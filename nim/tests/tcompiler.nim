@@ -2424,3 +2424,227 @@ suite "slice 6e: array destructuring byte-identity":
       "   10  IterClose           a=2   b=3   c=0   | u16=3 i16=3\n" &
       "   11  LoadUndefined       a=5   b=0   c=0   | u16=0 i16=0\n" &
       "   12  Return              r5\n"
+
+
+suite "slice 7a: basic classes (empty/methods/ctor/fields/static)":
+  test "class 7a: empty class":
+    check disasmToString("class C {}") ==
+      "\n" &
+      "=== <program>  code_len=5 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r2\n" &
+      "    4  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n"
+
+  test "class 7a: one method":
+    check disasmToString("class C { m() {} }") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7a: two methods":
+    check disasmToString("class C { m() {} n() {} }") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=6 fixed=2 params=0 consts=3 ics=3 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadConst           r4   const#2 = <function>\n" &
+      "    6  DefineMethod        a=3   b=2   c=4   | u16=1026 i16=1026\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#2  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7a: explicit ctor w/ param + this-store":
+    check disasmToString("class C { constructor(a) { this.x = a; } }") ==
+      "\n" &
+      "=== <program>  code_len=5 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r2\n" &
+      "    4  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=4 fixed=2 params=1 consts=0 ics=1 class-ctor ===\n" &
+      "    0  StoreProp           r1.x <- r0    ic#0\n" &
+      "    1  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r2\n"
+
+  test "class 7a: one instance field":
+    check disasmToString("class C { x = 1; }") ==
+      "\n" &
+      "=== <program>  code_len=5 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r2\n" &
+      "    4  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.x <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n"
+
+  test "class 7a: two instance fields":
+    check disasmToString("class C { x = 1; y = 2; }") ==
+      "\n" &
+      "=== <program>  code_len=5 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r2\n" &
+      "    4  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=6 regs=3 fixed=1 params=0 consts=0 ics=2 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.x <- r1    ic#0\n" &
+      "    2  LoadInt             r1   = 2\n" &
+      "    3  StoreProp           r0.y <- r1    ic#1\n" &
+      "    4  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  Return              r1\n"
+
+  test "class 7a: static method":
+    check disasmToString("class C { static m() {} }") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=2   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7a: explicit empty ctor + method":
+    check disasmToString("class C { constructor() {} m() {} }") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7a: anon class expr named-eval":
+    check disasmToString("var K = class {};") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=4 fixed=1 params=0 consts=2 ics=1 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r1   const#0 = <function>\n" &
+      "    2  LoadProp            r2   <- r1.prototype  ic#0\n" &
+      "    3  LoadConst           r2   const#1 = \"K\"\n" &
+      "    4  SetFunctionName     a=1   b=2   c=0   | u16=2 i16=2\n" &
+      "    5  DefineGlobal        r1   g108  ; K\n" &
+      "    6  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7a: method params + return":
+    check disasmToString("class C { m(a, b) { return a + b; } }") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=4 fixed=2 params=2 consts=0 ics=0 ===\n" &
+      "    0  Add                 a=2   b=0   c=1   | u16=256 i16=256\n" &
+      "    1  Return              r2\n"
+
+  test "class 7a: named class field refs outer global (slot reservation)":
+    check disasmToString("class C { y = x; }") ==
+      "\n" &
+      "=== <program>  code_len=5 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r2\n" &
+      "    4  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadGlobal          r1   g109  ; x\n" &
+      "    1  StoreProp           r0.y <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n"
+
+  test "class 7a: anon class expr field refs global (no reservation)":
+    check disasmToString("(class { y = x });") ==
+      "\n" &
+      "=== <program>  code_len=5 regs=4 fixed=1 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r1   const#0 = <function>\n" &
+      "    2  LoadProp            r2   <- r1.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r1\n" &
+      "    4  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadGlobal          r1   g108  ; x\n" &
+      "    1  StoreProp           r0.y <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n"

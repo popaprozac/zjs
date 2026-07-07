@@ -818,6 +818,13 @@ proc collectLocals(c: var Compiler, node: AstNode) =
     # FunctionDecl arm). The body has its own scope — don't recurse.
     if c.isFunction and not c.isScript and node.fnNameLen > 0:
       discard allocAndAddLocalScoped(c, node.fnNameStart, node.fnNameLen, 0'u32)
+  of ClassDecl:
+    # A ClassDecl is ALWAYS lexical, even at script-top (mirrors
+    # compiler.zc collect_locals ~6925-6930). Register the class name as a
+    # local in the CURRENT scope so the binding Mov (compileStmt ClassDecl)
+    # resolves it. Its members have their own scopes — don't recurse.
+    if c.isFunction and node.classNameLen > 0:
+      discard allocAndAddLocalScoped(c, node.classNameStart, node.classNameLen, c.curScopeId)
   of BlockStmt:
     enterScopeAssign(c, node)
     for s in node.stmtList:
@@ -998,11 +1005,15 @@ proc bodyReferencesAnyLocal(c: Compiler, body: AstNode, names: seq[string]): boo
 # collect-then-analyze order.
 
 proc fnBodyOf(n: AstNode): AstNode =
-  ## The statement/expression body of a nested function node.
+  ## The statement/expression body of a nested function node. A MethodDef
+  ## (class constructor / method — slice 7a) shares the FunctionExpr shape:
+  ## methodBody is the BlockStmt, methodParams the formals (mirrors
+  ## compiler.zc, where MethodDef reuses node.left/node.children).
   if n == nil: return nil
   case n.kind
   of FunctionDecl, FunctionExpr: n.fnBody
   of ArrowFunc: n.arrowBody
+  of MethodDef: n.methodBody
   else: nil
 
 proc fnParamsOf(n: AstNode): seq[AstNode] =
@@ -1010,6 +1021,7 @@ proc fnParamsOf(n: AstNode): seq[AstNode] =
   case n.kind
   of FunctionDecl, FunctionExpr: n.fnParams
   of ArrowFunc: n.arrowParams
+  of MethodDef: n.methodParams
   else: @[]
 
 proc bodyDeclaresName(c: Compiler, node: AstNode, name: string): bool =
@@ -1291,7 +1303,8 @@ proc blockNeedsEntryHole(c: Compiler, blk: AstNode, name: string): bool =
 # Forward decls: the recursive body compile calls compileStmt, and the
 # nested-function shape gate below calls compileFunctionValue.
 proc compileStmt(c: var Compiler, node: AstNode)
-proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Function
+proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
+                     isClassCtor: bool = false): Function
 # Object / array literals recurse into compileExpr (defined just below),
 # so forward-declare them here.
 proc compileExpr(c: var Compiler, node: AstNode): uint8
@@ -1308,6 +1321,10 @@ proc compileCall(c: var Compiler, node: AstNode): uint8
 # destructurePattern, which is defined after maybeInferAnonName.
 proc destructurePattern(c: var Compiler, pat: AstNode, srcReg: uint8)
 proc compileNew(c: var Compiler, node: AstNode): uint8
+# Class value (slice 7a): compiles a ClassDecl/ClassExpr to the register
+# holding the constructor. Defined after compileFunction (which it calls
+# for the ctor + each method), so forward-declare it here.
+proc compileClassValue(c: var Compiler, node: AstNode): uint8
 
 # --- Expressions ----------------------------------------------------
 
@@ -1968,6 +1985,12 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let dst = allocReg(c)
     emit(c, instA(LoadThis, dst))
     return dst
+  of ClassExpr:
+    # `class {}` / `class Name {}` as an expression value (slice 7a).
+    # compileClassValue returns the register holding the constructor;
+    # NamedEvaluation at the assignment site (maybeInferAnonName) sets an
+    # anonymous class-expression's .name. Mirrors compiler.zc ~2200.
+    return compileClassValue(c, node)
   else:
     # Not yet supported.
     c.hadError = true
@@ -2525,8 +2548,21 @@ proc maybeInferAnonName(c: var Compiler, initExpr: AstNode, valReg: uint8,
   case expr.kind
   of FunctionExpr: isAnon = expr.fnNameLen == 0
   of ArrowFunc:    isAnon = true
+  of ClassExpr:    isAnon = expr.classNameLen == 0
   else:            isAnon = false
   if not isAnon: return
+  # An anonymous class EXPRESSION with an explicit `static name` member
+  # already owns its .name property; ECMA-262 NamedEvaluation must NOT
+  # override it (compiler.zc ~6716-6728). Skip the SetFunctionName then.
+  if expr.kind == ClassExpr:
+    for m in expr.classMembers:
+      if m == nil: continue
+      if m.kind == MethodDef and m.methodIsStatic and m.methodNameLen == 4 and
+         c.slice(m.methodNameStart, m.methodNameStart + m.methodNameLen) == "name":
+        return
+      if m.kind == ClassField and m.fieldIsStatic and m.fieldNameLen == 4 and
+         c.slice(m.fieldNameStart, m.fieldNameStart + m.fieldNameLen) == "name":
+        return
   # LoadConst the name string, then SetFunctionName val, nameReg.
   c.constants.add(Constant(kind: ckString, s: targetName))
   let nameReg = allocReg(c)
@@ -3279,6 +3315,35 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       for bp in c.loopStack[frameIdx].breakPatches:
         patchJump(c, bp)
       loopPop(c)
+  of ClassDecl:
+    # A class declaration (slice 7a). compileClassValue builds the
+    # constructor + prototype + methods and returns the ctor register;
+    # bind the class name. A ClassDecl is ALWAYS lexical (§10.2 — even at
+    # script-top), so `c.isFunction` (true for both program-top-script and
+    # function bodies) binds to the pre-allocated local register that
+    # collectLocals reserved. Mirrors compiler.zc ~7417-7437. The
+    # captured-name / module-global paths (env StoreProp / DefineGlobal)
+    # are out of the slice-7a corpus.
+    let r = compileClassValue(c, node)
+    if c.hadError:
+      resetTemps(c)
+      return
+    if c.isFunction:
+      let name = c.slice(node.classNameStart, node.classNameStart + node.classNameLen)
+      let lidx = findLocalIndex(c, name)
+      if lidx >= 0:
+        if c.locals[lidx].captured:
+          # A class name captured by a nested closure lives on the env
+          # object — env chain / StoreProp not exercised here; bail.
+          c.hadError = true
+        else:
+          emit(c, instAB(Mov, c.locals[lidx].reg, r))
+    else:
+      # Module context (non-function) — a class-global DefineGlobal; out of
+      # the current corpus (the program compiler is always is_function).
+      c.hadError = true
+    releaseReg(c, r)
+    resetTemps(c)
   of FunctionDecl:
     # A function declaration. Compile the body into a fresh Function,
     # append it to the const pool, LoadConst it, then wrap in
@@ -3609,26 +3674,41 @@ proc functionBodyStmts(node: AstNode): seq[AstNode] =
   if body.kind == BlockStmt: return body.stmtList
   return @[body]
 
-proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Function =
-  ## Compile a FunctionDecl / FunctionExpr / ArrowFunc body into its own
-  ## Function (own code / consts / regs / paramCount). Mirrors compiler.zc
-  ## compile_function for the slice-4a/4d envelope: simple params, no
-  ## default/rest/destructure, no async/generator. `this`/`arguments`
-  ## inheritance is handled by the shared bodyUsesThis/bodyUsesArguments
-  ## pre-scans (which descend into arrows) + the arrow-always MakeClosure.
-  ## Any feature outside that envelope sets hadError -> returns nil so the
-  ## enclosing compile bails (surfacing as nim_missing, never a false
-  ## match). `enclosing` shares its global-intern table with the child
-  ## so global slots stay in one namespace program-wide.
+proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
+                     isClassCtor: bool = false): Function =
+  ## Compile a FunctionDecl / FunctionExpr / ArrowFunc / MethodDef body
+  ## into its own Function (own code / consts / regs / paramCount).
+  ## Mirrors compiler.zc compile_function for the slice-4a/4d envelope:
+  ## simple params, no default/rest/destructure, no async/generator.
+  ## `this`/`arguments` inheritance is handled by the shared
+  ## bodyUsesThis/bodyUsesArguments pre-scans (which descend into arrows)
+  ## + the arrow-always MakeClosure. Any feature outside that envelope
+  ## sets hadError -> returns nil so the enclosing compile bails
+  ## (surfacing as nim_missing, never a false match). `enclosing` shares
+  ## its global-intern table with the child so global slots stay in one
+  ## namespace program-wide.
+  ##
+  ## Slice 7a: MethodDef nodes (class methods + the class constructor) and
+  ## a synthesized empty-ctor FunctionExpr share this path via fnBodyOf /
+  ## fnParamsOf. `isClassCtor` flags the resulting Function (disasm header
+  ## " class-ctor") and enables the LoadCallee self-name bind for the
+  ## synthesized empty ctor (a named anonymous FunctionExpr), which class
+  ## codegen builds so `class C {}` names itself C inside the ctor.
   let isArrow = node.kind == ArrowFunc
+  let isMethod = node.kind == MethodDef
 
   # --- Envelope gate ------------------------------------------------
   # Arrow params/body live in a different AST variant (arrowParams /
   # arrowBody / arrowIsAsync); regular functions use fnParams / fnBody /
-  # fnIsAsync|fnIsGenerator. fnParamsOf / fnBodyOf abstract the shape.
+  # fnIsAsync|fnIsGenerator; a MethodDef uses methodIsAsync/methodIsGenerator.
+  # fnParamsOf / fnBodyOf abstract the shape.
   if isArrow:
     # DEFER async arrows (`async x => x`). No generator arrows exist.
     if node.arrowIsAsync:
+      return nil
+  elif isMethod:
+    # DEFER async / generator methods (`async m(){}` / `*m(){}`).
+    if node.methodIsAsync or node.methodIsGenerator:
       return nil
   else:
     if node.fnIsAsync or node.fnIsGenerator:
@@ -3645,7 +3725,13 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   # false byte-match. FunctionDecl names bind in the ENCLOSING scope and
   # get NO LoadCallee, so decls with a name are fine. Arrows are always
   # anonymous — no self-binding name.
-  if node.kind == FunctionExpr and node.fnNameLen > 0:
+  #
+  # EXCEPTION (slice 7a): the class-ctor path builds a synthesized empty
+  # ctor as a NAMED FunctionExpr (name = class name) precisely so
+  # bind_callee_local fires and emits LoadCallee — that's the oracle shape
+  # for `class C {}`. So allow a named FunctionExpr through when isClassCtor.
+  let bindCalleeLocal = node.kind == FunctionExpr and node.fnNameLen > 0
+  if bindCalleeLocal and not isClassCtor:
     return nil
   let body = fnBodyOf(node)
 
@@ -3704,6 +3790,18 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
       c.locals[c.locals.len - 1].isParam = true
       regularParamCount += 1
   c.paramCount = regularParamCount
+
+  # 1b. Named-FunctionExpr self-name bind (compiler.zc bind_callee_local,
+  #     ~4041-4048). Reached only via the slice-7a class-ctor path (the
+  #     synthesized empty ctor is a named FunctionExpr): allocate a fixed
+  #     register AFTER params, add it as a local named after the class, and
+  #     mark it fixed. The value is seeded by a LoadCallee prologue op
+  #     emitted below (matching the empty-ctor oracle `LoadCallee r0`).
+  var calleeReg: uint8 = 0
+  if bindCalleeLocal:
+    calleeReg = allocReg(c)
+    addLocalScoped(c, node.fnNameStart, node.fnNameLen, uint32(calleeReg), 0'u32)
+    if calleeReg + 1 > c.fixedRegs: c.fixedRegs = calleeReg + 1
 
   # Pass 2: inner pattern-binding locals come AFTER all param registers so
   # the caller's arg-passing layout stays contiguous. destructurePattern
@@ -3796,6 +3894,15 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   #          NewObject + default-init) to match compiler.zc ~4159-4162.
   if hasRest:
     emit(c, instAB(BuildRestArgs, restReg, uint8(regularParamCount)))
+
+  # 4a-callee. Named-FunctionExpr self-name seed (compiler.zc ~4163-4167).
+  #            Load the current callee into the self-binding local. Slice
+  #            7a reaches this only for the synthesized empty class ctor
+  #            (a captured callee — nested closure over the class name —
+  #            would need env mirroring, out of this corpus). Emitted after
+  #            BuildRestArgs, before default-init, matching the C order.
+  if bindCalleeLocal:
+    emit(c, instA(LoadCallee, calleeReg))
 
   # 4a-def. Default initializers for regular params (slice 4e): for each
   #         param with a default, `param === undefined ? <default> : param`,
@@ -3987,6 +4094,9 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
     # MakeClosure creation-time `this` snapshot. Set from the node kind
     # (compiler.zc ~4459 `f.is_arrow = node.kind == ArrowFunc`).
     isArrow: isArrow,
+    # Class-constructor flag: the disasm header prints " class-ctor". Set
+    # by the class-value codegen (compiler.zc ~5108). Slice 7a.
+    isClassCtor: isClassCtor,
   )
   # register_count floor: at least param_count (compiler.zc clamp).
   if f.registerCount < f.paramCount: f.registerCount = f.paramCount
@@ -3998,6 +4108,146 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   for i in 0 ..< c.globals.names.len:
     f.globalNames.add(GlobalName(slot: c.globals.slots[i], name: c.globals.names[i]))
   return f
+
+# --- Class value (slice 7a: base classes, methods, fields) ----------
+#
+# Mirrors compiler.zc compile_class_value (~5008) for the BASE-class
+# subset: an empty class, instance/static plain methods, an explicit or
+# synthesized constructor, and instance fields (which the parser injects
+# into the synthesized ctor body as `this.f = init`, so they compile for
+# free through the ctor). Emits:
+#     LoadConst  ctorReg  <- const#0 = <ctor Function>
+#     LoadProp   protoReg <- ctorReg.prototype  ic#0
+#     (per method) LoadConst methodReg; DefineMethod target, nameIc, methodReg
+#     return ctorReg
+# The caller (ClassDecl stmt / ClassExpr expr) binds/returns ctorReg.
+#
+# DEFERRED (set hadError -> nim_missing, never wrong bytecode): extends /
+# super (classParent != nil), getters/setters, computed method keys,
+# private members (#x), static blocks, static fields, and generator/async
+# methods. Each is detected up-front and bails the whole class.
+
+proc classMemberIsConstructor(c: Compiler, m: AstNode): bool =
+  ## Is this MethodDef the class constructor? A non-static MethodDef whose
+  ## literal name is "constructor", OR the parser's synthesized ctor
+  ## (methodNameLen == 0, injected when instance fields exist without an
+  ## explicit ctor). A STATIC "constructor" is an ordinary static member.
+  ## Mirrors compiler.zc's is_ctor derivation (~5018-5024).
+  if m == nil or m.kind != MethodDef: return false
+  if m.methodIsStatic: return false
+  if m.methodNameLen == 0: return true      # synthesized (parser sentinel)
+  if m.methodNameLen == 11'u32 and
+     c.slice(m.methodNameStart, m.methodNameStart + m.methodNameLen) == "constructor":
+    return true
+  return false
+
+proc classValueUnsupported(c: Compiler, node: AstNode): bool =
+  ## True if this class contains any construct slice 7a defers. Checked
+  ## before emitting anything so the whole class bails cleanly.
+  if node.classParent != nil: return true          # extends / super — 7b
+  for m in node.classMembers:
+    if m == nil: return true
+    case m.kind
+    of MethodDef:
+      if m.methodAccessor != Eq: return true       # get / set accessor
+      if m.methodIsAsync or m.methodIsGenerator: return true
+      if m.methodComputedKey != nil: return true   # computed key `[e](){}`
+      # Private method (`#m(){}`): name begins with '#'.
+      if m.methodNameLen > 0 and c.src[m.methodNameStart.int] == '#': return true
+    of ClassField:
+      if m.fieldIsStatic: return true              # static field — deferred
+      if m.fieldComputedKey != nil: return true    # computed field key
+      # Private field (`#x`): name begins with '#'.
+      if m.fieldNameLen > 0 and c.src[m.fieldNameStart.int] == '#': return true
+    of StaticBlock:
+      return true                                  # static block — deferred
+    else:
+      return true
+  return false
+
+proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
+  # Bail on any deferred construct before emitting anything.
+  if classValueUnsupported(c, node):
+    c.hadError = true
+    return allocReg(c)
+
+  # 1. Find the constructor MethodDef (explicit or parser-synthesized).
+  var ctorNode: AstNode = nil
+  for m in node.classMembers:
+    if classMemberIsConstructor(c, m):
+      ctorNode = m
+
+  # 2. Compile the constructor Function. An explicit / synthesized ctor is
+  #    a MethodDef (no LoadCallee). If ABSENT (no fields, no explicit
+  #    ctor), synthesize an empty NAMED FunctionExpr carrying the class
+  #    name so compileFunction's bind_callee_local fires -> LoadCallee
+  #    (matching the `class C {}` oracle). An anonymous class expr
+  #    (classNameLen == 0) synthesizes a name-less FunctionExpr -> no
+  #    LoadCallee. Mirrors compiler.zc ~5089-5106.
+  var ctorFn: Function
+  if ctorNode != nil:
+    ctorFn = compileFunction(c.src, ctorNode, c, isClassCtor = true)
+  else:
+    let empty = newFunctionExpr(node.classNameStart, node.classNameStart,
+                                node.classNameStart, node.classNameLen,
+                                nil, @[], false, false)
+    ctorFn = compileFunction(c.src, empty, c, isClassCtor = true)
+  if ctorFn == nil:
+    c.hadError = true
+    return allocReg(c)
+
+  # 3. LoadConst the ctor Function into ctorReg. A ctor that captures outer
+  #    scope would need a MakeClosure wrap (compiler.zc ~5141-5148) — out of
+  #    the base-class corpus (a ctor body referencing an enclosing local),
+  #    so refuse rather than emit an unvalidated wrap.
+  if ctorFn.needsEnv:
+    c.hadError = true
+    return allocReg(c)
+  c.constants.add(Constant(kind: ckFunction, fn: ctorFn))
+  let ctorReg = allocReg(c)
+  emit(c, instAU16(LoadConst, ctorReg, uint16(c.constants.len - 1)))
+
+  # 4. Load `<ctor>.prototype` once into protoReg for all instance methods
+  #    (compiler.zc ~5168-5175). ic#0 = "prototype".
+  let protoIc = allocIcSlot(c, "prototype")
+  if protoIc > 255:
+    c.hadError = true
+    return ctorReg
+  let protoReg = allocReg(c)
+  emit(c, instABC(LoadProp, protoReg, ctorReg, uint8(protoIc)))
+
+  # 5. Attach each non-constructor method. Instance methods -> prototype
+  #    (target = protoReg); static methods -> the constructor itself
+  #    (target = ctorReg). DefineMethod a=target, b=nameIc, c=methodReg.
+  #    Mirrors compiler.zc ~5178-5311.
+  for m in node.classMembers:
+    if m == nil: continue
+    if m.kind == ClassField: continue          # instance fields handled via ctor
+    if classMemberIsConstructor(c, m): continue
+    if m.kind != MethodDef: continue           # (guarded unsupported above)
+    let mfn = compileFunction(c.src, m, c)
+    if mfn == nil:
+      c.hadError = true
+      return ctorReg
+    if mfn.needsEnv:
+      # A method capturing outer scope needs a MakeClosure wrap — out of
+      # the base-class corpus. Refuse rather than diverge.
+      c.hadError = true
+      return ctorReg
+    c.constants.add(Constant(kind: ckFunction, fn: mfn))
+    let methodReg = allocReg(c)
+    emit(c, instAU16(LoadConst, methodReg, uint16(c.constants.len - 1)))
+    let mname = c.slice(m.methodNameStart, m.methodNameStart + m.methodNameLen)
+    let mIc = allocIcSlot(c, mname)
+    if mIc > 255:
+      c.hadError = true
+      return ctorReg
+    let target = if m.methodIsStatic: ctorReg else: protoReg
+    emit(c, instABC(DefineMethod, target, uint8(mIc), methodReg))
+    releaseReg(c, methodReg)
+
+  releaseReg(c, protoReg)
+  return ctorReg
 
 # --- Program --------------------------------------------------------
 
@@ -4036,6 +4286,16 @@ proc hoistProgramGlobals(c: var Compiler, root: AstNode) =
           hoistPatternGlobals(c, decl.declPattern)
     elif stmt.kind == FunctionDecl and stmt.fnNameLen > 0:
       discard internGlobal(c, c.slice(stmt.fnNameStart, stmt.fnNameStart + stmt.fnNameLen))
+    elif stmt.kind == ClassDecl and stmt.classNameLen > 0:
+      # A script-top ClassDecl RESERVES a global slot for its name in the
+      # hoist pass (compiler.zc hoist_program_decls ~8872-8878), even though
+      # the class itself binds LEXICALLY (a register, via the Mov in the
+      # ClassDecl compile arm — never DefineGlobal'd). The reservation is
+      # what makes the ctor body's first real global land one slot LATER
+      # (`class C { y = x }` → C reserves g108, so `x` reads g109). A
+      # ClassExpr reserves nothing (compiler.zc ~8879) — matches the
+      # anonymous-class oracle where the field-init global starts at g108.
+      discard internGlobal(c, c.slice(stmt.classNameStart, stmt.classNameStart + stmt.classNameLen))
 
 proc compileProgram*(src: string, root: AstNode): Function =
   ## Compile the top-level program. Mirrors compile_program: reserve r0
