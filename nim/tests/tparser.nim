@@ -3710,3 +3710,25 @@ suite "parser early errors: assignment rest must be last":
     check not hadErr("[...a, b]")            # array LITERAL, not a target
     check not hadErr("let [a, ...b] = c")    # binding pattern
     check not hadErr("f(...a, b)")           # call spread
+
+suite "parser early errors: reserved word as binding identifier":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "reserved word as a var/let/const binding is rejected":
+    check hadErr("var true = 1")
+    check hadErr("var this = 1")
+    check hadErr("let false = 1")
+    check hadErr("const null = 1")
+    check hadErr("var;")
+    check hadErr("for (var true of x){}")
+  test "reserved word as a function parameter is rejected":
+    check hadErr("function f(true){}")
+    check hadErr("function f(a, null){}")
+    check hadErr("function f(...true){}")
+  test "valid bindings unaffected (incl. contextual keywords)":
+    check not hadErr("var x = 1")
+    check not hadErr("let a, b, c;")
+    check not hadErr("var yield = 1")
+    check not hadErr("const let = 1")
+    check not hadErr("function f(yield, async, await, get, set){}")
+    check not hadErr("var [a] = b")

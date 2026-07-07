@@ -1486,7 +1486,8 @@ proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
 
     let nameTok = p.peek()
     if not isBindingIdent(nameTok.kind):
-      break                     # guard: non-identifier = stop
+      p.hadError = true         # a declarator requires a BindingIdentifier (`var true`, `var;` → error)
+      break
     p.checkBindingReserved(nameTok)    # var-decl declarator = escape-aware
     discard p.advance()         # consume the identifier
 
@@ -1746,6 +1747,7 @@ proc parseParamList(p: var Parser): seq[AstNode] =
     if p.peek().kind == Ellipsis:
       let dots = p.advance()
       let nameTok = p.advance()                 # identifier
+      if not isBindingIdent(nameTok.kind): p.hadError = true   # `function f(true)` → error
       p.checkBindingReserved(nameTok, simpleParam = true)
       let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
       result.add(newRestParam(dots.start, nameTok.start + nameTok.length, ident))
@@ -1760,6 +1762,7 @@ proc parseParamList(p: var Parser): seq[AstNode] =
       result.add(param)
     else:
       let nameTok = p.advance()                 # identifier
+      if not isBindingIdent(nameTok.kind): p.hadError = true   # `function f(true)` → error
       p.checkBindingReserved(nameTok, simpleParam = true)
       let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
       if p.peek().kind == Eq:
