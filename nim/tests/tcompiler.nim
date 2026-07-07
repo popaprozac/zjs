@@ -2648,3 +2648,195 @@ suite "slice 7a: basic classes (empty/methods/ctor/fields/static)":
       "    1  StoreProp           r0.y <- r1    ic#0\n" &
       "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
       "    3  Return              r1\n"
+
+suite "slice 7b: extends + super()":
+  # Byte-for-byte against `build/zjs disasm`. The extends prototype-chain
+  # setup (LoadGlobal parent; LoadProp parent.prototype ic#0; SetProto
+  # a=parentProto b=proto; SetParentCtor a=ctor b=parent) is emitted AFTER
+  # the DefineMethod block; the result Mov comes from the ClassDecl/Expr arm.
+
+  test "class 7b: empty derived (extends B, default derived ctor)":
+    check disasmToString("class C extends B {}") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=7 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadGlobal          r4   g109  ; B\n" &
+      "    4  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    5  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    6  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n"
+
+  test "class 7b: explicit ctor super() (no args)":
+    check disasmToString("class C extends B { constructor(){ super(); } }") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=7 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadGlobal          r4   g109  ; B\n" &
+      "    4  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    5  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    6  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=2 fixed=0 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadGlobal          r0   g109  ; B\n" &
+      "    1  SuperCall           a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r0\n"
+
+  test "class 7b: super(a) + this.x = a (one arg, defensive Mov pair)":
+    check disasmToString("class C extends B { constructor(a){ super(a); this.x = a; } }") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=7 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadGlobal          r4   g109  ; B\n" &
+      "    4  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    5  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    6  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=7 regs=6 fixed=2 params=1 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadGlobal          r2   g109  ; B\n" &
+      "    1  Mov                 r4   <- r0\n" &
+      "    2  Mov                 r3   <- r4\n" &
+      "    3  SuperCall           a=2   b=2   c=1   | u16=258 i16=258\n" &
+      "    4  StoreProp           r1.x <- r0    ic#0\n" &
+      "    5  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    6  Return              r2\n"
+
+  test "class 7b: instance method + extends":
+    check disasmToString("class C extends B { m(){} }") ==
+      "\n" &
+      "=== <program>  code_len=11 regs=7 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadGlobal          r4   g109  ; B\n" &
+      "    6  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    7  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    8  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    9  Mov                 r0   <- r2\n" &
+      "   10  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7b: super(a, b) (two args)":
+    check disasmToString("class C extends B { constructor(a,b){ super(a,b); } }") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=7 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadGlobal          r4   g109  ; B\n" &
+      "    4  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    5  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    6  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=8 regs=7 fixed=2 params=2 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadGlobal          r2   g109  ; B\n" &
+      "    1  Mov                 r5   <- r0\n" &
+      "    2  Mov                 r3   <- r5\n" &
+      "    3  Mov                 r5   <- r1\n" &
+      "    4  Mov                 r4   <- r5\n" &
+      "    5  SuperCall           a=2   b=2   c=2   | u16=514 i16=514\n" &
+      "    6  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    7  Return              r2\n"
+
+  test "class 7b: super() then this.y = 1 (this after super)":
+    check disasmToString("class C extends B { constructor(){ super(); this.y = 1; } }") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=7 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadGlobal          r4   g109  ; B\n" &
+      "    4  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    5  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    6  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=6 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadGlobal          r1   g109  ; B\n" &
+      "    1  SuperCall           a=1   b=1   c=0   | u16=1 i16=1\n" &
+      "    2  LoadInt             r1   = 1\n" &
+      "    3  StoreProp           r0.y <- r1    ic#0\n" &
+      "    4  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  Return              r1\n"
+
+  test "class 7b: anonymous class expr extends (var D = class extends B {})":
+    check disasmToString("var D = class extends B {};") ==
+      "\n" &
+      "=== <program>  code_len=11 regs=6 fixed=1 params=0 consts=2 ics=1 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r1   const#0 = <function>\n" &
+      "    2  LoadProp            r2   <- r1.prototype  ic#0\n" &
+      "    3  LoadGlobal          r3   g109  ; B\n" &
+      "    4  LoadProp            r4   <- r3.prototype  ic#0\n" &
+      "    5  SetProto            a=4   b=2   c=0   | u16=2 i16=2\n" &
+      "    6  SetParentCtor       a=1   b=3   c=0   | u16=3 i16=3\n" &
+      "    7  LoadConst           r2   const#1 = \"D\"\n" &
+      "    8  SetFunctionName     a=1   b=2   c=0   | u16=2 i16=2\n" &
+      "    9  DefineGlobal        r1   g108  ; D\n" &
+      "   10  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7b: derived field (synthesized ctor: field init then super)":
+    check disasmToString("class C extends B { x = 1; }") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=7 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadGlobal          r4   g109  ; B\n" &
+      "    4  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    5  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    6  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=6 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.x <- r1    ic#0\n" &
+      "    2  LoadGlobal          r1   g109  ; B\n" &
+      "    3  SuperCall           a=1   b=1   c=0   | u16=1 i16=1\n" &
+      "    4  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  Return              r1\n"
+
+  test "class 7b: super.method() bails (member super deferred)":
+    # super PROPERTY access is a distinct op path (deferred) -> compile fails
+    # so the whole class surfaces as nim_missing, NOT wrong bytecode.
+    # disasmToString raises ValueError on a compile bail.
+    expect ValueError:
+      discard disasmToString("class C extends B { m(){ super.n(); } }")
+
+  test "class 7b: spread super(...args) bails (SpreadSuperCall deferred)":
+    expect ValueError:
+      discard disasmToString("class C extends B { constructor(){ super(...arguments); } }")

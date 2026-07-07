@@ -195,6 +195,14 @@ type
     ## return expression compare unequal and still fuse. Mirrors compiler.zc
     ## `c.tail_call_node` (#394).
     tailCallNode*: AstNode
+    ## The `extends` expression of the class whose constructor body we are
+    ## currently compiling (nil outside a derived-class ctor). Threaded from
+    ## compileClassValue into the ctor's compileFunction and read by the
+    ## `super(...)` compile arm to materialize the parent constructor (a
+    ## LoadGlobal for `extends B`). Mirrors compiler.zc
+    ## `c.enclosing_class_parent` — set on the outer compiler before the
+    ## member compiles (~5033) and inherited by the child (~3929). Slice 7b.
+    enclosingClassParent*: AstNode
     # --- Lexical scope tracker (compiler.zc scope_stack / *_scope_id) --
     scopeStack*:  seq[uint32]
     curScopeId*:  uint32
@@ -2176,8 +2184,47 @@ proc compileCallInner(c: var Compiler, node: AstNode, retHint: int): uint8 =
   # OptionalComputed) that never reach the Member/Computed compile arms.
   if callHasSpreadArg(node):
     c.hadError = true; return 0
+  # `super(...)` in a derived-class constructor (slice 7b). Emits Op::SuperCall
+  # which preserves the current `this` / new-target; the parent constructor is
+  # materialized by compiling the enclosing class's `extends` expression into
+  # the call-frame base (mirrors compiler.zc ~5784-5854). Spread-super
+  # (`super(...args)`) → SpreadSuperCall is DEFERRED (bail). A `super()`
+  # outside a derived ctor (no enclosingClassParent) is a bail, matching the
+  # C's `c.enclosing_class_parent == NULL` SyntaxError guard.
   if callee != nil and callee.kind == SuperExpr:
-    c.hadError = true; return 0
+    if c.enclosingClassParent == nil:
+      c.hadError = true; return 0
+    # Contiguous call frame: regs[base] = parent ctor, regs[base+1..] = args.
+    let base = c.nextReg
+    let slotsNeeded = 1 + argCount
+    for _ in 0 ..< slotsNeeded:
+      discard allocReg(c)
+    # Parent ctor into regs[base] via preferred_dst so a LoadGlobal writes
+    # the slot directly (the `extends B` global case). A non-global parent
+    # expression compiles normally and Movs into base if it lands elsewhere.
+    c.preferredDst = int(base)
+    let parentR = compileExpr(c, c.enclosingClassParent)
+    c.preferredDst = -1
+    if parentR != base:
+      emit(c, instAB(Mov, base, parentR))
+      if parentR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+    # Args into regs[base+1..]. Uses preferred_dst + compileExpr (NOT
+    # tryPlaceSimple) — matching compiler.zc's super-arg loop, so a bare
+    # local arg yields the defensive-read Mov pair the oracle emits.
+    var j = 0
+    while j < argCount:
+      let targetSlot = base + 1'u8 + uint8(j)
+      c.preferredDst = int(targetSlot)
+      let argR = compileExpr(c, node.args[j])
+      c.preferredDst = -1
+      if argR != targetSlot:
+        emit(c, instAB(Mov, targetSlot, argR))
+        if argR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      j += 1
+    emit(c, instABC(SuperCall, base, base, uint8(argCount)))
+    c.nextReg = base + 1
+    if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+    return base
   if callee != nil and callee.kind in {OptionalMember, OptionalComputed, OptionalCall}:
     c.hadError = true; return 0
   # Math.sqrt/abs/floor/ceil intrinsic fusion is DEFERRED -- the plain
@@ -3747,6 +3794,11 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
     needsEnv: false, envReg: 0, hasOuterRefs: false, cachedOuterEnvReg: -1,
     globals: enclosing.globals,      # SHARED global namespace (see GlobalTable)
     scopeStack: @[0'u32], curScopeId: 0, nextScopeId: 1,
+    # Inherit the enclosing derived-class parent so a `super(...)` inside
+    # this body compiles the parent constructor (compiler.zc ~3929). Only
+    # a class ctor / method body sees a non-nil value (set on the outer
+    # compiler by compileClassValue before it compiles the members). Slice 7b.
+    enclosingClassParent: enclosing.enclosingClassParent,
   )
 
   # 1. Bind params to the low fixed regs r0..rN-1 in declaration order.
@@ -4141,10 +4193,55 @@ proc classMemberIsConstructor(c: Compiler, m: AstNode): bool =
     return true
   return false
 
+proc subtreeHasDirectEval(c: Compiler, n: AstNode): bool =
+  ## Does this subtree contain a direct-eval call — a `Call` whose callee is
+  ## the bare identifier `eval`? A direct eval inside a DERIVED class body
+  ## forces the class-scope bindings (the class name + its parent) into a
+  ## captured env so the evaluated code can see them; the derived ctor is
+  ## then wrapped in a MakeClosure and its `super(...)` reads the parent
+  ## through that env (LoadEnv + LoadProp) instead of a plain LoadGlobal.
+  ## That class-scope env-capture machinery is out of slice 7b, so a derived
+  ## class body containing a direct eval BAILS (nim_missing) rather than emit
+  ## the LoadGlobal-shaped super that diverges from the oracle.
+  if n == nil: return false
+  if n.kind == Call and n.callee != nil and n.callee.kind == IdentExpr and
+     c.slice(n.callee.start, n.callee.`end`) == "eval":
+    return true
+  for ch in childNodes(n):
+    if subtreeHasDirectEval(c, ch): return true
+  return false
+
+proc subtreeHasMemberSuper(n: AstNode): bool =
+  ## Does this subtree contain a `super.prop` / `super[expr]` member access
+  ## (a Member/Computed/OptionalMember/OptionalComputed whose receiver is a
+  ## SuperExpr)? Slice 7b handles `super(...)` CALLS but DEFERS super
+  ## PROPERTY access (a distinct op path). Detected up-front so any class
+  ## whose ctor/method body touches `super.x` bails cleanly (nim_missing).
+  ## Does NOT descend into nested non-arrow function bodies (they have their
+  ## own `super` binding — but an arrow inherits it; being conservative and
+  ## descending everywhere only makes us bail more, which is safe).
+  if n == nil: return false
+  case n.kind
+  of Member, Computed, OptionalMember, OptionalComputed:
+    if n.recv != nil and n.recv.kind == SuperExpr: return true
+  else: discard
+  for ch in childNodes(n):
+    if subtreeHasMemberSuper(ch): return true
+  return false
+
 proc classValueUnsupported(c: Compiler, node: AstNode): bool =
-  ## True if this class contains any construct slice 7a defers. Checked
+  ## True if this class contains any construct slice 7a/7b defers. Checked
   ## before emitting anything so the whole class bails cleanly.
-  if node.classParent != nil: return true          # extends / super — 7b
+  ## Slice 7b: `extends B` + `super(...)` calls are now SUPPORTED; still
+  ## deferred are super PROPERTY access (`super.m()` / `super.x`) and
+  ## spread-super (`super(...args)` → SpreadSuperCall).
+  for m in node.classMembers:
+    if m != nil and subtreeHasMemberSuper(m): return true   # super.prop — deferred
+  # A derived class whose body contains a direct eval forces class-scope
+  # env-capture (parent read through the env in super) — out of slice 7b.
+  if node.classParent != nil:
+    for m in node.classMembers:
+      if m != nil and subtreeHasDirectEval(c, m): return true
   for m in node.classMembers:
     if m == nil: return true
     case m.kind
@@ -4171,6 +4268,13 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
     c.hadError = true
     return allocReg(c)
 
+  # 0. Slice 7b: publish the `extends` expression on THIS compiler for the
+  #    duration of the member compiles, so a `super(...)` inside the ctor
+  #    body resolves the parent constructor (compileFunction inherits it into
+  #    the child). Restored at the end. Mirrors compiler.zc ~5031-5033.
+  let savedClassParent = c.enclosingClassParent
+  c.enclosingClassParent = node.classParent
+
   # 1. Find the constructor MethodDef (explicit or parser-synthesized).
   var ctorNode: AstNode = nil
   for m in node.classMembers:
@@ -4193,8 +4297,15 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
                                 nil, @[], false, false)
     ctorFn = compileFunction(c.src, empty, c, isClassCtor = true)
   if ctorFn == nil:
+    c.enclosingClassParent = savedClassParent
     c.hadError = true
     return allocReg(c)
+  # Default derived ctor (extends + NO explicit constructor): mark so the
+  # runtime forwards args to the parent ctor. Its body is the minimal
+  # LoadCallee; LoadUndefined; Return already produced by compileFunction.
+  # NOT printed by disasm — no byte effect. Mirrors compiler.zc ~5111-5113.
+  if ctorNode == nil and node.classParent != nil:
+    ctorFn.isDefaultDerivedCtor = true
 
   # 3. LoadConst the ctor Function into ctorReg. A ctor that captures outer
   #    scope would need a MakeClosure wrap (compiler.zc ~5141-5148) — out of
@@ -4246,7 +4357,42 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
     emit(c, instABC(DefineMethod, target, uint8(mIc), methodReg))
     releaseReg(c, methodReg)
 
+  # 6. `extends Parent` (slice 7b): chain Child.prototype.[[Prototype]] =
+  #    Parent.prototype AND record the parent constructor on the child ctor
+  #    (so Object.getPrototypeOf(Child) === Parent). Evaluated AFTER methods
+  #    so they land on the child's own prototype, and while protoReg is still
+  #    live (parentReg / parentProtoReg allocate above it). Mirrors
+  #    compiler.zc ~5314-5339. Emits:
+  #      LoadGlobal    parentReg      <- Parent          (extends B: a global)
+  #      LoadProp      parentProtoReg <- parentReg.prototype  ic#0 (reused)
+  #      SetProto      a=parentProtoReg, b=protoReg
+  #      SetParentCtor a=ctorReg,        b=parentReg
+  #    `extends null` (LoadNull + SetProto, no SetParentCtor) is a distinct
+  #    shape not in the 7b corpus — DEFER (bail) rather than emit unvalidated.
+  if node.classParent != nil:
+    if node.classParent.kind == NullExpr:
+      c.hadError = true
+      c.enclosingClassParent = savedClassParent
+      return ctorReg
+    # Parent expression -> parentReg. No preferred_dst (fresh reg), matching
+    # compiler.zc's bare `compile_expr(c, cls_node.right)`. For `extends B`
+    # this is a LoadGlobal into the freshly-allocated reg.
+    let parentReg = compileExpr(c, node.classParent)
+    # "prototype" IC dedups to ic#0 (already allocated above for the child's
+    # own prototype load) — the reuse the oracle relies on.
+    let parentProtoIc = allocIcSlot(c, "prototype")
+    let parentProtoReg = allocReg(c)
+    if parentProtoIc <= 255:
+      emit(c, instABC(LoadProp, parentProtoReg, parentReg, uint8(parentProtoIc)))
+      emit(c, instAB(SetProto, parentProtoReg, protoReg))
+    else:
+      c.hadError = true
+    emit(c, instAB(SetParentCtor, ctorReg, parentReg))
+    releaseReg(c, parentProtoReg)
+    if parentReg + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+
   releaseReg(c, protoReg)
+  c.enclosingClassParent = savedClassParent
   return ctorReg
 
 # --- Program --------------------------------------------------------

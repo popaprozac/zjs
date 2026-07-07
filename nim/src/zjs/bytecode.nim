@@ -239,6 +239,13 @@ type
     isGenerator*: bool
     isArrow*: bool
     isClassCtor*: bool
+    ## Default derived constructor: a class `extends Parent` with NO explicit
+    ## constructor. Its body is the minimal `LoadCallee; LoadUndefined;
+    ## Return` — the runtime performs the implicit `super(...args)`. Set by
+    ## the class-value codegen (compiler.zc `is_default_derived_ctor`,
+    ## ~5111-5113). NOT printed by disasm (no header text), so it doesn't
+    ## affect the byte-for-byte oracle; carried for later runtime phases.
+    isDefaultDerivedCtor*: bool
     ## Repurposed exactly as compiler.zc's `Function.needs_env` (slice
     ## 4b): "this function body references at least one OUTER-scope name"
     ## (i.e. the compiler's `has_outer_refs`), NOT "this function has its
