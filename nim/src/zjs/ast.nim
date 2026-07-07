@@ -159,7 +159,13 @@ type
     of TaggedTemplate:
       tag*: AstNode
       tmpl*: AstNode
-    of BlockStmt:    stmtList*: seq[AstNode]
+    of BlockStmt:
+      stmtList*: seq[AstNode]
+      ## Lexical scope id assigned by the compiler's collect-locals pass
+      ## (mirrors `AstNode.scope_id` in src/ast.zc). 0 = unassigned; the
+      ## compiler re-enters the SAME id in later walks so block-scoped
+      ## `let`/`const` resolve identically across passes. Slice 3a.
+      blockScopeId*: uint32
     of IfStmt:       ifCond*, thenStmt*, elseStmt*: AstNode    # elseStmt nil if no else
     of WhileStmt:    whileCond*, whileBody*: AstNode
     of DoWhileStmt:  doBody*, doCond*: AstNode

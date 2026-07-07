@@ -22,6 +22,19 @@ const
   USER_GLOBAL_BASE* = 108'u32
 
 type
+  Local* = object
+    ## One lexical binding (mirrors `struct Local` in src/compiler.zc).
+    ## Slice 3a only needs name/reg/scope + const/tdz flags for
+    ## script-scope let/const at the top level; captured/env-spill and
+    ## the full TDZ machinery arrive with function bodies (slice 4).
+    nameStart*:  uint32
+    nameLength*: uint32
+    reg*:        uint8
+    scopeId*:    uint32
+    name*:       string          ## decoded name text (atom-equivalent compare)
+    isConst*:    bool
+    isTdz*:      bool
+
   Compiler* = object
     src*: string                 ## source text (for identifier slices)
     code*: seq[Inst]
@@ -35,6 +48,31 @@ type
     ## First distinct name -> USER_GLOBAL_BASE, next -> +1, etc.
     globalNames*: seq[string]
     globalSlots*: seq[uint32]
+    # --- Register machinery ported from compiler.zc (slice 3a) ---------
+    ## "preferred destination" hint (compiler.zc `preferred_dst`). -1 =
+    ## none. allocDst() consumes it, resetting to -1, so a caller that
+    ## knows where a result should land (assignment RHS / decl init) gets
+    ## the terminal ALU op to write there directly.
+    preferredDst*: int
+    ## When set, IdentExpr's local-read path may hand back the local's
+    ## reg DIRECTLY (Mov-elision) instead of a defensive Mov. Set only by
+    ## callers that proved the surrounding expression won't mutate the
+    ## read local before its result is consumed (compiler.zc
+    ## `borrow_local_ok`).
+    borrowLocalOk*: bool
+    ## Lexical locals table (script-scope let/const at top level). Grown
+    ## in declaration order by collectLocals; each entry owns a fixed reg.
+    locals*: seq[Local]
+    ## True on the top-level compiler when running a *script* (not a
+    ## module). Forces let/const/class to bind to registers while `var`
+    ## and FunctionDecls stay on globalThis. Mirrors compiler.zc
+    ## `is_function` + `is_script`.
+    isFunction*: bool
+    isScript*: bool
+    # --- Lexical scope tracker (compiler.zc scope_stack / *_scope_id) --
+    scopeStack*:  seq[uint32]
+    curScopeId*:  uint32
+    nextScopeId*: uint32
 
 # --- Register allocator (high-water-mark) ---------------------------
 
@@ -57,6 +95,16 @@ proc releaseReg(c: var Compiler, r: uint8) =
 proc resetTemps(c: var Compiler) =
   c.nextReg = c.fixedRegs
 
+proc allocDst(c: var Compiler): uint8 =
+  ## Returns the caller-preferred dst register if one is queued, else a
+  ## freshly-allocated temp. Always clears the hint so nested
+  ## sub-expressions allocate their own scratch (compiler.zc `alloc_dst`).
+  if c.preferredDst >= 0:
+    let r = uint8(c.preferredDst)
+    c.preferredDst = -1
+    return r
+  return allocReg(c)
+
 # --- Emit -----------------------------------------------------------
 
 proc emit(c: var Compiler, inst: Inst) =
@@ -78,6 +126,81 @@ proc internGlobal(c: var Compiler, name: string): uint32 =
 
 proc slice(c: Compiler, s, e: uint32): string =
   c.src[s.int ..< e.int]
+
+# --- Lexical scope tracker (mirrors compiler.zc scope_stack) ---------
+#
+# Both the collect-locals pre-pass and compile walk the AST in the same
+# order. Blocks carry a `blockScopeId` assigned once at collect time and
+# re-entered by id in compile (enter_scope_reuse) — so `let` inside a
+# block resolves to the block's scope in both walks. scope 0 is the
+# function/script-top scope; `var` always binds there.
+
+proc enterScope(c: var Compiler) =
+  let newId = c.nextScopeId
+  c.nextScopeId += 1
+  c.scopeStack.add(newId)
+  c.curScopeId = newId
+
+proc enterScopeAssign(c: var Compiler, node: AstNode) =
+  ## Collect-pass scope entry: issue a fresh id AND record it on the node.
+  enterScope(c)
+  if node != nil and node.kind == BlockStmt:
+    node.blockScopeId = c.curScopeId
+
+proc enterScopeReuse(c: var Compiler, node: AstNode) =
+  ## Compile-pass: re-enter the id assigned at collect time. Falls back
+  ## to a fresh id for nodes the collect pass never reached (0 = none).
+  if node == nil or node.kind != BlockStmt or node.blockScopeId == 0:
+    enterScope(c)
+    return
+  c.scopeStack.add(node.blockScopeId)
+  c.curScopeId = node.blockScopeId
+
+proc exitScope(c: var Compiler) =
+  if c.scopeStack.len > 1:
+    c.scopeStack.setLen(c.scopeStack.len - 1)
+    c.curScopeId = c.scopeStack[c.scopeStack.len - 1]
+
+proc resetScopeWalk(c: var Compiler) =
+  ## Reset the scope STACK before re-walking. Ids stay assigned on nodes;
+  ## nextScopeId stays monotonic so a fresh fallback id can't collide.
+  c.scopeStack.setLen(0)
+  c.scopeStack.add(0'u32)
+  c.curScopeId = 0
+
+proc scopeIdIsActive(c: Compiler, scopeId: uint32): bool =
+  for s in c.scopeStack:
+    if s == scopeId: return true
+  return false
+
+# --- Locals table ---------------------------------------------------
+
+proc addLocalScoped(c: var Compiler, nameStart, nameLength, reg, scopeId: uint32) =
+  let nm = if nameLength > 0: c.slice(nameStart, nameStart + nameLength) else: ""
+  c.locals.add(Local(
+    nameStart: nameStart, nameLength: nameLength,
+    reg: uint8(reg), scopeId: scopeId, name: nm,
+  ))
+
+proc allocAndAddLocalScoped(c: var Compiler, nameStart, nameLength, scopeId: uint32): uint8 =
+  ## Combined alloc-and-register (compiler.zc alloc_and_add_local_scoped).
+  ## Slice 3a omits env-spill: script-scope locals never approach the
+  ## 192-reg watermark. Returns the register.
+  let reg = allocReg(c)
+  addLocalScoped(c, nameStart, nameLength, uint32(reg), scopeId)
+  return reg
+
+proc findLocalIndex(c: Compiler, name: string): int =
+  ## Index in c.locals, or -1. Walks top-down so a more recent binding
+  ## shadows an earlier same-name one; skips entries whose scope is no
+  ## longer active (that's how a block-scoped `let` stops shadowing once
+  ## the block exits). Compares by decoded name text.
+  var i = c.locals.len - 1
+  while i >= 0:
+    if c.locals[i].name == name and scopeIdIsActive(c, c.locals[i].scopeId):
+      return i
+    dec i
+  return -1
 
 # --- String-literal escape decoding (mirrors decode_string_body) ----
 #
@@ -192,6 +315,87 @@ proc binaryOp(tk: TokenKind): Op =
   of GtGtGt:   UShr
   else:        Halt
 
+# --- Simple-pure predicate + terminal placement (compiler.zc) -------
+
+proc exprIsSimplePure(n: AstNode): bool =
+  ## "This subtree has no observable writes / calls / coercions that
+  ## could mutate a sibling local" (compiler.zc expr_is_simple_pure).
+  ## Conservative; gates borrow_local_ok.
+  if n == nil: return true
+  case n.kind
+  of NumberExpr, StringExpr, BoolExpr, NullExpr, UndefinedExpr,
+     ThisExpr, IdentExpr:
+    return true
+  of Member, OptionalMember:
+    return exprIsSimplePure(n.recv)
+  else:
+    return false
+
+proc tryPlaceSimple(c: var Compiler, node: AstNode, slot: uint8): bool =
+  ## Terminal placement of a bare-simple read directly into `slot`
+  ## (compiler.zc try_place_simple). Handles Paren-wrapped local idents,
+  ## `this`, and numeric literals. Returns false when the node isn't a
+  ## simple terminal (caller falls back to the preferred-dst path).
+  if node == nil: return false
+  case node.kind
+  of Paren:
+    return tryPlaceSimple(c, node.inner, slot)
+  of IdentExpr:
+    let name = c.slice(node.start, node.`end`)
+    let li = findLocalIndex(c, name)
+    if li < 0: return false
+    if c.locals[li].reg == slot: return true    # already there
+    emit(c, instAB(Mov, slot, c.locals[li].reg))
+    return true
+  of NumberExpr:
+    let v = node.numVal
+    let iv = int32(v)
+    if float64(iv) == v and iv >= -32768 and iv <= 32767:
+      emit(c, instAI16(LoadInt, slot, iv))
+    elif float64(iv) == v:
+      c.constants.add(Constant(kind: ckInt, i: iv))
+      emit(c, instAU16(LoadConst, slot, uint16(c.constants.len - 1)))
+    else:
+      c.constants.add(Constant(kind: ckDouble, d: v))
+      emit(c, instAU16(LoadConst, slot, uint16(c.constants.len - 1)))
+    return true
+  else:
+    return false
+
+# --- Collect-locals pre-pass (mirrors compiler.zc collect_locals) ----
+#
+# Pre-allocates a fixed register for every script-scope let/const (in
+# declaration order) BEFORE the completion slot is reserved, so locals
+# take the low regs. Only handles the node shapes slice 3a compiles:
+# BlockStmt (fresh scope) and VarDecl (let/const → local, var → skipped
+# at script top). var/function/class-global bindings are handled by the
+# existing global path.
+
+proc collectLocals(c: var Compiler, node: AstNode) =
+  if node == nil: return
+  case node.kind
+  of VarDecl:
+    let isVarKind = node.declKind == KwVar
+    # Script-top `var x` stays on globalThis; let/const become locals.
+    if c.isScript and isVarKind: return
+    let scopeId = if isVarKind: 0'u32 else: c.curScopeId
+    for decl in node.declarators:
+      if decl.kind != Declarator: continue
+      if decl.nameLength > 0:
+        discard allocAndAddLocalScoped(c, decl.nameStart, decl.nameLength, scopeId)
+        if not isVarKind: c.locals[c.locals.len - 1].isTdz = true
+        if node.declKind == KwConst: c.locals[c.locals.len - 1].isConst = true
+  of BlockStmt:
+    enterScopeAssign(c, node)
+    for s in node.stmtList:
+      collectLocals(c, s)
+    exitScope(c)
+  of Program:
+    for s in node.stmts:
+      collectLocals(c, s)
+  else:
+    discard
+
 # --- Expressions ----------------------------------------------------
 
 proc compileExpr(c: var Compiler, node: AstNode): uint8 =
@@ -225,13 +429,28 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     emit(c, instA(LoadUndefined, dst))
     return dst
   of IdentExpr:
-    # Slice 2: script-top identifier reads resolve to globals (no
-    # locals/with/capture yet -- those are later slices). Mirrors the
-    # `3. Fall through to globals` branch of compile_expr's IdentExpr.
     let name = c.slice(node.start, node.`end`)
+    # 1. Try our own locals first (script-scope let/const).
+    let localIdx = findLocalIndex(c, name)
+    if localIdx >= 0:
+      # Non-captured local — hand back the local's reg directly when
+      # borrowLocalOk is set (the caller proved the surrounding
+      # expression won't mutate this local before its result is
+      # consumed). Otherwise emit a defensive Mov.
+      if c.borrowLocalOk:
+        return c.locals[localIdx].reg
+      # NOTE (#395): deliberately allocReg, NOT allocDst — an
+      # operand-position defensive read stealing a live hint writes the
+      # hint target before later reads of it in the same expression.
+      let dst = allocReg(c)
+      emit(c, instAB(Mov, dst, c.locals[localIdx].reg))
+      return dst
+    # 3. Fall through to globals (compiler.zc `3. Fall through to
+    # globals`). Uses allocDst so a terminal read consumes a queued hint.
     let slot = internGlobal(c, name)
-    let dst = allocReg(c)
+    let dst = allocDst(c)
     emit(c, instAU16(LoadGlobal, dst, uint16(slot)))
+    if c.nextReg <= dst: c.nextReg = dst + 1
     return dst
   of StringExpr:
     # node.start/end include the surrounding quotes. Decode the body to
@@ -287,15 +506,81 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
           of CmpLe: CmpLeImm
           of CmpGt: CmpGtImm
           else:     CmpGeImm    # CmpGe
+        # Honor caller's preferred dst BEFORE recursing so the LHS read
+        # doesn't leak the hint inwards (compiler.zc). borrowLocalOk is
+        # set around the LHS read: the RHS is a literal, so the LHS
+        # local's reg is safe to hand back and reuse as the dst.
+        let savedPd = c.preferredDst
+        c.preferredDst = -1
+        let savedBorrow = c.borrowLocalOk
+        c.borrowLocalOk = true
         let src = compileExpr(c, node.lhs)
-        let dst = allocReg(c)
+        c.borrowLocalOk = savedBorrow
+        c.preferredDst = savedPd
+        let dst = allocDst(c)
         emit(c, instABC(fusedOp, dst, src, uint8(int8(iv))))
+        releaseReg(c, src)
+        if c.nextReg <= dst: c.nextReg = dst + 1
         return dst
+    # Borrow optimization: if the RHS is side-effect-free we can hand
+    # back LHS's local reg directly. Then the LHS read may also borrow if
+    # its operands are pure, so set the flag around both reads. Mirrors
+    # compile_expr's general Binary path exactly.
+    let rhsPure = exprIsSimplePure(node.rhs)
+    let lhsPure = exprIsSimplePure(node.lhs)
+    let savedPd = c.preferredDst
+    c.preferredDst = -1
+    let savedBorrow = c.borrowLocalOk
+    if rhsPure: c.borrowLocalOk = true
     let l = compileExpr(c, node.lhs)
+    if not rhsPure: c.borrowLocalOk = savedBorrow
+    if lhsPure: c.borrowLocalOk = true
     let r = compileExpr(c, node.rhs)
-    let dst = allocReg(c)
+    c.borrowLocalOk = savedBorrow
+    c.preferredDst = savedPd
+    let dst = allocDst(c)
     emit(c, instABC(opKind, dst, l, r))
+    releaseReg(c, r)
+    releaseReg(c, l)
+    if c.nextReg <= dst: c.nextReg = dst + 1
     return dst
+  of Assignment:
+    # Slice 3a: only plain `=` to a script-scope local target. Member /
+    # global / compound / destructuring assignment are later slices --
+    # refuse them so they surface as nim-missing, never a false match.
+    let target = node.target
+    if target == nil or target.kind != IdentExpr or node.assignOp != Eq:
+      c.hadError = true
+      return 0
+    let name = c.slice(target.start, target.`end`)
+    let localIdx = findLocalIndex(c, name)
+    if localIdx < 0:
+      # Assignment to a non-local (global) target is a later slice.
+      c.hadError = true
+      return 0
+    let localReg = c.locals[localIdx].reg
+    # const bindings reject all later assignments (TypeError) -- later
+    # slice; refuse for now so we don't emit an unguarded store.
+    if c.locals[localIdx].isConst:
+      c.hadError = true
+      return 0
+    # For a local target, hand the RHS a preferred-dst hint so the final
+    # ALU op writes straight into localReg -- skips the tail Mov on
+    # `local = expr`. #395: bare-simple RHS (local ident / number) is a
+    # terminal read -- place it directly, skipping both the defensive
+    # temp and the tail Mov.
+    let savedPd = c.preferredDst
+    if tryPlaceSimple(c, node.value, localReg):
+      c.preferredDst = savedPd
+      return localReg
+    c.preferredDst = int(localReg)
+    let r = compileExpr(c, node.value)
+    c.preferredDst = savedPd
+    if r != localReg:
+      # RHS didn't take our hint (e.g. it was a bare ident returning a
+      # borrowed reg) -- fall back to Mov.
+      emit(c, instAB(Mov, localReg, r))
+    return r
   else:
     # Not yet supported.
     c.hadError = true
@@ -303,29 +588,68 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
 
 # --- Statements -----------------------------------------------------
 
+proc compileStmt(c: var Compiler, node: AstNode)
+
 proc compileVarDecl(c: var Compiler, node: AstNode) =
-  ## Slice 1: script-top `var x = <e>` -> DefineGlobal. `let`/`const`
-  ## and destructuring are later slices.
+  ## Handles all three decl kinds at script top level:
+  ##   * `var x = <e>`  -> DefineGlobal (slice 1)
+  ##   * `let`/`const`  -> bind to the pre-allocated local register
+  ## Destructuring declarators are a later slice.
   for decl in node.declarators:
     if decl.kind != Declarator: continue
     if decl.nameLength == 0:
+      # Destructuring declarator (declPattern != nil) -- later slice.
       c.hadError = true; return
     let name = c.slice(decl.nameStart, decl.nameStart + decl.nameLength)
-    let slot = internGlobal(c, name)
-    if decl.init != nil:
-      let r = compileExpr(c, decl.init)
-      emit(c, instAU16(DefineGlobal, r, uint16(slot)))
-      releaseReg(c, r)
+    # Script-top `var x` keeps global semantics; collectLocals skipped
+    # it, so it must not fall into the local path.
+    let isScriptVar = c.isScript and node.declKind == KwVar
+    if c.isFunction and not isScriptVar:
+      # Local -- register was pre-allocated by collectLocals.
+      let lidx = findLocalIndex(c, name)
+      if lidx < 0:
+        c.hadError = true; return
+      let lreg = c.locals[lidx].reg
+      if decl.init != nil:
+        # #395: bare-simple initializer (local ident / number) is a
+        # terminal read -- place directly into lreg, skipping the temp
+        # and the tail Mov.
+        if tryPlaceSimple(c, decl.init, lreg):
+          discard
+        else:
+          # Otherwise hand the initializer a preferred-dst hint so its
+          # terminal op writes lreg directly -- kills the tail Mov on
+          # `let x = <expr>`.
+          let savedPd = c.preferredDst
+          c.preferredDst = int(lreg)
+          let r = compileExpr(c, decl.init)
+          c.preferredDst = savedPd
+          if r != lreg:
+            emit(c, instAB(Mov, lreg, r))
+          releaseReg(c, r)
+      # No initializer (`let x;`): reg stays undefined -- slice 3a's
+      # targets always initialize, so nothing to emit here.
+    else:
+      # Script-top `var` (or non-function context) -> globalThis.
+      let slot = internGlobal(c, name)
+      if decl.init != nil:
+        let r = compileExpr(c, decl.init)
+        emit(c, instAU16(DefineGlobal, r, uint16(slot)))
+        releaseReg(c, r)
   resetTemps(c)
 
 proc compileStmt(c: var Compiler, node: AstNode) =
   if node == nil: return
   case node.kind
+  of BlockStmt:
+    # Re-enter the scope id collectLocals assigned to this block.
+    enterScopeReuse(c, node)
+    for s in node.stmtList:
+      if c.hadError: break
+      compileStmt(c, s)
+    exitScope(c)
   of VarDecl:
-    if node.declKind == KwVar:
-      compileVarDecl(c, node)
-    else:
-      c.hadError = true
+    compileVarDecl(c, node)
   else:
     # Default: an expression statement. At the program top level, Mov
     # the result into the reserved completion slot (lastExprReg).
@@ -361,9 +685,28 @@ proc compileProgram*(src: string, root: AstNode): Function =
     fixedRegs: 0,
     lastExprReg: -1,
     hadError: false,
+    preferredDst: -1,
+    borrowLocalOk: false,
+    # Script mode (the common case). Top-level let/const bind to a
+    # script-scope lexical env (= register slots); `var` and FunctionDecl
+    # stay on globalThis. Mirrors compile_program's else-branch.
+    isFunction: true,
+    isScript: true,
+    scopeStack: @[0'u32],
+    curScopeId: 0,
+    nextScopeId: 1,
   )
 
-  # Reserve the program-result register.
+  # Lexical pre-allocation: collect_locals gives each top-level let/const
+  # a low FIXED reg in declaration order BEFORE the completion slot is
+  # reserved, so the completion slot lands AFTER the locals.
+  if root != nil and root.kind == Program:
+    collectLocals(c, root)
+  # Reset scope tracking so compileStmt re-enters each block with the
+  # same ids collectLocals just assigned.
+  resetScopeWalk(c)
+
+  # Reserve a stable program-result register (the completion slot).
   let resultReg = allocReg(c)
   emit(c, instA(LoadUndefined, resultReg))
   c.fixedRegs = resultReg + 1

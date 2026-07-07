@@ -210,3 +210,127 @@ suite "slice 2 string escape decoding":
     check "const#0 = \"line\x0Abreak\"" in disasmToString("\"line\\nbreak\";")
   test "\"tab\\there\" tab escape decoded":
     check "const#0 = \"tab\x09here\"" in disasmToString("\"tab\\there\";")
+
+# --- Slice 3a: lexical locals + blocks + register discipline --------
+
+const
+  blockLetX = "\n" &
+    "=== <program>  code_len=3 regs=3 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Return              r1\n"
+
+  letXreadX = "\n" &
+    "=== <program>  code_len=5 regs=4 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Mov                 r2   <- r0\n" &
+    "    3  Mov                 r1   <- r2\n" &
+    "    4  Return              r1\n"
+
+  letXY = "\n" &
+    "=== <program>  code_len=4 regs=4 fixed=3 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  LoadInt             r1   = 2\n" &
+    "    3  Return              r2\n"
+
+  nestedBlocks = "\n" &
+    "=== <program>  code_len=4 regs=4 fixed=3 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  LoadInt             r1   = 2\n" &
+    "    3  Return              r2\n"
+
+  constKplus1 = "\n" &
+    "=== <program>  code_len=5 regs=4 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 5\n" &
+    "    2  AddImm              r2   <- r0, imm=1\n" &
+    "    3  Mov                 r1   <- r2\n" &
+    "    4  Return              r1\n"
+
+  assignConst = "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  LoadInt             r0   = 2\n" &
+    "    3  Mov                 r1   <- r0\n" &
+    "    4  Return              r1\n"
+
+  assignSelfInc = "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  AddImm              r0   <- r0, imm=1\n" &
+    "    3  Mov                 r1   <- r0\n" &
+    "    4  Return              r1\n"
+
+  letYfromX = "\n" &
+    "=== <program>  code_len=4 regs=4 fixed=3 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Mov                 r1   <- r0\n" &
+    "    3  Return              r2\n"
+
+  addTwoLocals = "\n" &
+    "=== <program>  code_len=6 regs=5 fixed=3 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  LoadInt             r1   = 2\n" &
+    "    3  Add                 a=3   b=0   c=1   | u16=256 i16=256\n" &
+    "    4  Mov                 r2   <- r3\n" &
+    "    5  Return              r2\n"
+
+  siblingBlocks = "\n" &
+    "=== <program>  code_len=8 regs=5 fixed=3 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Mov                 r3   <- r0\n" &
+    "    3  Mov                 r2   <- r3\n" &
+    "    4  LoadInt             r1   = 2\n" &
+    "    5  Mov                 r3   <- r1\n" &
+    "    6  Mov                 r2   <- r3\n" &
+    "    7  Return              r2\n"
+
+  constStr = "\n" &
+    "=== <program>  code_len=6 regs=4 fixed=2 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r2   const#0 = \"hi\"\n" &
+    "    2  Mov                 r0   <- r2\n" &
+    "    3  Mov                 r2   <- r0\n" &
+    "    4  Mov                 r1   <- r2\n" &
+    "    5  Return              r1\n"
+
+suite "slice 3a lexical locals byte-identity":
+  test "{ let x = 1; } (block-scoped local, completion after)":
+    check disasmToString("{ let x = 1; }") == blockLetX
+  test "let x = 1; x; (local read -> Mov temp + completion)":
+    check disasmToString("let x = 1; x;") == letXreadX
+  test "let x=1, y=2; (two locals, fixed=3)":
+    check disasmToString("let x=1, y=2;") == letXY
+  test "{ let a=1; { let b=2; } } (nested-block distinct fixed slots)":
+    check disasmToString("{ let a=1; { let b=2; } }") == nestedBlocks
+  test "const k = 5; k + 1; (const read fuses AddImm)":
+    check disasmToString("const k = 5; k + 1;") == constKplus1
+  test "let x=1; x=2; (assign direct into local, no extra Mov)":
+    check disasmToString("let x=1; x=2;") == assignConst
+  test "let x=1; x=x+1; (self-inc AddImm r0<-r0)":
+    check disasmToString("let x=1; x=x+1;") == assignSelfInc
+  test "let x=1; let y=x; (init from local, terminal place)":
+    check disasmToString("let x=1; let y=x;") == letYfromX
+  test "let x = 1; let y = 2; x + y; (two-local Add)":
+    check disasmToString("let x = 1; let y = 2; x + y;") == addTwoLocals
+  test "{ let a=1; a; } { let b=2; b; } (sibling blocks accumulate)":
+    check disasmToString("{ let a=1; a; } { let b=2; b; }") == siblingBlocks
+  test "const s = \"hi\"; s; (string const into local)":
+    check disasmToString("const s = \"hi\"; s;") == constStr
+
+suite "slice 3a register model":
+  test "single block let -> regs=3 fixed=2 (local r0, completion r1)":
+    check "regs=3 fixed=2" in disasmToString("{ let x = 1; }")
+  test "two locals -> fixed=3":
+    check "fixed=3" in disasmToString("let x=1, y=2;")
+  test "assign to local writes local reg directly":
+    let txt = disasmToString("let x=1; x=2;")
+    check "LoadInt             r0   = 2" in txt
