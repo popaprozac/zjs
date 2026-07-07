@@ -11,6 +11,7 @@
 ## literals, and the epilogue (`Return r0`).
 
 import std/unicode
+import std/strutils
 import ast, token
 import bytecode
 
@@ -749,6 +750,14 @@ proc tryPlaceSimple(c: var Compiler, node: AstNode, slot: uint8): bool =
     if li < 0: return false
     if c.locals[li].reg == slot: return true    # already there
     emit(c, instAB(Mov, slot, c.locals[li].reg))
+    return true
+  of ThisExpr:
+    # Plain `this` places directly with a single Mov from the hoisted
+    # this-reg (compiler.zc try_place_simple ~1307-1312). `new.target`
+    # (newTarget) is not hoisted, and a body with no this-reg falls back.
+    if node.newTarget: return false
+    if c.thisReg < 0: return false
+    emit(c, instAB(Mov, slot, uint8(c.thisReg)))
     return true
   of NumberExpr:
     let v = node.numVal
@@ -4187,6 +4196,10 @@ proc classMemberIsConstructor(c: Compiler, m: AstNode): bool =
   ## Mirrors compiler.zc's is_ctor derivation (~5018-5024).
   if m == nil or m.kind != MethodDef: return false
   if m.methodIsStatic: return false
+  # A computed-key method (`[e](){}`) also has methodNameLen == 0 but is
+  # NEVER the constructor (the ctor is matched by the literal name
+  # "constructor"). Mirrors compiler.zc's is_computed_name guard (~5187).
+  if m.methodComputedKey != nil: return false
   if m.methodNameLen == 0: return true      # synthesized (parser sentinel)
   if m.methodNameLen == 11'u32 and
      c.slice(m.methodNameStart, m.methodNameStart + m.methodNameLen) == "constructor":
@@ -4229,6 +4242,95 @@ proc subtreeHasMemberSuper(n: AstNode): bool =
     if subtreeHasMemberSuper(ch): return true
   return false
 
+# --- Method-name canonicalization (mirrors intern_method_name_atom) --
+#
+# A class-member name may be an identifier (`m`), a string literal
+# (`"m"`), or a numeric literal (`0` / `0x10` / `1.5`). The parser stores
+# the RAW source slice (quotes / digits included) in methodNameStart/Len.
+# The atom the runtime keys on is the CANONICAL name: a string literal has
+# its quotes stripped + escapes decoded; a numeric literal is ToString'd
+# (integral values print without a decimal point). Mirrors compiler.zc
+# intern_method_name_atom (~4606). Used both for the IC slot of a plain
+# string/number method (DefineMethod) and the const-pool key of an
+# accessor (DefineMethodGetter/Setter). Private (`#`) names are handled
+# upstream (deferred to slice 7d), so only the three public forms here.
+
+proc parseIntPrefixC(digits: string, base: int): float64 =
+  ## Base-N integer accumulation (hex/bin/oct), mirroring the parser's
+  ## parseIntPrefix. Local copy so the compiler stays parser-independent.
+  var acc = 0.0
+  for ch in digits:
+    var d: int
+    if ch >= '0' and ch <= '9': d = ord(ch) - ord('0')
+    elif ch >= 'a' and ch <= 'f': d = ord(ch) - ord('a') + 10
+    elif ch >= 'A' and ch <= 'F': d = ord(ch) - ord('A') + 10
+    else: return acc
+    acc = acc * float64(base) + float64(d)
+  acc
+
+proc parseNumberLiteralC(src: string, start, length: uint32): float64 =
+  ## Local port of the parser's parseNumberLiteral (strip `_` separators,
+  ## dispatch on the 0x/0b/0o prefix, else decimal via parseFloat).
+  var buf = newStringOfCap(int(length))
+  var i = 0'u32
+  while i < length:
+    let ch = src[int(start + i)]
+    if ch != '_': buf.add(ch)
+    inc i
+  if buf.len >= 2 and buf[0] == '0':
+    let c1 = buf[1]
+    if c1 == 'x' or c1 == 'X': return parseIntPrefixC(buf[2 .. ^1], 16)
+    if c1 == 'b' or c1 == 'B': return parseIntPrefixC(buf[2 .. ^1], 2)
+    if c1 == 'o' or c1 == 'O': return parseIntPrefixC(buf[2 .. ^1], 8)
+  parseFloat(buf)
+
+proc cSnprintfG(buf: cstring, n: csize_t, fmt: cstring): cint
+  {.importc: "snprintf", header: "<stdio.h>", varargs, discardable.}
+
+proc formatGprec(d: float64, prec: cint): string =
+  ## C `%.*g` for a given precision. The numeric-name canonicalization must
+  ## match the C intern_method_name_atom snprintf byte-for-byte, and Nim's
+  ## `formatFloat(ffDefault)` diverges (keeps a trailing `.`, prefers the
+  ## exponent form), so we call libc directly — the same routine the oracle
+  ## uses.
+  var buf: array[48, char]
+  let n = cSnprintfG(cast[cstring](addr buf[0]), 48, cstring("%.*g"), prec, d)
+  let ln = if n < 0: 0 elif n > 47: 47 else: int(n)
+  result = newString(ln)
+  for i in 0 ..< ln: result[i] = buf[i]
+
+proc numberNameToString(d: float64): string =
+  ## ECMA-262 Number::toString for a finite double, matching the C
+  ## snprintf ladder in intern_method_name_atom: integral values in the
+  ## safe range print as `%lld`; otherwise the shortest `%.*g` that
+  ## round-trips. Only class-member numeric NAMES reach here.
+  if d == float64(int64(d)) and d >= -1e15 and d <= 1e15:
+    return $int64(d)
+  # Shortest round-tripping decimal (mirrors the prec 1..17 `%g` scan).
+  for prec in cint(1) .. cint(17):
+    let s = formatGprec(d, prec)
+    if parseFloat(s) == d:
+      return s
+  return formatGprec(d, 17)
+
+proc internMethodNameAtom(c: Compiler, nameStart, nameLen: uint32): string =
+  ## Canonical member name for `nameStart..nameStart+nameLen`.
+  if nameLen == 0: return ""
+  let first = c.src[nameStart.int]
+  # NumberLit: leading digit, or `.` followed by a digit.
+  let isNumeric =
+    (first >= '0' and first <= '9') or
+    (first == '.' and nameLen > 1 and
+     c.src[(nameStart + 1).int] >= '0' and c.src[(nameStart + 1).int] <= '9')
+  if isNumeric:
+    return numberNameToString(parseNumberLiteralC(c.src, nameStart, nameLen))
+  # StringLit: surrounded by quotes -> strip + decode the body.
+  if first == '"' or first == '\'':
+    if nameLen < 2: return ""
+    return decodeStringBody(c.src, nameStart + 1, nameLen - 2)
+  # Identifier / keyword: the source slice is the canonical name.
+  return c.slice(nameStart, nameStart + nameLen)
+
 proc classValueUnsupported(c: Compiler, node: AstNode): bool =
   ## True if this class contains any construct slice 7a/7b defers. Checked
   ## before emitting anything so the whole class bails cleanly.
@@ -4246,16 +4348,23 @@ proc classValueUnsupported(c: Compiler, node: AstNode): bool =
     if m == nil: return true
     case m.kind
     of MethodDef:
-      if m.methodAccessor != Eq: return true       # get / set accessor
+      # Slice 7c: get/set accessors and computed method keys are now
+      # SUPPORTED; async / generator methods (7e) and private methods (7d)
+      # still bail. A computed accessor (`get [e](){}`) is fine too — the
+      # emit path routes it through DefineMethodGetter/Setter with the
+      # compiled key.
       if m.methodIsAsync or m.methodIsGenerator: return true
-      if m.methodComputedKey != nil: return true   # computed key `[e](){}`
       # Private method (`#m(){}`): name begins with '#'.
-      if m.methodNameLen > 0 and c.src[m.methodNameStart.int] == '#': return true
+      if m.methodComputedKey == nil and m.methodNameLen > 0 and
+         c.src[m.methodNameStart.int] == '#': return true
     of ClassField:
-      if m.fieldIsStatic: return true              # static field — deferred
-      if m.fieldComputedKey != nil: return true    # computed field key
+      # Slice 7c: static fields (plain + computed key) are now SUPPORTED.
+      # Instance fields are lowered via the synthesized ctor (7a); a
+      # computed INSTANCE-field key is not byte-validated there, so bail.
+      if not m.fieldIsStatic and m.fieldComputedKey != nil: return true
       # Private field (`#x`): name begins with '#'.
-      if m.fieldNameLen > 0 and c.src[m.fieldNameStart.int] == '#': return true
+      if m.fieldComputedKey == nil and m.fieldNameLen > 0 and
+         c.src[m.fieldNameStart.int] == '#': return true
     of StaticBlock:
       return true                                  # static block — deferred
     else:
@@ -4329,11 +4438,19 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
 
   # 5. Attach each non-constructor method. Instance methods -> prototype
   #    (target = protoReg); static methods -> the constructor itself
-  #    (target = ctorReg). DefineMethod a=target, b=nameIc, c=methodReg.
-  #    Mirrors compiler.zc ~5178-5311.
+  #    (target = ctorReg). Mirrors compiler.zc ~5178-5311. Three shapes,
+  #    all with `LoadConst methodReg` first:
+  #      * plain method (ident / string / number name) -> DefineMethod with
+  #        the canonicalized name in an IC slot (a=target, b=nameIc, c=mReg).
+  #      * get/set accessor -> LoadConst keyReg <- name-string const, then
+  #        DefineMethodGetter/Setter (a=target, b=keyReg, c=mReg). The key
+  #        is a CONST (materialized via LoadConst), NOT an IC slot.
+  #      * computed key `[e](){}` -> compile the key EXPRESSION into keyReg,
+  #        then DefineMethodComputed / Getter / Setter (a=target, b=keyReg,
+  #        c=mReg). Fields are handled in the static-elements pass below.
   for m in node.classMembers:
     if m == nil: continue
-    if m.kind == ClassField: continue          # instance fields handled via ctor
+    if m.kind == ClassField: continue          # fields handled separately
     if classMemberIsConstructor(c, m): continue
     if m.kind != MethodDef: continue           # (guarded unsupported above)
     let mfn = compileFunction(c.src, m, c)
@@ -4348,13 +4465,36 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
     c.constants.add(Constant(kind: ckFunction, fn: mfn))
     let methodReg = allocReg(c)
     emit(c, instAU16(LoadConst, methodReg, uint16(c.constants.len - 1)))
-    let mname = c.slice(m.methodNameStart, m.methodNameStart + m.methodNameLen)
-    let mIc = allocIcSlot(c, mname)
-    if mIc > 255:
-      c.hadError = true
-      return ctorReg
     let target = if m.methodIsStatic: ctorReg else: protoReg
-    emit(c, instABC(DefineMethod, target, uint8(mIc), methodReg))
+    if m.methodComputedKey != nil:
+      # Computed key: evaluate the expression at runtime into keyReg.
+      let keyReg = compileExpr(c, m.methodComputedKey)
+      case m.methodAccessor
+      of KwGet: emit(c, instABC(DefineMethodGetter, target, keyReg, methodReg))
+      of KwSet: emit(c, instABC(DefineMethodSetter, target, keyReg, methodReg))
+      else:     emit(c, instABC(DefineMethodComputed, target, keyReg, methodReg))
+      releaseReg(c, keyReg)
+      releaseReg(c, methodReg)
+      continue
+    # Non-computed name: canonicalize (strip quotes / ToString numbers).
+    let mname = internMethodNameAtom(c, m.methodNameStart, m.methodNameLen)
+    if m.methodAccessor == KwGet or m.methodAccessor == KwSet:
+      # Accessor: the key is a string CONST loaded into its own register.
+      c.constants.add(Constant(kind: ckString, s: mname))
+      let keyReg = allocReg(c)
+      emit(c, instAU16(LoadConst, keyReg, uint16(c.constants.len - 1)))
+      if m.methodAccessor == KwGet:
+        emit(c, instABC(DefineMethodGetter, target, keyReg, methodReg))
+      else:
+        emit(c, instABC(DefineMethodSetter, target, keyReg, methodReg))
+      releaseReg(c, keyReg)
+    else:
+      # Plain method: name in an IC slot -> DefineMethod.
+      let mIc = allocIcSlot(c, mname)
+      if mIc > 255:
+        c.hadError = true
+        return ctorReg
+      emit(c, instABC(DefineMethod, target, uint8(mIc), methodReg))
     releaseReg(c, methodReg)
 
   # 6. `extends Parent` (slice 7b): chain Child.prototype.[[Prototype]] =
@@ -4390,6 +4530,49 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
     emit(c, instAB(SetParentCtor, ctorReg, parentReg))
     releaseReg(c, parentProtoReg)
     if parentReg + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+
+  # 7. Static ELEMENTS (slice 7c): static field initializers, run at
+  #    class-definition time in SOURCE ORDER, each with `this` bound to the
+  #    constructor. Instance fields are lowered via the ctor body (7a);
+  #    only the static half is emitted here. Mirrors compiler.zc ~5341-5400.
+  #    `this` is routed to ctorReg for the duration (so `this` inside a
+  #    static init reads the constructor), and borrowLocalOk is cleared so
+  #    ctorReg is never handed out as a scratch dst. Emits, per static field:
+  #      * plain name `static x = e`   -> compile e -> valReg;
+  #                                       StoreProp ctorReg.x <- valReg (IC)
+  #      * computed   `static [k] = e` -> compile e -> valReg; compile k ->
+  #                                       keyReg; StoreElem ctorReg,key,val
+  #    The value is compiled BEFORE the computed key (compiler.zc order).
+  #    StaticBlock members are refused up-front (classValueUnsupported).
+  let savedThisReg = c.thisReg
+  let savedBorrow  = c.borrowLocalOk
+  c.thisReg = int(ctorReg)
+  c.borrowLocalOk = false
+  for m in node.classMembers:
+    if m == nil: continue
+    if m.kind != ClassField: continue
+    if not m.fieldIsStatic: continue           # instance fields via ctor
+    # Value: the initializer, or `undefined` when absent (`static x;`).
+    var valReg: uint8
+    if m.fieldInit != nil:
+      valReg = compileExpr(c, m.fieldInit)
+    else:
+      valReg = allocReg(c)
+      emit(c, instA(LoadUndefined, valReg))
+    if m.fieldComputedKey != nil:
+      let keyReg = compileExpr(c, m.fieldComputedKey)
+      emit(c, instABC(StoreElem, ctorReg, keyReg, valReg))
+      releaseReg(c, keyReg)
+    else:
+      let fname = internMethodNameAtom(c, m.fieldNameStart, m.fieldNameLen)
+      if not emitStorePropAtom(c, ctorReg, fname, valReg):
+        c.thisReg = savedThisReg
+        c.borrowLocalOk = savedBorrow
+        c.enclosingClassParent = savedClassParent
+        return ctorReg
+    releaseReg(c, valReg)
+  c.thisReg = savedThisReg
+  c.borrowLocalOk = savedBorrow
 
   releaseReg(c, protoReg)
   c.enclosingClassParent = savedClassParent

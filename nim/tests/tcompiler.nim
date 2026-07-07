@@ -2840,3 +2840,321 @@ suite "slice 7b: extends + super()":
   test "class 7b: spread super(...args) bails (SpreadSuperCall deferred)":
     expect ValueError:
       discard disasmToString("class C extends B { constructor(){ super(...arguments); } }")
+
+suite "slice 7c: accessors / computed keys / string-number-named / static fields byte-identity":
+  test "class 7c: getter":
+    check disasmToString("class C { get x(){ return 1; } }") ==
+      "\n" &
+      "=== <program>  code_len=8 regs=7 fixed=2 params=0 consts=3 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  LoadConst           r5   const#2 = \"x\"\n" &
+      "    5  DefineMethodGetter  a=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  Mov                 r0   <- r2\n" &
+      "    7  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadInt             r0   = 1\n" &
+      "    1  Return              r0\n"
+
+  test "class 7c: setter":
+    check disasmToString("class C { set x(v){} }") ==
+      "\n" &
+      "=== <program>  code_len=8 regs=7 fixed=2 params=0 consts=3 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  LoadConst           r5   const#2 = \"x\"\n" &
+      "    5  DefineMethodSetter  a=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  Mov                 r0   <- r2\n" &
+      "    7  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=3 fixed=1 params=1 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r1\n"
+
+  test "class 7c: getter+setter pair":
+    check disasmToString("class C { get x(){return 1;} set x(v){} }") ==
+      "\n" &
+      "=== <program>  code_len=11 regs=7 fixed=2 params=0 consts=5 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  LoadConst           r5   const#2 = \"x\"\n" &
+      "    5  DefineMethodGetter  a=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  LoadConst           r4   const#3 = <function>\n" &
+      "    7  LoadConst           r5   const#4 = \"x\"\n" &
+      "    8  DefineMethodSetter  a=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    9  Mov                 r0   <- r2\n" &
+      "   10  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadInt             r0   = 1\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#3  code_len=2 regs=3 fixed=1 params=1 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r1\n"
+
+  test "class 7c: computed method key":
+    check disasmToString("class C { [k](){} }") ==
+      "\n" &
+      "=== <program>  code_len=8 regs=7 fixed=2 params=0 consts=2 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  LoadGlobal          r5   g109  ; k\n" &
+      "    5  DefineMethodComputeda=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  Mov                 r0   <- r2\n" &
+      "    7  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7c: string-named method":
+    check disasmToString("class C { \"m\"(){} }") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7c: static field":
+    check disasmToString("class C { static x = 1; }") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=1 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadInt             r4   = 1\n" &
+      "    4  StoreProp           r2.x <- r4    ic#1\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n"
+
+  test "class 7c: static getter":
+    check disasmToString("class C { static get y(){return 2;} }") ==
+      "\n" &
+      "=== <program>  code_len=8 regs=7 fixed=2 params=0 consts=3 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  LoadConst           r5   const#2 = \"y\"\n" &
+      "    5  DefineMethodGetter  a=2   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  Mov                 r0   <- r2\n" &
+      "    7  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadInt             r0   = 2\n" &
+      "    1  Return              r0\n"
+
+  test "class 7c: mixed method/getter/static":
+    check disasmToString("class C { m(){} get x(){return 1;} static n(){} }") ==
+      "\n" &
+      "=== <program>  code_len=12 regs=7 fixed=2 params=0 consts=5 ics=3 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadConst           r4   const#2 = <function>\n" &
+      "    6  LoadConst           r5   const#3 = \"x\"\n" &
+      "    7  DefineMethodGetter  a=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    8  LoadConst           r4   const#4 = <function>\n" &
+      "    9  DefineMethod        a=2   b=2   c=4   | u16=1026 i16=1026\n" &
+      "   10  Mov                 r0   <- r2\n" &
+      "   11  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#2  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadInt             r0   = 1\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#4  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7c: number-named method":
+    check disasmToString("class C { 0(){} }") ==
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+  test "class 7c: two static fields":
+    check disasmToString("class C { static x = 1; static y = 2; }") ==
+      "\n" &
+      "=== <program>  code_len=9 regs=6 fixed=2 params=0 consts=1 ics=3 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadInt             r4   = 1\n" &
+      "    4  StoreProp           r2.x <- r4    ic#1\n" &
+      "    5  LoadInt             r4   = 2\n" &
+      "    6  StoreProp           r2.y <- r4    ic#2\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n"
+
+  test "class 7c: computed static field":
+    check disasmToString("class C { static [k] = 1; }") ==
+      "\n" &
+      "=== <program>  code_len=8 regs=7 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadInt             r4   = 1\n" &
+      "    4  LoadGlobal          r5   g109  ; k\n" &
+      "    5  StoreElem           a=2   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  Mov                 r0   <- r2\n" &
+      "    7  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n"
+
+  test "class 7c: computed getter":
+    check disasmToString("class C { get [k](){return 1;} }") ==
+      "\n" &
+      "=== <program>  code_len=8 regs=7 fixed=2 params=0 consts=2 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  LoadGlobal          r5   g109  ; k\n" &
+      "    5  DefineMethodGetter  a=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  Mov                 r0   <- r2\n" &
+      "    7  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadInt             r0   = 1\n" &
+      "    1  Return              r0\n"
+
+  test "class 7c: static this-method-call field":
+    check disasmToString("class C { static g(){} static h = this.g(); }") ==
+      "\n" &
+      "=== <program>  code_len=11 regs=7 fixed=2 params=0 consts=2 ics=3 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=2   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r5   <- r2\n" &
+      "    6  LoadProp            r4   <- r5.g  ic#1\n" &
+      "    7  MethodInvoke        r4   <- base=r4 recv=r5 argc=0\n" &
+      "    8  StoreProp           r2.h <- r4    ic#2\n" &
+      "    9  Mov                 r0   <- r2\n" &
+      "   10  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n"
+
+suite "slice 7c: deferred class shapes bail (nim_missing, not text_diff)":
+  test "private field #x -> compile error":
+    expect ValueError:
+      discard disasmToString("class C { #x = 1; }")
+  test "private method #m -> compile error":
+    expect ValueError:
+      discard disasmToString("class C { #m(){} }")
+  test "private getter get #x -> compile error":
+    expect ValueError:
+      discard disasmToString("class C { get #x(){return 1;} }")
+  test "static block -> compile error":
+    expect ValueError:
+      discard disasmToString("class C { static { x = 1; } }")
+  test "async method -> compile error":
+    expect ValueError:
+      discard disasmToString("class C { async m(){} }")
+  test "generator method -> compile error":
+    expect ValueError:
+      discard disasmToString("class C { *m(){} }")
+  test "computed INSTANCE field -> compile error":
+    expect ValueError:
+      discard disasmToString("class C { [k] = 1; }")
