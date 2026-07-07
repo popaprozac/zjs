@@ -945,9 +945,10 @@ suite "slice 4a structure + capture bail":
     # Formerly deferred; slice 6d lowers an object-pattern param via the
     # AssertCoercible + LoadProp fan-out.
     discard disasmToString("function f({a}) { return a; }")
-  test "array-pattern param -> compile error (deferred, array slice)":
-    expect ValueError:
-      discard disasmToString("function f([a]) { return a; }")
+  test "array-pattern param -> compiles (slice 6e)":
+    # Formerly deferred; slice 6e lowers an array-pattern param via the
+    # iterator fan-out (IterGet/IterStep + try-region).
+    discard disasmToString("function f([a]) { return a; }")
   test "named function expression -> compile error (LoadCallee deferred)":
     expect ValueError:
       discard disasmToString("(function foo(){});")
@@ -1614,9 +1615,9 @@ suite "slice 4e: deferred param forms bail (nim_missing, not text_diff)":
   test "object-pattern param arrow -> compiles (slice 6d)":
     # Formerly deferred; slice 6d lowers an object-pattern arrow param.
     discard disasmToString("var f = ({a}) => a;")
-  test "array-pattern param arrow -> compile error (deferred, array slice)":
-    expect ValueError:
-      discard disasmToString("var f = ([a]) => a;")
+  test "array-pattern param arrow -> compiles (slice 6e)":
+    # Formerly deferred; slice 6e lowers an array-pattern arrow param.
+    discard disasmToString("var f = ([a]) => a;")
   test "async arrow -> compile error (deferred)":
     expect ValueError:
       discard disasmToString("var f = async () => 1;")
@@ -2214,16 +2215,212 @@ suite "slice 6d: object destructuring byte-identity":
     let txt = disasmToString("let {\"a-b\": v} = o;")
     check "LoadProp            r3   <- r2.\"a-b\"  ic#0" in txt
 
-suite "slice 6d: array patterns still bail (nim_missing, not text_diff)":
-  test "let [a, b] = o -> compile error (array slice deferred)":
-    expect ValueError:
-      discard disasmToString("let [a, b] = o;")
-  test "let {a: [b]} = o -> nested array pattern bails":
-    expect ValueError:
-      discard disasmToString("let {a: [b]} = o;")
-  test "[a, b] = c -> array assignment bails":
-    expect ValueError:
-      discard disasmToString("[a, b] = c;")
-  test "let {a, b: [c]} = o -> object containing array bails":
-    expect ValueError:
-      discard disasmToString("let {a, b: [c]} = o;")
+# --- Slice 6e: array destructuring (iterator protocol) ------------------
+
+suite "slice 6e: array destructuring byte-identity":
+  test "let [a, b] = c -> IterGet/Step + try-region + IterClose":
+    check disasmToString("let [a, b] = c;") == "\n" &
+      "=== <program>  code_len=16 regs=9 fixed=7 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r3   g108  ; c\n" &
+      "    2  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=4   b=3   c=0   | u16=3 i16=3\n" &
+      "    4  LoadFalse           a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=6   b=6   c=0   | u16=6 i16=6\n" &
+      "    6  IterStep            a=7   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    7  Mov                 r0   <- r7\n" &
+      "    8  IterStep            a=7   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    9  Mov                 r1   <- r7\n" &
+      "   10  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   11  Jmp                 -> 14\n" &
+      "   12  IterCloseQuiet      a=4   b=5   c=0   | u16=5 i16=5\n" &
+      "   13  Throw               a=6   b=0   c=0   | u16=0 i16=0\n" &
+      "   14  IterClose           a=4   b=5   c=0   | u16=5 i16=5\n" &
+      "   15  Return              r2\n"
+  test "let [a, ...r] = c -> IterRestCollect drains, IterClose omitted":
+    check disasmToString("let [a, ...r] = c;") == "\n" &
+      "=== <program>  code_len=15 regs=9 fixed=7 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r3   g108  ; c\n" &
+      "    2  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=4   b=3   c=0   | u16=3 i16=3\n" &
+      "    4  LoadFalse           a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=6   b=6   c=0   | u16=6 i16=6\n" &
+      "    6  IterStep            a=7   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    7  Mov                 r0   <- r7\n" &
+      "    8  IterRestCollect     a=7   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    9  Mov                 r1   <- r7\n" &
+      "   10  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   11  Jmp                 -> 14\n" &
+      "   12  IterCloseQuiet      a=4   b=5   c=0   | u16=5 i16=5\n" &
+      "   13  Throw               a=6   b=0   c=0   | u16=0 i16=0\n" &
+      "   14  Return              r2\n"
+  test "let [a = 1] = c -> element default undefined-check":
+    check disasmToString("let [a = 1] = c;") == "\n" &
+      "=== <program>  code_len=19 regs=10 fixed=6 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g108  ; c\n" &
+      "    2  AssertCoercible     a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=3   b=2   c=0   | u16=2 i16=2\n" &
+      "    4  LoadFalse           a=4   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=5   b=9   c=0   | u16=9 i16=9\n" &
+      "    6  IterStep            a=6   b=3   c=4   | u16=1027 i16=1027\n" &
+      "    7  LoadUndefined       a=8   b=0   c=0   | u16=0 i16=0\n" &
+      "    8  CmpStrictEq         a=7   b=6   c=8   | u16=2054 i16=2054\n" &
+      "    9  JmpIfFalse          r7   -> 12\n" &
+      "   10  LoadInt             r7   = 1\n" &
+      "   11  Mov                 r6   <- r7\n" &
+      "   12  Mov                 r0   <- r6\n" &
+      "   13  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   14  Jmp                 -> 17\n" &
+      "   15  IterCloseQuiet      a=3   b=4   c=0   | u16=4 i16=4\n" &
+      "   16  Throw               a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "   17  IterClose           a=3   b=4   c=0   | u16=4 i16=4\n" &
+      "   18  Return              r1\n"
+  test "let [, b] = c -> elision emits IterStep but binds nothing":
+    check disasmToString("let [, b] = c;") == "\n" &
+      "=== <program>  code_len=15 regs=8 fixed=6 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g108  ; c\n" &
+      "    2  AssertCoercible     a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=3   b=2   c=0   | u16=2 i16=2\n" &
+      "    4  LoadFalse           a=4   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=5   b=5   c=0   | u16=5 i16=5\n" &
+      "    6  IterStep            a=6   b=3   c=4   | u16=1027 i16=1027\n" &
+      "    7  IterStep            a=6   b=3   c=4   | u16=1027 i16=1027\n" &
+      "    8  Mov                 r0   <- r6\n" &
+      "    9  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   10  Jmp                 -> 13\n" &
+      "   11  IterCloseQuiet      a=3   b=4   c=0   | u16=4 i16=4\n" &
+      "   12  Throw               a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "   13  IterClose           a=3   b=4   c=0   | u16=4 i16=4\n" &
+      "   14  Return              r1\n"
+  test "let [a, [b]] = c -> nested array pattern (inner try-region)":
+    check disasmToString("let [a, [b]] = c;") == "\n" &
+      "=== <program>  code_len=26 regs=13 fixed=11 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r3   g108  ; c\n" &
+      "    2  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=4   b=3   c=0   | u16=3 i16=3\n" &
+      "    4  LoadFalse           a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=6   b=16  c=0   | u16=16 i16=16\n" &
+      "    6  IterStep            a=7   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    7  Mov                 r0   <- r7\n" &
+      "    8  IterStep            a=7   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    9  AssertCoercible     a=7   b=0   c=0   | u16=0 i16=0\n" &
+      "   10  IterGet             a=8   b=7   c=0   | u16=7 i16=7\n" &
+      "   11  LoadFalse           a=9   b=0   c=0   | u16=0 i16=0\n" &
+      "   12  EnterTry            a=10  b=4   c=0   | u16=4 i16=4\n" &
+      "   13  IterStep            a=11  b=8   c=9   | u16=2312 i16=2312\n" &
+      "   14  Mov                 r1   <- r11\n" &
+      "   15  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   16  Jmp                 -> 19\n" &
+      "   17  IterCloseQuiet      a=8   b=9   c=0   | u16=9 i16=9\n" &
+      "   18  Throw               a=10  b=0   c=0   | u16=0 i16=0\n" &
+      "   19  IterClose           a=8   b=9   c=0   | u16=9 i16=9\n" &
+      "   20  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   21  Jmp                 -> 24\n" &
+      "   22  IterCloseQuiet      a=4   b=5   c=0   | u16=5 i16=5\n" &
+      "   23  Throw               a=6   b=0   c=0   | u16=0 i16=0\n" &
+      "   24  IterClose           a=4   b=5   c=0   | u16=5 i16=5\n" &
+      "   25  Return              r2\n"
+  test "let [{a}] = c -> nested object pattern recursion":
+    check disasmToString("let [{a}] = c;") == "\n" &
+      "=== <program>  code_len=16 regs=9 fixed=6 params=0 consts=0 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g108  ; c\n" &
+      "    2  AssertCoercible     a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=3   b=2   c=0   | u16=2 i16=2\n" &
+      "    4  LoadFalse           a=4   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=5   b=6   c=0   | u16=6 i16=6\n" &
+      "    6  IterStep            a=6   b=3   c=4   | u16=1027 i16=1027\n" &
+      "    7  AssertCoercible     a=6   b=0   c=0   | u16=0 i16=0\n" &
+      "    8  LoadProp            r7   <- r6.a  ic#0\n" &
+      "    9  Mov                 r0   <- r7\n" &
+      "   10  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   11  Jmp                 -> 14\n" &
+      "   12  IterCloseQuiet      a=3   b=4   c=0   | u16=4 i16=4\n" &
+      "   13  Throw               a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "   14  IterClose           a=3   b=4   c=0   | u16=4 i16=4\n" &
+      "   15  Return              r1\n"
+  test "([a, b] = c) -> assignment mode StoreGlobal targets":
+    check disasmToString("([a, b] = c);") == "\n" &
+      "=== <program>  code_len=17 regs=7 fixed=5 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r1   g108  ; c\n" &
+      "    2  AssertCoercible     a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=2   b=1   c=0   | u16=1 i16=1\n" &
+      "    4  LoadFalse           a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=4   b=6   c=0   | u16=6 i16=6\n" &
+      "    6  IterStep            a=5   b=2   c=3   | u16=770 i16=770\n" &
+      "    7  StoreGlobal         r5   g109  ; a\n" &
+      "    8  IterStep            a=5   b=2   c=3   | u16=770 i16=770\n" &
+      "    9  StoreGlobal         r5   g110  ; b\n" &
+      "   10  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   11  Jmp                 -> 14\n" &
+      "   12  IterCloseQuiet      a=2   b=3   c=0   | u16=3 i16=3\n" &
+      "   13  Throw               a=4   b=0   c=0   | u16=0 i16=0\n" &
+      "   14  IterClose           a=2   b=3   c=0   | u16=3 i16=3\n" &
+      "   15  Mov                 r0   <- r1\n" &
+      "   16  Return              r0\n"
+  test "var [x, y] = z -> DefineGlobal binding targets":
+    check disasmToString("var [x, y] = z;") == "\n" &
+      "=== <program>  code_len=16 regs=7 fixed=5 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r1   g110  ; z\n" &
+      "    2  AssertCoercible     a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  IterGet             a=2   b=1   c=0   | u16=1 i16=1\n" &
+      "    4  LoadFalse           a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  EnterTry            a=4   b=6   c=0   | u16=6 i16=6\n" &
+      "    6  IterStep            a=5   b=2   c=3   | u16=770 i16=770\n" &
+      "    7  DefineGlobal        r5   g108  ; x\n" &
+      "    8  IterStep            a=5   b=2   c=3   | u16=770 i16=770\n" &
+      "    9  DefineGlobal        r5   g109  ; y\n" &
+      "   10  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   11  Jmp                 -> 14\n" &
+      "   12  IterCloseQuiet      a=2   b=3   c=0   | u16=3 i16=3\n" &
+      "   13  Throw               a=4   b=0   c=0   | u16=0 i16=0\n" &
+      "   14  IterClose           a=2   b=3   c=0   | u16=3 i16=3\n" &
+      "   15  Return              r0\n"
+  test "let {a: [b]} = o -> object entry containing an array pattern":
+    check disasmToString("let {a: [b]} = o;") == "\n" &
+      "=== <program>  code_len=16 regs=9 fixed=7 params=0 consts=0 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g108  ; o\n" &
+      "    2  AssertCoercible     a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r3   <- r2.a  ic#0\n" &
+      "    4  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  IterGet             a=4   b=3   c=0   | u16=3 i16=3\n" &
+      "    6  LoadFalse           a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "    7  EnterTry            a=6   b=4   c=0   | u16=4 i16=4\n" &
+      "    8  IterStep            a=7   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    9  Mov                 r0   <- r7\n" &
+      "   10  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "   11  Jmp                 -> 14\n" &
+      "   12  IterCloseQuiet      a=4   b=5   c=0   | u16=5 i16=5\n" &
+      "   13  Throw               a=6   b=0   c=0   | u16=0 i16=0\n" &
+      "   14  IterClose           a=4   b=5   c=0   | u16=5 i16=5\n" &
+      "   15  Return              r1\n"
+  test "function f([a]) -> array-pattern param fan-out":
+    check disasmToString("function f([a]) {}") == "\n" &
+      "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r1   const#0 = <function>\n" &
+      "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+      "    3  DefineGlobal        r1   g108  ; f\n" &
+      "    4  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=13 regs=7 fixed=5 params=1 consts=0 ics=0 ===\n" &
+      "    0  AssertCoercible     a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  IterGet             a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  LoadFalse           a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  EnterTry            a=4   b=4   c=0   | u16=4 i16=4\n" &
+      "    4  IterStep            a=5   b=2   c=3   | u16=770 i16=770\n" &
+      "    5  Mov                 r1   <- r5\n" &
+      "    6  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    7  Jmp                 -> 10\n" &
+      "    8  IterCloseQuiet      a=2   b=3   c=0   | u16=3 i16=3\n" &
+      "    9  Throw               a=4   b=0   c=0   | u16=0 i16=0\n" &
+      "   10  IterClose           a=2   b=3   c=0   | u16=3 i16=3\n" &
+      "   11  LoadUndefined       a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "   12  Return              r5\n"

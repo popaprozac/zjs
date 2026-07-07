@@ -924,13 +924,13 @@ proc paramsCompilable(params: seq[AstNode]): bool =
     case prm.kind
     of IdentExpr:
       # A destructuring binding surfaces as identPattern on the param.
-      # Slice 6d permits an OBJECT-pattern param (`function f({x})`); an
-      # ARRAY-pattern param and a DEFAULTED pattern param (`{x} = {}`) both
-      # bail — array needs the iterator fan-out (later slice), and a
-      # pattern default's undefined-check + AssertCoercible interleaving is
-      # untested here.
+      # Slice 6d permits an OBJECT-pattern param (`function f({x})`); slice
+      # 6e adds an ARRAY-pattern param (`function f([x])`) — both fan out
+      # through the same pattern-param path. A DEFAULTED pattern param
+      # (`{x} = {}` / `[x] = []`) still bails: a pattern default's
+      # undefined-check + AssertCoercible interleaving is untested here.
       if prm.identPattern != nil:
-        if prm.identPattern.kind != ObjectPattern: return false
+        if prm.identPattern.kind notin {ObjectPattern, ArrayPattern}: return false
         if prm.identDefault != nil: return false
     of RestParam:
       # Only a plain-ident rest binding is supported; `...[a]` / `...{a}`
@@ -1650,7 +1650,7 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     # destructurePattern in assignment mode dispatches each target through
     # the LHS-expression store chain. Returns the RHS reg (the assignment's
     # value). ArrayPattern targets bail inside destructurePattern.
-    if target.kind == ObjectPattern and node.assignOp == Eq:
+    if target.kind in {ObjectPattern, ArrayPattern} and node.assignOp == Eq:
       let r = compileExpr(c, node.value)
       let saved = c.inDstrAssign
       c.inDstrAssign = true
@@ -1658,7 +1658,7 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       c.inDstrAssign = saved
       return r
     if target.kind == ArrayPattern:
-      # Array destructuring assignment — separate slice.
+      # Array destructuring with a compound assign op — separate slice.
       c.hadError = true
       return 0
     # --- Member target: `obj.name = rhs` -> StoreProp -----------------
@@ -2568,12 +2568,8 @@ proc bindDestructureTarget(c: var Compiler, target: AstNode, valReg: uint8) =
   ## and would need ThrowIfHole / env chains not ported here).
   if target == nil: return
   let k = target.kind
-  if k == ObjectPattern:
+  if k == ObjectPattern or k == ArrayPattern:
     destructurePattern(c, target, valReg)
-    return
-  if k == ArrayPattern:
-    # Array destructuring (iterator protocol) — separate slice. BAIL.
-    c.hadError = true
     return
   if c.inDstrAssign:
     # Assignment mode: the target is any LHSExpression.
@@ -2727,6 +2723,78 @@ proc destructureObject(c: var Compiler, pat: AstNode, srcReg: uint8) =
     bindDestructureTarget(c, entry.patTarget, vR)
     releaseReg(c, vR)
 
+proc destructureArray(c: var Compiler, pat: AstNode, srcReg: uint8) =
+  ## `let [a, b] = c` / `([a, b] = c)` / `let [a, ...r] = c`. Runs the
+  ## iterator protocol: GetIterator(src) then IteratorStep / IteratorClose
+  ## per element (§13.15.5.3). Mirrors compiler.zc destructure_array.
+  ##
+  ## Shape (verified against the oracle):
+  ##   IterGet   iter <- src
+  ##   LoadFalse done
+  ##   EnterTry  catch, <ph>            (region wraps element binding)
+  ##   per entry: IterStep val <- iter, done ; (default?) ; bind
+  ##     elision (patTarget==nil) still emits IterStep, binds nothing
+  ##     rest → IterRestCollect val <- iter, done (drains; last entry)
+  ##   region_pop; LeaveTry; Jmp -> normalClose
+  ##   <handler>: IterCloseQuiet iter, done ; Throw catch
+  ##   normalClose (only when NO rest): IterClose iter, done
+  ##
+  ## catch_reg is pushed below fixed_regs so element temps can't clobber
+  ## the caught value; the bump is PERMANENT (matches the C — it isn't
+  ## restored). A rest binding always drains the iterator, so the final
+  ## IterClose is omitted (the C's `!saw_rest` gate).
+  let iterR = allocReg(c)
+  emit(c, instAB(IterGet, iterR, srcReg))
+  let doneR = allocReg(c)
+  emit(c, instA(LoadFalse, doneR))
+
+  let catchReg = allocReg(c)
+  if catchReg + 1 > c.fixedRegs: c.fixedRegs = catchReg + 1
+  let enterIdx = emit(c, instAI16(EnterTry, catchReg, 0))
+  regionPushCatch(c)
+
+  var sawRest = false
+  for entry in pat.patEntries:
+    if c.hadError: return
+    if entry == nil or entry.kind != PatternEntry:
+      c.hadError = true
+      return
+    if entry.patIsRest:
+      # ...rest: drain remaining elements into a fresh array.
+      let savedNext = c.nextReg
+      let dstR = allocReg(c)
+      emit(c, instABC(IterRestCollect, dstR, iterR, doneR))
+      bindDestructureTarget(c, entry.patTarget, dstR)
+      c.nextReg = savedNext
+      if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+      sawRest = true
+      continue
+    # Pull the next value; IterStep sets vR (or undefined when done) and done.
+    let vR = allocReg(c)
+    emit(c, instABC(IterStep, vR, iterR, doneR))
+    if entry.patTarget == nil:
+      # Elision — the slot was consumed, bind nothing.
+      releaseReg(c, vR)
+      continue
+    applyDestructureDefault(c, vR, entry.patDefault, entry.patTarget)
+    bindDestructureTarget(c, entry.patTarget, vR)
+    releaseReg(c, vR)
+
+  regionPop(c)
+  emit(c, instA(LeaveTry, 0))
+  let skipHandler = emit(c, instI16(Jmp, 0))
+  patchJump(c, enterIdx)
+  emit(c, instAB(IterCloseQuiet, iterR, doneR))
+  emit(c, instA(Throw, catchReg))
+  patchJump(c, skipHandler)
+
+  # NormalCompletion IteratorClose: skipped when a rest binding drained it.
+  if not sawRest:
+    emit(c, instAB(IterClose, iterR, doneR))
+  releaseReg(c, catchReg)
+  releaseReg(c, doneR)
+  releaseReg(c, iterR)
+
 proc destructurePattern(c: var Compiler, pat: AstNode, srcReg: uint8) =
   ## Spec: at the head of every destructuring step the value must be
   ## RequireObjectCoercible — null/undefined throw TypeError before any
@@ -2736,7 +2804,9 @@ proc destructurePattern(c: var Compiler, pat: AstNode, srcReg: uint8) =
   if pat.kind == ObjectPattern:
     destructureObject(c, pat, srcReg)
     return
-  # ArrayPattern (iterator protocol) is a separate slice — BAIL.
+  if pat.kind == ArrayPattern:
+    destructureArray(c, pat, srcReg)
+    return
   c.hadError = true
 
 # --- Statements -----------------------------------------------------
@@ -3619,7 +3689,8 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
       addLocalScoped(c, ra.start, ra.`end` - ra.start, uint32(restReg), 0'u32)
       c.locals[c.locals.len - 1].isParam = true
     elif p.kind == IdentExpr and p.identPattern != nil:
-      # Object-pattern param placeholder (array patterns bailed above).
+      # Destructuring-pattern param placeholder (object or array; a
+      # defaulted pattern param bailed in paramsCompilable).
       paramNames.add("")
       let reg = allocReg(c)
       addLocalScoped(c, p.start, 0'u32, uint32(reg), 0'u32)
