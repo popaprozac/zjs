@@ -32,7 +32,12 @@ the compiler only *emits* bytecode.
 ## Bytecode facts (from `src/bytecode.zc`)
 
 - **`Inst { op: Op; a,b,c: u8 }`** — 4 bytes. `bc_u16 = b | (c<<8)`; `bc_i16` = sign-extended `bc_u16`.
-- **Op enum — 128 ops, THIS ORDER** (ordinals matter for Phase 4; disasm uses names):
+- **Op enum — 145 ops, THIS ORDER** (ordinals matter for Phase 4; disasm prints names
+  POSITIONALLY from `zjs_op_names` in `src/interpreter.zc` — verified 145/145 aligned with the
+  `bytecode.zc` enum and the Nim `Op` enum). NOTE: the abbreviated list below collapses the
+  multi-op arithmetic/cmp lines — the REAL count is 145 (Sub/Mul/Div/Mod/Pow, BitOr/BitXor/
+  Shr/UShr, CmpNe/CmpStrictEq/CmpStrictNe, BitNot/LogicalNot are all distinct ops). The
+  authoritative order is now in `nim/src/zjs/bytecode.nim` (slice 1).
   ```
   Halt LoadConst LoadInt LoadUndefined LoadHole ThrowIfHole LoadNull LoadTrue LoadFalse Mov
   DefineGlobal LoadGlobal StoreGlobal LoadGlobalOrUndefined WithEnter WithLeave WithLookup

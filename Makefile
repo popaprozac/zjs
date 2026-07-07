@@ -501,7 +501,12 @@ $(NIM_PARSEBIN): $(NIM_SRCS) nim/tools/nim_parse.nim nim/tools/labels.nim | $(NI
 nim-diffparse: nim-parse cli
 	@bash nim/tests/diff_parse.sh
 
-.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse
+NIM_DISASMBIN := $(NIM_OUT)/nim-disasm
+nim-disasm: $(NIM_DISASMBIN)
+$(NIM_DISASMBIN): $(NIM_SRCS) nim/tools/nim_disasm.nim | $(NIM_OUT)
+	$(NIM) c --mm:arc -d:release --hints:off --out:$(NIM_DISASMBIN) nim/tools/nim_disasm.nim
+
+.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse nim-disasm
 
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
