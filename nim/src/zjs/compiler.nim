@@ -896,15 +896,17 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let name = c.slice(target.start, target.`end`)
     let localIdx = findLocalIndex(c, name)
     if localIdx < 0:
-      # Global target (non-strict): compile the RHS to a fresh temp, then
-      # StoreGlobal. compiler.zc pins preferred_dst = -1 for globals (the
-      # store reads the temp), so the RHS never takes a caller hint.
+      # Global target (non-strict): the RHS is evaluated FIRST — and its
+      # globals interned — BEFORE the target's slot, matching Zen-c's
+      # GetValue-then-PutValue order so global-slot numbering stays canonical
+      # (`a = b` → b=g108, a=g109). compiler.zc pins preferred_dst = -1 for
+      # globals (the store reads the temp), so the RHS never takes a caller hint.
       # Strict-mode StoreGlobalStrict / with-object PutValue are later.
-      let slot = internGlobal(c, name)
       let savedPd = c.preferredDst
       c.preferredDst = -1
       let r = compileExpr(c, node.value)
       c.preferredDst = savedPd
+      let slot = internGlobal(c, name)
       emit(c, instAU16(StoreGlobal, r, uint16(slot)))
       return r
     let localReg = c.locals[localIdx].reg
