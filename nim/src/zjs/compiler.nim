@@ -816,25 +816,55 @@ proc collectLocals(c: var Compiler, node: AstNode) =
   else:
     discard
 
-# --- Function shape gate + capture pre-scan (slice 4a) --------------
+# --- Function shape gate + capture pre-scan (slice 4a / 4e) ---------
 #
-# Slice 4a compiles ONLY non-capturing functions with simple (plain
-# ident) params. Anything outside that envelope must set hadError so
-# the file surfaces as nim_missing (never a false byte-match): default
-# / pattern / rest params, async / generator, `arguments` / `this`
-# usage, and — the big one — a nested function that CAPTURES one of
-# this function's locals (needs an env object: slice 4b). Non-capturing
+# The compilable param envelope grew across slices. 4a compiled ONLY
+# plain-identifier params; 4e adds DEFAULT (`a = expr`) and REST
+# (`...rest`) params (see paramsCompilable). Everything else must set
+# hadError so the file surfaces as nim_missing (never a false
+# byte-match): destructuring params (`{a}` / `[a]`), async / generator,
+# and — the big one — a nested function that CAPTURES one of this
+# function's locals (needs an env object: slice 4b). Non-capturing
 # nested functions are fine and compile independently.
 
 proc paramsAreSimple(params: seq[AstNode]): bool =
   ## Every formal is a plain identifier: no default (`=`), no binding
   ## pattern (`{}`/`[]`), no rest (`...`). Mirrors the parser's
-  ## paramsAreSimple but also rejects rest (a RestParam node).
+  ## paramsAreSimple but also rejects rest (a RestParam node). Retained
+  ## as the "no prologue needed" fast predicate for callers that want to
+  ## know a param list is arity-only.
   for prm in params:
     if prm == nil: return false
     if prm.kind != IdentExpr: return false            # RestParam / pattern
     if prm.identDefault != nil: return false          # `a = 1`
     if prm.identPattern != nil: return false          # `{a}` / `[a]`
+  return true
+
+proc paramsCompilable(params: seq[AstNode]): bool =
+  ## Slice 4e envelope: a param list compileFunction can lower. Permits
+  ## plain-ident params, default params (`a = expr`), and a trailing rest
+  ## param (`...rest`, an IdentExpr rest binding). BAILS on destructuring
+  ## (a `{}`/`[]` pattern via identPattern, or a RestParam whose bound arg
+  ## is a pattern) — the iterator / AssertCoercible fan-out is a separate
+  ## slice. A default value that is itself a destructuring target lives on
+  ## the default expr (compiled as a plain expression); only PARAM-position
+  ## patterns are refused here.
+  for prm in params:
+    if prm == nil: return false
+    case prm.kind
+    of IdentExpr:
+      # A destructuring binding surfaces as identPattern on the param —
+      # refuse it (defaults, via identDefault, are fine).
+      if prm.identPattern != nil: return false
+    of RestParam:
+      # Only a plain-ident rest binding is supported; `...[a]` / `...{a}`
+      # need pattern fan-out (deferred). restArg is the bound target.
+      let ra = prm.restArg
+      if ra == nil: return false
+      if ra.kind != IdentExpr: return false
+      if ra.identPattern != nil: return false
+    else:
+      return false
   return true
 
 proc identName(c: Compiler, n: AstNode): string =
@@ -3173,8 +3203,9 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
     if node.fnIsAsync or node.fnIsGenerator:
       return nil
   let params = fnParamsOf(node)
-  # Simple params only: identifier params, no default/rest/destructure.
-  if not paramsAreSimple(params):
+  # Slice 4e envelope: plain-ident, default (`a = expr`), and rest
+  # (`...rest`) params. Destructuring params still bail (nim_missing).
+  if not paramsCompilable(params):
     return nil
   # A NAMED function expression binds its own name as a self-referencing
   # local visible inside the body (§15.7.1), seeded via a LoadCallee
@@ -3202,14 +3233,32 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   )
 
   # 1. Bind params to the low fixed regs r0..rN-1 in declaration order.
+  #    The rest param (always last if present, parser-enforced) also gets
+  #    a register but is seeded by Op::BuildRestArgs in the prologue rather
+  #    than a caller-supplied arg — so `param_count`/`paramCount` reflects
+  #    only the REGULAR params (the arity for the header + BuildRestArgs
+  #    first-index). Mirrors compiler.zc's regular_param_count / rest_reg
+  #    (src/compiler.zc ~3969-4033).
   var paramNames: seq[string] = @[]
+  var regularParamCount: uint32 = 0
+  var hasRest = false
+  var restReg: uint8 = 0
   for p in params:
-    let nm = c.slice(p.start, p.`end`)
-    paramNames.add(nm)
-    let reg = allocReg(c)
-    addLocalScoped(c, p.start, p.`end` - p.start, uint32(reg), 0'u32)
-    c.locals[c.locals.len - 1].isParam = true
-  c.paramCount = uint32(params.len)
+    if p.kind == RestParam:
+      # Rest binding: its own register, param_count NOT incremented.
+      let ra = p.restArg               # plain-ident target (gated above)
+      restReg = allocReg(c)
+      hasRest = true
+      addLocalScoped(c, ra.start, ra.`end` - ra.start, uint32(restReg), 0'u32)
+      c.locals[c.locals.len - 1].isParam = true
+    else:
+      let nm = c.slice(p.start, p.`end`)
+      paramNames.add(nm)
+      let reg = allocReg(c)
+      addLocalScoped(c, p.start, p.`end` - p.start, uint32(reg), 0'u32)
+      c.locals[c.locals.len - 1].isParam = true
+      regularParamCount += 1
+  c.paramCount = regularParamCount
 
   # 2. Hoist body var/let/const into fixed locals. The body's own braces
   #    ARE the function scope, so walk its children directly (matching
@@ -3287,6 +3336,90 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   if c.cachedOuterEnvReg >= 0:
     emit(c, instA(LoadEnv, uint8(c.cachedOuterEnvReg)))
 
+  # 4a-rest. Rest param (slice 4e): build the array from
+  #          args_base[regularParamCount..argc] into restReg. `param_count`
+  #          (= regularParamCount) is the first-rest index operand. Emitted
+  #          here (after BuildArguments / cached-env LoadEnv, before env
+  #          NewObject + default-init) to match compiler.zc ~4159-4162.
+  if hasRest:
+    emit(c, instAB(BuildRestArgs, restReg, uint8(regularParamCount)))
+
+  # 4a-def. Default initializers for regular params (slice 4e): for each
+  #         param with a default, `param === undefined ? <default> : param`,
+  #         in declaration order. Mirrors compiler.zc's default-init loop
+  #         (src/compiler.zc ~4179-4231). Sequence per defaulted param:
+  #           LoadUndefined undefR          (sentinel)
+  #           CmpStrictEq   tmp, paramReg, undefR
+  #           JmpIfFalse    tmp -> <skip>   (arg present -> keep it)
+  #           LoadHole      paramReg        (#330 TDZ: param is in its own
+  #                                          TDZ while its default runs, so a
+  #                                          self-reference hits ThrowIfHole)
+  #           <compute default into initR>
+  #           Mov paramReg <- initR         (only if initR != paramReg)
+  #         <skip>: both paths converge with paramReg initialized. `tmp` is
+  #         allocated BEFORE `undefR` (so tmp gets the lower temp reg) but
+  #         LoadUndefined for undefR is emitted first — matching the C's
+  #         alloc-then-emit order exactly. Rest params carry no default and
+  #         are skipped. Runs BEFORE env NewObject (compiler.zc order).
+  # Regular-param names in declaration order — for the self/forward-ref
+  # TDZ guard below. A default that references its OWN param, or a LATER
+  # param (still in TDZ), must emit a ThrowIfHole in C. We don't port
+  # ThrowIfHole, so we BAIL (nim_missing) on those shapes rather than emit
+  # an unguarded read; a reference to an EARLIER (already-initialized)
+  # param — `function f(a, b = a)` — is fine and compiles.
+  var regularNames: seq[string] = @[]
+  for p in params:
+    if p.kind != RestParam:
+      regularNames.add(c.slice(p.start, p.`end`))
+
+  var localIdx = 0
+  var regIdx = 0
+  for p in params:
+    if p.kind == RestParam:
+      continue
+    if p.identDefault != nil:
+      # Self / forward param reference in the default → the referenced
+      # binding is in its TDZ; C guards with ThrowIfHole. Not ported: bail.
+      var refsTdzParam = false
+      var k = regIdx
+      while k < regularNames.len:
+        if subtreeMentionsName(c, p.identDefault, regularNames[k]):
+          refsTdzParam = true
+          break
+        k += 1
+      if refsTdzParam:
+        c.hadError = true
+        return nil
+      let paramReg = c.locals[localIdx].reg
+      let tmp = allocReg(c)
+      let undefR = allocReg(c)
+      emit(c, instA(LoadUndefined, undefR))
+      emit(c, instABC(CmpStrictEq, tmp, paramReg, undefR))
+      releaseReg(c, undefR)
+      let skipIdx = emit(c, instAI16(JmpIfFalse, tmp, 0))
+      releaseReg(c, tmp)
+      # #330 TDZ ref-self: seed the param reg with the hole on the
+      # default-taken branch and mark it uninitialized. (A self-reference
+      # would hit ThrowIfHole in C — we've already bailed those above, so
+      # this LoadHole is dead by construction but is emitted unconditionally
+      # to match the oracle byte-for-byte.) Simple named non-captured param.
+      let isSimpleParam = p.`end` > p.start and not c.locals[localIdx].captured
+      if isSimpleParam:
+        c.locals[localIdx].isTdz = true
+        emit(c, instA(LoadHole, paramReg))
+      let initR = compileExpr(c, p.identDefault)
+      if initR != paramReg:
+        emit(c, instAB(Mov, paramReg, initR))
+      if initR + 1 == c.nextReg:
+        c.nextReg = c.nextReg - 1
+      resetTemps(c)
+      patchJump(c, skipIdx)
+      # Both paths converge here initialized — body reads skip the check.
+      if isSimpleParam:
+        c.locals[localIdx].isTdz = false
+    localIdx += 1
+    regIdx += 1
+
   # 4a''. Env construction (compiler.zc ~4232). `NewObject envReg`, then
   #       if we ALSO forward an outer env, chain it via the __outer__ key,
   #       then mirror each captured PARAM's value into the env by name
@@ -3357,12 +3490,22 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   if c.hadError:
     return nil
 
+  # ECMA-262 ExpectedArgumentCount: walk params left-to-right, stop at the
+  # first with a default initializer or the rest binding (compiler.zc
+  # ~4408-4419). NOT printed by disasm; set for later runtime phases.
+  var eac: uint32 = 0
+  for p in params:
+    if p.kind == RestParam: break
+    if p.identDefault != nil: break
+    eac += 1
+
   var f = Function(
     code: c.code,
     constants: c.constants,
     registerCount: uint32(c.maxReg) + 1'u32,
     fixedRegs: c.fixedRegs,
     paramCount: c.paramCount,
+    expectedArgCount: eac,
     constCount: uint32(c.constants.len),
     icCount: uint32(c.ics.len),
     ics: c.ics,

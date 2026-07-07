@@ -908,12 +908,45 @@ suite "slice 4a structure + capture bail":
       disasmToString("function outer() { function inner() { return 1; } return 2; }")
   # NOTE: arrow functions COMPILE as of slice 4d — see the "slice 4d:
   # arrow functions" suite below (`var f = () => 1;` is now byte-identical).
-  test "default param -> compile error (deferred)":
+  # Slice 4e: default + rest params now COMPILE (byte-identical to oracle).
+  test "default param -> undefined-check + default init (slice 4e)":
+    let txt = disasmToString("function f(a = 1) { return a; }")
+    check "=== <program>/const#0  code_len=7 regs=4 fixed=1 params=1 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  CmpStrictEq         a=1   b=0   c=2   | u16=512 i16=512\n" &
+      "    2  JmpIfFalse          r1   -> 6\n" &
+      "    3  LoadHole            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    4  LoadInt             r1   = 1\n" &
+      "    5  Mov                 r0   <- r1\n" &
+      "    6  Return              r0\n" in txt
+  test "rest param -> BuildRestArgs prologue (slice 4e)":
+    let txt = disasmToString("function f(...r) { return 1; }")
+    check "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+      "    0  BuildRestArgs       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadInt             r1   = 1\n" &
+      "    2  Return              r1\n" in txt
+  test "rest after a regular param -> BuildRestArgs r1, first=1 (slice 4e)":
+    let txt = disasmToString("function f(a, ...rest) {}")
+    check "params=1" in txt
+    check "    0  BuildRestArgs       a=1   b=1   c=0   | u16=1 i16=1\n" in txt
+  test "default referencing an earlier param -> Mov chain (slice 4e)":
+    let txt = disasmToString("function f(a, b = a) {}")
+    check "params=2" in txt
+    check "    1  CmpStrictEq         a=2   b=1   c=3   | u16=769 i16=769\n" in txt
+    check "    4  Mov                 r2   <- r0\n" in txt
+    check "    5  Mov                 r1   <- r2\n" in txt
+  test "default referencing OWN param (TDZ self-ref) -> bail (ThrowIfHole deferred)":
     expect ValueError:
-      discard disasmToString("function f(a = 1) { return a; }")
-  test "rest param -> compile error (deferred)":
+      discard disasmToString("function f(x = x) { return x; }")
+  test "default referencing a LATER param (TDZ forward-ref) -> bail":
     expect ValueError:
-      discard disasmToString("function f(...r) { return 1; }")
+      discard disasmToString("function f(a = b, b = 1) {}")
+  test "destructuring param -> compile error (deferred, slice 4e DEFER)":
+    expect ValueError:
+      discard disasmToString("function f({a}) { return a; }")
+  test "array-pattern param -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("function f([a]) { return a; }")
   test "named function expression -> compile error (LoadCallee deferred)":
     expect ValueError:
       discard disasmToString("(function foo(){});")
@@ -1557,13 +1590,26 @@ suite "slice 4d: structure + arrow-always MakeClosure invariants":
     check "MakeClosure" in txt
     check "SetFunctionName" notin txt
 
-suite "slice 4d: deferred arrow forms bail (nim_missing, not text_diff)":
-  test "default param arrow -> compile error (deferred)":
-    expect ValueError:
-      discard disasmToString("var f = (a = 1) => a;")
-  test "rest param arrow -> compile error (deferred)":
-    expect ValueError:
-      discard disasmToString("var f = (...a) => a;")
+suite "slice 4e: arrow default + rest params compile":
+  test "default param arrow (slice 4e)":
+    let txt = disasmToString("var f = (a = 1) => a;")
+    check "=== <program>/const#0  code_len=8 regs=4 fixed=1 params=1 consts=0 ics=0 arrow ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  CmpStrictEq         a=1   b=0   c=2   | u16=512 i16=512\n" &
+      "    2  JmpIfFalse          r1   -> 6\n" &
+      "    3  LoadHole            a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    4  LoadInt             r1   = 1\n" &
+      "    5  Mov                 r0   <- r1\n" &
+      "    6  Mov                 r1   <- r0\n" &
+      "    7  Return              r1\n" in txt
+  test "rest param arrow (slice 4e)":
+    let txt = disasmToString("var f = (...a) => a;")
+    check "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 arrow ===\n" &
+      "    0  BuildRestArgs       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Mov                 r1   <- r0\n" &
+      "    2  Return              r1\n" in txt
+
+suite "slice 4e: deferred param forms bail (nim_missing, not text_diff)":
   test "destructuring param arrow -> compile error (deferred)":
     expect ValueError:
       discard disasmToString("var f = ({a}) => a;")

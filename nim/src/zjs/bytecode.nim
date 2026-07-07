@@ -228,6 +228,11 @@ type
     registerCount*: uint32
     fixedRegs*: uint32
     paramCount*: uint32
+    ## ECMA-262 ExpectedArgumentCount (Function.length backing): the index
+    ## of the first param with a default initializer or the rest param, or
+    ## paramCount if none (mirrors compiler.zc `Function.expected_arg_count`,
+    ## src ~4407-4419). NOT printed by disasm; set for later runtime phases.
+    expectedArgCount*: uint32
     constCount*: uint32
     icCount*: uint32
     isAsync*: bool
