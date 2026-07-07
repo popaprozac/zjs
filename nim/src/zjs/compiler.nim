@@ -119,6 +119,13 @@ type
     ## loop. Slice 3c ports the unlabeled-loop subset (labeled break /
     ## continue, switch frames, and try-region unwinding are later).
     loopStack*: seq[LoopFrame]
+    # --- Inline-cache name table (compiler.zc c.ics / c.ic_count) ------
+    ## Per-function IC slots, keyed by property NAME. allocIcSlot dedups
+    ## by decoded name: a repeated `.length`/`.prototype` access reuses
+    ## the same slot (mirrors alloc_ic_slot's atom-pointer dedup). Index
+    ## = IC slot, stored into Function.ics so disasm prints the name. The
+    ## count becomes Function.icCount.
+    ics*: seq[string]
 
 # --- Register allocator (high-water-mark) ---------------------------
 
@@ -254,6 +261,53 @@ proc internGlobal(c: var Compiler, name: string): uint32 =
 
 proc slice(c: Compiler, s, e: uint32): string =
   c.src[s.int ..< e.int]
+
+# --- Inline-cache slot allocation (mirrors alloc_ic_slot) -----------
+#
+# One IC slot per DISTINCT property name in the function. `allocIcSlot`
+# dedups by name: a name already present returns its existing index; a
+# new name appends (name -> next index). The C dedups by interned-atom
+# pointer, which is equivalent to comparing the decoded name text — two
+# textually-equal property names intern to the same atom. Property names
+# here are plain identifiers (no `\u` escapes in the slice-5a corpus), so
+# a direct source-slice compare matches the atom-pointer dedup.
+#
+# CRITICAL ORDER: a member access allocates its OWN slot BEFORE compiling
+# its receiver subexpression, so outer accesses get LOWER indices than
+# inner ones (`a.b.c` -> `.b`=ic#1, `.c`=ic#0; `o.x = o.y` -> `.x`=ic#0,
+# `.y`=ic#1). The caller enforces this by calling allocIcSlot first.
+
+proc allocIcSlot(c: var Compiler, name: string): int =
+  for i in 0 ..< c.ics.len:
+    if c.ics[i] == name:
+      return i
+  c.ics.add(name)
+  return c.ics.len - 1
+
+# Property LOAD by name: allocate (or reuse) the IC slot, then emit
+# `LoadProp dst <- objReg.name  ic#slot` (a=dst, b=objReg, c=slot). The
+# slot is allocated BEFORE the caller compiles the receiver so the alloc
+# order is outer-first. Only the ic<=255 fast path is ported; a function
+# accumulating >255 distinct IC names would need the LoadElem fallback
+# (out of the slice-5a corpus) -- bail there.
+proc emitLoadPropAtom(c: var Compiler, dst, objReg: uint8, name: string): bool =
+  let ic = allocIcSlot(c, name)
+  if ic > 255:
+    c.hadError = true
+    return false
+  emit(c, instABC(LoadProp, dst, objReg, uint8(ic)))
+  return true
+
+# Property STORE by name: `StoreProp objReg.name <- valReg  ic#slot`
+# (a=objReg, b=slot, c=valReg -- matches emit_store_prop_atom and the
+# disasm, which reads the name from ics[b] and the value reg from c).
+proc emitStorePropAtom(c: var Compiler, objReg: uint8, name: string, valReg: uint8): bool =
+  let ic = allocIcSlot(c, name)
+  if ic > 255:
+    c.hadError = true
+    return false
+  emit(c, instABC(StoreProp, objReg, uint8(ic), valReg))
+  return true
 
 # --- Lexical scope tracker (mirrors compiler.zc scope_stack) ---------
 #
@@ -635,6 +689,15 @@ proc blockNeedsEntryHole(c: Compiler, blk: AstNode, name: string): bool =
 # nested-function shape gate below calls compileFunctionValue.
 proc compileStmt(c: var Compiler, node: AstNode)
 proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Function
+# Object / array literals recurse into compileExpr (defined just below),
+# so forward-declare them here.
+proc compileExpr(c: var Compiler, node: AstNode): uint8
+proc compileObjectLiteral(c: var Compiler, node: AstNode): uint8
+proc compileArrayLiteral(c: var Compiler, node: AstNode): uint8
+# compileObjectLiteral applies NamedEvaluation to anon-function values;
+# maybeInferAnonName is defined later, so forward-declare it.
+proc maybeInferAnonName(c: var Compiler, initExpr: AstNode, valReg: uint8,
+                        targetName: string)
 
 # --- Expressions ----------------------------------------------------
 
@@ -785,11 +848,49 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     if c.nextReg <= dst: c.nextReg = dst + 1
     return dst
   of Assignment:
-    # Slice 3a: only plain `=` to a script-scope local target. Member /
-    # global / compound / destructuring assignment are later slices --
-    # refuse them so they surface as nim-missing, never a false match.
+    # Slice 3a: plain `=` to a script-scope local / global target.
+    # Slice 5a adds Member (`obj.name = rhs`) and Computed
+    # (`obj[idx] = rhs`) targets. Compound (`+=` etc.) and destructuring
+    # assignment are later slices -- refuse them.
     let target = node.target
-    if target == nil or target.kind != IdentExpr or node.assignOp != Eq:
+    if target == nil:
+      c.hadError = true
+      return 0
+    # --- Member target: `obj.name = rhs` -> StoreProp -----------------
+    if target.kind == Member and node.assignOp == Eq:
+      # Mirrors compile_assignment_to_property's IC fast path. The IC
+      # slot for `.name` is allocated FIRST (before the receiver / RHS),
+      # so on `o.x = o.y` the target `.x` takes ic#0 and the RHS's `.y`
+      # takes ic#1. StoreProp reads obj+value before writing, so the
+      # receiver may always borrow, and the RHS may borrow when the
+      # receiver read is pure. No preferred-dst hint reaches the RHS.
+      let name = c.slice(target.propStart, target.propStart + target.propLength)
+      let ic = allocIcSlot(c, name)
+      if ic > 255:
+        c.hadError = true
+        return 0
+      let savedBorrow = c.borrowLocalOk
+      let rhsPure = exprIsSimplePure(node.value)
+      let lhsPure = exprIsSimplePure(target.recv)
+      if rhsPure: c.borrowLocalOk = true
+      let objReg = compileExpr(c, target.recv)
+      if lhsPure: c.borrowLocalOk = true
+      else:       c.borrowLocalOk = savedBorrow
+      let v = compileExpr(c, node.value)
+      c.borrowLocalOk = savedBorrow
+      emit(c, instABC(StoreProp, objReg, uint8(ic), v))
+      return v
+    # --- Computed target: `obj[idx] = rhs` -> StoreElem ---------------
+    if target.kind == Computed and node.assignOp == Eq:
+      # Mirrors compile_property_target + the Eq arm: receiver, index,
+      # then RHS into fresh temps; StoreElem obj, key, val (a=obj, b=key,
+      # c=val). The assignment value is the RHS reg.
+      let objReg = compileExpr(c, target.recv)
+      let keyReg = compileExpr(c, target.index)
+      let v = compileExpr(c, node.value)
+      emit(c, instABC(StoreElem, objReg, keyReg, v))
+      return v
+    if target.kind != IdentExpr or node.assignOp != Eq:
       c.hadError = true
       return 0
     let name = c.slice(target.start, target.`end`)
@@ -852,10 +953,165 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let dst = allocReg(c)
     emit(c, instAU16(LoadConst, dst, idx))
     return dst
+  of Member:
+    # `obj.name` -> LoadProp. Mirrors compile_member's IC fast path. The
+    # IC slot is allocated BEFORE the receiver is compiled (outer-first
+    # order). LoadProp reads obj before writing dst, so the receiver may
+    # borrow; dst honors the caller's preferred-dst hint. OptionalMember
+    # (`?.`) is a later slice -- refuse it (not in this arm).
+    let name = c.slice(node.propStart, node.propStart + node.propLength)
+    let ic = allocIcSlot(c, name)
+    if ic > 255:
+      c.hadError = true
+      return 0
+    let savedPd = c.preferredDst
+    c.preferredDst = -1
+    let savedBorrow = c.borrowLocalOk
+    c.borrowLocalOk = true
+    let objReg = compileExpr(c, node.recv)
+    c.borrowLocalOk = savedBorrow
+    c.preferredDst = savedPd
+    let dst = allocDst(c)
+    emit(c, instABC(LoadProp, dst, objReg, uint8(ic)))
+    releaseReg(c, objReg)
+    if c.nextReg <= dst: c.nextReg = dst + 1
+    return dst
+  of Computed:
+    # `obj[idx]` -> LoadElem dst, objReg, idxReg. NO IC. Mirrors
+    # compile_computed: receiver then index into fresh temps, LoadElem,
+    # release both. OptionalComputed (`?.[]`) is a later slice.
+    let objReg = compileExpr(c, node.recv)
+    let idxReg = compileExpr(c, node.index)
+    let dst = allocReg(c)
+    emit(c, instABC(LoadElem, dst, objReg, idxReg))
+    releaseReg(c, idxReg)
+    releaseReg(c, objReg)
+    if c.nextReg <= dst: c.nextReg = dst + 1
+    return dst
+  of Object:
+    return compileObjectLiteral(c, node)
+  of Array:
+    return compileArrayLiteral(c, node)
   else:
     # Not yet supported.
     c.hadError = true
     return 0
+
+# --- Object & array literals (mirrors compile_object/array_literal) --
+
+proc objectPropKeyName(c: Compiler, prop: AstNode): string =
+  ## The (decoded) key string for a plain `key: value` ObjectProp. For a
+  ## quoted-string key the C strips the surrounding quotes and interns the
+  ## RAW inner bytes -- no escape decoding (compiler.zc's "Real escape
+  ## decoding is still TODO"), so `{"a\nb": 1}` keys on the 4 source bytes
+  ## a,\,n,b. For an identifier / number key it's the raw slice. Returns
+  ## "" only when the caller has already rejected the prop shape.
+  let ks = prop.keyStart
+  let kl = prop.keyLength
+  if kl == 0: return ""
+  let first = c.src[ks.int]
+  if first == '"' or first == '\'':
+    if kl < 2: return ""
+    return c.slice(ks + 1, ks + kl - 1)
+  return c.slice(ks, ks + kl)
+
+proc compileObjectLiteral(c: var Compiler, node: AstNode): uint8 =
+  ## `{ k: v, ... }` -> NewObject dst; per property LoadConst "k" into a
+  ## key reg, compile the value, InitObjData dst, keyReg, valReg. Only
+  ## plain `identifier: value` / `"string": value` / `number: value`
+  ## props are compiled; every other shape (computed keys, shorthand,
+  ## methods, get/set accessors, spread, __proto__) is DEFERRED -- bail to
+  ## hadError so the file surfaces as nim_missing, never a false byte-
+  ## match. Mirrors compile_object_literal's data-property path; the
+  ## release_reg pattern lets each prop reuse the same key/val temps.
+  let dst = allocReg(c)
+  emit(c, instA(NewObject, dst))
+  for prop in node.props:
+    if c.hadError: return dst
+    if prop == nil:
+      c.hadError = true; return dst
+    # Spread `{...x}` -> deferred.
+    if prop.kind == Spread:
+      c.hadError = true; return dst
+    if prop.kind != ObjectProp:
+      c.hadError = true; return dst
+    # Computed key `[e]: v` (keyLength==0, computedKey set) -> deferred.
+    if prop.computedKey != nil or prop.keyLength == 0:
+      c.hadError = true; return dst
+    # Method / get / set -> the value is a FunctionExpr synthesized by the
+    # parser (`k(){}`, `get k(){}`). Deferred.
+    if prop.propVal != nil and prop.propVal.kind == FunctionExpr:
+      c.hadError = true; return dst
+    # Shorthand `{a}` / shorthand-with-default `{a = e}`: the value is a
+    # bare IdentExpr (or Assignment) whose slice coincides with the key.
+    # The parser gives shorthand the same key/value slice; a default-
+    # shorthand wraps an Assignment. Both are DEFERRED. `k: v` (data)
+    # always has a distinct value slice or a non-ident/assignment value.
+    if prop.propVal != nil and prop.propVal.kind == Assignment:
+      c.hadError = true; return dst
+    if prop.propVal != nil and prop.propVal.kind == IdentExpr and
+       prop.propVal.start == prop.keyStart and
+       prop.propVal.`end` == prop.keyStart + prop.keyLength:
+      # Shorthand: value ident occupies the exact key slice.
+      c.hadError = true; return dst
+    # __proto__ colon-form proto setter -> deferred (SetProto path).
+    let keyName = objectPropKeyName(c, prop)
+    if keyName.len == 0:
+      c.hadError = true; return dst
+    let firstKeyByte = c.src[prop.keyStart.int]
+    if keyName == "__proto__" and firstKeyByte != '"' and firstKeyByte != '\'':
+      c.hadError = true; return dst
+    # Data property: LoadConst key, compile value, InitObjData.
+    c.constants.add(Constant(kind: ckString, s: keyName))
+    let keyReg = allocReg(c)
+    emit(c, instAU16(LoadConst, keyReg, uint16(c.constants.len - 1)))
+    let valReg = compileExpr(c, prop.propVal)
+    # ECMA-262 NamedEvaluation: an anonymous function on the RHS of
+    # `{ key: <init> }` is named "key". (compile_object_literal calls
+    # maybe_infer_anon_name for data props.)
+    maybeInferAnonName(c, prop.propVal, valReg, keyName)
+    emit(c, instABC(InitObjData, dst, keyReg, valReg))
+    releaseReg(c, valReg)
+    releaseReg(c, keyReg)
+  if c.nextReg <= dst: c.nextReg = dst + 1
+  return dst
+
+proc compileArrayLiteral(c: var Compiler, node: AstNode): uint8 =
+  ## `[e0, e1, ...]` -> pack elements into CONSECUTIVE registers, then
+  ## `NewArray dst, firstReg, count` (a=base(dst), b=base, c=count). The
+  ## result reuses base (the interpreter copies elements out before
+  ## writing dst). Mirrors compile_array_literal's fixed-shape path. The
+  ## empty `[]` case emits `NewArray dst, 0, 0`. Spread `[...x]`, holes
+  ## `[1,,2]`, and large (>32) literals are DEFERRED -- bail.
+  let count = node.elems.len
+  if count == 0:
+    let dst = allocReg(c)
+    emit(c, instABC(NewArray, dst, 0, 0))
+    return dst
+  # Spread / hole / large -> deferred (dynamic-build path not ported).
+  for el in node.elems:
+    if el == nil or el.kind == Spread:
+      c.hadError = true
+      return allocReg(c)
+  if count > 32:
+    c.hadError = true
+    return allocReg(c)
+  # Reserve `count` consecutive slots for the elements.
+  let base = c.nextReg
+  for _ in 0 ..< count:
+    discard allocReg(c)
+  var j = 0
+  while j < count:
+    let elemReg = compileExpr(c, node.elems[j])
+    let target = base + uint8(j)
+    if elemReg != target:
+      emit(c, instAB(Mov, target, elemReg))
+      releaseReg(c, elemReg)
+    j += 1
+  emit(c, instABC(NewArray, base, base, uint8(count)))
+  c.nextReg = base + 1
+  if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+  return base
 
 # --- Fused compare-and-branch (mirrors try_emit_cmp_branch_if_false) -
 #
@@ -1530,7 +1786,8 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
     fixedRegs: c.fixedRegs,
     paramCount: c.paramCount,
     constCount: uint32(c.constants.len),
-    icCount: 0,
+    icCount: uint32(c.ics.len),
+    ics: c.ics,
   )
   # register_count floor: at least param_count (compiler.zc clamp).
   if f.registerCount < f.paramCount: f.registerCount = f.paramCount
@@ -1630,7 +1887,8 @@ proc compileProgram*(src: string, root: AstNode): Function =
     fixedRegs: uint32(c.fixedRegs),
     paramCount: 0,
     constCount: uint32(c.constants.len),
-    icCount: 0,
+    icCount: uint32(c.ics.len),
+    ics: c.ics,
   )
   if f.registerCount == 0: f.registerCount = 1
   if f.fixedRegs > f.registerCount: f.fixedRegs = f.registerCount

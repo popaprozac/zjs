@@ -933,3 +933,133 @@ suite "slice 4a structure + capture bail":
   test "body using arguments -> compile error (arguments prologue deferred)":
     expect ValueError:
       discard disasmToString("function f() { return arguments; }")
+
+# --- Slice 5a: member/element access + object/array literals + IC ---
+
+const
+  memberGet = "\n" &
+    "=== <program>  code_len=5 regs=4 fixed=1 params=0 consts=0 ics=1 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r1   g108  ; a\n" &
+    "    2  LoadProp            r2   <- r1.b  ic#0\n" &
+    "    3  Mov                 r0   <- r2\n" &
+    "    4  Return              r0\n"
+
+  memberChain = "\n" &
+    "=== <program>  code_len=6 regs=5 fixed=1 params=0 consts=0 ics=2 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r1   g108  ; a\n" &
+    "    2  LoadProp            r2   <- r1.b  ic#1\n" &
+    "    3  LoadProp            r3   <- r2.c  ic#0\n" &
+    "    4  Mov                 r0   <- r3\n" &
+    "    5  Return              r0\n"
+
+  storePropChain = "\n" &
+    "=== <program>  code_len=7 regs=5 fixed=1 params=0 consts=0 ics=2 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r1   g108  ; o\n" &
+    "    2  LoadGlobal          r2   g108  ; o\n" &
+    "    3  LoadProp            r3   <- r2.y  ic#1\n" &
+    "    4  StoreProp           r1.x <- r3    ic#0\n" &
+    "    5  Mov                 r0   <- r3\n" &
+    "    6  Return              r0\n"
+
+  objectLit = "\n" &
+    "=== <program>  code_len=10 regs=5 fixed=1 params=0 consts=2 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  NewObject           a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadConst           r2   const#0 = \"x\"\n" &
+    "    3  LoadInt             r3   = 1\n" &
+    "    4  InitObjData         a=1   b=2   c=3   | u16=770 i16=770\n" &
+    "    5  LoadConst           r2   const#1 = \"y\"\n" &
+    "    6  LoadInt             r3   = 2\n" &
+    "    7  InitObjData         a=1   b=2   c=3   | u16=770 i16=770\n" &
+    "    8  DefineGlobal        r1   g108  ; o\n" &
+    "    9  Return              r0\n"
+
+  arrayLit = "\n" &
+    "=== <program>  code_len=10 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r4   = 1\n" &
+    "    2  Mov                 r1   <- r4\n" &
+    "    3  LoadInt             r4   = 2\n" &
+    "    4  Mov                 r2   <- r4\n" &
+    "    5  LoadInt             r4   = 3\n" &
+    "    6  Mov                 r3   <- r4\n" &
+    "    7  NewArray            a=1   b=1   c=3   | u16=769 i16=769\n" &
+    "    8  DefineGlobal        r1   g108  ; a\n" &
+    "    9  Return              r0\n"
+
+suite "slice 5a disasm byte-identity":
+  test "member get a.b":
+    check disasmToString("a.b;") == memberGet
+  test "member chain a.b.c (outer-first IC alloc: .b=ic#1 .c=ic#0)":
+    check disasmToString("a.b.c;") == memberChain
+  test "store-prop chain o.x = o.y (.x=ic#0 .y=ic#1)":
+    check disasmToString("o.x = o.y;") == storePropChain
+  test "object literal {x:1, y:2} reuses r2/r3 across props":
+    check disasmToString("var o = {x: 1, y: 2};") == objectLit
+  test "array literal [1,2,3] packs into r1/r2/r3 via r4 temp":
+    check disasmToString("var a = [1, 2, 3];") == arrayLit
+
+suite "slice 5a IC table (dedup + alloc order)":
+  test "member set a.b = c -> ics=1":
+    check "ics=1" in disasmToString("a.b = c;")
+  test "a.b.c.d -> ics=3, .b=ic#2 .c=ic#1 .d=ic#0":
+    let txt = disasmToString("a.b.c.d;")
+    check "ics=3" in txt
+    check "r1.b  ic#2" in txt
+    check "r2.c  ic#1" in txt
+    check "r3.d  ic#0" in txt
+  test "repeated name dedups to one IC slot":
+    # o.x and o.x share the same name -> a single ic slot (ics=1).
+    check "ics=1" in disasmToString("o.x; o.x;")
+  test "element access has NO IC (LoadElem)":
+    let txt = disasmToString("a[i];")
+    check "ics=0" in txt
+    check "LoadElem" in txt
+  test "element set has NO IC (StoreElem)":
+    let txt = disasmToString("a[i] = b;")
+    check "ics=0" in txt
+    check "StoreElem" in txt
+
+suite "slice 5a literal edges (handled)":
+  test "empty object {} -> NewObject only":
+    let txt = disasmToString("var o = {};")
+    check "NewObject" in txt
+    check "InitObjData" notin txt
+  test "empty array [] -> NewArray dst,0,0":
+    check "NewArray            a=1   b=0   c=0" in disasmToString("var a = [];")
+  test "number key {1:2} keys on \"1\"":
+    check "const#0 = \"1\"" in disasmToString("var o = {1: 2};")
+  test "string key {\"k\":2} strips quotes":
+    check "const#0 = \"k\"" in disasmToString("var o = {\"k\": 2};")
+
+suite "slice 5a deferred forms bail (nim_missing, not text_diff)":
+  test "computed key {[e]:1} -> compile error":
+    expect ValueError:
+      discard disasmToString("var o = {[e]: 1};")
+  test "shorthand {a} -> compile error":
+    expect ValueError:
+      discard disasmToString("var o = {a};")
+  test "method {m(){}} -> compile error":
+    expect ValueError:
+      discard disasmToString("var o = {m(){}};")
+  test "getter {get x(){}} -> compile error":
+    expect ValueError:
+      discard disasmToString("var o = {get x(){return 1}};")
+  test "setter {set x(v){}} -> compile error":
+    expect ValueError:
+      discard disasmToString("var o = {set x(v){}};")
+  test "object spread {...x} -> compile error":
+    expect ValueError:
+      discard disasmToString("var o = {...x};")
+  test "__proto__ colon setter -> compile error":
+    expect ValueError:
+      discard disasmToString("var o = {__proto__: p};")
+  test "array spread [...x] -> compile error":
+    expect ValueError:
+      discard disasmToString("var a = [...x];")
+  test "array hole [1,,2] -> compile error":
+    expect ValueError:
+      discard disasmToString("var a = [1,,2];")

@@ -129,6 +129,18 @@ proc disasmFunction(buf: var string, f: Function, label: string) =
         " recv=r" & $(uint(inst.b) + 1) & " argc=" & $inst.c)
     of TailInvoke, TailMethodInvoke:
       buf.add("base=r" & $inst.b & " argc=" & $inst.c)
+    of LoadProp:
+      # `r%-3u <- r%u.%s  ic#%u` -- a=dst, b=objReg, name from ics[c],
+      # c=ic slot.
+      let pn = if int(inst.c) < f.ics.len: f.ics[int(inst.c)] else: "?"
+      buf.add("r" & padRight($inst.a, 3) & " <- r" & $inst.b & "." & pn &
+        "  ic#" & $inst.c)
+    of StoreProp:
+      # `r%u.%s <- r%-3u  ic#%u` -- a=objReg, name from ics[b], value reg
+      # is c, ic slot is b.
+      let sn = if int(inst.b) < f.ics.len: f.ics[int(inst.b)] else: "?"
+      buf.add("r" & $inst.a & "." & sn & " <- r" & padRight($inst.c, 3) &
+        "  ic#" & $inst.b)
     of Mov:
       buf.add("r" & padRight($inst.a, 3) & " <- r" & $inst.b)
     of AddImm, SubImm, CmpLtImm, CmpLeImm, CmpGtImm, CmpGeImm:

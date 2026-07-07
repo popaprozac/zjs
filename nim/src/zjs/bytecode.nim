@@ -237,6 +237,11 @@ type
     ## Names for the global slots this function references, so disasm can
     ## print `; <name>` for the global ops. Keyed by slot number.
     globalNames*: seq[GlobalName]
+    ## Inline-cache name table (mirrors `Function.ics` in bytecode.zc).
+    ## Index = IC slot; value = the property NAME the slot caches. LoadProp
+    ## reads `ics[c]`, StoreProp reads `ics[b]` (see nim_disasm). Built by
+    ## the compiler's allocIcSlot; icCount == ics.len.
+    ics*: seq[string]
 
 # --- Operand encode / decode ----------------------------------------
 
