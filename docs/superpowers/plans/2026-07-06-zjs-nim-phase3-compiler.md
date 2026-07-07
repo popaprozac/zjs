@@ -135,8 +135,29 @@ table + `compileProgram` handling ExpressionStmt / VarDecl(var) / literals / Ide
 ## Later slices (sketch — detail per-slice at start, like Phase 2)
 2. **Expressions** — LoadConst (number/string const pool), Add & the arithmetic subset,
    AddImm/SubImm fusion, unary Neg/Not, comparisons, the temp watermark discipline.
-3. **Statements** — let/const (lexical → registers in script scope), blocks, if (Jmp/JmpIf*),
-   while/for (+ loop rotation / bottom-test — see `project_loop_rotation`), the fused branches.
+3. **Statements — SPLIT into 3a/3b/3c (recon 2026-07-06):**
+   - **3a — the REAL register discipline + lexical locals + blocks (FOUNDATION).** Port
+     `alloc_dst` (uses `preferred_dst` assignment-hint, else `alloc_reg`), `release_reg` (frees
+     only the top temp, never a local: `r+1==next_reg && r>=fixed_regs`), `reset_temps`, and
+     `borrow_local_ok`/`expr_is_simple_pure` (Mov-elision: reading a local returns its reg
+     directly when the surrounding expr is pure, else `Mov dst, localReg`). `let`/`const` at
+     script scope (`is_script`): a **lexical pre-allocation pass** gives each lexical binding a
+     low FIXED reg in declaration order (`x`→r0), and the completion slot is allocated AFTER
+     the locals (`{let x=1;}` → x=r0, completion=r1, `fixed=2`; `let x=1,y=2;`→`fixed=3`;
+     nested-block locals accumulate distinct fixed slots). Assignment to a local writes
+     `preferred_dst` = the local's reg so the RHS compiles directly into it. NO control flow.
+     Targets: `{let x=1;}`, `let x=1; x;`, `let x=1,y=2;`, `{let a=1;{let b=2;}}`, `const k=5;k+1;`,
+     `let x=1; x=2;`. This slice must NOT regress slices 1-2 (the model reduces to fresh-alloc
+     when no locals/hints — verified equivalent at top level).
+   - **3b — if/else.** Note the DOUBLE `LoadUndefined` (program r0 init + the if-statement
+     completion pre-init), single-slot `JmpIfFalse a=src bc=off` (target=i+1+off), forward-jump
+     patching (emit placeholder offset 0, remember index, patch when target known), `else`→`Jmp`.
+   - **3c — loops + rotation + fused branches.** while/do/for with LOOP ROTATION (test-at-bottom:
+     `Jmp` to the test, body+update, fused compare-and-branch back — see `project_loop_rotation`).
+     The FUSED 2-slot compare-and-branch (`JmpIfLt/Le/Gt/Ge`, `JmpIfNot*`, `*Imm` variants):
+     operands in slot J, i16 offset in the J+1 CARRIER, branch base J+2; disasm prints ONE line
+     `r%-3u r%-3u -> <target>  [carrier@J+1]` and skips J+1. `emit_cmp_branch_back*` / the
+     `is_fused_branch_op` carrier logic in compiler.zc (~1064-1470).
 4. **Functions + closures** — `compile_function`, params→fixed regs, locals, `MakeClosure`,
    nested Function in the const pool + disasm recursion, `Return`, `this_reg`.
 5. **Calls / members / literals** — Invoke/MethodInvoke/InvokeGlobal (+ carriers), LoadProp/
