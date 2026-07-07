@@ -185,6 +185,12 @@ type
     of LabeledStmt:
       labelStart*, labelLen*: uint32
       labeled*: AstNode
+    of BreakStmt, ContinueStmt:
+      ## Optional target label slice (mirrors src/ast.zc BreakStmt/ContinueStmt
+      ## `name_start`/`name_length`; 0/0 = unlabeled). NOT dumped by the AST
+      ## printer — Zen-c's dumper renders these as bare leaf node-kind names,
+      ## so the label is stored for the compiler but never printed (slice 6c).
+      breakLabelStart*, breakLabelLen*: uint32
     of ForInStmt, ForOfStmt:
       forBinding*, forIterable*, forInOfBody*: AstNode
     of SwitchStmt:
@@ -480,6 +486,13 @@ proc newThrow*(s, e: uint32, throwArg: AstNode): AstNode =
 proc newLabeled*(s, e, labelStart, labelLen: uint32, labeled: AstNode): AstNode =
   ## Construct a LabeledStmt node; labelStart/labelLen are the label identifier slice.
   AstNode(kind: LabeledStmt, start: s, `end`: e, labelStart: labelStart, labelLen: labelLen, labeled: labeled)
+
+proc newBreakContinue*(kind: NodeKind, s, e, labelStart, labelLen: uint32): AstNode =
+  ## kind ∈ {BreakStmt, ContinueStmt}. labelStart/labelLen = target label slice
+  ## (0/0 = unlabeled). Mirrors src/parser.zc parse_break / parse_continue.
+  {.cast(uncheckedAssign).}:
+    result = AstNode(kind: kind, start: s, `end`: e,
+                     breakLabelStart: labelStart, breakLabelLen: labelLen)
 
 proc newForInOf*(kind: NodeKind, s, e: uint32, binding, iterable, body: AstNode): AstNode =
   ## kind ∈ {ForInStmt, ForOfStmt}

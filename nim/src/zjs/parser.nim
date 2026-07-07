@@ -48,6 +48,18 @@ proc advance(p: var Parser): Token {.inline.} =
 proc check(p: Parser, k: TokenKind): bool {.inline.} =
   p.toks[p.pos].kind == k
 
+proc hasNewlineBetween(p: Parser, a, b: uint32): bool {.inline.} =
+  ## True iff the source range [a, b) contains a line terminator (CR/LF).
+  ## Mirrors src/parser.zc has_newline_between — used for the same-line
+  ## restriction on `break <label>` / `continue <label>` (no ASI newline
+  ## before the label).
+  var i = a
+  while i < b:
+    let c = p.source[i.int]
+    if c == '\n' or c == '\r': return true
+    inc i
+  false
+
 proc expect(p: var Parser, k: TokenKind): bool {.inline.} =
   ## Advance if the current token matches k; return true. Otherwise set
   ## hadError, leave pos unchanged, and return false.
@@ -1664,10 +1676,22 @@ proc parseThrow(p: var Parser): AstNode =
 proc parseBreakContinue(p: var Parser, kind: NodeKind): AstNode =
   let kw = p.advance()
   var endPos = kw.start + kw.length
-  if p.peek().kind == Identifier:            # optional label target (discarded — dump omits it)
-    let lbl = p.advance(); endPos = lbl.start + lbl.length
+  var labelStart = 0'u32
+  var labelLen = 0'u32
+  # Optional label identifier immediately after `break` / `continue`, on the
+  # SAME line (no ASI newline before the label). Mirrors src/parser.zc
+  # parse_break / parse_continue. The label is stored on the node but NOT
+  # dumped by the AST printer (Zen-c renders these as bare leaf node names).
+  if p.peek().kind == Identifier:
+    let next = p.peek()
+    let kwEnd = kw.start + kw.length
+    if not p.hasNewlineBetween(kwEnd, next.start):
+      let lbl = p.advance()
+      labelStart = lbl.start
+      labelLen = lbl.length
+      endPos = lbl.start + lbl.length
   if p.peek().kind == Semicolon: discard p.advance()
-  newLeaf(kind, kw.start, endPos)
+  newBreakContinue(kind, kw.start, endPos, labelStart, labelLen)
 
 proc parseSwitch(p: var Parser): AstNode =
   let kw = p.advance()                 # 'switch'

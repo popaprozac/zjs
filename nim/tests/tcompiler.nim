@@ -2013,3 +2013,83 @@ suite "slice 6b: deferred shapes -> compile error (bail)":
     expect ValueError:
       discard disasmToString(
         "var p; try { a; } catch(e) { p = function(){ return e; }; }")
+
+# --- Slice 6c: labeled statements + labeled break / continue --------
+
+const
+  labeledForBreak = "\n" &
+    "=== <program>  code_len=5 regs=2 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Jmp                 -> 4\n" &
+    "    3  Jmp                 -> 2\n" &
+    "    4  Return              r0\n"
+
+  labeledBlockBreak = "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r1   g108  ; a\n" &
+    "    2  Mov                 r0   <- r1\n" &
+    "    3  Jmp                 -> 4\n" &
+    "    4  Return              r0\n"
+
+  nestedContinueOuter = "\n" &
+    "=== <program>  code_len=7 regs=2 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  Jmp                 -> 5\n" &
+    "    4  Jmp                 -> 3\n" &
+    "    5  Jmp                 -> 2\n" &
+    "    6  Return              r0\n"
+
+  labeledMixedBreakContinue = "\n" &
+    "=== <program>  code_len=8 regs=2 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  Jmp                 -> 7\n" &
+    "    4  Jmp                 -> 5\n" &
+    "    5  Jmp                 -> 3\n" &
+    "    6  Jmp                 -> 2\n" &
+    "    7  Return              r0\n"
+
+suite "slice 6c: labeled statements byte-identity":
+  test "labeled for + labeled break -> Jmp to loop end":
+    check disasmToString("outer: for(;;){ break outer; }") == labeledForBreak
+  test "labeled block + break -> Jmp to block end":
+    check disasmToString("L: { a; break L; }") == labeledBlockBreak
+  test "nested loops: continue OUTER label targets outer continue":
+    check disasmToString("x: for(;;){ for(;;){ continue x; } }") == nestedContinueOuter
+  test "mixed break-outer + continue-inner across two labeled loops":
+    check disasmToString("m: for(;;){ n: for(;;){ break m; continue n; } }") ==
+      labeledMixedBreakContinue
+
+suite "slice 6c: labeled structural invariants":
+  test "break OUTER from an inner loop jumps to the outer loop's end":
+    # outer for-body wraps an inner for; `break outer` must land on the
+    # outer loop's break site (its end), not the inner's.
+    let txt = disasmToString("outer: for(;;){ for(;;){ break outer; } }")
+    check "Return              r0" in txt
+    # Two nested empty for(;;) => three LoadUndefined + a break Jmp.
+    check "    0  LoadUndefined" in txt
+  test "unlabeled break inside a labeled loop stays innermost":
+    # `a: for(;;){ break; }` — the unlabeled break targets the (only) loop.
+    let txt = disasmToString("a: for(;;){ break; }")
+    check txt == labeledForBreak.replace("outer", "a")  # identical shape
+  test "labeled block with only break -> single forward Jmp to end":
+    let txt = disasmToString("x: { break x; }")
+    check "Jmp" in txt
+    check "Return" in txt
+  test "labeled continue L1 in a for(;;) targets the loop back-edge":
+    let txt = disasmToString("L1: for(;;){ continue L1; }")
+    # for(;;) continue -> update step (none) -> back Jmp to loop top (r0=2).
+    check "Jmp                 -> 2" in txt
+  test "labeled while break: `loop: while(a){ if(b) break loop; c; }`":
+    let txt = disasmToString("loop: while(a){ if(b) break loop; c; }")
+    check "Return" in txt
+    check "LoadGlobal          r1   g108  ; a" in txt
+  test "bare labeled expression statement `a: b;` compiles like `b;`":
+    let a = disasmToString("a: b;")
+    let b = disasmToString("b;")
+    check a == b   # a label on a plain expr statement adds no bytecode

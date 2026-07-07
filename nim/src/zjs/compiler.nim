@@ -92,6 +92,14 @@ type
     ## (index >= this) via emitUnwindRegions — LeaveTry for catch regions,
     ## BAIL for finally regions. Snapshotted in loopPush (slice 6b).
     regionDepthAtEntry*: int
+    ## Slice 6c: the label attached to this frame by a preceding
+    ## LabeledStmt (0/0 = unlabeled). loopPush picks it up from the
+    ## compiler's pendingLabel and clears pending. A `break <label>` /
+    ## `continue <label>` resolves to the frame whose (labelStart,
+    ## labelLen) source-slice equals the target. Mirrors compiler.zc
+    ## LoopFrame.label_start / label_length (339-340).
+    labelStart*: uint32
+    labelLen*:   uint32
 
   Compiler* = object
     src*: string                 ## source text (for identifier slices)
@@ -197,6 +205,12 @@ type
     ## loop. Slice 3c ports the unlabeled-loop subset (labeled break /
     ## continue, switch frames, and try-region unwinding are later).
     loopStack*: seq[LoopFrame]
+    # --- Pending label for the NEXT loop frame (compiler.zc 207-208) ----
+    ## Set by a LabeledStmt whose body is a loop, BEFORE compiling that
+    ## body; the loop's loopPush picks it up into the frame and clears it.
+    ## 0/0 = no pending label. Slice 6c.
+    pendingLabelStart*: uint32
+    pendingLabelLen*:   uint32
     # --- Unwind-region stack for try/catch/finally (compiler.zc #402b) --
     ## Innermost-LAST record of every protected region open at the current
     ## compile point. `regionCount` is the logical top (may be transiently
@@ -311,7 +325,29 @@ proc loopPush(c: var Compiler) =
     breakPatches: @[], continuePatches: @[],
     isIter: true,          # real iteration loop; switch frames flip to false
     regionDepthAtEntry: c.regionCount,   # #402b: unwind regions opened inside
+    # Slice 6c: pick up a pending label from a preceding LabeledStmt, then
+    # clear it so the next loop in the same scope starts unlabeled
+    # (compiler.zc loop_push 524-529).
+    labelStart: c.pendingLabelStart,
+    labelLen:   c.pendingLabelLen,
   ))
+  c.pendingLabelStart = 0
+  c.pendingLabelLen = 0
+
+proc findLabeledLoop(c: Compiler, nameStart, nameLen: uint32): int =
+  ## Walk the loop stack top-down for a frame whose label source-slice
+  ## equals the target label. Returns the frame index, or -1. Mirrors
+  ## compiler.zc find_labeled_loop (573-587).
+  if c.loopStack.len == 0 or nameLen == 0: return -1
+  let target = c.src[nameStart.int ..< (nameStart + nameLen).int]
+  var i = c.loopStack.len - 1
+  while i >= 0:
+    let fr = c.loopStack[i]
+    if fr.labelLen == nameLen and nameLen > 0:
+      if c.src[fr.labelStart.int ..< (fr.labelStart + fr.labelLen).int] == target:
+        return i
+    dec i
+  -1
 
 proc loopPop(c: var Compiler) =
   if c.loopStack.len > 0:
@@ -328,14 +364,6 @@ proc loopSetContinue(c: var Compiler, target: uint32) =
   c.loopStack[top].haveContinue = true
   for jmpIdx in c.loopStack[top].continuePatches:
     patchJump(c, jmpIdx)
-
-proc loopAddBreak(c: var Compiler, jmpIdx: int) =
-  if c.loopStack.len == 0: return
-  c.loopStack[c.loopStack.len - 1].breakPatches.add(jmpIdx)
-
-proc loopAddContinuePatch(c: var Compiler, jmpIdx: int) =
-  if c.loopStack.len == 0: return
-  c.loopStack[c.loopStack.len - 1].continuePatches.add(jmpIdx)
 
 # --- Unwind-region stack (compiler.zc region_push / region_pop / ...) --
 #
@@ -769,6 +797,12 @@ proc collectLocals(c: var Compiler, node: AstNode) =
     collectLocals(c, node.whileBody)
   of DoWhileStmt:
     collectLocals(c, node.doBody)
+  of LabeledStmt:
+    # Descend into the labeled body so a `let`/`const` inside a labeled
+    # block (`L: { let x; }`) gets its register pre-allocated in the same
+    # walk order the compile pass uses. Mirrors compiler.zc collect_locals'
+    # generic `node.left` descent for LabeledStmt (7060). Slice 6c.
+    collectLocals(c, node.labeled)
   of ForStmt:
     # The for-statement owns a fresh scope so its init `let`/`const`
     # (and any let/const in the body) don't leak past the loop. Enter it
@@ -2810,31 +2844,46 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       patchJump(c, bp)
     loopPop(c)
   of BreakStmt:
-    # Unlabeled break to the innermost loop. Labeled break is out of
-    # scope (the parser discards labels) -> falls here as an unlabeled
-    # break, which is the correct target for the slice-3c corpus. A
-    # `break` with no enclosing loop is a SyntaxError -> hadError.
+    # `break` (unlabeled) targets the innermost frame; `break <label>`
+    # resolves to the matching labeled frame (loop OR labeled-block). A
+    # `break` with no enclosing loop/label frame is a SyntaxError ->
+    # hadError. Mirrors compiler.zc BreakStmt (8180-8196).
     if c.loopStack.len == 0:
       c.hadError = true; return
-    # #402b: unwind every region opened INSIDE this loop before jumping —
-    # LeaveTry per catch region; a crossed finally region BAILs (its
-    # inline-finally-body path is not ported this slice). The innermost
-    # loop is the target (labeled break is out of corpus).
-    emitUnwindRegions(c, c.loopStack[c.loopStack.len - 1].regionDepthAtEntry)
+    var frameIdx = c.loopStack.len - 1
+    if node.breakLabelLen > 0:
+      frameIdx = findLabeledLoop(c, node.breakLabelStart, node.breakLabelLen)
+      if frameIdx < 0:
+        c.hadError = true; return
+    # #402b: unwind every region opened INSIDE the target frame before
+    # jumping — LeaveTry per catch region; a crossed finally region BAILs
+    # (its inline-finally-body path is not ported this slice).
+    emitUnwindRegions(c, c.loopStack[frameIdx].regionDepthAtEntry)
     if c.hadError: return
     let jmpIdx = emit(c, instI16(Jmp, 0))
-    loopAddBreak(c, jmpIdx)
+    c.loopStack[frameIdx].breakPatches.add(jmpIdx)
   of ContinueStmt:
     if c.loopStack.len == 0:
       c.hadError = true; return
-    # Unlabeled continue targets the innermost ITERATION loop; walk past
-    # switch frames (which push only to receive breaks). Mirrors
-    # compiler.zc's is_iter walk (#261).
-    var top = c.loopStack.len - 1
-    while top >= 0 and not c.loopStack[top].isIter:
-      dec top
-    if top < 0:
-      c.hadError = true; return
+    var top: int
+    if node.breakLabelLen > 0:
+      # `continue <label>` targets the matching labeled LOOP frame
+      # (find_labeled_loop; a labeled block frame that isn't a loop has
+      # no continue target — the loop-set-continue path below still runs
+      # against whatever frame matched, mirroring compiler.zc which
+      # searches the same label stack).
+      top = findLabeledLoop(c, node.breakLabelStart, node.breakLabelLen)
+      if top < 0:
+        c.hadError = true; return
+    else:
+      # Unlabeled continue targets the innermost ITERATION loop; walk past
+      # switch frames (which push only to receive breaks). Mirrors
+      # compiler.zc's is_iter walk (#261).
+      top = c.loopStack.len - 1
+      while top >= 0 and not c.loopStack[top].isIter:
+        dec top
+      if top < 0:
+        c.hadError = true; return
     # #402b: unwind regions opened inside the target loop (LeaveTry per
     # catch region; finally region BAILs). Uses the TARGET frame's entry
     # depth so a continue past a switch frame still unwinds correctly.
@@ -2848,6 +2897,39 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       # loopSetContinue time. Record it on the TARGET iteration frame.
       let jmpIdx = emit(c, instI16(Jmp, 0))
       c.loopStack[top].continuePatches.add(jmpIdx)
+  of LabeledStmt:
+    # `label: <stmt>`. Mirrors compiler.zc LabeledStmt (8231-8274).
+    let inner = node.labeled
+    let ik = if inner != nil: inner.kind else: EmptyStmt
+    let isLoopTarget =
+      ik in {WhileStmt, DoWhileStmt, ForStmt, ForInStmt, ForOfStmt}
+    if isLoopTarget:
+      # Stash the label so the loop's loopPush() picks it up into its
+      # frame; then a `break/continue <label>` inside resolves to it.
+      c.pendingLabelStart = node.labelStart
+      c.pendingLabelLen = node.labelLen
+      compileStmt(c, inner)
+      c.pendingLabelStart = 0
+      c.pendingLabelLen = 0
+    else:
+      # Labeled non-loop (block, if, try, plain statement). Push a
+      # synthetic loop frame carrying the label so a `break <label>` inside
+      # the body patches out to the position immediately after the inner
+      # statement. NOTE: isIter is left at loopPush's default `true`,
+      # matching compiler.zc (8255-8258 sets ONLY the label) — a stray
+      # unlabeled `continue` would target it with nowhere to land, but
+      # `continue` against a labeled non-loop is a SyntaxError not yet
+      # enforced. Byte-for-byte fidelity requires the same default.
+      loopPush(c)
+      let frameIdx = c.loopStack.len - 1
+      c.loopStack[frameIdx].labelStart = node.labelStart
+      c.loopStack[frameIdx].labelLen = node.labelLen
+      # loopPush already cleared pending; nothing inherits this label.
+      compileStmt(c, inner)
+      # Patch every break that targeted this frame to here (after the body).
+      for bp in c.loopStack[frameIdx].breakPatches:
+        patchJump(c, bp)
+      loopPop(c)
   of FunctionDecl:
     # A function declaration. Compile the body into a fresh Function,
     # append it to the const pool, LoadConst it, then wrap in
