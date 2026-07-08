@@ -127,6 +127,15 @@ type
     of Assignment:
       assignOp*: TokenKind
       target*, value*: AstNode
+      ## True ONLY for the parser-synthesized instance-field initializer
+      ## `this.#x = init` injected into a class constructor body. Mirrors
+      ## compiler.zc's `target.num == 1.0` marker: a private field-init
+      ## assignment CREATES the mangled own property, so the PrivateSet
+      ## presence check (PrivateCheck) must NOT run at that site (the brand
+      ## isn't installed until construction finishes). A real private write
+      ## (`this.#x = v` in a method) leaves this false → PrivateCheck emits.
+      ## Non-private field inits also set it; harmless (no private path). (7d)
+      assignIsFieldInit*: bool
     of Paren:
       inner*: AstNode
     of VarDecl:

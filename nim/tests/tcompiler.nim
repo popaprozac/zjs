@@ -3138,15 +3138,15 @@ suite "slice 7c: accessors / computed keys / string-number-named / static fields
       "    1  Return              r0\n"
 
 suite "slice 7c: deferred class shapes bail (nim_missing, not text_diff)":
-  test "private field #x -> compile error":
+  # NOTE (slice 7d): private FIELDS / METHODS / ACCESSORS NO LONGER bail —
+  # they now compile byte-identically (see the "slice 7d private members"
+  # suite). Only STATIC private members + static blocks remain deferred.
+  test "static private field static #x -> compile error":
     expect ValueError:
-      discard disasmToString("class C { #x = 1; }")
-  test "private method #m -> compile error":
+      discard disasmToString("class C { static #x = 1; }")
+  test "static private method static #m -> compile error":
     expect ValueError:
-      discard disasmToString("class C { #m(){} }")
-  test "private getter get #x -> compile error":
-    expect ValueError:
-      discard disasmToString("class C { get #x(){return 1;} }")
+      discard disasmToString("class C { static #m(){} }")
   test "static block -> compile error":
     expect ValueError:
       discard disasmToString("class C { static { x = 1; } }")
@@ -3336,3 +3336,251 @@ suite "slice 7e: deferred forms bail (nim_missing, not text_diff)":
   test "for await -> compile error":
     expect ValueError:
       discard disasmToString("async function f(){ for await (const x of a) {} }")
+
+suite "slice 7d: private members byte-identity":
+  test "private field #x = 1":
+    let exp0 =
+      "\n" &
+      "=== <program>  code_len=5 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r2\n" &
+      "    4  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_x <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n"
+    check disasmToString("class C { #x = 1; }") == exp0
+  test "private read this.#x in method":
+    let exp1 =
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_x <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=3 regs=3 fixed=1 params=0 consts=1 ics=1 ===\n" &
+      "    0  PrivateCheck        a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadProp            r1   <- r0.__zjs_priv_25_x  ic#0\n" &
+      "    2  Return              r1\n"
+    check disasmToString("class C { #x = 1; getX(){ return this.#x; } }") == exp1
+  test "private method #m + this.#m() call":
+    let exp2 =
+      "\n" &
+      "=== <program>  code_len=9 regs=6 fixed=2 params=0 consts=3 ics=3 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadConst           r4   const#2 = <function>\n" &
+      "    6  DefineMethod        a=3   b=2   c=4   | u16=1026 i16=1026\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#2  code_len=5 regs=4 fixed=1 params=0 consts=1 ics=1 ===\n" &
+      "    0  Mov                 r2   <- r0\n" &
+      "    1  PrivateCheck        a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  LoadProp            r1   <- r2.__zjs_priv_25_m  ic#0\n" &
+      "    3  TailMethodInvoke    base=r1 argc=0\n" &
+      "    4  Return              r1\n"
+    check disasmToString("class C { #m(){} call(){ return this.#m(); } }") == exp2
+  test "private write this.#x = v in method":
+    let exp3 =
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_x <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=4 regs=4 fixed=2 params=1 consts=1 ics=1 ===\n" &
+      "    0  PrivateCheck        a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  StoreProp           r1.__zjs_priv_25_x <- r0    ic#0\n" &
+      "    2  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r2\n"
+    check disasmToString("class C { #x = 1; set(v){ this.#x = v; } }") == exp3
+  test "brand check #x in obj":
+    let exp4 =
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_x <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=3 regs=4 fixed=1 params=1 consts=1 ics=0 ===\n" &
+      "    0  LoadConst           r1   const#0 = \"__zjs_priv_25_x\"\n" &
+      "    1  In                  a=2   b=1   c=0   | u16=1 i16=1\n" &
+      "    2  Return              r2\n"
+    check disasmToString("class C { #x; has(o){ return #x in o; } }") == exp4
+  test "private getter get #x + read":
+    let exp5 =
+      "\n" &
+      "=== <program>  code_len=10 regs=7 fixed=2 params=0 consts=4 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  LoadConst           r5   const#2 = \"__zjs_priv_25_x\"\n" &
+      "    5  DefineMethodGetter  a=3   b=5   c=4   | u16=1029 i16=1029\n" &
+      "    6  LoadConst           r4   const#3 = <function>\n" &
+      "    7  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    8  Mov                 r0   <- r2\n" &
+      "    9  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadInt             r0   = 1\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#3  code_len=3 regs=3 fixed=1 params=0 consts=1 ics=1 ===\n" &
+      "    0  PrivateCheck        a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadProp            r1   <- r0.__zjs_priv_25_x  ic#0\n" &
+      "    2  Return              r1\n"
+    check disasmToString("class C { get #x(){ return 1; } read(){ return this.#x; } }") == exp5
+  test "two private fields + sum":
+    let exp6 =
+      "\n" &
+      "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=6 regs=3 fixed=1 params=0 consts=0 ics=2 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_x <- r1    ic#0\n" &
+      "    2  LoadInt             r1   = 2\n" &
+      "    3  StoreProp           r0.__zjs_priv_25_y <- r1    ic#1\n" &
+      "    4  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=6 regs=5 fixed=1 params=0 consts=2 ics=2 ===\n" &
+      "    0  PrivateCheck        a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadProp            r1   <- r0.__zjs_priv_25_x  ic#0\n" &
+      "    2  PrivateCheck        a=0   b=1   c=0   | u16=1 i16=1\n" &
+      "    3  LoadProp            r2   <- r0.__zjs_priv_25_y  ic#1\n" &
+      "    4  Add                 a=3   b=1   c=2   | u16=513 i16=513\n" &
+      "    5  Return              r3\n"
+    check disasmToString("class C { #x = 1; #y = 2; sum(){ return this.#x + this.#y; } }") == exp6
+  test "private read + write in separate methods":
+    let exp7 =
+      "\n" &
+      "=== <program>  code_len=9 regs=6 fixed=2 params=0 consts=3 ics=3 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadConst           r4   const#2 = <function>\n" &
+      "    6  DefineMethod        a=3   b=2   c=4   | u16=1026 i16=1026\n" &
+      "    7  Mov                 r0   <- r2\n" &
+      "    8  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_x <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=3 regs=3 fixed=1 params=0 consts=1 ics=1 ===\n" &
+      "    0  PrivateCheck        a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadProp            r1   <- r0.__zjs_priv_25_x  ic#0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#2  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadInt             r1   = 5\n" &
+      "    1  PrivateCheck        a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  StoreProp           r0.__zjs_priv_25_x <- r1    ic#0\n" &
+      "    3  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    4  Return              r1\n"
+    check disasmToString("class C { #x = 1; m(){ return this.#x; } n(){ this.#x = 5; } }") == exp7
+  test "two sibling classes -> ids 25 26":
+    let exp8 =
+      "\n" &
+      "=== <program>  code_len=8 regs=6 fixed=3 params=0 consts=2 ics=1 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r3   const#0 = <function>\n" &
+      "    2  LoadProp            r4   <- r3.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r3\n" &
+      "    4  LoadConst           r3   const#1 = <function>\n" &
+      "    5  LoadProp            r4   <- r3.prototype  ic#0\n" &
+      "    6  Mov                 r1   <- r3\n" &
+      "    7  Return              r2\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_a <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  StoreProp           r0.__zjs_priv_26_b <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n"
+    check disasmToString("class A { #a; } class B { #b; }") == exp8
+  test "single private field Outer":
+    let exp9 =
+      "\n" &
+      "=== <program>  code_len=5 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  Mov                 r0   <- r2\n" &
+      "    4  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=4 regs=3 fixed=1 params=0 consts=0 ics=1 class-ctor ===\n" &
+      "    0  LoadInt             r1   = 1\n" &
+      "    1  StoreProp           r0.__zjs_priv_25_o <- r1    ic#0\n" &
+      "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r1\n"
+    check disasmToString("class Outer { #o = 1; }") == exp9

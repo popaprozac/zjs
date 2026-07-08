@@ -2096,7 +2096,12 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
             target = newMember(Member, m.start, m.`end`, m.fieldNameStart, m.fieldNameLen, thisE)
           let initVal = if m.fieldInit != nil: m.fieldInit
                         else: newLeaf(UndefinedExpr, m.start, m.start)
-          inits.add(newAssignment(m.start, initVal.`end`, Eq, target, initVal))
+          # Mark as a synthesized field-init (compiler.zc's `target.num == 1.0`):
+          # a private field-init CREATES the mangled own prop, so the compiler
+          # must NOT emit a PrivateCheck at this StoreProp. (7d)
+          let fieldAssign = newAssignment(m.start, initVal.`end`, Eq, target, initVal)
+          fieldAssign.assignIsFieldInit = true
+          inits.add(fieldAssign)
       ctor.methodBody.stmtList = inits & ctor.methodBody.stmtList
   return members
 

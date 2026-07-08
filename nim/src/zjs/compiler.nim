@@ -22,7 +22,31 @@ const
   ## land (base becomes a computed count, one place). See the Phase 3 plan.
   USER_GLOBAL_BASE* = 108'u32
 
+  ## Per-class id base (slice 7d). The oracle assigns each user class a
+  ## monotonically increasing id from a `ctx.class_id_counter` that is
+  ## PRE-incremented at every `compile_class_value`: the first user class
+  ## gets 25, the second 26, and so on. That base (24 before the first
+  ## pre-increment) is runtime-coupled exactly like USER_GLOBAL_BASE=108 —
+  ## it reflects how many internal classes the Zen-c runtime constructs
+  ## before user code compiles. Nim has none yet, so we stub the base. The
+  ## id is baked into every private-name mangle (`__zjs_priv_<id>_x`) and
+  ## brand (`__zjs_brand_<id>`), so it must match the oracle's assignment
+  ## ORDER (verify `class A{#a} class B{#b}` → 25/26, nested inner > outer).
+  USER_CLASS_ID_BASE* = 25'u32
+
 type
+  ClassScope* = object
+    ## One entry on the enclosing-class stack (mirrors compiler.zc's
+    ## cls_stack_ids / cls_stack_names / cls_stack_kinds at a given depth).
+    ## `id` is the class's assigned id; `names`/`kinds` are the parallel
+    ## private-bound-name registry the resolver walks. Kind bits mirror the
+    ## Zen-c encoding: 1=field, 2=method, 4=getter, 8=setter (a get+set pair
+    ## is 4|8=12). Only the field kind (1) changes the PrivateCheck target
+    ## (the mangled field atom vs the class brand). (Slice 7d.)
+    id*:    uint32
+    names*: seq[string]     ## bare private names (leading `#` stripped)
+    kinds*: seq[uint8]
+
   GlobalTable* = ref object
     ## The program-wide global-name interning namespace. ONE table is
     ## shared by the top-level program compiler AND every nested-function
@@ -33,6 +57,13 @@ type
     ## disasm slot numbers would diverge from the oracle.
     names*: seq[string]
     slots*: seq[uint32]
+    ## Program-wide per-class id counter (slice 7d). Lives here — on the
+    ## SHARED ref table — because the oracle's counter is `ctx.class_id_counter`,
+    ## a single monotonic sequence spanning every class the whole compile
+    ## encounters (sibling classes, nested classes inside method bodies).
+    ## Pre-incremented at each compileClassValue; first class → 25. Seeded to
+    ## USER_CLASS_ID_BASE-1 = 24 in compileProgram. (Mirrors compiler.zc 5038.)
+    classIdCounter*: uint32
 
   Local* = object
     ## One lexical binding (mirrors `struct Local` in src/compiler.zc).
@@ -204,6 +235,19 @@ type
     ## `c.enclosing_class_parent` — set on the outer compiler before the
     ## member compiles (~5033) and inherited by the child (~3929). Slice 7b.
     enclosingClassParent*: AstNode
+    ## Slice 7d: the id of the class whose body we are currently compiling
+    ## (-1 outside any class). Set on the outer compiler by compileClassValue
+    ## before it compiles the members and INHERITED by every child ctor/method
+    ## compiler (compileFunction copies it), so both emit the same
+    ## `__zjs_priv_<id>_x` mangle + `__zjs_brand_<id>` for a given `#name`.
+    ## Mirrors compiler.zc `c.enclosing_class_id`.
+    enclosingClassId*: int
+    ## Slice 7d: the enclosing-class scope stack (innermost LAST). Each frame
+    ## is the class's id + its private-bound-name registry (name→kind). A
+    ## `#name` access resolves by walking this stack innermost-outward for the
+    ## declaring class (compiler.zc resolve_private / cls_stack_*). Copied into
+    ## child compilers so a method body resolves names its class declared.
+    clsStack*: seq[ClassScope]
     # --- Lexical scope tracker (compiler.zc scope_stack / *_scope_id) --
     scopeStack*:  seq[uint32]
     curScopeId*:  uint32
@@ -1365,6 +1409,76 @@ proc compileNew(c: var Compiler, node: AstNode): uint8
 # for the ctor + each method), so forward-declare it here.
 proc compileClassValue(c: var Compiler, node: AstNode): uint8
 
+# --- Private-name machinery (slice 7d, mirrors compiler.zc ~4877-5006) ----
+#
+# A private member `#name` in class N is keyed on the mangled hidden atom
+# `__zjs_priv_<classId>_<name-after-#>`. The class also carries a brand atom
+# `__zjs_brand_<classId>` installed on every instance at construction; a
+# private ACCESS emits Op::PrivateCheck against it (or, for a private FIELD,
+# against the field's own mangled atom — §7.3.30 PrivateGet precision, the
+# field isn't installed until its DefineField runs). All this comes "for
+# free" through the existing StoreProp/LoadProp/DefineMethod paths ONCE the
+# name is mangled and the classId is right, plus a PrivateCheck at each site.
+# Defined here (before compileExpr) so the access-site compile arms can call
+# them; internMethodNameAtom (the declaration-site mangler) lives near the
+# class-value code and reuses manglePrivateWithId.
+
+proc isPrivateName(c: Compiler, nameStart, nameLen: uint32): bool =
+  ## `#`-prefixed. Mirrors compiler.zc is_private_name (~4877).
+  nameLen > 0 and c.src[nameStart.int] == '#'
+
+proc manglePrivateWithId(c: Compiler, nameStart, nameLen: uint32, classId: uint32): string =
+  ## `__zjs_priv_<classId>_<body>` where body = name after the leading `#`.
+  ## Mirrors compiler.zc mangle_with_id / mangle_private_name (~4931/4889).
+  let body = c.slice(nameStart + 1, nameStart + nameLen)
+  "__zjs_priv_" & $classId & "_" & body
+
+proc brandAtomFor(classId: uint32): string =
+  ## `__zjs_brand_<classId>`. Mirrors the emit_private_check snprintf (~4985).
+  "__zjs_brand_" & $classId
+
+proc resolvePrivate(c: Compiler, nameStart, nameLen: uint32,
+                    outId: var uint32, outKind: var uint8): string =
+  ## Resolve a `#name` ACCESS through the enclosing-class scope stack
+  ## (innermost outward), returning the mangled atom for the DECLARING class
+  ## and writing that class's id + the element's kind bits. An unmatched name
+  ## returns "" (caller arms hadError: SyntaxError — private name must be
+  ## declared in an enclosing class). Mirrors compiler.zc resolve_private (~4952).
+  outId = 0; outKind = 0
+  let bare = c.slice(nameStart + 1, nameStart + nameLen)
+  var lvl = c.clsStack.len - 1
+  while lvl >= 0:
+    let sc = c.clsStack[lvl]
+    for i in 0 ..< sc.names.len:
+      if sc.names[i] == bare:
+        outId = sc.id
+        outKind = sc.kinds[i]
+        return manglePrivateWithId(c, nameStart, nameLen, sc.id)
+    dec lvl
+  return ""    # caller sets hadError
+
+proc emitPrivateCheck(c: var Compiler, objReg: uint8, classId: uint32) =
+  ## `PrivateCheck objReg, <const idx>` where the const is the class brand
+  ## atom. The const is added but never rendered by disasm (default branch
+  ## prints only a/b/c/u16), so its index — driven by const-pool order — is
+  ## what must match. Mirrors compiler.zc emit_private_check (~4980).
+  c.constants.add(Constant(kind: ckString, s: brandAtomFor(classId)))
+  let idx = uint16(c.constants.len - 1)
+  emit(c, instAU16(PrivateCheck, objReg, idx))
+
+proc emitPrivateAccessCheck(c: var Compiler, objReg: uint8, classId: uint32,
+                            kind: uint8, mangled: string) =
+  ## §7.3.30/31 precision: a private FIELD (kind==1) presence-checks its OWN
+  ## mangled atom (it's installed one-at-a-time in textual order); a private
+  ## method/accessor checks the class brand (installed all-at-once). Mirrors
+  ## compiler.zc emit_private_access_check (~4998).
+  if kind == 1'u8:
+    c.constants.add(Constant(kind: ckString, s: mangled))
+    let idx = uint16(c.constants.len - 1)
+    emit(c, instAU16(PrivateCheck, objReg, idx))
+    return
+  emitPrivateCheck(c, objReg, classId)
+
 # --- Expressions ----------------------------------------------------
 
 proc compileExpr(c: var Compiler, node: AstNode): uint8 =
@@ -1575,9 +1689,47 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     emit(c, instABC(op, dst, src, 0))
     return dst
   of Binary:
+    # `in` / `instanceof` are keyword tokens routed through Binary (they
+    # aren't arithmetic ops, so binaryOp returns Halt). Mirrors compiler.zc
+    # ~2066-2100. Slice 7d handles the `#x in obj` brand-check special case;
+    # the general `a in b` / `a instanceof b` forms are a straightforward
+    # In/Instanceof emit.
+    if node.binOp == KwIn or node.binOp == KwInstanceof:
+      # Brand check `#x in obj`: the parser builds a Member with recv==nil
+      # holding the `#x` slice. Resolve to the mangled atom, LOAD it as the
+      # LHS (a string const), then `In dst, lhsAtom, rhsObj` tests existence
+      # of that hidden key. Mirrors compiler.zc ~2070-2091.
+      if node.binOp == KwIn and node.lhs != nil and node.lhs.kind == Member and
+         node.lhs.recv == nil and
+         isPrivateName(c, node.lhs.propStart, node.lhs.propLength):
+        var inId: uint32
+        var inKind: uint8
+        let mangled = resolvePrivate(c, node.lhs.propStart, node.lhs.propLength, inId, inKind)
+        if mangled.len == 0:
+          c.hadError = true
+          return 0
+        c.constants.add(Constant(kind: ckString, s: mangled))
+        let l = allocReg(c)
+        emit(c, instAU16(LoadConst, l, uint16(c.constants.len - 1)))
+        let r = compileExpr(c, node.rhs)
+        let dst = allocReg(c)
+        emit(c, instABC(In, dst, l, r))
+        releaseReg(c, r)
+        releaseReg(c, l)
+        if c.nextReg <= dst: c.nextReg = dst + 1
+        return dst
+      let l = compileExpr(c, node.lhs)
+      let r = compileExpr(c, node.rhs)
+      let dst = allocReg(c)
+      let op = if node.binOp == KwIn: In else: Instanceof
+      emit(c, instABC(op, dst, l, r))
+      releaseReg(c, r)
+      releaseReg(c, l)
+      if c.nextReg <= dst: c.nextReg = dst + 1
+      return dst
     let opKind = binaryOp(node.binOp)
     if opKind == Halt:
-      # `in`/`instanceof` and any unsupported binary op -- later slices.
+      # Any remaining unsupported binary op -- later slices.
       c.hadError = true
       return 0
     # RHS-immediate fusion: `x OP N` where N is an integral literal in
@@ -1725,7 +1877,27 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       # takes ic#1. StoreProp reads obj+value before writing, so the
       # receiver may always borrow, and the RHS may borrow when the
       # receiver read is pure. No preferred-dst hint reaches the RHS.
-      let name = c.slice(target.propStart, target.propStart + target.propLength)
+      # Slice 7d: `this.#x = rhs` — resolve to the mangled atom for the IC.
+      # The PrivateCheck (if any) runs AFTER the RHS evaluates (§13.15.2 step
+      # order), and is SKIPPED for the parser-synthesized field-init
+      # (assignIsFieldInit — compiler.zc's `target.num != 1.0` guard), whose
+      # StoreProp CREATES the mangled own prop. Writing a private method
+      # (kind==2) or getter-only accessor (kind==4) is a TypeError — deferred.
+      var name: string
+      var isPriv = false
+      var privId: uint32
+      var privKind: uint8
+      if isPrivateName(c, target.propStart, target.propLength):
+        name = resolvePrivate(c, target.propStart, target.propLength, privId, privKind)
+        if name.len == 0:
+          c.hadError = true
+          return 0
+        if not node.assignIsFieldInit and privKind in {2'u8, 4'u8}:
+          c.hadError = true      # write to private method / getter-only — deferred
+          return 0
+        isPriv = true
+      else:
+        name = c.slice(target.propStart, target.propStart + target.propLength)
       let ic = allocIcSlot(c, name)
       if ic > 255:
         c.hadError = true
@@ -1746,6 +1918,10 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       else:       c.borrowLocalOk = savedBorrow
       let v = compileExpr(c, node.value)
       c.borrowLocalOk = savedBorrow
+      # PrivateSet presence check — after RHS, before StoreProp; not for the
+      # synthesized DefineField (creates the prop). Mirrors compiler.zc 3171.
+      if isPriv and not node.assignIsFieldInit:
+        emitPrivateAccessCheck(c, objReg, privId, privKind, name)
       emit(c, instABC(StoreProp, objReg, uint8(ic), v))
       return v
     # --- Computed target: `obj[idx] = rhs` -> StoreElem ---------------
@@ -1962,7 +2138,25 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     # order). LoadProp reads obj before writing dst, so the receiver may
     # borrow; dst honors the caller's preferred-dst hint. OptionalMember
     # (`?.`) is a later slice -- refuse it (not in this arm).
-    let name = c.slice(node.propStart, node.propStart + node.propLength)
+    # Slice 7d: `this.#x` — the property is a PrivateName. Resolve it to the
+    # mangled `__zjs_priv_<id>_x` atom (the IC name), then emit a PrivateCheck
+    # on the receiver BEFORE the LoadProp (compiler.zc ~2863-2903). A getter-
+    # only accessor read is a TypeError (kind==8) — out of the 7d corpus, bail.
+    var name: string
+    var isPriv = false
+    var privId: uint32
+    var privKind: uint8
+    if isPrivateName(c, node.propStart, node.propLength):
+      name = resolvePrivate(c, node.propStart, node.propLength, privId, privKind)
+      if name.len == 0:
+        c.hadError = true      # unresolved private name — SyntaxError
+        return 0
+      if privKind == 8'u8:     # setter-only private accessor read — deferred
+        c.hadError = true
+        return 0
+      isPriv = true
+    else:
+      name = c.slice(node.propStart, node.propStart + node.propLength)
     let ic = allocIcSlot(c, name)
     if ic > 255:
       c.hadError = true
@@ -1974,6 +2168,8 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let objReg = compileExpr(c, node.recv)
     c.borrowLocalOk = savedBorrow
     c.preferredDst = savedPd
+    if isPriv:
+      emitPrivateAccessCheck(c, objReg, privId, privKind, name)
     let dst = allocDst(c)
     emit(c, instABC(LoadProp, dst, objReg, uint8(ic)))
     releaseReg(c, objReg)
@@ -2322,10 +2518,28 @@ proc compileCallInner(c: var Compiler, node: AstNode, retHint: int): uint8 =
 
     # Load the method into regs[base].
     if callee.kind == Member:
-      let name = c.slice(callee.propStart, callee.propStart + callee.propLength)
+      # Slice 7d: `this.#m()` — resolve the private name to the mangled atom,
+      # PrivateCheck the receiver (regs[base+1]) BEFORE loading the method
+      # (compiler.zc ~5973-5996). Reading a setter-only accessor (kind==8) as
+      # a callee is a TypeError — deferred.
+      var name: string
+      var isPriv = false
+      var privId: uint32
+      var privKind: uint8
+      if isPrivateName(c, callee.propStart, callee.propLength):
+        name = resolvePrivate(c, callee.propStart, callee.propLength, privId, privKind)
+        if name.len == 0:
+          c.hadError = true; return base
+        if privKind == 8'u8:
+          c.hadError = true; return base
+        isPriv = true
+      else:
+        name = c.slice(callee.propStart, callee.propStart + callee.propLength)
       let ic = allocIcSlot(c, name)
       if ic > 255:
         c.hadError = true; return base
+      if isPriv:
+        emitPrivateAccessCheck(c, base + 1, privId, privKind, name)
       emit(c, instABC(LoadProp, base, base + 1, uint8(ic)))
     else:
       # Computed: LoadElem regs[base], recv, key.
@@ -3865,6 +4079,12 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
     # a class ctor / method body sees a non-nil value (set on the outer
     # compiler by compileClassValue before it compiles the members). Slice 7b.
     enclosingClassParent: enclosing.enclosingClassParent,
+    # Slice 7d: inherit the enclosing class id + private-name scope stack so a
+    # `this.#x` / `#m()` inside this body mangles + resolves against the
+    # declaring class (compiler.zc copies parent.enclosing_class_id +
+    # cls_stack_* into the child, ~3930-3946).
+    enclosingClassId: enclosing.enclosingClassId,
+    clsStack: enclosing.clsStack,
     # Slice 7e: generator / async flags (computed from the node above).
     isGenerator: kindIsGenerator,
     isAsync: kindIsAsync,
@@ -4391,6 +4611,12 @@ proc internMethodNameAtom(c: Compiler, nameStart, nameLen: uint32): string =
   ## Canonical member name for `nameStart..nameStart+nameLen`.
   if nameLen == 0: return ""
   let first = c.src[nameStart.int]
+  # PrivateName: mangle to the per-class hidden key (compiler.zc
+  # intern_method_name_atom ~4611). Uses the CURRENT class id — declaration
+  # sites always mangle with the enclosing class. (Slice 7d.)
+  if first == '#':
+    if c.enclosingClassId < 0: return ""   # not in a class (caller bails)
+    return manglePrivateWithId(c, nameStart, nameLen, uint32(c.enclosingClassId))
   # NumberLit: leading digit, or `.` followed by a digit.
   let isNumeric =
     (first >= '0' and first <= '9') or
@@ -4426,20 +4652,25 @@ proc classValueUnsupported(c: Compiler, node: AstNode): bool =
       # Slice 7e: async / generator methods now compile too — the class emit
       # path (LoadConst + DefineMethod) is byte-identical to a plain method
       # (verified against the oracle); only the nested Function body + its
-      # header flags differ, which compileFunction handles. Private methods
-      # (7d) still bail. A generator/async ACCESSOR is a parse error, so
-      # there's no gen/async-accessor interaction to guard here.
-      # Private method (`#m(){}`): name begins with '#'.
+      # header flags differ, which compileFunction handles. A generator/async
+      # ACCESSOR is a parse error, so there's no gen/async-accessor
+      # interaction to guard here.
+      # Slice 7d: INSTANCE private methods (`#m(){}`) + private accessors
+      # (`get/set #x`) are SUPPORTED (DefineMethod / DefineMethodGetter/Setter
+      # with the mangled key). STATIC private members (`static #m(){}`) are
+      # DEFERRED — the static-private receiver install is a distinct path.
       if m.methodComputedKey == nil and m.methodNameLen > 0 and
-         c.src[m.methodNameStart.int] == '#': return true
+         c.src[m.methodNameStart.int] == '#' and m.methodIsStatic: return true
     of ClassField:
       # Slice 7c: static fields (plain + computed key) are now SUPPORTED.
       # Instance fields are lowered via the synthesized ctor (7a); a
       # computed INSTANCE-field key is not byte-validated there, so bail.
       if not m.fieldIsStatic and m.fieldComputedKey != nil: return true
-      # Private field (`#x`): name begins with '#'.
+      # Slice 7d: INSTANCE private fields (`#x = 1`) are SUPPORTED (lowered
+      # through the synthesized ctor as a mangled StoreProp). STATIC private
+      # fields (`static #x`) are DEFERRED (static-private receiver path).
       if m.fieldComputedKey == nil and m.fieldNameLen > 0 and
-         c.src[m.fieldNameStart.int] == '#': return true
+         c.src[m.fieldNameStart.int] == '#' and m.fieldIsStatic: return true
     of StaticBlock:
       return true                                  # static block — deferred
     else:
@@ -4447,6 +4678,17 @@ proc classValueUnsupported(c: Compiler, node: AstNode): bool =
   return false
 
 proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
+  # 0b. Slice 7d: assign this class its id from the shared program-wide
+  #     counter FIRST — the oracle's compile_class_value pre-increments
+  #     ctx.class_id_counter UNCONDITIONALLY at the top (compiler.zc 5038),
+  #     before any bail. Doing it before classValueUnsupported keeps the id
+  #     ASSIGNMENT ORDER identical to the oracle even when Nim bails on a
+  #     class the oracle would id — a bail returns nil for the whole program
+  #     (nim_missing, never wrong bytecode), but this keeps a future slice
+  #     that lifts a bail from silently shifting ids.
+  c.globals.classIdCounter = c.globals.classIdCounter + 1
+  let thisClassId = c.globals.classIdCounter
+
   # Bail on any deferred construct before emitting anything.
   if classValueUnsupported(c, node):
     c.hadError = true
@@ -4458,6 +4700,67 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
   #    the child). Restored at the end. Mirrors compiler.zc ~5031-5033.
   let savedClassParent = c.enclosingClassParent
   c.enclosingClassParent = node.classParent
+
+  #     Publish the id + an enclosing-class-scope frame BEFORE compiling any
+  #     member, so the ctor body's `this.#x = init` mangle and every
+  #     method-body private access resolve against THIS class. (7d)
+  let savedClassId = c.enclosingClassId
+  let savedStackLen = c.clsStack.len
+  c.enclosingClassId = int(thisClassId)
+  # Pre-scan private members → the private-bound-name registry (name→kind).
+  # Kind bits mirror compiler.zc (~5057-5063): 1=field, 2=method, 4=getter,
+  # 8=setter; a get+set pair merges to 4|8. A name that is BOTH a getter and
+  # a setter is registered once with the merged kind. (Slice 7d.)
+  var scope = ClassScope(id: thisClassId, names: @[], kinds: @[])
+  for m in node.classMembers:
+    if m == nil: continue
+    var pStart, pLen: uint32
+    var isPriv = false
+    if m.kind == MethodDef and m.methodComputedKey == nil and
+       isPrivateName(c, m.methodNameStart, m.methodNameLen):
+      pStart = m.methodNameStart; pLen = m.methodNameLen; isPriv = true
+    elif m.kind == ClassField and m.fieldComputedKey == nil and
+         isPrivateName(c, m.fieldNameStart, m.fieldNameLen):
+      pStart = m.fieldNameStart; pLen = m.fieldNameLen; isPriv = true
+    if not isPriv: continue
+    let bare = c.slice(pStart + 1, pStart + pLen)
+    var kindBit: uint8 = 1                        # field
+    if m.kind == MethodDef:
+      case m.methodAccessor
+      of KwGet: kindBit = 4
+      of KwSet: kindBit = 8
+      else:     kindBit = 2
+    var found = -1
+    for i in 0 ..< scope.names.len:
+      if scope.names[i] == bare: found = i; break
+    if found >= 0:
+      # Duplicate PrivateBoundName — a SyntaxError UNLESS it's a matching
+      # get+set accessor pair (compiler.zc 5071-5079). Any other duplicate
+      # (#m/#m, #x field twice, method+field, get+get, …) is an early error.
+      let prevk = scope.kinds[found]
+      let pairOk = (prevk == 4'u8 and kindBit == 8'u8) or
+                   (prevk == 8'u8 and kindBit == 4'u8)
+      if not pairOk:
+        # Restore inline (the scope frame isn't pushed yet; the template that
+        # does this is defined below). The whole program compile returns nil.
+        c.enclosingClassParent = savedClassParent
+        c.enclosingClassId = savedClassId
+        c.hadError = true
+        return allocReg(c)
+      scope.kinds[found] = prevk or kindBit
+    else:
+      scope.names.add(bare)
+      scope.kinds.add(kindBit)
+  c.clsStack.add(scope)
+
+  # Restore all enclosing-class state (parent + id + scope stack) on the way
+  # out. Called at every return so a SIBLING class starts fresh and gets the
+  # next id (compiler.zc 5406-5408). On an error path the whole program
+  # compile returns nil, so restoration there is merely tidy.
+  template restoreClassState() =
+    c.enclosingClassParent = savedClassParent
+    c.enclosingClassId = savedClassId
+    if c.clsStack.len > savedStackLen: c.clsStack.setLen(savedStackLen)
 
   # 1. Find the constructor MethodDef (explicit or parser-synthesized).
   var ctorNode: AstNode = nil
@@ -4481,7 +4784,7 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
                                 nil, @[], false, false)
     ctorFn = compileFunction(c.src, empty, c, isClassCtor = true)
   if ctorFn == nil:
-    c.enclosingClassParent = savedClassParent
+    restoreClassState()
     c.hadError = true
     return allocReg(c)
   # Default derived ctor (extends + NO explicit constructor): mark so the
@@ -4587,7 +4890,7 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
   if node.classParent != nil:
     if node.classParent.kind == NullExpr:
       c.hadError = true
-      c.enclosingClassParent = savedClassParent
+      restoreClassState()
       return ctorReg
     # Parent expression -> parentReg. No preferred_dst (fresh reg), matching
     # compiler.zc's bare `compile_expr(c, cls_node.right)`. For `extends B`
@@ -4643,14 +4946,14 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
       if not emitStorePropAtom(c, ctorReg, fname, valReg):
         c.thisReg = savedThisReg
         c.borrowLocalOk = savedBorrow
-        c.enclosingClassParent = savedClassParent
+        restoreClassState()
         return ctorReg
     releaseReg(c, valReg)
   c.thisReg = savedThisReg
   c.borrowLocalOk = savedBorrow
 
   releaseReg(c, protoReg)
-  c.enclosingClassParent = savedClassParent
+  restoreClassState()
   return ctorReg
 
 # --- Program --------------------------------------------------------
@@ -4723,10 +5026,14 @@ proc compileProgram*(src: string, root: AstNode): Function =
     thisReg: -1, argumentsReg: -1,   # program top has no this/arguments regs
     parent: nil,                     # top-level program has no lexical parent
     needsEnv: false, envReg: 0, hasOuterRefs: false, cachedOuterEnvReg: -1,
-    globals: GlobalTable(),
+    # Seed the shared class-id counter to USER_CLASS_ID_BASE-1 (24): the
+    # first compileClassValue pre-increments to 25, matching the oracle.
+    globals: GlobalTable(classIdCounter: USER_CLASS_ID_BASE - 1),
     scopeStack: @[0'u32],
     curScopeId: 0,
     nextScopeId: 1,
+    enclosingClassId: -1,            # not inside any class at program top (7d)
+    clsStack: @[],
   )
 
   # Lexical pre-allocation: collect_locals gives each top-level let/const
