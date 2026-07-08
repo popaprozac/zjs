@@ -25,8 +25,8 @@ Nim parser is proportionally larger than its source, so LOC understates frontend
 | | AST types | 310 | ✅ Done | object variants; `childNodes` iterator |
 | | Parser (grammar) | 4,779 | ✅ Done | all ES grammar; byte-identical AST dumps |
 | | Parser (early errors) | *(in parser.zc)* | 🟡 ~99% | broad 98.9% clean, **0 false-rejects**; scattered singleton tail (escaped-reserved-keyword, hashbang, decorators-proposal, obj-shorthand) |
-| **Middle** | Bytecode format/ops | 894 | ⬜ Not started | Phase 3 |
-| | Compiler (AST→bytecode) | 9,049 | ⬜ Not started | Phase 3 — next major arc |
+| **Middle** | Bytecode format/ops | 894 | ✅ Done | `bytecode.nim` — 145-op enum, Inst, Function |
+| | Compiler (AST→bytecode) | 9,049 | 🟢 ~95% | Phase 3 — byte-identical `disasm` across the language; hard-edge tail bails cleanly (see below) |
 | | AOT (bytecode serialize) | 840 | ⬜ Not started | |
 | **Backend** | Interpreter / VM | 9,170 | ⬜ Not started | Phase 4 — dispatch loop + opcodes |
 | | Eval entry points | 214 | ⬜ Not started | |
