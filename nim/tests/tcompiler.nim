@@ -952,12 +952,13 @@ suite "slice 4a structure + capture bail":
   test "named function expression -> compile error (LoadCallee deferred)":
     expect ValueError:
       discard disasmToString("(function foo(){});")
-  test "async function -> compile error (deferred)":
-    expect ValueError:
-      discard disasmToString("async function f() { return 1; }")
-  test "generator function -> compile error (deferred)":
-    expect ValueError:
-      discard disasmToString("function* f() { return 1; }")
+  # NOTE (slice 7e): async / generator functions NO LONGER bail — they now
+  # compile (see the "slice 7e generator/async" suite). Sanity: they no
+  # longer raise.
+  test "async function -> compiles (slice 7e)":
+    discard disasmToString("async function f() { return 1; }")
+  test "generator function -> compiles (slice 7e)":
+    discard disasmToString("function* f() { return 1; }")
   # NOTE: `this`/`arguments`/`new.target` bodies COMPILE as of slice 4c —
   # see the "slice 4c: this / arguments / new.target" suite below.
 
@@ -1618,9 +1619,9 @@ suite "slice 4e: deferred param forms bail (nim_missing, not text_diff)":
   test "array-pattern param arrow -> compiles (slice 6e)":
     # Formerly deferred; slice 6e lowers an array-pattern arrow param.
     discard disasmToString("var f = ([a]) => a;")
-  test "async arrow -> compile error (deferred)":
-    expect ValueError:
-      discard disasmToString("var f = async () => 1;")
+  test "async arrow -> compiles (slice 7e)":
+    # Formerly deferred; slice 7e lowers async arrows (`async () => await x`).
+    discard disasmToString("var f = async () => 1;")
   test "multi-level env chain (f => g => x => f(g(x))) -> compile error (deferred __outer__)":
     expect ValueError:
       discard disasmToString("var compose = f => g => x => f(g(x));")
@@ -3149,12 +3150,189 @@ suite "slice 7c: deferred class shapes bail (nim_missing, not text_diff)":
   test "static block -> compile error":
     expect ValueError:
       discard disasmToString("class C { static { x = 1; } }")
-  test "async method -> compile error":
-    expect ValueError:
-      discard disasmToString("class C { async m(){} }")
-  test "generator method -> compile error":
-    expect ValueError:
-      discard disasmToString("class C { *m(){} }")
+  # NOTE (slice 7e): async / generator methods NO LONGER bail — they now
+  # compile byte-identically (see the "slice 7e generator/async" suite). The
+  # old bail assertions were removed here.
   test "computed INSTANCE field -> compile error":
     expect ValueError:
       discard disasmToString("class C { [k] = 1; }")
+
+# --- slice 7e: generator + async functions --------------------------
+# Ground-truth constants captured from `build/zjs disasm` (the oracle):
+# GeneratorStart prologue, Yield + JmpIfNotGenReturn return-dispatch,
+# Await, the is_generator/is_async header flags, and generator/async
+# class methods. yield* and async-iteration bail (nim_missing).
+const
+  gen7eYield1 =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; g\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=5 regs=3 fixed=0 params=0 consts=0 ics=0 generator ===\n" &
+    "    0  GeneratorStart      a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Yield               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  JmpIfNotGenReturn   a=0   b=1   c=0   | u16=1 i16=1\n" &
+    "    4  Return              r1\n"
+
+  gen7eBare =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; g\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=5 regs=3 fixed=0 params=0 consts=0 ics=0 generator ===\n" &
+    "    0  GeneratorStart      a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Yield               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  JmpIfNotGenReturn   a=0   b=1   c=0   | u16=1 i16=1\n" &
+    "    4  Return              r1\n"
+
+  gen7eTwo =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; g\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=9 regs=3 fixed=0 params=0 consts=0 ics=0 generator ===\n" &
+    "    0  GeneratorStart      a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r0   g109  ; a\n" &
+    "    2  Yield               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  JmpIfNotGenReturn   a=0   b=1   c=0   | u16=1 i16=1\n" &
+    "    4  Return              r1\n" &
+    "    5  LoadGlobal          r0   g110  ; b\n" &
+    "    6  Yield               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    7  JmpIfNotGenReturn   a=0   b=1   c=0   | u16=1 i16=1\n" &
+    "    8  Return              r1\n"
+
+  async7eAwait =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=4 regs=3 fixed=0 params=0 consts=0 ics=0 async ===\n" &
+    "    0  LoadGlobal          r0   g109  ; x\n" &
+    "    1  Await               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  Return              r0\n"
+
+  async7eRetAwait =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=3 regs=3 fixed=0 params=0 consts=0 ics=0 async ===\n" &
+    "    0  LoadGlobal          r0   g109  ; x\n" &
+    "    1  Await               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Return              r1\n"
+
+  gen7eVarYield =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; g\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=8 regs=4 fixed=1 params=0 consts=0 ics=0 generator ===\n" &
+    "    0  GeneratorStart      a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r1   = 1\n" &
+    "    2  Yield               a=2   b=1   c=0   | u16=1 i16=1\n" &
+    "    3  JmpIfNotGenReturn   a=0   b=1   c=0   | u16=1 i16=1\n" &
+    "    4  Return              r2\n" &
+    "    5  Mov                 r0   <- r2\n" &
+    "    6  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    7  Return              r1\n"
+
+  async7eMethod =
+    "\n" &
+    "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r2   const#0 = <function>\n" &
+    "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+    "    3  LoadConst           r4   const#1 = <function>\n" &
+    "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+    "    5  Mov                 r0   <- r2\n" &
+    "    6  Return              r1\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+    "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Return              r1\n" &
+    "\n" &
+    "=== <program>/const#1  code_len=4 regs=3 fixed=0 params=0 consts=0 ics=0 async ===\n" &
+    "    0  LoadGlobal          r0   g109  ; x\n" &
+    "    1  Await               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  Return              r0\n"
+
+  gen7eMethod =
+    "\n" &
+    "=== <program>  code_len=7 regs=6 fixed=2 params=0 consts=2 ics=2 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r2   const#0 = <function>\n" &
+    "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+    "    3  LoadConst           r4   const#1 = <function>\n" &
+    "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+    "    5  Mov                 r0   <- r2\n" &
+    "    6  Return              r1\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+    "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Return              r1\n" &
+    "\n" &
+    "=== <program>/const#1  code_len=5 regs=3 fixed=0 params=0 consts=0 ics=0 generator ===\n" &
+    "    0  GeneratorStart      a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Yield               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  JmpIfNotGenReturn   a=0   b=1   c=0   | u16=1 i16=1\n" &
+    "    4  Return              r1\n"
+
+suite "slice 7e generator/async byte-identity":
+  test "function* g(){ yield 1; }":
+    check disasmToString("function* g(){ yield 1; }") == gen7eYield1
+  test "function* g(){ yield; }":
+    check disasmToString("function* g(){ yield; }") == gen7eBare
+  test "function* g(){ yield a; yield b; }":
+    check disasmToString("function* g(){ yield a; yield b; }") == gen7eTwo
+  test "async function f(){ await x; }":
+    check disasmToString("async function f(){ await x; }") == async7eAwait
+  test "async function f(){ return await x; }":
+    check disasmToString("async function f(){ return await x; }") == async7eRetAwait
+  test "function* g(){ var x = yield 1; }":
+    check disasmToString("function* g(){ var x = yield 1; }") == gen7eVarYield
+  test "class C { async m(){ await x; } }":
+    check disasmToString("class C { async m(){ await x; } }") == async7eMethod
+  test "class C { *m(){ yield 1; } }":
+    check disasmToString("class C { *m(){ yield 1; } }") == gen7eMethod
+
+suite "slice 7e: deferred forms bail (nim_missing, not text_diff)":
+  test "yield* delegate -> compile error":
+    expect ValueError:
+      discard disasmToString("function* g(){ yield* a; }")
+  test "async generator yield* -> compile error":
+    expect ValueError:
+      discard disasmToString("async function* g(){ yield* a; }")
+  test "for await -> compile error":
+    expect ValueError:
+      discard disasmToString("async function f(){ for await (const x of a) {} }")

@@ -247,6 +247,16 @@ type
     ## lvalue). bindDestructureTarget branches on it. Mirrors compiler.zc
     ## Compiler.in_dstr_assign.
     inDstrAssign*: bool
+    ## Slice 7e: this function body is a generator (`function*`). Drives the
+    ## GeneratorStart prologue op and the Function.isGenerator header flag.
+    ## Set by compileFunction from the node's gen flag; read nowhere else in
+    ## the compile (the YieldExpr arm fires regardless — a yield outside a
+    ## generator is a parse error). Mirrors compiler.zc Compiler.is_generator.
+    isGenerator*: bool
+    ## Slice 7e: this function body is async (`async function` / `async () =>`
+    ## / async method). Drives the Function.isAsync header flag. Await fires
+    ## regardless. Mirrors compiler.zc Compiler.is_async.
+    isAsync*: bool
 
 # --- Register allocator (high-water-mark) ---------------------------
 
@@ -436,6 +446,18 @@ proc emitReturnSequence(c: var Compiler, r: uint8) =
     emitUnwindRegions(c, 0)
     c.fixedRegs = savedFixed
   emit(c, instA(Return, r))
+
+proc emitYieldWithReturnDispatch(c: var Compiler, dst, src: uint8) =
+  ## #402a (slice 7e): wrap a Yield with the return-completion dispatch. The
+  ## JmpIfNotGenReturn MUST be the op right after Yield (the generator's
+  ## saved_ip lands on it); a `.return(v)` resume falls through into the
+  ## inline return path with v already in `dst`, while a normal resume takes
+  ## the branch past the return sequence. Mirrors compiler.zc
+  ## emit_yield_with_return_dispatch (~564-569).
+  emit(c, instAB(Yield, dst, src))
+  let skip = emit(c, instI16(JmpIfNotGenReturn, 0))
+  emitReturnSequence(c, dst)
+  patchJump(c, skip)
 
 # --- Global interning (mirrors ctx_intern_global at USER_GLOBAL_BASE) --
 
@@ -2008,6 +2030,38 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     # NamedEvaluation at the assignment site (maybeInferAnonName) sets an
     # anonymous class-expression's .name. Mirrors compiler.zc ~2200.
     return compileClassValue(c, node)
+  of AwaitExpr:
+    # `await x` (slice 7e). Compile the operand into a reg, then
+    # `Await dst <- src`. The dst is a fresh temp (allocReg, not allocDst —
+    # a live preferred-dst hint must not be stolen). Mirrors compiler.zc
+    # ~1869-1875. The src-release peephole (`if src+1==next_reg && src!=dst`)
+    # frees the operand temp when it was the top reg — matching the C exactly.
+    let src = compileExpr(c, node.awaitArg)
+    let dst = allocReg(c)
+    emit(c, instAB(Await, dst, src))
+    if src + 1 == c.nextReg and src != dst: c.nextReg = c.nextReg - 1
+    return dst
+  of YieldExpr:
+    # `yield` / `yield expr` / `yield* expr` (slice 7e). Mirrors compiler.zc
+    # ~1890-1913. yield* (delegating) DEFERS — its iterator-delegation loop
+    # (IterGet + step/await/yield) is a separate slice; bail so the file
+    # surfaces as nim_missing rather than a wrong suspend sequence.
+    if node.yieldDelegate:
+      c.hadError = true
+      return 0
+    # Plain `yield` (bare or with operand). Bare `yield` yields undefined.
+    var src: uint8 = 0
+    if node.yieldArg != nil:
+      src = compileExpr(c, node.yieldArg)
+    else:
+      src = allocReg(c)
+      emit(c, instA(LoadUndefined, src))
+    let dst = allocReg(c)
+    # #402a — Yield + return-completion dispatch (JmpIfNotGenReturn + the
+    # inline return sequence).
+    emitYieldWithReturnDispatch(c, dst, src)
+    if src + 1 == c.nextReg and src != dst: c.nextReg = c.nextReg - 1
+    return dst
   else:
     # Not yet supported.
     c.hadError = true
@@ -3758,17 +3812,20 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
   # arrowBody / arrowIsAsync); regular functions use fnParams / fnBody /
   # fnIsAsync|fnIsGenerator; a MethodDef uses methodIsAsync/methodIsGenerator.
   # fnParamsOf / fnBodyOf abstract the shape.
+  # Slice 7e: generator (`function*` / `*m(){}`) and async (`async function`
+  # / `async () =>` / `async m(){}`) bodies now compile — determine the two
+  # flags from the node shape (arrows have no generator form). yield* and
+  # async generators DEFER at the compile site (see the YieldExpr arm).
+  var kindIsGenerator = false
+  var kindIsAsync = false
   if isArrow:
-    # DEFER async arrows (`async x => x`). No generator arrows exist.
-    if node.arrowIsAsync:
-      return nil
+    kindIsAsync = node.arrowIsAsync
   elif isMethod:
-    # DEFER async / generator methods (`async m(){}` / `*m(){}`).
-    if node.methodIsAsync or node.methodIsGenerator:
-      return nil
+    kindIsAsync = node.methodIsAsync
+    kindIsGenerator = node.methodIsGenerator
   else:
-    if node.fnIsAsync or node.fnIsGenerator:
-      return nil
+    kindIsAsync = node.fnIsAsync
+    kindIsGenerator = node.fnIsGenerator
   let params = fnParamsOf(node)
   # Slice 4e envelope: plain-ident, default (`a = expr`), and rest
   # (`...rest`) params. Destructuring params still bail (nim_missing).
@@ -3808,6 +3865,9 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
     # a class ctor / method body sees a non-nil value (set on the outer
     # compiler by compileClassValue before it compiles the members). Slice 7b.
     enclosingClassParent: enclosing.enclosingClassParent,
+    # Slice 7e: generator / async flags (computed from the node above).
+    isGenerator: kindIsGenerator,
+    isAsync: kindIsAsync,
   )
 
   # 1. Bind params to the low fixed regs r0..rN-1 in declaration order.
@@ -4080,6 +4140,17 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
         destructurePattern(c, p.identPattern, paramReg)
       inc localIdx
 
+  # 3z. Generator prologue terminator (slice 7e). ECMA-262 runs
+  #     FunctionDeclarationInstantiation (the prologue above: BuildArguments,
+  #     env, pattern-param fan-out) at the INITIAL call to a generator, then
+  #     returns the iterator suspended at GeneratorStart; the body only runs
+  #     on the first .next(). Emitted AFTER the pattern-param fan-out and
+  #     BEFORE the function-top TDZ hole seed — mirrors compiler.zc ~4297-4316
+  #     (section 3z, which precedes the `tz` hole loop at ~4344). Async
+  #     functions have NO GeneratorStart.
+  if c.isGenerator:
+    emit(c, instA(GeneratorStart, 0))
+
   # 4. Function-top TDZ hole seeding. ECMA-262: a body-top let/const is
   #    seeded with LoadHole before its initializer. Params are never
   #    seeded (their value arrives from the caller). Unlike a nested
@@ -4158,6 +4229,9 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
     # Class-constructor flag: the disasm header prints " class-ctor". Set
     # by the class-value codegen (compiler.zc ~5108). Slice 7a.
     isClassCtor: isClassCtor,
+    # Slice 7e: generator / async header flags (compiler.zc ~4470-4474).
+    isGenerator: c.isGenerator,
+    isAsync: c.isAsync,
   )
   # register_count floor: at least param_count (compiler.zc clamp).
   if f.registerCount < f.paramCount: f.registerCount = f.paramCount
@@ -4348,12 +4422,13 @@ proc classValueUnsupported(c: Compiler, node: AstNode): bool =
     if m == nil: return true
     case m.kind
     of MethodDef:
-      # Slice 7c: get/set accessors and computed method keys are now
-      # SUPPORTED; async / generator methods (7e) and private methods (7d)
-      # still bail. A computed accessor (`get [e](){}`) is fine too — the
-      # emit path routes it through DefineMethodGetter/Setter with the
-      # compiled key.
-      if m.methodIsAsync or m.methodIsGenerator: return true
+      # Slice 7c: get/set accessors and computed method keys are SUPPORTED.
+      # Slice 7e: async / generator methods now compile too — the class emit
+      # path (LoadConst + DefineMethod) is byte-identical to a plain method
+      # (verified against the oracle); only the nested Function body + its
+      # header flags differ, which compileFunction handles. Private methods
+      # (7d) still bail. A generator/async ACCESSOR is a parse error, so
+      # there's no gen/async-accessor interaction to guard here.
       # Private method (`#m(){}`): name begins with '#'.
       if m.methodComputedKey == nil and m.methodNameLen > 0 and
          c.src[m.methodNameStart.int] == '#': return true
