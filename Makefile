@@ -515,7 +515,23 @@ nim-diffdisasm: nim-disasm cli
 	@find $(DIFFDISASM_CORPUS) -name '*.js' 2>/dev/null | grep -v _FIXTURE | awk 'NR%40==0' \
 		| bash nim/tests/measure_diffdisasm.sh
 
-.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse nim-disasm nim-diffdisasm
+# Phase 4 slice 1: minimal bytecode VM. `nim-eval '<src>'` executes the
+# top-level Function and prints the completion value; output must match
+# `build/zjs eval '<src>'` byte-for-byte.
+NIM_EVALBIN := $(NIM_OUT)/nim-eval
+nim-eval: $(NIM_EVALBIN)
+$(NIM_EVALBIN): $(NIM_SRCS) nim/tools/nim_eval.nim | $(NIM_OUT)
+	$(NIM) c --mm:arc -d:release --hints:off --out:$(NIM_EVALBIN) nim/tools/nim_eval.nim
+
+# Differential-oracle EXECUTION sweep: compare `zjs eval` vs `nim-eval`
+# over a corpus. wrong_result MUST stay 0; nim_missing (objects/calls/
+# strings/coercion) is expected during slice 1.
+DIFFEVAL_CORPUS ?= vendor/test262/test/language/expressions
+nim-diffeval: nim-eval cli
+	@find $(DIFFEVAL_CORPUS) -name '*.js' 2>/dev/null | grep -v _FIXTURE | awk 'NR%40==0' \
+		| bash nim/tests/measure_evalparity.sh
+
+.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse nim-disasm nim-diffdisasm nim-eval nim-diffeval
 
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
