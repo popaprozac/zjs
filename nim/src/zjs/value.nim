@@ -15,6 +15,7 @@ const
   VALUE_UNDEFINED*      = 10'u64
   VALUE_FALSE*          = 6'u64
   VALUE_TRUE*           = 7'u64
+  VALUE_DELETED*        = 0x10002'u64   ## the "hole" sentinel (zjs_deleted)
 
 # --- bit casts ---
 proc doubleToBits(d: float64): uint64 {.inline.} = cast[uint64](d)
@@ -32,6 +33,7 @@ proc boolVal*(b: bool): ZjsValue {.inline.} =
 
 proc nullVal*(): ZjsValue {.inline.} = ZjsValue(bits: VALUE_NULL)
 proc undefinedVal*(): ZjsValue {.inline.} = ZjsValue(bits: VALUE_UNDEFINED)
+proc deletedVal*(): ZjsValue {.inline.} = ZjsValue(bits: VALUE_DELETED)
 
 # --- predicates ---
 proc isInt32*(v: ZjsValue): bool {.inline.} =
@@ -44,6 +46,7 @@ proc isBool*(v: ZjsValue): bool {.inline.} =
   (v.bits and not 1'u64) == VALUE_FALSE
 proc isNull*(v: ZjsValue): bool {.inline.} = v.bits == VALUE_NULL
 proc isUndefined*(v: ZjsValue): bool {.inline.} = v.bits == VALUE_UNDEFINED
+proc isHole*(v: ZjsValue): bool {.inline.} = v.bits == VALUE_DELETED
 proc isCell*(v: ZjsValue): bool {.inline.} =
   (v.bits and NOT_CELL_MASK) == 0
 

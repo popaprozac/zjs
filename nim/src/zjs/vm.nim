@@ -25,22 +25,38 @@ import bytecode, value
 
 type
   VmValKind* = enum
-    vkVal      ## a plain NaN-boxed ZjsValue (number / bool / null / undefined)
-    vkString   ## a string constant (from LoadConst ckString); print-only
+    vkVal       ## a plain NaN-boxed ZjsValue (number / bool / null / undefined)
+    vkString    ## a string constant (from LoadConst ckString); print-only
+    vkFunction  ## a callable function value (slice 2): a bare Function* from a
+                ## function-constant LoadConst, or a NON-capturing closure from
+                ## MakeClosure. Capturing closures (real env object) BAIL — no
+                ## object model yet.
 
   VmVal* = object
     case kind*: VmValKind
-    of vkVal:    v*: ZjsValue
-    of vkString: s*: string
+    of vkVal:      v*: ZjsValue
+    of vkString:   s*: string
+    of vkFunction: fn*: Function
 
   VmBail* = object of CatchableError
     ## Raised when the VM hits an op or value shape it can't faithfully
     ## execute. The CLI must then print NOTHING and exit nonzero.
 
+const
+  ## Recursion-depth guard for the call-frame stack. `build/zjs` throws a
+  ## RangeError ("Maximum call stack size exceeded") on deep recursion, which
+  ## surfaces as nothing-on-stdout (an unhandled throw) in the eval oracle. We
+  ## match that shape by BAILING once we exceed the limit — never a wrong
+  ## value. Well within: fib(10)=177 nested calls, fac(5)=5. Kept comfortably
+  ## below Nim's own native stack limit so `runFunction`'s recursion can't
+  ## segfault before the guard fires.
+  MAX_CALL_DEPTH = 2000
+
 # --- VmVal constructors -------------------------------------------------
 
 proc vv(v: ZjsValue): VmVal {.inline.} = VmVal(kind: vkVal, v: v)
 proc vs(s: string): VmVal {.inline.} = VmVal(kind: vkString, s: s)
+proc vf(f: Function): VmVal {.inline.} = VmVal(kind: vkFunction, fn: f)
 
 proc bail(msg: string) {.noreturn.} =
   raise newException(VmBail, msg)
@@ -202,21 +218,72 @@ proc toBool(v: ZjsValue): bool =
 
 proc numVal(x: VmVal): ZjsValue {.inline.} =
   ## A register that must be a number/bool/null/undefined for an
-  ## arithmetic/comparison op. A string operand is out of scope → bail.
+  ## arithmetic/comparison op. A string / function operand is out of scope
+  ## for these ops → bail.
   case x.kind
-  of vkString: bail("operation on string operand")
-  of vkVal:    x.v
+  of vkString:   bail("operation on string operand")
+  of vkFunction: bail("operation on function operand")
+  of vkVal:      x.v
 
 # --- the interpreter ----------------------------------------------------
 
-proc runFunction*(f: Function, globals: var seq[VmVal]): VmVal =
-  ## Execute `f`'s bytecode, returning the value in its `Return` operand
-  ## register. `globals` is the shared slot array (indexed by the full
-  ## u16 global slot, ≥ USER_GLOBAL_BASE). Raises `VmBail` on any op or
-  ## value shape outside the slice-1 subset.
+proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
+              depth: int): VmVal
+
+proc resolveCallee(v: VmVal): Function =
+  ## A call target must be a callable function value. Anything else (a
+  ## number / string / null / undefined callee — the JS "is not a function"
+  ## TypeError) is out of the slice-2 subset → BAIL, never a wrong result.
+  ## A callable whose shape needs machinery we lack (arrow / async /
+  ## generator / class-ctor / capturing closure) also bails: those either
+  ## need `this`/env we don't model or must not run their body synchronously.
+  if v.kind != vkFunction:
+    bail("callee is not a function value")
+  let f = v.fn
+  if f == nil: bail("callee has no function")
+  if f.isArrow or f.isAsync or f.isGenerator or f.isClassCtor or f.needsEnv:
+    # arrow: lexical this/env; async: must yield a Promise; generator: must
+    # return an iterator; class-ctor: needs `new`; needsEnv: captures outer
+    # scope (real env object) — all deferred to later slices.
+    bail("callee shape needs object model / env / this")
+  f
+
+proc callFunction(callee: Function, args: openArray[VmVal],
+                  globals: var seq[VmVal], depth: int): VmVal =
+  ## Create a fresh frame for `callee`, bind `args` to its low registers
+  ## r0..r(argc-1) (the params), run it from ip 0, and return its Return
+  ## value. Mirrors push_call_frame + the Op::Invoke frame push
+  ## (interpreter.zc ~5716-5731): a NEW register file sized
+  ## callee.registerCount, args copied into the param slots, extras dropped,
+  ## missing params left undefined.
+  if depth + 1 > MAX_CALL_DEPTH:
+    bail("call stack depth exceeded")
+  runFrame(callee, args, globals, depth + 1)
+
+proc runFunction*(f: Function, globals: var seq[VmVal], depth: int = 0): VmVal =
+  ## Execute the top-level program `f` (public entry point). A program takes
+  ## no arguments; see `runFrame` for the shared execution core.
+  runFrame(f, [], globals, depth)
+
+proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
+              depth: int): VmVal =
+  ## Execute `f`'s bytecode in a fresh register frame, returning the value in
+  ## its `Return` operand register. `args` seed the callee's low param
+  ## registers r0..; extras drop, missing params stay undefined (matching
+  ## push_call_frame's arg-copy). `globals` is the shared slot array (indexed
+  ## by the full u16 global slot, ≥ USER_GLOBAL_BASE). `depth` is the
+  ## call-frame nesting. Raises `VmBail` on any op / value shape outside the
+  ## supported subset.
   var regs = newSeq[VmVal](int(f.registerCount))
   for i in 0 ..< regs.len:
     regs[i] = vv(undefinedVal())
+  # Bind args into the callee's low registers r0..r(argc-1) — the param
+  # slots (compileFunction lays params out at r0.. in declaration order).
+  # min(args.len, registerCount) guards a malformed argc; extras are dropped.
+  var na = args.len
+  if na > regs.len: na = regs.len
+  for i in 0 ..< na:
+    regs[i] = args[i]
   let code = f.code
   let codeLen = code.len
   var ip = 0
@@ -237,9 +304,27 @@ proc runFunction*(f: Function, globals: var seq[VmVal]): VmVal =
       of ckInt:      regs[int(inst.a)] = vv(int32Val(cv.i))
       of ckDouble:   regs[int(inst.a)] = vv(doubleVal(cv.d))
       of ckString:   regs[int(inst.a)] = vs(cv.s)
-      of ckFunction: bail("LoadConst function")
+      of ckFunction:
+        # A function-constant load produces a callable function VALUE
+        # (interpreter.zc treats the bare Function* cell as invokable — the
+        # IIFE / FunctionExpr-in-var path uses it directly, no MakeClosure).
+        regs[int(inst.a)] = vf(cv.fn)
     of LoadUndefined:
       regs[int(inst.a)] = vv(undefinedVal())
+    of LoadHole:
+      # TDZ seed (#330): a lexical binding (let/const) is seeded with the
+      # hole sentinel and overwritten on init. interpreter.zc ~3353 stores
+      # zjs_deleted(). A function-body let/const is UNCONDITIONALLY seeded
+      # at function-top (compiler.zc ~4487), so any multi-statement body
+      # with locals reaches this.
+      regs[int(inst.a)] = vv(deletedVal())
+    of ThrowIfHole:
+      # TDZ read check (interpreter.zc ~3357): reading a binding still
+      # holding the hole is a ReferenceError — the oracle throws (nothing on
+      # stdout), so BAIL to match (never a wrong value).
+      let v = regs[int(inst.a)]
+      if v.kind == vkVal and v.v.bits == VALUE_DELETED:
+        bail("TDZ: access before initialization")
     of LoadNull:
       regs[int(inst.a)] = vv(nullVal())
     of LoadTrue:
@@ -479,6 +564,66 @@ proc runFunction*(f: Function, globals: var seq[VmVal]): VmVal =
       let ct = if isInt32(a): asInt32(a) >= imm else: cmpLe(int32Val(imm), a)
       ip = if ct: ip + 2 + int(instBcI16(code[ip+1])) else: ip + 2
       continue
+
+    # --- function values / calls (slice 2) ----------------------------
+    of MakeClosure:
+      # a=dst, b=function-value reg, c=env-object reg (interpreter.zc
+      # ~6448). The compiler emits the NON-capturing in-place form
+      # `MakeClosure r,r,r` for a function that references no outer scope;
+      # there env == the function value itself (not a real env object), so
+      # the closure just wraps the Function with a NULL env. A CAPTURING
+      # closure needs a real env object from NewObject (which we don't
+      # model) — resolveCallee already bails on `f.needsEnv`, and such a
+      # function only ever reaches MakeClosure via the env-wrapping form
+      # whose env reg would (in a real run) hold an object. Here we simply
+      # carry the Function forward as a value; a later Invoke of a
+      # needsEnv/arrow function bails at resolve time (never a wrong value).
+      let src = regs[int(inst.b)]
+      if src.kind != vkFunction:
+        bail("MakeClosure on non-function")
+      regs[int(inst.a)] = vf(src.fn)
+    of SetFunctionName:
+      # ECMA-262 SetFunctionName (interpreter.zc ~6218): installs `.name` on
+      # a function value. The name is NOT part of the printed completion
+      # value, so this is a value-preserving no-op for the eval oracle. Only
+      # touches function-valued targets; leaves others unchanged.
+      discard
+    of Invoke, TailInvoke:
+      # Plain call (interpreter.zc ~5539/5913): a=ret_dst, b=base, c=argc.
+      # Callee = regs[base]; args = regs[base+1 .. base+argc]. TailInvoke has
+      # the same operand layout and (for correctness) executes as a normal
+      # call whose result the trailing Return reads — no frame-replacement
+      # needed to produce the right value.
+      let base = int(inst.b)
+      let argc = int(inst.c)
+      let callee = resolveCallee(regs[base])
+      var callArgs = newSeq[VmVal](argc)
+      for i in 0 ..< argc:
+        callArgs[i] = regs[base + 1 + i]
+      regs[int(inst.a)] = callFunction(callee, callArgs, globals, depth)
+    of InvokeGlobal:
+      # Fused global-callee call (interpreter.zc ~5634): a=ret_dst, b=base,
+      # c=argc; the carrier at code[ip+1] holds the u16 global slot. The
+      # callee is globals[slot]; args = regs[base+1 .. base+argc]. Advance ip
+      # past the carrier exactly as the reference does (ip = ip + 1 then read
+      # code[ip]), so the post-dispatch `inc ip` lands on the next real op.
+      let base = int(inst.b)
+      let argc = int(inst.c)
+      ip = ip + 1
+      let gslot = int(instBcU16(code[ip]))
+      if gslot >= globals.len:
+        bail("InvokeGlobal of undeclared slot")
+      let calleeVal = globals[gslot]
+      # An undeclared / built-in slot (a zero-bits placeholder) is out of
+      # scope — the reference would ObjectRecord-fallback to globalThis or
+      # throw a ReferenceError; either way, not a value we can produce.
+      if calleeVal.kind == vkVal and calleeVal.v.bits == 0'u64:
+        bail("InvokeGlobal of undeclared slot")
+      let callee = resolveCallee(calleeVal)
+      var callArgs = newSeq[VmVal](argc)
+      for i in 0 ..< argc:
+        callArgs[i] = regs[base + 1 + i]
+      regs[int(inst.a)] = callFunction(callee, callArgs, globals, depth)
 
     # --- return / halt ------------------------------------------------
     of Return:

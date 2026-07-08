@@ -22,6 +22,11 @@ proc printValue(x: VmVal): string =
   case x.kind
   of vkString:
     return x.s          # write_value string arm, quoted=false → raw bytes
+  of vkFunction:
+    # A function-valued completion prints its source-ish form in the oracle
+    # (`function name() { … }`), which we can't reproduce here. Out of
+    # scope → bail (print nothing). Our targets never complete on a function.
+    raise newException(VmBail, "printValue on function value")
   of vkVal:
     let v = x.v
     if isInt32(v):

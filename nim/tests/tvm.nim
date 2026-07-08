@@ -12,6 +12,8 @@ proc render(x: VmVal): string =
   case x.kind
   of vkString:
     return x.s
+  of vkFunction:
+    raise newException(VmBail, "function value")
   of vkVal:
     let v = x.v
     if isInt32(v): return $asInt32(v)
@@ -140,9 +142,44 @@ suite "vm bindings":
     check ev("var a=1; a=a+1; a") == "2"
     check ev("let a=1,b=2,c=3; a+b*c") == "7"
 
+suite "vm function calls (slice 2)":
+  test "declared function + InvokeGlobal":
+    check ev("function add(a,b){return a+b;} add(3,4)") == "7"
+    check ev("function id(x){return x;} id(99)") == "99"
+    check ev("function f(a,b,c){return a*100+b*10+c;} f(1,2,3)") == "123"
+  test "function expression assigned to var":
+    check ev("var f=function(x){return x*x;}; f(5)") == "25"
+  test "IIFE":
+    check ev("(function(){return 42;})()") == "42"
+  test "recursion":
+    check ev("function fib(n){ return n<2 ? n : fib(n-1)+fib(n-2); } fib(10)") == "55"
+    check ev("function fac(n){ return n<=1?1:n*fac(n-1); } fac(5)") == "120"
+    check ev("function fib(n){ return n<2 ? n : fib(n-1)+fib(n-2); } fib(15)") == "610"
+  test "zero-arg calls + combining results":
+    check ev("function k(){return 7;} k()+k()") == "14"
+    check ev("function noret(){} noret()") == "undefined"
+  test "tail call (return f())":
+    check ev("function outer(){ return inner(); } function inner(){ return 5; } outer()") == "5"
+  test "nested calls f(g(x))":
+    check ev("function g(x){return x+1;} function f(x){return x*2;} f(g(10))") == "22"
+  test "multi-statement body with locals":
+    check ev("function f(n){ let a=n+1; let b=a*2; return a+b; } f(3)") == "12"
+  test "extra args dropped, missing params undefined":
+    check ev("function f(a){return a;} f(1,2,3)") == "1"
+    check ev("function f(a,b){return b;} f(7)") == "undefined"
+
 suite "vm bail discipline":
   test "built-in globals bail (out of slice-1 scope)":
     check bails("NaN")           # LoadGlobal of a built-in slot
     check bails("Infinity")
   test "string operations bail":
     check bails("\"a\"+\"b\"")   # string concat = slice 3
+  test "capturing closures bail (need object model)":
+    # inner fn references outer local `x` → needsEnv → resolveCallee bails.
+    check bails("function outer(){ var x=1; function inner(){ return x; } return inner(); } outer()")
+  test "arrow calls bail (lexical this/env)":
+    check bails("var f=()=>1; f()")
+  test "method / object calls bail (no object model)":
+    check bails("var o={m:function(){return 1;}}; o.m()")
+  test "calling a non-function bails":
+    check bails("var x=5; x()")
