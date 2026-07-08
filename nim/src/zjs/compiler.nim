@@ -301,6 +301,15 @@ type
     ## / async method). Drives the Function.isAsync header flag. Await fires
     ## regardless. Mirrors compiler.zc Compiler.is_async.
     isAsync*: bool
+    ## Slice 7f: true while compiling a class STATIC element (static field
+    ## initializer, static block, or a static-block Function body). In this
+    ## context `super.x` resolves against the parent constructor DIRECTLY
+    ## (the home object is the class constructor), NOT parent.prototype — so
+    ## the member-super read/call arms skip the `.prototype` hop. Set by the
+    ## static-element pass (compileClassValue) and by compileFunction for a
+    ## StaticBlock body, inherited by nested bodies. Mirrors compiler.zc
+    ## Compiler.in_static_element (~247).
+    inStaticElement*: bool
 
 # --- Register allocator (high-water-mark) ---------------------------
 
@@ -521,6 +530,16 @@ proc internGlobal(c: var Compiler, name: string): uint32 =
 
 proc slice(c: Compiler, s, e: uint32): string =
   c.src[s.int ..< e.int]
+
+proc emitLoadNameString(c: var Compiler, name: string): uint8 =
+  ## Materialize a string atom into a fresh register via LoadConst, returning
+  ## the register (mirrors compiler.zc emit_load_name_string ~2736). Used by
+  ## the member-super arms, which read `super.x` through a LoadElem keyed by
+  ## a string CONST (not an IC slot) — the oracle's exact op shape.
+  c.constants.add(Constant(kind: ckString, s: name))
+  let r = allocReg(c)
+  emit(c, instAU16(LoadConst, r, uint16(c.constants.len - 1)))
+  return r
 
 # --- Inline-cache slot allocation (mirrors alloc_ic_slot) -----------
 #
@@ -1097,6 +1116,7 @@ proc fnBodyOf(n: AstNode): AstNode =
   of FunctionDecl, FunctionExpr: n.fnBody
   of ArrowFunc: n.arrowBody
   of MethodDef: n.methodBody
+  of StaticBlock: n.staticBlockBody   # slice 7f: block compiled as its own fn
   else: nil
 
 proc fnParamsOf(n: AstNode): seq[AstNode] =
@@ -1105,6 +1125,7 @@ proc fnParamsOf(n: AstNode): seq[AstNode] =
   of FunctionDecl, FunctionExpr: n.fnParams
   of ArrowFunc: n.arrowParams
   of MethodDef: n.methodParams
+  of StaticBlock: @[]                 # slice 7f: a static block takes no params
   else: @[]
 
 proc bodyDeclaresName(c: Compiler, node: AstNode, name: string): bool =
@@ -2133,6 +2154,39 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       return clsReg
     return dst
   of Member:
+    # Slice 7f: `super.x` (bare property read) — the receiver is a SuperExpr.
+    # Read the property off the enclosing class's parent: instance context →
+    # `parent.prototype.x`; static context → `parent.x` directly. The lookups
+    # are LoadElem keyed by string CONSTS (emitLoadNameString), NOT IC slots
+    # — the oracle's exact shape (compiler.zc compile_member ~2827-2851). A
+    # `super.x` outside a class-with-parent (enclosingClassParent == nil) is a
+    # SyntaxError (bail), matching the C guard.
+    if node.recv != nil and node.recv.kind == SuperExpr:
+      if c.enclosingClassParent == nil:
+        c.hadError = true
+        return allocReg(c)
+      # `super.#x` — a PrivateName on SuperProperty is a SyntaxError
+      # (ECMA-262 — the Nim parser doesn't reject it, so bail here to match
+      # the oracle's parse error instead of over-accepting).
+      if isPrivateName(c, node.propStart, node.propLength):
+        c.hadError = true
+        return allocReg(c)
+      let parentR = compileExpr(c, c.enclosingClassParent)
+      var holderR = parentR
+      if not c.inStaticElement:
+        let protoKey = emitLoadNameString(c, "prototype")
+        holderR = allocReg(c)
+        emit(c, instABC(LoadElem, holderR, parentR, protoKey))
+        if protoKey + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+        if parentR != holderR and parentR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      let name = c.slice(node.propStart, node.propStart + node.propLength)
+      let keyR = emitLoadNameString(c, name)
+      let dst = allocDst(c)
+      emit(c, instABC(LoadElem, dst, holderR, keyR))
+      if keyR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      if holderR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      if c.nextReg <= dst: c.nextReg = dst + 1
+      return dst
     # `obj.name` -> LoadProp. Mirrors compile_member's IC fast path. The
     # IC slot is allocated BEFORE the receiver is compiled (outer-first
     # order). LoadProp reads obj before writing dst, so the receiver may
@@ -2505,47 +2559,87 @@ proc compileCallInner(c: var Compiler, node: AstNode, retHint: int): uint8 =
     for _ in 0 ..< slotsNeeded:
       discard allocReg(c)
 
-    # Receiver into regs[base+1]. A bare-simple receiver places directly
-    # (one Mov, no defensive temp); otherwise preferred_dst so the recv
-    # expression's terminal op writes base+1 directly.
-    if not tryPlaceSimple(c, callee.recv, base + 1):
-      c.preferredDst = int(base + 1)
-      let recvR = compileExpr(c, callee.recv)
-      c.preferredDst = -1
-      if recvR != base + 1:
-        emit(c, instAB(Mov, base + 1, recvR))
-        releaseReg(c, recvR)
-
-    # Load the method into regs[base].
-    if callee.kind == Member:
-      # Slice 7d: `this.#m()` — resolve the private name to the mangled atom,
-      # PrivateCheck the receiver (regs[base+1]) BEFORE loading the method
-      # (compiler.zc ~5973-5996). Reading a setter-only accessor (kind==8) as
-      # a callee is a TypeError — deferred.
-      var name: string
-      var isPriv = false
-      var privId: uint32
-      var privKind: uint8
-      if isPrivateName(c, callee.propStart, callee.propLength):
-        name = resolvePrivate(c, callee.propStart, callee.propLength, privId, privKind)
-        if name.len == 0:
-          c.hadError = true; return base
-        if privKind == 8'u8:
-          c.hadError = true; return base
-        isPriv = true
-      else:
-        name = c.slice(callee.propStart, callee.propStart + callee.propLength)
-      let ic = allocIcSlot(c, name)
-      if ic > 255:
+    # Slice 7f: super-rooted member call — `super.m(...)` / `super[e](...)`.
+    # The receiver is the CURRENT `this` (Mov from this_reg in a static
+    # element, else LoadThis); the METHOD is looked up on the enclosing
+    # class's parent (instance → parent.prototype; static → parent itself),
+    # via LoadElem keyed by a string CONST (compiler.zc ~5921-5955).
+    let isSuperMember = callee.recv != nil and callee.recv.kind == SuperExpr
+    if isSuperMember:
+      if c.enclosingClassParent == nil:
         c.hadError = true; return base
-      if isPriv:
-        emitPrivateAccessCheck(c, base + 1, privId, privKind, name)
-      emit(c, instABC(LoadProp, base, base + 1, uint8(ic)))
+      # `super.#x()` — PrivateName on SuperProperty is a SyntaxError; bail to
+      # match the oracle's parse error (the Nim parser doesn't reject it).
+      if callee.kind == Member and
+         isPrivateName(c, callee.propStart, callee.propLength):
+        c.hadError = true; return base
+      # Receiver = current `this`.
+      if c.inStaticElement and c.thisReg >= 0:
+        emit(c, instAB(Mov, base + 1, uint8(c.thisReg)))
+      else:
+        emit(c, instA(LoadThis, base + 1))
+      # Method holder: instance → parent.prototype; static → parent ctor.
+      let parentR = compileExpr(c, c.enclosingClassParent)
+      var holderR = parentR
+      if not c.inStaticElement:
+        let protoKey = emitLoadNameString(c, "prototype")
+        holderR = allocReg(c)
+        emit(c, instABC(LoadElem, holderR, parentR, protoKey))
+        if protoKey + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+        if parentR != holderR and parentR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      if callee.kind == Member:
+        let mname = c.slice(callee.propStart, callee.propStart + callee.propLength)
+        let key2 = emitLoadNameString(c, mname)
+        emit(c, instABC(LoadElem, base, holderR, key2))
+        if key2 + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      else:
+        # `super[e](...)` — computed key.
+        let key3 = compileExpr(c, callee.index)
+        emit(c, instABC(LoadElem, base, holderR, key3))
+        if key3 + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      if holderR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
     else:
-      # Computed: LoadElem regs[base], recv, key.
-      let keyR = compileExpr(c, callee.index)
-      emit(c, instABC(LoadElem, base, base + 1, keyR))
-      releaseReg(c, keyR)
+      # Receiver into regs[base+1]. A bare-simple receiver places directly
+      # (one Mov, no defensive temp); otherwise preferred_dst so the recv
+      # expression's terminal op writes base+1 directly.
+      if not tryPlaceSimple(c, callee.recv, base + 1):
+        c.preferredDst = int(base + 1)
+        let recvR = compileExpr(c, callee.recv)
+        c.preferredDst = -1
+        if recvR != base + 1:
+          emit(c, instAB(Mov, base + 1, recvR))
+          releaseReg(c, recvR)
+
+      # Load the method into regs[base].
+      if callee.kind == Member:
+        # Slice 7d: `this.#m()` — resolve the private name to the mangled atom,
+        # PrivateCheck the receiver (regs[base+1]) BEFORE loading the method
+        # (compiler.zc ~5973-5996). Reading a setter-only accessor (kind==8) as
+        # a callee is a TypeError — deferred.
+        var name: string
+        var isPriv = false
+        var privId: uint32
+        var privKind: uint8
+        if isPrivateName(c, callee.propStart, callee.propLength):
+          name = resolvePrivate(c, callee.propStart, callee.propLength, privId, privKind)
+          if name.len == 0:
+            c.hadError = true; return base
+          if privKind == 8'u8:
+            c.hadError = true; return base
+          isPriv = true
+        else:
+          name = c.slice(callee.propStart, callee.propStart + callee.propLength)
+        let ic = allocIcSlot(c, name)
+        if ic > 255:
+          c.hadError = true; return base
+        if isPriv:
+          emitPrivateAccessCheck(c, base + 1, privId, privKind, name)
+        emit(c, instABC(LoadProp, base, base + 1, uint8(ic)))
+      else:
+        # Computed: LoadElem regs[base], recv, key.
+        let keyR = compileExpr(c, callee.index)
+        emit(c, instABC(LoadElem, base, base + 1, keyR))
+        releaseReg(c, keyR)
 
     # Args into regs[base+2..].
     var j = 0
@@ -4020,6 +4114,7 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
   ## codegen builds so `class C {}` names itself C inside the ctor.
   let isArrow = node.kind == ArrowFunc
   let isMethod = node.kind == MethodDef
+  let isStaticBlock = node.kind == StaticBlock
 
   # --- Envelope gate ------------------------------------------------
   # Arrow params/body live in a different AST variant (arrowParams /
@@ -4037,6 +4132,16 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
   elif isMethod:
     kindIsAsync = node.methodIsAsync
     kindIsGenerator = node.methodIsGenerator
+  elif isStaticBlock:
+    # Slice 7f: a static block is a plain synchronous, non-generator body,
+    # BUT the oracle marks its Function `is_async=true` — a quirk of the C's
+    # overloaded `node.bool_value`: the parser sets StaticBlock.bool_value=true
+    # (meaning "is a static element"), and compile_function's non-MethodDef
+    # branch reads `kind_is_async = node.bool_value` (compiler.zc ~4310, ~4473).
+    # So the block Function's disasm header carries " async". Replicate it
+    # exactly (no generator — StaticBlock.num is 0, so kind_is_generator stays
+    # false). This has no runtime effect for the empty-arg immediate invoke.
+    kindIsAsync = true
   else:
     kindIsAsync = node.fnIsAsync
     kindIsGenerator = node.fnIsGenerator
@@ -4088,6 +4193,14 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
     # Slice 7e: generator / async flags (computed from the node above).
     isGenerator: kindIsGenerator,
     isAsync: kindIsAsync,
+    # Slice 7f: a static-block body runs in static-super context (super.x
+    # resolves against the parent constructor directly, NOT parent.prototype).
+    # ONLY a StaticBlock body sets this — regular method / ctor bodies do NOT
+    # inherit it (compiler.zc resets in_static_element=false at init ~375 and
+    # sets it only for a StaticBlock node ~3961-3964). Static FIELD inits are
+    # compiled inline on the OUTER compiler (which carries the flag), so their
+    # nested funcs likewise don't inherit — matching the C.
+    inStaticElement: isStaticBlock,
   )
 
   # 1. Bind params to the low fixed regs r0..rN-1 in declaration order.
@@ -4536,6 +4649,239 @@ proc subtreeHasMemberSuper(n: AstNode): bool =
     if subtreeHasMemberSuper(ch): return true
   return false
 
+proc collectPatternNames(c: Compiler, pat: AstNode, acc: var seq[string]) =
+  ## Collect every binding name a destructuring pattern introduces (leaf
+  ## IdentExpr targets), recursing through nested patterns.
+  if pat == nil: return
+  case pat.kind
+  of IdentExpr:
+    if pat.`end` > pat.start: acc.add(c.slice(pat.start, pat.`end`))
+  of ObjectPattern, ArrayPattern:
+    for e in pat.patEntries:
+      if e != nil and e.kind == PatternEntry and e.patTarget != nil:
+        collectPatternNames(c, e.patTarget, acc)
+  else: discard
+
+proc collectBoundNamesShallow(c: Compiler, n: AstNode, acc: var seq[string]) =
+  ## Collect names DECLARED (var/let/const/function/class) in `n` WITHOUT
+  ## descending into nested function bodies OR into arbitrary expressions (an
+  ## assignment `x = 1` does NOT declare `x`). Used by the strict-global-store
+  ## detector to distinguish a bare-ident assignment to a LOCAL (safe) from
+  ## one to a GLOBAL (needs StoreGlobalStrict — a strict-only op Nim doesn't
+  ## model yet, so the enclosing member must bail rather than emit StoreGlobal).
+  if n == nil: return
+  case n.kind
+  of VarDecl:
+    for d in n.declarators:
+      if d.kind == Declarator and d.nameLength > 0:
+        acc.add(c.slice(d.nameStart, d.nameStart + d.nameLength))
+      elif d.kind == Declarator and d.declPattern != nil:
+        collectPatternNames(c, d.declPattern, acc)
+  of FunctionDecl:
+    if n.fnNameLen > 0: acc.add(c.slice(n.fnNameStart, n.fnNameStart + n.fnNameLen))
+  of ClassDecl:
+    if n.classNameLen > 0: acc.add(c.slice(n.classNameStart, n.classNameStart + n.classNameLen))
+  of FunctionExpr, ArrowFunc: return          # own scope — don't descend
+  # Only descend through STATEMENT containers (a bare expression can't
+  # introduce a binding). This keeps `x = 1` from spuriously marking `x` bound.
+  of BlockStmt:
+    for s in n.stmtList: collectBoundNamesShallow(c, s, acc)
+  of IfStmt:
+    collectBoundNamesShallow(c, n.thenStmt, acc)
+    collectBoundNamesShallow(c, n.elseStmt, acc)
+  of WhileStmt: collectBoundNamesShallow(c, n.whileBody, acc)
+  of DoWhileStmt: collectBoundNamesShallow(c, n.doBody, acc)
+  of ForStmt:
+    collectBoundNamesShallow(c, n.forInit, acc)
+    collectBoundNamesShallow(c, n.forBody, acc)
+  of ForInStmt, ForOfStmt:
+    collectBoundNamesShallow(c, n.forBinding, acc)
+    collectBoundNamesShallow(c, n.forInOfBody, acc)
+  of LabeledStmt: collectBoundNamesShallow(c, n.labeled, acc)
+  of SwitchStmt:
+    for cs in n.cases:
+      if cs != nil and cs.kind == SwitchCase:
+        for s in cs.caseBody: collectBoundNamesShallow(c, s, acc)
+  of TryStmt:
+    collectBoundNamesShallow(c, n.tryBlock, acc)
+    collectBoundNamesShallow(c, n.catchBlock, acc)
+    collectBoundNamesShallow(c, n.finallyBlock, acc)
+  else: discard
+
+proc subtreeHasStrictGlobalStore(c: Compiler, n: AstNode, bound: seq[string],
+                                 descendFns: bool): bool =
+  ## Does this STRICT body contain an assignment / update whose target is a
+  ## bare IdentExpr that is NOT locally bound (`bound`) — i.e. a store to a
+  ## global that, in strict mode, the oracle lowers to StoreGlobalStrict?
+  ## Nim always emits the non-strict StoreGlobal (strict form unmodeled), so a
+  ## strict body that contains one would diverge — the caller BAILS instead.
+  ##   * `descendFns=false` (method/ctor bodies): a nested function's OWN
+  ##     strictness is settled at its own compile — don't descend.
+  ##   * `descendFns=true` (STATIC BLOCK bodies): strict propagates into every
+  ##     nested function, so their global stores diverge too — descend.
+  if n == nil: return false
+  case n.kind
+  of Assignment:
+    if n.target != nil and n.target.kind == IdentExpr:
+      let nm = c.slice(n.target.start, n.target.`end`)
+      if nm notin bound: return true
+  of Unary, Postfix:
+    # `++x` / `x++` / `--x` / `x--` on a bare global → strict global store.
+    if n.unOp in {PlusPlus, MinusMinus} and n.operand != nil and
+       n.operand.kind == IdentExpr:
+      let nm = c.slice(n.operand.start, n.operand.`end`)
+      if nm notin bound: return true
+  of FunctionDecl, FunctionExpr, ArrowFunc:
+    if not descendFns: return false           # own scope / own strictness
+  else: discard
+  for ch in childNodes(n):
+    if subtreeHasStrictGlobalStore(c, ch, bound, descendFns): return true
+  return false
+
+proc collectAllBoundNames(c: Compiler, n: AstNode, acc: var seq[string]) =
+  ## Collect EVERY declared name across the whole subtree INCLUDING nested
+  ## function params + their locals (for the static-block full-descent strict
+  ## check). Over-approximates "bound" (a name declared in one nested function
+  ## counts as bound everywhere), which only makes the strict-store check bail
+  ## LESS — but the static-block corpus that matters here has no legitimate
+  ## cross-scope bare-global store, so this is safe in practice and errs toward
+  ## fewer false bails on well-formed blocks.
+  if n == nil: return
+  case n.kind
+  of FunctionDecl, FunctionExpr:
+    if n.fnNameLen > 0: acc.add(c.slice(n.fnNameStart, n.fnNameStart + n.fnNameLen))
+    for p in n.fnParams: collectPatternNames(c, (if p.kind == RestParam: p.restArg else: p), acc)
+    collectAllBoundNames(c, n.fnBody, acc)
+    return
+  of ArrowFunc:
+    for p in n.arrowParams: collectPatternNames(c, (if p.kind == RestParam: p.restArg else: p), acc)
+    collectAllBoundNames(c, n.arrowBody, acc)
+    return
+  else: discard
+  # Declarations at this level.
+  var shallow: seq[string] = @[]
+  collectBoundNamesShallow(c, n, shallow)
+  for s in shallow: acc.add(s)
+  for ch in childNodes(n): collectAllBoundNames(c, ch, acc)
+
+proc staticBlockNameOffends(c: Compiler, nameStart, nameLen: uint32): bool =
+  ## A static-block binding name that is a SyntaxError (§15.7.1): `arguments`
+  ## is banned, and `await` is reserved as a BindingIdentifier inside a static
+  ## init block. Escape-aware decode isn't needed for the common corpus, but
+  ## `arguments` decodes to `arguments` — decode the slice first.
+  if nameLen == 0: return false
+  let raw = c.slice(nameStart, nameStart + nameLen)
+  # cheap: if it contains no backslash, compare directly; else decode.
+  let nm = if '\\' in raw: decodeStringBody(c.src, nameStart, nameLen) else: raw
+  return nm == "arguments" or nm == "await"
+
+proc staticBlockRefsArgumentsOrAwait(c: Compiler, n: AstNode): bool =
+  ## Does the static-block subtree REFERENCE `arguments` / bind `await` at its
+  ## own level (not inside a nested ordinary function, which has its own
+  ## `arguments`)? A nested class's computed keys DO evaluate in the block
+  ## scope, so descend into those. Conservative bail for the §15.7.1 early
+  ## errors the Nim parser over-accepts once static blocks compile.
+  if n == nil: return false
+  case n.kind
+  of IdentExpr:
+    if staticBlockNameOffends(c, n.start, n.`end` - n.start): return true
+  of ClassDecl:
+    # `class await {}` — a class BINDING named `await` inside a static block.
+    if staticBlockNameOffends(c, n.classNameStart, n.classNameLen): return true
+  of VarDecl:
+    for d in n.declarators:
+      if d.kind == Declarator and d.nameLength > 0 and
+         staticBlockNameOffends(c, d.nameStart, d.nameLength): return true
+  of FunctionDecl, FunctionExpr, ArrowFunc:
+    return false                              # own `arguments` binding
+  else: discard
+  for ch in childNodes(n):
+    if staticBlockRefsArgumentsOrAwait(c, ch): return true
+  return false
+
+proc blockHasDupLexical(c: Compiler, body: AstNode): bool =
+  ## Top-level duplicate lexical binding OR let/const-vs-var clash in a block
+  ## (§15.7.1 / §14.2.1). Only the block's OWN statement list is scanned (a
+  ## nested block has its own scope). Detects `let x; let x;` and `let x; var x;`.
+  if body == nil or body.kind != BlockStmt: return false
+  var lexNames: seq[string] = @[]
+  var varNames: seq[string] = @[]
+  for s in body.stmtList:
+    if s == nil or s.kind != VarDecl: continue
+    let isVar = s.declKind == KwVar
+    for d in s.declarators:
+      if d.kind != Declarator or d.nameLength == 0: continue
+      let nm = c.slice(d.nameStart, d.nameStart + d.nameLength)
+      if isVar:
+        if nm in lexNames: return true        # var clashes a prior let/const
+        varNames.add(nm)
+      else:
+        if nm in lexNames or nm in varNames: return true   # dup lexical / clash
+        lexNames.add(nm)
+  return false
+
+proc subtreeHasDupLabel(c: Compiler, n: AstNode, enclosing: var seq[string]): bool =
+  ## A LabeledStatement whose label duplicates an enclosing label is a
+  ## SyntaxError (§14.13.1). Walk the label nesting; a nested class's static
+  ## block is a fresh label scope (its own compile handles it). Don't descend
+  ## into nested functions (fresh label scope).
+  if n == nil: return false
+  case n.kind
+  of LabeledStmt:
+    if n.labelLen > 0:
+      let lbl = c.slice(n.labelStart, n.labelStart + n.labelLen)
+      if lbl in enclosing: return true
+      enclosing.add(lbl)
+      let r = subtreeHasDupLabel(c, n.labeled, enclosing)
+      enclosing.setLen(enclosing.len - 1)
+      return r
+  of FunctionDecl, FunctionExpr, ArrowFunc:
+    return false
+  else: discard
+  for ch in childNodes(n):
+    if subtreeHasDupLabel(c, ch, enclosing): return true
+  return false
+
+proc staticBlockHasEarlyError(c: Compiler, body: AstNode): bool =
+  ## Combined §15.7.1 static-block early-error gate: banned `arguments`/`await`,
+  ## duplicate lexical bindings / let-var clash, and duplicate labels. These
+  ## are parse-phase SyntaxErrors the Nim parser doesn't enforce for a static
+  ## block nested in a function; bail so Nim doesn't over-accept.
+  if body == nil: return false
+  if staticBlockRefsArgumentsOrAwait(c, body): return true
+  if blockHasDupLexical(c, body): return true
+  var lbls: seq[string] = @[]
+  if subtreeHasDupLabel(c, body, lbls): return true
+  return false
+
+proc subtreeHasTopLevelReturn(n: AstNode): bool =
+  ## Does this static-block body contain a `return` statement at its OWN
+  ## level (NOT inside a nested function)? A static block is a `[~Return]`
+  ## context (ECMA-262 §15.7.1) — a top-level `return` is a SyntaxError the
+  ## oracle's parser rejects. The Nim parser doesn't clear the return-legal
+  ## flag when a static block nests inside a function, so it over-accepts;
+  ## detect + bail here to avoid the `zjs_missing` over-accept.
+  if n == nil: return false
+  case n.kind
+  of ReturnStmt: return true
+  of FunctionDecl, FunctionExpr, ArrowFunc: return false   # own return context
+  else: discard
+  for ch in childNodes(n):
+    if subtreeHasTopLevelReturn(ch): return true
+  return false
+
+proc staticBodyDivergesStrict(c: Compiler, body: AstNode,
+                              descendFns: bool = false): bool =
+  ## True if a STRICT static-block / method body would emit a strict-only
+  ## global store (bail signal). Gathers the body's bindings, then scans for a
+  ## bare-global assignment/update target. Static blocks pass descendFns=true
+  ## (strict propagates into nested functions; collect their bindings too).
+  if body == nil: return false
+  var bound: seq[string] = @[]
+  if descendFns: collectAllBoundNames(c, body, bound)
+  else:          collectBoundNamesShallow(c, body, bound)
+  return subtreeHasStrictGlobalStore(c, body, bound, descendFns)
+
 # --- Method-name canonicalization (mirrors intern_method_name_atom) --
 #
 # A class-member name may be an identifier (`m`), a string literal
@@ -4634,11 +4980,46 @@ proc internMethodNameAtom(c: Compiler, nameStart, nameLen: uint32): string =
 proc classValueUnsupported(c: Compiler, node: AstNode): bool =
   ## True if this class contains any construct slice 7a/7b defers. Checked
   ## before emitting anything so the whole class bails cleanly.
-  ## Slice 7b: `extends B` + `super(...)` calls are now SUPPORTED; still
-  ## deferred are super PROPERTY access (`super.m()` / `super.x`) and
-  ## spread-super (`super(...args)` → SpreadSuperCall).
-  for m in node.classMembers:
-    if m != nil and subtreeHasMemberSuper(m): return true   # super.prop — deferred
+  ## Slice 7b: `extends B` + `super(...)` calls are now SUPPORTED.
+  ## Slice 7f: member-super READS (`super.x`) and CALLS (`super.m(...)` /
+  ## `super[e](...)`) are SUPPORTED — the compile arms (compileExpr Member,
+  ## compileCall isMethod) emit the LoadElem-off-parent.prototype shape and
+  ## bail (hadError) on the still-deferred forms below (they recompile the
+  ## bare SuperExpr leaf, which errors):
+  ##   * `super.x = v` write   — Member-target assignment recompiles the recv
+  ##   * `super[e]` bare read  — the Computed arm recompiles the recv
+  ##   * `super.m(...args)`    — callHasSpreadArg bails before the super arm
+  ## Static blocks (`static { ... }`) are SUPPORTED (own Function + immediate
+  ## MethodInvoke recv=ctor, in source order with static fields).
+  #
+  # Slice 7f: member-super is byte-exact ONLY when the parent is a plain
+  # GLOBAL identifier (`extends B`, B a global) — the compile arms recompile
+  # `enclosingClassParent` as a LoadGlobal. When the parent is a LEXICAL
+  # binding (e.g. `class B {} class C extends B {…super…}` — B is a
+  # script-scope class local), the oracle builds a CLASS-SCOPE env: it wraps
+  # the super-using method in a MakeClosure and reads the parent through the
+  # env (NewObject + StoreProp env.B + LoadProp env.B). That class-scope
+  # env-capture machinery is out of this slice, so BAIL any class that uses
+  # member-super whose parent isn't a bare global identifier.
+  block memberSuperEnvGate:
+    var hasMemberSuper = false
+    for m in node.classMembers:
+      if m != nil and subtreeHasMemberSuper(m): hasMemberSuper = true; break
+    if hasMemberSuper:
+      let p = node.classParent
+      # Parent must be a bare identifier that resolves to a GLOBAL (not a
+      # local / captured binding) from the current compiler's scope.
+      if p == nil or p.kind != IdentExpr:
+        return true
+      let pname = c.slice(p.start, p.`end`)
+      if findLocalIndex(c, pname) >= 0: return true    # local parent → env-cap
+      # A parent captured from an ENCLOSING function scope also forces env
+      # capture. Walk the parent-compiler chain: any same-name local up the
+      # chain means the parent is a captured binding, not a global.
+      var pc = c.parent
+      while pc != nil:
+        if findLocalIndex(pc[], pname) >= 0: return true
+        pc = pc[].parent
   # A derived class whose body contains a direct eval forces class-scope
   # env-capture (parent read through the env in super) — out of slice 7b.
   if node.classParent != nil:
@@ -4661,6 +5042,15 @@ proc classValueUnsupported(c: Compiler, node: AstNode): bool =
       # DEFERRED — the static-private receiver install is a distinct path.
       if m.methodComputedKey == nil and m.methodNameLen > 0 and
          c.src[m.methodNameStart.int] == '#' and m.methodIsStatic: return true
+      # Slice 7f: a class method body is STRICT. Member-super is now enabled,
+      # so a method whose body touches `super.x` is no longer blanket-bailed —
+      # but if that (newly-enabled) body ALSO contains a strict-only global
+      # store, Nim would emit StoreGlobal where the oracle emits
+      # StoreGlobalStrict. Bail such a member to avoid the divergence. (This
+      # only fires for member-super bodies — the pre-existing strict-store gap
+      # in plain non-super methods is orthogonal and out of this slice.)
+      if subtreeHasMemberSuper(m.methodBody) and
+         staticBodyDivergesStrict(c, m.methodBody): return true
     of ClassField:
       # Slice 7c: static fields (plain + computed key) are now SUPPORTED.
       # Instance fields are lowered via the synthesized ctor (7a); a
@@ -4672,7 +5062,24 @@ proc classValueUnsupported(c: Compiler, node: AstNode): bool =
       if m.fieldComputedKey == nil and m.fieldNameLen > 0 and
          c.src[m.fieldNameStart.int] == '#' and m.fieldIsStatic: return true
     of StaticBlock:
-      return true                                  # static block — deferred
+      # Slice 7f: a static initialization block is SUPPORTED (compiled as its
+      # own Function, invoked immediately with `this`=ctor, in source order
+      # with static fields). A block that CAPTURES outer scope (its Function
+      # would be needsEnv) is refused at the compile site — compileFunction
+      # returns a needsEnv Function and the static-element pass bails.
+      # A static block body is STRICT (class body); if it would emit a
+      # strict-only global store (`static { x = 1 }`, OR a global store inside
+      # a nested function — strict propagates) — an op Nim doesn't model —
+      # bail rather than diverge (StoreGlobalStrict vs StoreGlobal).
+      if staticBodyDivergesStrict(c, m.staticBlockBody, descendFns = true): return true
+      # A top-level `return` in a static block is a SyntaxError the Nim parser
+      # over-accepts when the block nests in a function — bail to match the
+      # oracle (which parse-errors), avoiding a `zjs_missing` over-accept.
+      if subtreeHasTopLevelReturn(m.staticBlockBody): return true
+      # Other §15.7.1 static-block parse-phase early errors the Nim parser
+      # doesn't enforce (banned arguments/await, dup lexical / let-var clash,
+      # dup labels) — bail to avoid over-accepting.
+      if staticBlockHasEarlyError(c, m.staticBlockBody): return true
     else:
       return true
   return false
@@ -4830,6 +5237,29 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
     if m == nil: continue
     if m.kind == ClassField: continue          # fields handled separately
     if classMemberIsConstructor(c, m): continue
+    if m.kind == StaticBlock:
+      # Slice 7f QUIRK: the oracle's method-attach loop does NOT skip a
+      # StaticBlock (only ClassField is skipped — compiler.zc ~5182), so a
+      # static block gets a PHANTOM DefineMethod here in ADDITION to its real
+      # immediate-invoke in the static-element pass below. The block Function
+      # is thus compiled TWICE (two distinct const-pool entries). The phantom
+      # attaches to the CONSTRUCTOR (StaticBlock.bool_value=true → static) with
+      # the EMPTY name atom in an IC slot (name_length==0). We replicate it
+      # byte-for-byte:  LoadConst mReg; DefineMethod ctorReg, emptyNameIc, mReg.
+      let pfn = compileFunction(c.src, m, c)
+      if pfn == nil or pfn.needsEnv:
+        c.hadError = true
+        return ctorReg
+      c.constants.add(Constant(kind: ckFunction, fn: pfn))
+      let phantomReg = allocReg(c)
+      emit(c, instAU16(LoadConst, phantomReg, uint16(c.constants.len - 1)))
+      let emptyIc = allocIcSlot(c, "")
+      if emptyIc > 255:
+        c.hadError = true
+        return ctorReg
+      emit(c, instABC(DefineMethod, ctorReg, uint8(emptyIc), phantomReg))
+      releaseReg(c, phantomReg)
+      continue
     if m.kind != MethodDef: continue           # (guarded unsupported above)
     let mfn = compileFunction(c.src, m, c)
     if mfn == nil:
@@ -4909,25 +5339,61 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
     releaseReg(c, parentProtoReg)
     if parentReg + 1 == c.nextReg: c.nextReg = c.nextReg - 1
 
-  # 7. Static ELEMENTS (slice 7c): static field initializers, run at
-  #    class-definition time in SOURCE ORDER, each with `this` bound to the
+  # 7. Static ELEMENTS (slice 7c/7f): static field initializers AND static
+  #    initialization blocks, run at class-definition time in SOURCE ORDER
+  #    (INTERLEAVED — a single loop), each with `this` bound to the
   #    constructor. Instance fields are lowered via the ctor body (7a);
   #    only the static half is emitted here. Mirrors compiler.zc ~5341-5400.
   #    `this` is routed to ctorReg for the duration (so `this` inside a
-  #    static init reads the constructor), and borrowLocalOk is cleared so
-  #    ctorReg is never handed out as a scratch dst. Emits, per static field:
-  #      * plain name `static x = e`   -> compile e -> valReg;
-  #                                       StoreProp ctorReg.x <- valReg (IC)
-  #      * computed   `static [k] = e` -> compile e -> valReg; compile k ->
-  #                                       keyReg; StoreElem ctorReg,key,val
+  #    static init reads the constructor); borrowLocalOk is cleared so ctorReg
+  #    is never handed out as a scratch dst; inStaticElement is set so a
+  #    `super.x` in a static field init resolves against parent (not
+  #    parent.prototype). Emits:
+  #      * static block `static { ... }` -> compile the block as its OWN
+  #        Function (own var/lexical env), LoadConst it, then invoke it
+  #        immediately with `this`=ctor:
+  #          Mov base <- blockFnReg;  Mov recv <- ctorReg;
+  #          MethodInvoke base, base, argc=0            (compiler.zc ~5358-5373)
+  #      * plain field `static x = e`    -> compile e -> valReg;
+  #                                          StoreProp ctorReg.x <- valReg (IC)
+  #      * computed    `static [k] = e`  -> compile e -> valReg; compile k ->
+  #                                          keyReg; StoreElem ctorReg,key,val
   #    The value is compiled BEFORE the computed key (compiler.zc order).
-  #    StaticBlock members are refused up-front (classValueUnsupported).
   let savedThisReg = c.thisReg
   let savedBorrow  = c.borrowLocalOk
+  let savedStaticEl = c.inStaticElement
   c.thisReg = int(ctorReg)
   c.borrowLocalOk = false
+  c.inStaticElement = true
+  template restoreStaticState() =
+    c.thisReg = savedThisReg
+    c.borrowLocalOk = savedBorrow
+    c.inStaticElement = savedStaticEl
   for m in node.classMembers:
     if m == nil: continue
+    if m.kind == StaticBlock:
+      # Compile the block body as its own Function (compile_function_value):
+      # append to the const pool, LoadConst into blockFnReg. A block that
+      # captures outer scope (needsEnv) would need a MakeClosure wrap — out
+      # of the 7f corpus, so refuse rather than emit an unvalidated wrap.
+      let blockFn = compileFunction(c.src, m, c)
+      if blockFn == nil or blockFn.needsEnv:
+        c.hadError = true
+        restoreStaticState()
+        restoreClassState()
+        return ctorReg
+      c.constants.add(Constant(kind: ckFunction, fn: blockFn))
+      let blockFnReg = allocReg(c)
+      emit(c, instAU16(LoadConst, blockFnReg, uint16(c.constants.len - 1)))
+      let base = allocReg(c)       # callee slot
+      let recv = allocReg(c)       # base+1 — the `this` receiver
+      emit(c, instAB(Mov, base, blockFnReg))
+      emit(c, instAB(Mov, recv, ctorReg))
+      emit(c, instABC(MethodInvoke, base, base, 0))
+      releaseReg(c, recv)
+      releaseReg(c, base)
+      releaseReg(c, blockFnReg)
+      continue
     if m.kind != ClassField: continue
     if not m.fieldIsStatic: continue           # instance fields via ctor
     # Value: the initializer, or `undefined` when absent (`static x;`).
@@ -4944,13 +5410,11 @@ proc compileClassValue(c: var Compiler, node: AstNode): uint8 =
     else:
       let fname = internMethodNameAtom(c, m.fieldNameStart, m.fieldNameLen)
       if not emitStorePropAtom(c, ctorReg, fname, valReg):
-        c.thisReg = savedThisReg
-        c.borrowLocalOk = savedBorrow
+        restoreStaticState()
         restoreClassState()
         return ctorReg
     releaseReg(c, valReg)
-  c.thisReg = savedThisReg
-  c.borrowLocalOk = savedBorrow
+  restoreStaticState()
 
   releaseReg(c, protoReg)
   restoreClassState()

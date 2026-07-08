@@ -2831,12 +2831,47 @@ suite "slice 7b: extends + super()":
       "    4  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
       "    5  Return              r1\n"
 
-  test "class 7b: super.method() bails (member super deferred)":
-    # super PROPERTY access is a distinct op path (deferred) -> compile fails
-    # so the whole class surfaces as nim_missing, NOT wrong bytecode.
-    # disasmToString raises ValueError on a compile bail.
+  test "class 7f: super.method() byte-identity (member-super call)":
+    # Slice 7f: `super.n()` — receiver = current `this` (LoadThis), method
+    # looked up on parent.prototype via LoadElem keyed by string CONSTS.
+    let exp =
+      "\n" &
+      "=== <program>  code_len=11 regs=7 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadGlobal          r4   g109  ; B\n" &
+      "    6  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    7  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    8  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    9  Mov                 r0   <- r2\n" &
+      "   10  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=9 regs=7 fixed=0 params=0 consts=2 ics=0 ===\n" &
+      "    0  LoadThis            a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g109  ; B\n" &
+      "    2  LoadConst           r3   const#0 = \"prototype\"\n" &
+      "    3  LoadElem            a=4   b=2   c=3   | u16=770 i16=770\n" &
+      "    4  LoadConst           r5   const#1 = \"n\"\n" &
+      "    5  LoadElem            a=0   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    6  MethodInvoke        r0   <- base=r0 recv=r1 argc=0\n" &
+      "    7  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    8  Return              r0\n"
+    check disasmToString("class C extends B { m(){ super.n(); } }") == exp
+
+  test "class 7f: super.x read + super.x = v write bails":
+    # `super.x` READ is supported; `super.x = v` WRITE recompiles the bare
+    # SuperExpr recv -> compile error (matches the oracle SyntaxError).
+    check "LoadElem" in disasmToString("class C extends B { m(){ return super.x; } }")
     expect ValueError:
-      discard disasmToString("class C extends B { m(){ super.n(); } }")
+      discard disasmToString("class C extends B { m(){ super.x = 1; } }")
 
   test "class 7b: spread super(...args) bails (SpreadSuperCall deferred)":
     expect ValueError:
@@ -3147,7 +3182,10 @@ suite "slice 7c: deferred class shapes bail (nim_missing, not text_diff)":
   test "static private method static #m -> compile error":
     expect ValueError:
       discard disasmToString("class C { static #m(){} }")
-  test "static block -> compile error":
+  test "static block with strict global store -> compile error":
+    # Slice 7f: static blocks compile, BUT the block body is STRICT — a bare
+    # global store (`x = 1`) needs StoreGlobalStrict, which Nim doesn't model,
+    # so this specific shape bails (never emits the wrong StoreGlobal).
     expect ValueError:
       discard disasmToString("class C { static { x = 1; } }")
   # NOTE (slice 7e): async / generator methods NO LONGER bail — they now
@@ -3584,3 +3622,164 @@ suite "slice 7d: private members byte-identity":
       "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
       "    3  Return              r1\n"
     check disasmToString("class Outer { #o = 1; }") == exp9
+
+suite "slice 7f: static blocks + member-super byte-identity":
+  test "class C { static { x; } }":
+    let exp =
+      "\n" &
+      "=== <program>  code_len=11 regs=8 fixed=2 params=0 consts=3 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=2   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadConst           r4   const#2 = <function>\n" &
+      "    6  Mov                 r5   <- r4\n" &
+      "    7  Mov                 r6   <- r2\n" &
+      "    8  MethodInvoke        r5   <- base=r5 recv=r6 argc=0\n" &
+      "    9  Mov                 r0   <- r2\n" &
+      "   10  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=3 regs=2 fixed=0 params=0 consts=0 ics=0 async ===\n" &
+      "    0  LoadGlobal          r0   g109  ; x\n" &
+      "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#2  code_len=3 regs=2 fixed=0 params=0 consts=0 ics=0 async ===\n" &
+      "    0  LoadGlobal          r0   g109  ; x\n" &
+      "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r0\n"
+    check disasmToString("class C { static { x; } }") == exp
+
+  test "interleave: static a = 1; static { this.b = 2; }":
+    # static field + static block run in SOURCE ORDER; block uses StoreProp
+    # (this=ctor), not a global store — strict-agnostic.
+    let txt = disasmToString("class C { static a = 1; static { this.b = 2; } }")
+    check "StoreProp           r2.a <- r4" in txt      # static field first
+    check "MethodInvoke        r5   <- base=r5 recv=r6 argc=0" in txt  # then block
+
+  test "static { let y = 1; y; } (own lexical env, TDZ hole)":
+    let txt = disasmToString("class C { static { let y = 1; y; } }")
+    check "LoadHole" in txt          # the block body has its own let-scope TDZ seed
+    check "MethodInvoke        r5   <- base=r5 recv=r6 argc=0" in txt
+
+  test "method m(){} then static { init(); } in source order":
+    let exp =
+      "\n" &
+      "=== <program>  code_len=13 regs=8 fixed=2 params=0 consts=4 ics=3 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadConst           r4   const#2 = <function>\n" &
+      "    6  DefineMethod        a=2   b=2   c=4   | u16=1026 i16=1026\n" &
+      "    7  LoadConst           r4   const#3 = <function>\n" &
+      "    8  Mov                 r5   <- r4\n" &
+      "    9  Mov                 r6   <- r2\n" &
+      "   10  MethodInvoke        r5   <- base=r5 recv=r6 argc=0\n" &
+      "   11  Mov                 r0   <- r2\n" &
+      "   12  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#2  code_len=4 regs=2 fixed=0 params=0 consts=0 ics=0 async ===\n" &
+      "    0  InvokeGlobal        r0   <- g109(base=r0 argc=0)  [carrier@1] ; init\n" &
+      "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#3  code_len=4 regs=2 fixed=0 params=0 consts=0 ics=0 async ===\n" &
+      "    0  InvokeGlobal        r0   <- g109(base=r0 argc=0)  [carrier@1] ; init\n" &
+      "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  Return              r0\n"
+    check disasmToString("class C { m(){} static { init(); } }") == exp
+
+  test "two static blocks -> two phantom DefineMethods + two invokes":
+    let txt = disasmToString("class C { static { a; } static { b; } }")
+    # 5 consts: ctor + 2 phantom + 2 real; two MethodInvoke calls.
+    check "consts=5" in txt
+    check txt.count("MethodInvoke") == 2
+
+  test "member-super: super.x read (parent.prototype.x via LoadElem)":
+    let exp =
+      "\n" &
+      "=== <program>  code_len=11 regs=7 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadGlobal          r4   g109  ; B\n" &
+      "    6  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    7  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    8  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    9  Mov                 r0   <- r2\n" &
+      "   10  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=6 regs=6 fixed=0 params=0 consts=2 ics=0 ===\n" &
+      "    0  LoadGlobal          r0   g109  ; B\n" &
+      "    1  LoadConst           r1   const#0 = \"prototype\"\n" &
+      "    2  LoadElem            a=2   b=0   c=1   | u16=256 i16=256\n" &
+      "    3  LoadConst           r3   const#1 = \"x\"\n" &
+      "    4  LoadElem            a=4   b=2   c=3   | u16=770 i16=770\n" &
+      "    5  Return              r4\n"
+    check disasmToString("class C extends B { m(){ return super.x; } }") == exp
+
+  test "member-super: super.m(1, 2) call with args (TailMethodInvoke)":
+    let exp =
+      "\n" &
+      "=== <program>  code_len=11 regs=7 fixed=2 params=0 consts=2 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r2   const#0 = <function>\n" &
+      "    2  LoadProp            r3   <- r2.prototype  ic#0\n" &
+      "    3  LoadConst           r4   const#1 = <function>\n" &
+      "    4  DefineMethod        a=3   b=1   c=4   | u16=1025 i16=1025\n" &
+      "    5  LoadGlobal          r4   g109  ; B\n" &
+      "    6  LoadProp            r5   <- r4.prototype  ic#0\n" &
+      "    7  SetProto            a=5   b=3   c=0   | u16=3 i16=3\n" &
+      "    8  SetParentCtor       a=2   b=4   c=0   | u16=4 i16=4\n" &
+      "    9  Mov                 r0   <- r2\n" &
+      "   10  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=0 class-ctor ===\n" &
+      "    0  LoadCallee          a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    2  Return              r1\n" &
+      "\n" &
+      "=== <program>/const#1  code_len=10 regs=9 fixed=0 params=0 consts=2 ics=0 ===\n" &
+      "    0  LoadThis            a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r4   g109  ; B\n" &
+      "    2  LoadConst           r5   const#0 = \"prototype\"\n" &
+      "    3  LoadElem            a=6   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    4  LoadConst           r7   const#1 = \"m\"\n" &
+      "    5  LoadElem            a=0   b=6   c=7   | u16=1798 i16=1798\n" &
+      "    6  LoadInt             r2   = 1\n" &
+      "    7  LoadInt             r3   = 2\n" &
+      "    8  TailMethodInvoke    base=r0 argc=2\n" &
+      "    9  Return              r0\n"
+    check disasmToString("class C extends B { m(){ return super.m(1, 2); } }") == exp
+
+  test "member-super: super.x = v write bails (recompiles bare SuperExpr)":
+    expect ValueError:
+      discard disasmToString("class C extends B { m(){ super.x = 1; } }")
+
+  test "member-super: bare super[e] read bails":
+    expect ValueError:
+      discard disasmToString("class C extends B { m(){ return super[y]; } }")
