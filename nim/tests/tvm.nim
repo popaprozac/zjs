@@ -168,12 +168,113 @@ suite "vm function calls (slice 2)":
     check ev("function f(a){return a;} f(1,2,3)") == "1"
     check ev("function f(a,b){return b;} f(7)") == "undefined"
 
+suite "vm string operations (slice 3)":
+  test "string concat":
+    check ev("\"a\"+\"b\"") == "ab"
+    check ev("\"x\"+1") == "x1"
+    check ev("1+\"x\"") == "1x"
+    check ev("\"num=\"+10") == "num=10"
+    check ev("\"a\"+1+2") == "a12"       # left-assoc: ("a"+1)+2
+    check ev("1+2+\"a\"") == "3a"        # (1+2)+"a" — numeric then concat
+    check ev("\"a\"+(1+2)") == "a3"
+  test "ToString in concat (int / bool / null / undefined)":
+    check ev("\"\"+42") == "42"
+    check ev("\"\"+0") == "0"
+    check ev("\"\"+(-5)") == "-5"
+    check ev("\"\"+123456789012") == "123456789012"   # integral double
+    check ev("\"\"+true") == "true"
+    check ev("\"\"+false") == "false"
+    check ev("\"\"+null") == "null"
+    check ev("\"\"+undefined") == "undefined"
+    check ev("\"x\"+true") == "xtrue"
+    check ev("\"x\"+null") == "xnull"
+  test "ToNumber in arithmetic":
+    check ev("\"5\"*2") == "10"
+    check ev("\"7\"-2") == "5"
+    check ev("\"10\"/2") == "5"
+    check ev("\"6\"%4") == "2"
+    check ev("\"2\"**3") == "8"
+    check ev("\"0x1F\"*1") == "31"       # strtod hex
+    check ev("\"  42  \"-0") == "42"     # whitespace trim
+    check ev("\"\"-0") == "0"            # empty string → 0
+  test "unary plus (ToNumber)":
+    check ev("+\"42\"") == "42"
+    check ev("+\"  17  \"") == "17"
+    check ev("+true") == "1"
+    check ev("+false") == "0"
+    check ev("+null") == "0"
+  test "bool / null arithmetic coercion":
+    check ev("true+1") == "2"
+    check ev("1+true") == "2"
+    check ev("false+1") == "1"
+    check ev("null+1") == "1"
+    check ev("true-1") == "0"
+    check ev("null*3") == "0"
+    check ev("~true") == "-2"
+    check ev("true|0") == "1"
+  test "typeof":
+    check ev("typeof 5") == "number"
+    check ev("typeof (1+1)") == "number"
+    check ev("typeof \"s\"") == "string"
+    check ev("typeof \"\"") == "string"
+    check ev("typeof true") == "boolean"
+    check ev("typeof undefined") == "undefined"
+    check ev("typeof null") == "object"
+  test "string comparison (lexicographic)":
+    check ev("\"a\"<\"b\"") == "true"
+    check ev("\"b\"<\"a\"") == "false"
+    check ev("\"a\"<=\"a\"") == "true"
+    check ev("\"b\">\"a\"") == "true"
+    check ev("\"z\"<\"aa\"") == "false"  # 'z'(122) > 'a'(97)
+    check ev("\"aa\"<\"z\"") == "true"
+  test "string equality":
+    check ev("\"abc\"===\"abc\"") == "true"
+    check ev("\"abc\"===\"abd\"") == "false"
+    check ev("\"a\"!==\"b\"") == "true"
+    check ev("\"a\"==\"a\"") == "true"
+    check ev("\"a\"!=\"b\"") == "true"
+    check ev("\"5\"===5") == "false"     # different type
+    check ev("\"5\"==5") == "true"       # loose: ToNumber
+    check ev("5==\"5\"") == "true"
+    check ev("\"0\"==false") == "true"
+  test "mixed string/number comparison (ToNumber)":
+    check ev("\"5\"<3") == "false"
+    check ev("\"2\"<3") == "true"
+    check ev("\"abc\"<5") == "false"     # NaN → false
+    check ev("\"5\">3") == "true"
+  test "ToBoolean over strings":
+    check ev("!\"\"") == "true"
+    check ev("!\"x\"") == "false"
+    check ev("\"\"?1:2") == "2"
+    check ev("\"x\"?1:2") == "1"
+    check ev("\"\"||3") == "3"
+    check ev("\"x\"||3") == "x"
+    check ev("\"x\"&&5") == "5"
+    check ev("\"x\"??3") == "x"
+  test "template literals":
+    check ev("`hello`") == "hello"
+    check ev("`a${1+1}b`") == "a2b"
+    check ev("`x${\"y\"}z`") == "xyz"
+    check ev("`${1}${2}`") == "12"
+    check ev("`a${1}b${2}c`") == "a1b2c"
+    check ev("`${true}`") == "true"
+    check ev("`${null}`") == "null"
+    check ev("`n=${10}`") == "n=10"
+
 suite "vm bail discipline":
   test "built-in globals bail (out of slice-1 scope)":
     check bails("NaN")           # LoadGlobal of a built-in slot
     check bails("Infinity")
-  test "string operations bail":
-    check bails("\"a\"+\"b\"")   # string concat = slice 3
+  test "non-integer-double ToString bails (dtoa deferred)":
+    # CRITICAL: must NOT emit "0.333333" — the shortest-round-trip dtoa is
+    # a later slice; a wrong result is far worse than a bail.
+    check bails("\"\"+(1/3)")
+    check bails("\"\"+0.5")
+    check bails("0.1+\"\"")
+    check bails("`${1/3}`")
+    check bails("\"\"+(0.1+0.2)")
+  test "property access / built-ins bail":
+    check bails("\"foo\".length")   # object model = Phase 5
   test "capturing closures bail (need object model)":
     # inner fn references outer local `x` → needsEnv → resolveCallee bails.
     check bails("function outer(){ var x=1; function inner(){ return x; } return inner(); } outer()")

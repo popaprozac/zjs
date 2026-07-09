@@ -23,6 +23,12 @@
 import std/math
 import bytecode, value
 
+# C strtod for the ECMA-262 StringToNumber path (value.zc ~217): ported
+# verbatim so hex ("0x1F"→31), decimals, and whitespace-trim match the
+# oracle exactly rather than being re-approximated in Nim.
+proc c_strtod(s: cstring, endp: ptr cstring): float64 {.importc: "strtod", header: "<stdlib.h>".}
+proc c_snprintf_ll(buf: cstring, n: csize_t, fmt: cstring, v: clonglong): cint {.importc: "snprintf", header: "<stdio.h>", varargs.}
+
 type
   VmValKind* = enum
     vkVal       ## a plain NaN-boxed ZjsValue (number / bool / null / undefined)
@@ -214,16 +220,170 @@ proc toBool(v: ZjsValue): bool =
   if isNull(v) or isUndefined(v): return false
   bail("ToBoolean on non-primitive")
 
+# --- primitive coercion ladder (slice 3; ports of value.zc/context.zc) --
+
+proc strToNumber(s: string): float64 =
+  ## ECMA-262 StringToNumber via strtod (zjs_to_double string arm,
+  ## value.zc ~217). Trim leading/trailing JS whitespace; empty / all-ws
+  ## → 0; strtod handles hex ("0x1F"→31) / decimals / signs. A trailing
+  ## non-numeric tail (ep != end) → NaN. Infinity must match the exact
+  ## spec spelling "Infinity" (optionally signed), else NaN.
+  const WS = {' ', '\t', '\n', '\r', '\v', '\f'}
+  var lo = 0
+  var hi = s.len
+  while lo < hi and s[lo] in WS: inc lo
+  while hi > lo and s[hi-1] in WS: dec hi
+  if lo == hi: return 0.0                     # empty / all-whitespace → 0
+  # strtod needs a NUL-terminated C string of the trimmed body.
+  let body = s[lo ..< hi]
+  let cbody = cstring(body)
+  var ep: cstring = nil
+  let parsed = c_strtod(cbody, addr ep)
+  # ep must have reached the end of `body` (whole trimmed string consumed).
+  let consumed = int(cast[uint](ep) - cast[uint](cbody))
+  if consumed != body.len or consumed == 0:
+    return NaN
+  if parsed == Inf or parsed == NegInf:
+    # Validate the exact spec spelling: [+/-]Infinity, nothing else.
+    var q = 0
+    if body.len > 0 and (body[0] == '+' or body[0] == '-'): q = 1
+    if not (body.len - q == 8 and body[q ..< body.len] == "Infinity"):
+      return NaN
+  parsed
+
+proc vmToNumber(x: VmVal): ZjsValue =
+  ## ToNumber over a VmVal (zjs_to_double, value.zc ~207). Numbers pass
+  ## through; a string is parsed by StringToNumber → int32 if it lands on
+  ## an exact int32-range integer, else a double (so `"5"*2`→10 stays a
+  ## clean integer, matching the oracle). Function operands are out of
+  ## scope → bail.
+  case x.kind
+  of vkFunction: bail("ToNumber on function operand")
+  of vkString:
+    let d = strToNumber(x.s)
+    if d == d and d == floor(d) and d >= -2147483648.0 and d <= 2147483647.0:
+      return int32Val(int32(d))
+    return doubleVal(d)
+  of vkVal:
+    let v = x.v
+    if isNumber(v): return v
+    # bool→1/0, null→0, undefined→NaN — exactly zjs_to_double's arms.
+    if isBool(v):      return int32Val(if asBool(v) != 0: 1'i32 else: 0'i32)
+    if isNull(v):      return int32Val(0'i32)
+    if isUndefined(v): return doubleVal(NaN)
+    bail("ToNumber on non-primitive")
+
+proc vmToString(x: VmVal): string =
+  ## ToString over a VmVal (zjs_to_string, context.zc ~33638). string→
+  ## itself; int32→decimal digits; bool/null/undefined→literals. Double:
+  ## NaN/±Infinity have fixed spellings; an INTEGER-valued double in the
+  ## exact-integer window prints its digits. A NON-INTEGER double (0.5,
+  ## 1/3, 0.1+0.2) needs js_double_to_chars (ECMAScript shortest-round-
+  ## trip dtoa) — DEFERRED to a later slice → BAIL, never `%g` (which would
+  ## print "0.333333", a WRONG result vs the oracle's 0.3333333333333333).
+  case x.kind
+  of vkFunction: bail("ToString on function operand")
+  of vkString:   return x.s
+  of vkVal:
+    let v = x.v
+    if isInt32(v): return $asInt32(v)
+    if isDouble(v):
+      let d = asDouble(v)
+      if d != d: return "NaN"
+      if d == Inf: return "Infinity"
+      if d == NegInf: return "-Infinity"
+      # Integer-valued double: exact integer print. context.zc uses %lld
+      # for |d| <= 1e15 and %.0f for integral |d| < 1e21; both windows are
+      # integer-valued, so a single integral guard + %lld covers the safe
+      # range. Beyond 1e15 %lld could overflow i64 — restrict to the
+      # snprintf %lld window and bail on the (rare, integral > 1e15) rest
+      # rather than risk a wrong digit.
+      if d == floor(d) and d >= -1e15 and d <= 1e15:
+        var buf: array[64, char]
+        let n = c_snprintf_ll(cast[cstring](addr buf[0]), csize_t(64),
+                              cstring("%lld"), clonglong(int64(d)))
+        if n <= 0 or n >= 64: bail("ToString double overflow")
+        var res = newString(n)
+        for i in 0 ..< n: res[i] = buf[i]
+        return res
+      # Non-integer (or integral beyond the %lld window) double → dtoa.
+      bail("ToString non-integer double (needs dtoa)")
+    if isBool(v):      return (if asBool(v) != 0: "true" else: "false")
+    if isNull(v):      return "null"
+    if isUndefined(v): return "undefined"
+    bail("ToString on non-primitive")
+
+proc vmToBool(x: VmVal): bool =
+  ## ToBoolean over a VmVal (zjs_to_bool_coerce, value.zc ~270): a
+  ## non-empty string is truthy, ""→false; else defer to the ZjsValue arm.
+  case x.kind
+  of vkFunction: return true            # a function object is always truthy
+  of vkString:   return x.s.len > 0
+  of vkVal:      return toBool(x.v)
+
 # --- register helpers: unwrap a VmVal to a numeric ZjsValue -------------
 
 proc numVal(x: VmVal): ZjsValue {.inline.} =
-  ## A register that must be a number/bool/null/undefined for an
-  ## arithmetic/comparison op. A string / function operand is out of scope
-  ## for these ops → bail.
+  ## Operand of an arithmetic / bitwise / relational op, ToNumber-coerced
+  ## to a number (zjs_arith_* / zjs_to_double, value.zc). Numbers pass
+  ## through; string / bool / null / undefined go through the ToNumber
+  ## ladder ("5"→5, true→1, null→0, undefined→NaN) so the arith helpers
+  ## always see a real number. A function operand is out of scope → bail.
   case x.kind
-  of vkString:   bail("operation on string operand")
+  of vkString:   vmToNumber(x)
   of vkFunction: bail("operation on function operand")
-  of vkVal:      x.v
+  of vkVal:
+    if isNumber(x.v): x.v
+    else: vmToNumber(x)
+
+# --- VmVal-aware comparison (ports of zjs_cmp_lt/le, loose/strict eq) ---
+# Relational: two strings → lexicographic by code unit (value.zc ~719);
+# otherwise ToNumber both then numeric compare (value.zc ~733). Equality:
+# two strings → byte equality (strict_eq, value.zc ~499); otherwise defer
+# to the numeric loose/strict arms (a mixed string/number path ToNumbers
+# the string, matching value.zc ~609 / ~499 → strict_eq numeric).
+
+proc vmCmpLt(a, b: VmVal): bool =
+  if a.kind == vkString and b.kind == vkString:
+    return a.s < b.s
+  cmpLt(numVal(a), numVal(b))
+
+proc vmCmpLe(a, b: VmVal): bool =
+  if a.kind == vkString and b.kind == vkString:
+    return a.s <= b.s
+  cmpLe(numVal(a), numVal(b))
+
+proc vmStrictEq(a, b: VmVal): bool =
+  ## zjs_strict_eq (value.zc ~488). String===String → byte equality;
+  ## String===non-string (or vice versa) → false (different type); else
+  ## numeric strict-eq. A function value never appears in our targets'
+  ## strict-eq — treat as out of scope.
+  if a.kind == vkString or b.kind == vkString:
+    if a.kind == vkString and b.kind == vkString: return a.s == b.s
+    return false                     # string vs number/bool/null → not equal
+  if a.kind == vkFunction or b.kind == vkFunction:
+    bail("strict-eq on function operand")
+  strictEqNum(a.v, b.v)
+
+proc vmLooseEq(a, b: VmVal): bool =
+  ## zjs_loose_eq (value.zc ~530). String==String → byte equality.
+  ## String==Number → ToNumber(string) then numeric compare (value.zc
+  ## ~609). String vs null/undefined → false (never equal). Else defer to
+  ## the numeric/null loose arm.
+  if a.kind == vkString and b.kind == vkString:
+    return a.s == b.s
+  if a.kind == vkString or b.kind == vkString:
+    let (sx, ox) = if a.kind == vkString: (a, b) else: (b, a)
+    # string == null/undefined is false; string == number → ToNumber(str).
+    if ox.kind == vkVal and (isNull(ox.v) or isUndefined(ox.v)):
+      return false
+    if ox.kind == vkFunction:
+      bail("loose-eq string vs function")
+    # both sides numeric after coercing the string (ox is number/bool).
+    return strictEqNum(vmToNumber(sx), numVal(ox))
+  if a.kind == vkFunction or b.kind == vkFunction:
+    bail("loose-eq on function operand")
+  looseEqSimple(a.v, b.v)
 
 # --- the interpreter ----------------------------------------------------
 
@@ -359,11 +519,19 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
 
     # --- binary arithmetic --------------------------------------------
     of Add:
+      # ECMA-262 Op::Add (interpreter.zc ~3508): if EITHER operand is a
+      # string, ToString both and concatenate → a string; else numeric add.
+      # (ToPrimitive on objects = slice 4; vmToString bails on function /
+      # non-integer double.)
       let a = regs[int(inst.b)]
       let b = regs[int(inst.c)]
       if a.kind == vkString or b.kind == vkString:
-        bail("string concat")   # slice 3
-      regs[int(inst.a)] = vv(arithAdd(a.v, b.v))
+        regs[int(inst.a)] = vs(vmToString(a) & vmToString(b))
+      else:
+        # Numeric path: ToNumber both (numVal) so bool/null/undefined
+        # operands coerce (true+1→2, null+1→1) rather than passing a
+        # non-number into arithAdd. Functions bail via numVal.
+        regs[int(inst.a)] = vv(arithAdd(numVal(a), numVal(b)))
     of Sub:
       regs[int(inst.a)] = vv(arithSub(rn(inst.b), rn(inst.c)))
     of Mul:
@@ -385,9 +553,14 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         else:
           regs[int(inst.a)] = vv(doubleVal(float64(s)))
       elif a.kind == vkString:
-        bail("string + imm")
+        # Slow fallback = real Add: string LHS → concat with the imm's
+        # ToString (interpreter.zc ~3641). imm is an int32 so ToString is
+        # its decimal digits.
+        regs[int(inst.a)] = vs(a.s & $imm)
       else:
-        regs[int(inst.a)] = vv(arithAdd(a.v, int32Val(imm)))
+        # Numeric fallback: ToNumber the operand (double/bool/null/undef)
+        # then add. numVal handles bool→1 / null→0 / undefined→NaN.
+        regs[int(inst.a)] = vv(arithAdd(numVal(a), int32Val(imm)))
     of SubImm:
       let a = regs[int(inst.b)]
       let imm = int32(cast[int8](inst.c))
@@ -397,28 +570,29 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
           regs[int(inst.a)] = vv(int32Val(int32(d)))
         else:
           regs[int(inst.a)] = vv(doubleVal(float64(d)))
-      elif a.kind == vkString:
-        bail("string - imm")
       else:
-        regs[int(inst.a)] = vv(arithSub(a.v, int32Val(imm)))
+        # Sub coerces both via ToNumber (no concat). Covers unary plus
+        # (`+x` → `x - 0`): "7"-2→5, +true→1, +null→0, +"42"→42. numVal
+        # runs the full ToNumber ladder over string / bool / null / undef.
+        regs[int(inst.a)] = vv(arithSub(numVal(a), int32Val(imm)))
 
     # --- comparison → bool --------------------------------------------
     of CmpEq:
-      regs[int(inst.a)] = vv(boolVal(looseEqSimple(rn(inst.b), rn(inst.c))))
+      regs[int(inst.a)] = vv(boolVal(vmLooseEq(regs[int(inst.b)], regs[int(inst.c)])))
     of CmpNe:
-      regs[int(inst.a)] = vv(boolVal(not looseEqSimple(rn(inst.b), rn(inst.c))))
+      regs[int(inst.a)] = vv(boolVal(not vmLooseEq(regs[int(inst.b)], regs[int(inst.c)])))
     of CmpStrictEq:
-      regs[int(inst.a)] = vv(boolVal(strictEqNum(rn(inst.b), rn(inst.c))))
+      regs[int(inst.a)] = vv(boolVal(vmStrictEq(regs[int(inst.b)], regs[int(inst.c)])))
     of CmpStrictNe:
-      regs[int(inst.a)] = vv(boolVal(not strictEqNum(rn(inst.b), rn(inst.c))))
+      regs[int(inst.a)] = vv(boolVal(not vmStrictEq(regs[int(inst.b)], regs[int(inst.c)])))
     of CmpLt:
-      regs[int(inst.a)] = vv(boolVal(cmpLt(rn(inst.b), rn(inst.c))))
+      regs[int(inst.a)] = vv(boolVal(vmCmpLt(regs[int(inst.b)], regs[int(inst.c)])))
     of CmpLe:
-      regs[int(inst.a)] = vv(boolVal(cmpLe(rn(inst.b), rn(inst.c))))
+      regs[int(inst.a)] = vv(boolVal(vmCmpLe(regs[int(inst.b)], regs[int(inst.c)])))
     of CmpGt:
-      regs[int(inst.a)] = vv(boolVal(cmpLt(rn(inst.c), rn(inst.b))))
+      regs[int(inst.a)] = vv(boolVal(vmCmpLt(regs[int(inst.c)], regs[int(inst.b)])))
     of CmpGe:
-      regs[int(inst.a)] = vv(boolVal(cmpLe(rn(inst.c), rn(inst.b))))
+      regs[int(inst.a)] = vv(boolVal(vmCmpLe(regs[int(inst.c)], regs[int(inst.b)])))
     of CmpLtImm:
       let a = rn(inst.b); let imm = int32(cast[int8](inst.c))
       if isInt32(a): regs[int(inst.a)] = vv(boolVal(asInt32(a) < imm))
@@ -448,25 +622,50 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
     of Neg:    regs[int(inst.a)] = vv(arithNeg(rn(inst.b)))
     of BitNot: regs[int(inst.a)] = vv(bitNot(rn(inst.b)))
     of LogicalNot:
-      regs[int(inst.a)] = vv(boolVal(not toBool(rn(inst.b))))
+      # ToBoolean over the VmVal so ""→false / "x"→true are distinguished
+      # (rn would ToNumber both to NaN, collapsing the distinction).
+      regs[int(inst.a)] = vv(boolVal(not vmToBool(regs[int(inst.b)])))
+
+    # --- type introspection -------------------------------------------
+    of Typeof:
+      # ECMA-262 typeof (interpreter.zc ~6070): the result is a type STRING
+      # (a vkString). Symbol / BigInt aren't representable in our value set;
+      # a function VALUE → "function". null → "object".
+      let x = regs[int(inst.b)]
+      let label =
+        case x.kind
+        of vkString:   "string"
+        of vkFunction: "function"
+        of vkVal:
+          let v = x.v
+          if isUndefined(v): "undefined"
+          elif isNull(v):    "object"
+          elif isBool(v):    "boolean"
+          elif isNumber(v):  "number"
+          else: bail("typeof on non-primitive")
+      regs[int(inst.a)] = vs(label)
 
     # --- control flow -------------------------------------------------
     of Jmp:
       ip = ip + 1 + int(instBcI16(inst))
       continue
     of JmpIfTrue:
-      if toBool(rn(inst.a)):
+      # ToBoolean over the VmVal (a string condition, e.g. `""?1:2`, must
+      # distinguish ""→false from "x"→true; rn's ToNumber would lose it).
+      if vmToBool(regs[int(inst.a)]):
         ip = ip + 1 + int(instBcI16(inst)); continue
     of JmpIfFalse:
-      if not toBool(rn(inst.a)):
+      if not vmToBool(regs[int(inst.a)]):
         ip = ip + 1 + int(instBcI16(inst)); continue
     of JmpIfNullish:
-      let v = rn(inst.a)
-      if isNull(v) or isUndefined(v):
+      # A string / function value is never null/undefined; only inspect the
+      # ZjsValue arm.
+      let x = regs[int(inst.a)]
+      if x.kind == vkVal and (isNull(x.v) or isUndefined(x.v)):
         ip = ip + 1 + int(instBcI16(inst)); continue
     of JmpIfNotNullish:
-      let v = rn(inst.a)
-      if not (isNull(v) or isUndefined(v)):
+      let x = regs[int(inst.a)]
+      if not (x.kind == vkVal and (isNull(x.v) or isUndefined(x.v))):
         ip = ip + 1 + int(instBcI16(inst)); continue
 
     # --- fused compare-and-branch (branch when FALSE) -----------------
@@ -474,19 +673,19 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
     # carrier code[ip+1], branch base J+2. taken: ip = ip+2+off;
     # not-taken: ip = ip+2 (skip the carrier).
     of JmpIfNotLt:
-      let ct = cmpLt(rn(inst.a), rn(inst.b))
+      let ct = vmCmpLt(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ct: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotLe:
-      let ct = cmpLe(rn(inst.a), rn(inst.b))
+      let ct = vmCmpLe(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ct: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotGt:
-      let ct = cmpLt(rn(inst.b), rn(inst.a))
+      let ct = vmCmpLt(regs[int(inst.b)], regs[int(inst.a)])
       ip = if ct: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotGe:
-      let ct = cmpLe(rn(inst.b), rn(inst.a))
+      let ct = vmCmpLe(regs[int(inst.b)], regs[int(inst.a)])
       ip = if ct: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotLtImm:
@@ -510,38 +709,38 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       ip = if ct: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotEq:
-      let ct = looseEqSimple(rn(inst.a), rn(inst.b))
+      let ct = vmLooseEq(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ct: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotNe:
-      let ne = not looseEqSimple(rn(inst.a), rn(inst.b))
+      let ne = not vmLooseEq(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ne: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotStrictEq:
-      let ct = strictEqNum(rn(inst.a), rn(inst.b))
+      let ct = vmStrictEq(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ct: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
     of JmpIfNotStrictNe:
-      let ne = not strictEqNum(rn(inst.a), rn(inst.b))
+      let ne = not vmStrictEq(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ne: ip + 2 else: ip + 2 + int(instBcI16(code[ip+1]))
       continue
 
     # --- inverse-polarity fused compare-and-branch (branch when TRUE) -
     # interpreter.zc ~4128: same carrier layout; branch taken on TRUE.
     of JmpIfLt:
-      let ct = cmpLt(rn(inst.a), rn(inst.b))
+      let ct = vmCmpLt(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ct: ip + 2 + int(instBcI16(code[ip+1])) else: ip + 2
       continue
     of JmpIfLe:
-      let ct = cmpLe(rn(inst.a), rn(inst.b))
+      let ct = vmCmpLe(regs[int(inst.a)], regs[int(inst.b)])
       ip = if ct: ip + 2 + int(instBcI16(code[ip+1])) else: ip + 2
       continue
     of JmpIfGt:
-      let ct = cmpLt(rn(inst.b), rn(inst.a))
+      let ct = vmCmpLt(regs[int(inst.b)], regs[int(inst.a)])
       ip = if ct: ip + 2 + int(instBcI16(code[ip+1])) else: ip + 2
       continue
     of JmpIfGe:
-      let ct = cmpLe(rn(inst.b), rn(inst.a))
+      let ct = vmCmpLe(regs[int(inst.b)], regs[int(inst.a)])
       ip = if ct: ip + 2 + int(instBcI16(code[ip+1])) else: ip + 2
       continue
     of JmpIfLtImm:

@@ -757,6 +757,62 @@ proc decodeStringBody(src: string, rawStart, rawLen: uint32): string =
       result.add(ch)
       i += 1
 
+# --- Untagged-template escape validation (mirrors template_escapes_are_valid,
+# compiler.zc ~3682). An invalid \x / \u / legacy-octal escape in an
+# UNTAGGED template is a SyntaxError; the caller sets hadError so the case
+# surfaces as nim-missing, never a false match. Only scans; decoding
+# reuses decodeStringBody.
+proc templateEscapesAreValid(src: string, start, length: uint32): bool =
+  var i: uint32 = 0
+  while i < length:
+    let ch = src[int(start + i)]
+    if ch != '\\':
+      i += 1
+      continue
+    if i + 1 >= length: return false
+    let nx = src[int(start + i + 1)]
+    if nx == 'x':
+      if i + 3 >= length: return false
+      if hexVal(src[int(start + i + 2)]) < 0 or hexVal(src[int(start + i + 3)]) < 0:
+        return false
+      i += 4
+      continue
+    # Legacy octal / decimal escapes \1..\9, and \0 followed by a digit.
+    if nx >= '1' and nx <= '9': return false
+    if nx == '0' and i + 2 < length:
+      let look = src[int(start + i + 2)]
+      if look >= '0' and look <= '9': return false
+    if nx == 'u':
+      if i + 2 >= length: return false
+      let after = src[int(start + i + 2)]
+      if after == '{':
+        var p: uint32 = i + 3
+        var cp: uint32 = 0
+        var sawDigit = false
+        while p < length:
+          let cc = src[int(start + p)]
+          if cc == '}': break
+          let d = hexVal(cc)
+          if d < 0: return false
+          cp = cp * 16 + uint32(d)
+          if cp > 1114111'u32: return false
+          sawDigit = true
+          p += 1
+        if not sawDigit: return false
+        if p >= length or src[int(start + p)] != '}': return false
+        i = p + 1
+        continue
+      else:
+        if i + 5 >= length: return false
+        if hexVal(src[int(start + i + 2)]) < 0 or hexVal(src[int(start + i + 3)]) < 0 or
+           hexVal(src[int(start + i + 4)]) < 0 or hexVal(src[int(start + i + 5)]) < 0:
+          return false
+        i += 6
+        continue
+    # All other escapes are valid in a template body.
+    i += 2
+  true
+
 # --- Operator token -> Op (mirrors binary_op in compiler.zc) --------
 #
 # Returns `Halt` as the "unsupported" sentinel, exactly like the C.
@@ -1597,6 +1653,42 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let dst = allocReg(c)
     emit(c, instAU16(LoadConst, dst, uint16(c.constants.len - 1)))
     return dst
+  of TemplatePartExpr:
+    # A raw literal segment of an untagged template (compiler.zc
+    # compile_template_part ~3635): start/end are the RAW bounds (no
+    # backticks). Validate escapes (invalid → SyntaxError → hadError), then
+    # LoadConst the decoded body.
+    let rawStart = node.start
+    let rawLen = if node.`end` > node.start: node.`end` - node.start else: 0'u32
+    if not templateEscapesAreValid(c.src, rawStart, rawLen):
+      c.hadError = true
+      return 0
+    let s = decodeStringBody(c.src, rawStart, rawLen)
+    c.constants.add(Constant(kind: ckString, s: s))
+    let dst = allocReg(c)
+    emit(c, instAU16(LoadConst, dst, uint16(c.constants.len - 1)))
+    return dst
+  of TemplateExpr:
+    # Untagged template literal (compiler.zc compile_template_lit ~3880):
+    # children alternate part / expr / part / … (both ends are parts).
+    # Compile the first, then Add each subsequent child onto the running
+    # accumulator — string concat once any operand is a string.
+    if node.tparts.len == 0:
+      c.constants.add(Constant(kind: ckString, s: ""))
+      let dst = allocReg(c)
+      emit(c, instAU16(LoadConst, dst, uint16(c.constants.len - 1)))
+      return dst
+    var acc = compileExpr(c, node.tparts[0])
+    var i = 1
+    while i < node.tparts.len:
+      let nextR = compileExpr(c, node.tparts[i])
+      let dst = allocReg(c)
+      emit(c, instABC(Add, dst, acc, nextR))
+      if nextR + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      if acc + 1 == c.nextReg: c.nextReg = c.nextReg - 1
+      acc = dst
+      inc i
+    return acc
   of Paren:
     return compileExpr(c, node.inner)
   of Unary:
@@ -1682,10 +1774,13 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
           return dstG
     # --- typeof (non-ident) / void / arithmetic-negate family --------
     case node.unOp
-    of Minus, Bang, Tilde, KwTypeof, KwVoid:
+    of Minus, Plus, Bang, Tilde, KwTypeof, KwVoid:
+      # Unary `+` (Plus) joins the family in slice 3: it is ToNumber(x),
+      # lowered to `x - 0` (SubImm) below — the SubImm handler runs the
+      # same coercion ladder (true→1, "5"→5) as zjs_arith_sub.
       discard
     else:
-      # ++/-- and unary `+` -- later slices.
+      # ++/-- -- later slices.
       c.hadError = true
       return 0
     let src = compileExpr(c, node.operand)
@@ -1700,6 +1795,14 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       let dst = allocReg(c)
       emit(c, instAB(Typeof, dst, src))
       releaseReg(c, src)
+      return dst
+    # Unary plus: ToNumber(x) via `x - 0` (SubImm dst, src, 0) — matches
+    # compiler.zc ~2014-2024.
+    if node.unOp == Plus:
+      let dst = allocReg(c)
+      emit(c, instABC(SubImm, dst, src, 0))
+      releaseReg(c, src)
+      if c.nextReg <= dst: c.nextReg = dst + 1
       return dst
     let dst = allocReg(c)
     let op =

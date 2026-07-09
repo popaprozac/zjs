@@ -1434,9 +1434,20 @@ suite "slice 2b: deferred shapes bail to nim-missing":
   test "logical-assign &&= is deferred":
     expect ValueError:
       discard disasmToString("a &&= b;")
-  test "unary plus is deferred":
-    expect ValueError:
-      discard disasmToString("+a;")
+
+suite "slice 3: unary plus + template literals (byte identity)":
+  test "unary plus lowers to SubImm x, 0 (ToNumber)":
+    # compiler.zc ~2014: `+x` == `x - 0` via SubImm dst, src, 0.
+    let txt = disasmToString("+a;")
+    check "SubImm              r2   <- r1, imm=0" in txt
+  test "template literal lowers to LoadConst + Add chain":
+    let txt = disasmToString("`a${1}b`;")
+    check "LoadConst           r1   const#0 = \"a\"" in txt
+    check "Add" in txt
+    check "const#1 = \"b\"" in txt
+  test "template with no substitution is a single LoadConst":
+    let txt = disasmToString("`hi`;")
+    check "LoadConst           r1   const#0 = \"hi\"" in txt
 
 # --- Slice 4d: arrow functions (simple params) ----------------------
 #
