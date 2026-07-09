@@ -28,7 +28,7 @@ Nim parser is proportionally larger than its source, so LOC understates frontend
 | **Middle** | Bytecode format/ops | 894 | ✅ Done | `bytecode.nim` — 145-op enum, Inst, Function |
 | | Compiler (AST→bytecode) | 9,049 | 🟢 ~95% | Phase 3 — byte-identical `disasm` across the language; hard-edge tail bails cleanly (see below) |
 | | AOT (bytecode serialize) | 840 | ⬜ Not started | |
-| **Backend** | Interpreter / VM | 9,170 | ⬜ Not started | Phase 4 — dispatch loop + opcodes |
+| **Backend** | Interpreter / VM | 9,170 | 🟡 ~35% | Phase 4 — `vm.nim` executes arithmetic/control-flow/functions/recursion/strings/coercion byte-exact vs `zjs eval`; object model (slice 4) = the heap/GC fork, CHECKPOINTED pending design |
 | | Eval entry points | 214 | ⬜ Not started | |
 | **Runtime core** | Value type + ops | 3,806 | 🟡 ~2% | `value.nim` = NaN-boxed immediates only (Phase 0-1) |
 | | Object model, hidden classes, **GC**, Realm, **all built-ins** | **34,528** | ⬜ Not started | `context.zc` — 52% of the engine; see breakdown |
