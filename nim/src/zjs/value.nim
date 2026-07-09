@@ -55,3 +55,16 @@ proc asInt32*(v: ZjsValue): int32 {.inline.} = cast[int32](uint32(v.bits))
 proc asDouble*(v: ZjsValue): float64 {.inline.} =
   bitsToDouble(v.bits - DOUBLE_ENCODE_OFFSET)
 proc asBool*(v: ZjsValue): cint {.inline.} = cint(v.bits and 1'u64)
+
+# --- Cell encode/decode (GC heap; mirrors src/value.zc:2926/2932) -----
+# A heap cell is a raw pointer. On the platforms zjs targets, an object
+# pointer's high 16 bits are 0 and the OTHER_TAG bit (bit 1) is clear, so
+# storing the pointer bits verbatim satisfies `isCell` (NOT_CELL_MASK==0).
+# This is the EXACT layout of zjs_cell_from_ptr / zjs_cell_as_ptr: the raw
+# pointer bits ARE the value bits, no shifting or tagging.
+
+proc cellFromPtr*(p: pointer): ZjsValue {.inline.} =
+  ZjsValue(bits: cast[uint64](p))
+
+proc cellAsPtr*(v: ZjsValue): pointer {.inline.} =
+  cast[pointer](v.bits)

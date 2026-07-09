@@ -485,6 +485,14 @@ nim-cabi-smoke: $(NIM_LIB)
 nim-test:
 	$(NIM) c -r --mm:arc -d:release --hints:off nim/tests/tvalue.nim
 
+# Phase 5 slice A: GC memory foundation (non-moving cell allocator +
+# Rooted[T] RAII rooting + mark/sweep collect). GC is invisible to
+# `zjs eval`; these unit tests ARE the validation (alloc/root/collect/
+# survive-vs-free/stress). --mm:arc governs HOST code; the JS cell heap
+# is manual (alloc0/dealloc, raw ptr).
+nim-tgc:
+	$(NIM) c -r --mm:arc -d:release --hints:off --warnings:off nim/tests/tgc.nim
+
 NIM_LEXBIN := $(NIM_OUT)/nim-lex
 nim-lex: $(NIM_LEXBIN)
 $(NIM_LEXBIN): $(NIM_SRCS) nim/tools/nim_lex.nim nim/tools/labels.nim | $(NIM_OUT)
@@ -531,7 +539,7 @@ nim-diffeval: nim-eval cli
 	@find $(DIFFEVAL_CORPUS) -name '*.js' 2>/dev/null | grep -v _FIXTURE | awk 'NR%40==0' \
 		| bash nim/tests/measure_evalparity.sh
 
-.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse nim-disasm nim-diffdisasm nim-eval nim-diffeval
+.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-tgc nim-lex nim-difflex nim-parse nim-diffparse nim-disasm nim-diffdisasm nim-eval nim-diffeval
 
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
