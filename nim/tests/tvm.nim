@@ -261,6 +261,34 @@ suite "vm string operations (slice 3)":
     check ev("`${null}`") == "null"
     check ev("`n=${10}`") == "n=10"
 
+suite "vm object model (slice B1)":
+  test "object literal property read":
+    check ev("({a:1}).a") == "1"
+    check ev("({a:1,b:2}).b") == "2"
+    check ev("({a:{b:7}}).a.b") == "7"
+  test "object property store then read":
+    check ev("var o={}; o.x=5; o.x") == "5"
+    check ev("var o={a:1}; o.a=o.a+1; o.a") == "2"
+    check ev("var o={a:1,b:2,c:3}; o.a+o.b+o.c") == "6"
+  test "missing property is undefined":
+    check ev("({x:1}).y") == "undefined"
+  test "array literal indexed read":
+    check ev("[10,20,30][1]") == "20"
+    check ev("[[1],[2]][1][0]") == "2"
+  test "array length":
+    check ev("var a=[1,2,3]; a.length") == "3"
+  test "array element store then read":
+    check ev("var a=[]; a[0]=9; a[0]") == "9"
+    check ev("var a=[5]; a[0]=a[0]*2; a[0]") == "10"
+  test "out-of-range array read is undefined":
+    check ev("[1,2,3][5]") == "undefined"
+  test "objects survive allocation churn (GC under eval)":
+    # `o` is held in a var while 100k throwaway objects are allocated in a
+    # loop — o.a must still read 1 (o was never freed while live).
+    check ev("var o={a:1}; for(let i=0;i<100000;i=i+1){ var t={x:i}; } o.a") == "1"
+    # Same for an array held across churn.
+    check ev("var a=[7]; for(let i=0;i<100000;i=i+1){ var t=[i,i+1]; } a[0]") == "7"
+
 suite "vm bail discipline":
   test "built-in globals bail (out of slice-1 scope)":
     check bails("NaN")           # LoadGlobal of a built-in slot

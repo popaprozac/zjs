@@ -21,7 +21,7 @@
 ## comments for the exact source anchor.
 
 import std/math
-import bytecode, value
+import bytecode, value, gc
 
 # C strtod for the ECMA-262 StringToNumber path (value.zc ~217): ported
 # verbatim so hex ("0x1F"→31), decimals, and whitespace-trim match the
@@ -66,6 +66,120 @@ proc vf(f: Function): VmVal {.inline.} = VmVal(kind: vkFunction, fn: f)
 
 proc bail(msg: string) {.noreturn.} =
   raise newException(VmBail, msg)
+
+# --- GC frame rooting ---------------------------------------------------
+# The GC scans `heap.frameRoots` (seq[ptr seq[ZjsValue]]) natively, but a
+# VM register file is a `seq[VmVal]` — the GC module can't name that type
+# without importing vm.nim (circular). So the VM keeps its OWN stack of
+# active frame register files here and marks the cell-holding `vkVal`
+# registers via `heap.customMark`, installed once by the top-level run.
+# Only vkVal registers can hold a heap cell; vkString / vkFunction are
+# Nim-managed (skipped). LIFO: runFrame pushes on entry, pops on exit.
+#
+# Correctness: EVERY value that flows into a register goes through this
+# scan, so a cell held in any active frame's regs (or in globals) is a
+# root and survives a collect() triggered mid-execution (e.g. by an
+# allocating NewObject inside a loop). This is what makes the object model
+# safe under GC pressure — no live object reachable from a register is
+# ever freed.
+var vmFrames {.threadvar.}: seq[ptr seq[VmVal]]
+var vmGlobals {.threadvar.}: ptr seq[VmVal]
+var vmHeap {.threadvar.}: ptr GcHeap   ## the heap the customMark hook reads
+
+proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
+  if x.kind == vkVal:
+    markCell(heap, x.v)
+
+proc vmMarkFrames() =
+  ## Mark every cell held in an active frame's registers and in globals.
+  ## Reads the current heap from the threadvar so the closure captures
+  ## nothing (Nim forbids capturing a `var GcHeap` param).
+  if vmHeap == nil: return
+  let heap = vmHeap
+  if vmGlobals != nil:
+    for x in vmGlobals[]:
+      markVmVal(heap[], x)
+  for fr in vmFrames:
+    if fr != nil:
+      for x in fr[]:
+        markVmVal(heap[], x)
+
+# --- object-model op helpers -------------------------------------------
+# Slice B1 has NO prototype chain: a receiver must be a plain object or
+# array cell for property/element access to be faithful. Anything else (a
+# string with `.length`, a number, an inherited-only prop like `.toString`
+# on a bare object) is out of scope → BAIL, never a wrong result.
+
+const
+  ## Names present on Object.prototype (from the live oracle). A LoadProp /
+  ## LoadElem that MISSES an own property but whose name is here would, in a
+  ## real run, resolve through the prototype chain to an inherited value
+  ## (e.g. `({}).toString` → a function) — machinery B1 lacks. So a missing
+  ## own property with one of these names BAILS (never the wrong `undefined`).
+  OBJECT_PROTO_NAMES = [
+    "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable", "toString",
+    "valueOf", "__defineGetter__", "__defineSetter__", "__lookupGetter__",
+    "__lookupSetter__", "toLocaleString", "__proto__", "constructor"]
+  ## Names present on Array.prototype (the array proto chain also includes
+  ## Object.prototype, checked separately).
+  ARRAY_PROTO_NAMES = [
+    "push", "pop", "indexOf", "map", "forEach", "fill", "copyWithin", "join",
+    "toString", "slice", "concat", "every", "some", "find", "findIndex",
+    "filter", "reduce", "reduceRight", "includes", "lastIndexOf", "at", "flat",
+    "flatMap", "reverse", "sort", "splice", "shift", "unshift", "findLast",
+    "findLastIndex", "toReversed", "toSorted", "toSpliced", "with", "keys",
+    "values", "entries", "constructor", "length"]
+
+proc isObjectInherited(name: string): bool =
+  for n in OBJECT_PROTO_NAMES:
+    if n == name: return true
+  false
+
+proc isArrayInherited(name: string): bool =
+  ## The array proto chain = Array.prototype -> Object.prototype.
+  for n in ARRAY_PROTO_NAMES:
+    if n == name: return true
+  isObjectInherited(name)
+
+const GC_TRIGGER_INTERVAL = 4096
+  ## Force a collect every N cell allocations so a long allocating loop
+  ## (e.g. `for(...) { var t={x:i}; }`) actually EXERCISES the mid-
+  ## execution collect + frame rooting, keeping live memory bounded — and
+  ## proving no register/globals-held object is freed while live.
+
+proc asObjectCell(x: VmVal): ptr ObjectCell {.inline.} =
+  ## The receiver as a plain ObjectCell, or nil if it isn't one.
+  if x.kind == vkVal and isCell(x.v) and cellHeader(x.v).typeTag == TAG_OBJECT:
+    cast[ptr ObjectCell](cellAsPtr(x.v))
+  else:
+    nil
+
+proc asArrayCell(x: VmVal): ptr ArrayCell {.inline.} =
+  ## The receiver as a plain ArrayCell, or nil if it isn't one.
+  if x.kind == vkVal and isCell(x.v) and cellHeader(x.v).typeTag == TAG_ARRAY:
+    cast[ptr ArrayCell](cellAsPtr(x.v))
+  else:
+    nil
+
+proc arrayIndex(key: ZjsValue): int =
+  ## An array-index integer from a key value (non-negative int32), else -1
+  ## (a non-index key routes to the object property path or bails).
+  if isInt32(key):
+    let i = asInt32(key)
+    if i >= 0: return int(i)
+  elif isDouble(key):
+    let d = asDouble(key)
+    if d == d and d >= 0.0 and d <= 2147483647.0 and d == d.int.float64:
+      return int(d)
+  -1
+
+proc maybeCollect(heap: var GcHeap) {.inline.} =
+  ## Trigger a full collect once the allocation count crosses the interval.
+  ## The frame regs + globals are roots (heap.customMark), so every live
+  ## object survives; only unreachable throwaway cells are reclaimed.
+  if heap.totalAllocated - heap.lastCollectAt >= GC_TRIGGER_INTERVAL:
+    discard collect(heap)
+    heap.lastCollectAt = heap.totalAllocated
 
 # --- ZjsValue arithmetic / comparison (ports of src/value.zc) ----------
 
@@ -388,7 +502,7 @@ proc vmLooseEq(a, b: VmVal): bool =
 # --- the interpreter ----------------------------------------------------
 
 proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
-              depth: int): VmVal
+              heap: var GcHeap, depth: int): VmVal
 
 proc resolveCallee(v: VmVal): Function =
   ## A call target must be a callable function value. Anything else (a
@@ -409,7 +523,7 @@ proc resolveCallee(v: VmVal): Function =
   f
 
 proc callFunction(callee: Function, args: openArray[VmVal],
-                  globals: var seq[VmVal], depth: int): VmVal =
+                  globals: var seq[VmVal], heap: var GcHeap, depth: int): VmVal =
   ## Create a fresh frame for `callee`, bind `args` to its low registers
   ## r0..r(argc-1) (the params), run it from ip 0, and return its Return
   ## value. Mirrors push_call_frame + the Op::Invoke frame push
@@ -418,15 +532,39 @@ proc callFunction(callee: Function, args: openArray[VmVal],
   ## missing params left undefined.
   if depth + 1 > MAX_CALL_DEPTH:
     bail("call stack depth exceeded")
-  runFrame(callee, args, globals, depth + 1)
+  runFrame(callee, args, globals, heap, depth + 1)
 
-proc runFunction*(f: Function, globals: var seq[VmVal], depth: int = 0): VmVal =
+proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
+                  depth: int = 0): VmVal =
   ## Execute the top-level program `f` (public entry point). A program takes
-  ## no arguments; see `runFrame` for the shared execution core.
-  runFrame(f, [], globals, depth)
+  ## no arguments; see `runFrame` for the shared execution core. Installs the
+  ## GC root hook (frame regs + globals) for the duration of the run so any
+  ## collect() triggered by object/array allocation keeps live cells.
+  let savedFrames = vmFrames
+  let savedGlobals = vmGlobals
+  let savedHeap = vmHeap
+  vmFrames.setLen(0)
+  vmGlobals = addr globals
+  vmHeap = addr heap
+  heap.customMark = vmMarkFrames
+  try:
+    result = runFrame(f, [], globals, heap, depth)
+  finally:
+    heap.customMark = nil
+    vmFrames = savedFrames
+    vmGlobals = savedGlobals
+    vmHeap = savedHeap
+
+proc runFunction*(f: Function, globals: var seq[VmVal]): VmVal =
+  ## Backward-compatible entry that owns a private heap for the run (used by
+  ## call sites that don't thread a heap). Cells are collected when the heap
+  ## is destroyed at scope exit.
+  var heap = newGcHeap()
+  result = runFunction(f, globals, heap, 0)
+  destroyHeap(heap)
 
 proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
-              depth: int): VmVal =
+              heap: var GcHeap, depth: int): VmVal =
   ## Execute `f`'s bytecode in a fresh register frame, returning the value in
   ## its `Return` operand register. `args` seed the callee's low param
   ## registers r0..; extras drop, missing params stay undefined (matching
@@ -437,6 +575,13 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
   var regs = newSeq[VmVal](int(f.registerCount))
   for i in 0 ..< regs.len:
     regs[i] = vv(undefinedVal())
+  # Register THIS frame's register file as a GC root for its whole
+  # lifetime (LIFO push/pop). Every cell a register holds is now scanned
+  # by markRoots via heap.customMark, so a collect() triggered by an
+  # allocating op inside this frame keeps the live objects. `defer` pops
+  # on EVERY exit path (normal return, VmBail, deep-recursion).
+  vmFrames.add(addr regs)
+  defer: vmFrames.setLen(vmFrames.len - 1)
   # Bind args into the callee's low registers r0..r(argc-1) — the param
   # slots (compileFunction lays params out at r0.. in declaration order).
   # min(args.len, registerCount) guards a malformed argc; extras are dropped.
@@ -799,7 +944,7 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       var callArgs = newSeq[VmVal](argc)
       for i in 0 ..< argc:
         callArgs[i] = regs[base + 1 + i]
-      regs[int(inst.a)] = callFunction(callee, callArgs, globals, depth)
+      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth)
     of InvokeGlobal:
       # Fused global-callee call (interpreter.zc ~5634): a=ret_dst, b=base,
       # c=argc; the carrier at code[ip+1] holds the u16 global slot. The
@@ -822,7 +967,144 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       var callArgs = newSeq[VmVal](argc)
       for i in 0 ..< argc:
         callArgs[i] = regs[base + 1 + i]
-      regs[int(inst.a)] = callFunction(callee, callArgs, globals, depth)
+      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth)
+
+    # --- object / array model (slice B1) ------------------------------
+    of NewObject:
+      # a=dst. Allocate an empty ObjectCell (interpreter.zc ~6802
+      # ctx_new_object). The cell is boxed into a vkVal ZjsValue; it is a
+      # root immediately (this frame's regs are scanned).
+      regs[int(inst.a)] = vv(cellValue(allocObject(heap)))
+      maybeCollect(heap)
+    of InitObjData:
+      # a=obj, b=keyReg (a string const), c=valReg. CreateDataProperty on
+      # the object literal (interpreter.zc ~6933). The key came from a
+      # LoadConst ckString, so regs[keyReg] is a vkString.
+      let o = asObjectCell(regs[int(inst.a)])
+      if o == nil: bail("InitObjData on non-object")
+      let keyv = regs[int(inst.b)]
+      if keyv.kind != vkString: bail("InitObjData non-string key")
+      let valv = regs[int(inst.c)]
+      # The side table stores ZjsValues; a string / function property value
+      # can't be represented here → out of scope, bail (never wrong).
+      if valv.kind != vkVal: bail("InitObjData string/function value")
+      objSet(heap, o, keyv.s, valv.v)
+    of StoreProp:
+      # a=obj, b=ic, c=val. Own-property set by name f.ics[ic]
+      # (interpreter.zc ~6678). Only plain object receivers are in scope;
+      # a string / number / array-with-a-named-prop receiver bails.
+      let o = asObjectCell(regs[int(inst.a)])
+      if o == nil: bail("StoreProp on non-object receiver")
+      let name = f.ics[int(inst.b)]
+      let sv = regs[int(inst.c)]
+      if sv.kind != vkVal: bail("StoreProp string/function value")
+      objSet(heap, o, name, sv.v)
+    of LoadProp:
+      # a=dst, b=obj, c=ic. Own-property get by name f.ics[ic]
+      # (interpreter.zc ~6503). Missing own prop → undefined. NO proto
+      # chain: an array's `.length` returns the element count; any other
+      # inherited-only name (.toString, .hasOwnProperty) or a non-object /
+      # non-array receiver BAILS (never a wrong value).
+      let name = f.ics[int(inst.c)]
+      let recv = regs[int(inst.b)]
+      let o = asObjectCell(recv)
+      if o != nil:
+        if objHas(heap, o, name):
+          regs[int(inst.a)] = vv(objGet(heap, o, name))
+        elif isObjectInherited(name):
+          # Absent OWN prop but the name lives on Object.prototype — the
+          # real run resolves an inherited value (function / accessor) B1
+          # can't produce. Bail rather than return a wrong `undefined`.
+          bail("LoadProp inherited property (needs prototype chain)")
+        else:
+          regs[int(inst.a)] = vv(undefinedVal())
+      else:
+        let a = asArrayCell(recv)
+        if a != nil:
+          if name == "length":
+            regs[int(inst.a)] = vv(int32Val(int32(arrLength(heap, a))))
+          else:
+            # A named (non-index) property on an array: only own props are
+            # in scope. B1 arrays carry no named props, and inherited Array
+            # methods need built-ins → bail.
+            bail("LoadProp named property on array (needs proto/props)")
+        else:
+          bail("LoadProp on non-object/array receiver")
+    of NewArray:
+      # a=base(dst), b=base, c=count. Elements are in regs[base..base+count)
+      # (interpreter.zc ~6817). Result reuses base.
+      let base = int(inst.b)
+      let count = int(inst.c)
+      var elems = newSeq[ZjsValue](count)
+      for i in 0 ..< count:
+        let e = regs[base + i]
+        # An element must be a plain ZjsValue (number/bool/null/undefined
+        # or a cell). A string / function element can't be a NaN-boxed
+        # ZjsValue here → out of scope, bail.
+        if e.kind != vkVal: bail("NewArray element is string/function")
+        elems[i] = e.v
+      regs[int(inst.a)] = vv(cellValue(allocArray(heap, elems)))
+      maybeCollect(heap)
+    of LoadElem:
+      # a=dst, b=obj, c=idxReg. Array element by int index, or object
+      # property by string key (interpreter.zc ~6830). Out-of-range /
+      # absent → undefined.
+      let recv = regs[int(inst.b)]
+      let key = regs[int(inst.c)]
+      let a = asArrayCell(recv)
+      if a != nil:
+        if key.kind != vkVal: bail("LoadElem array key is string/function")
+        let idx = arrayIndex(key.v)
+        if idx >= 0:
+          regs[int(inst.a)] = vv(arrGet(heap, a, idx))
+        else:
+          # Non-index key on an array (e.g. a[-1], a["length"]) — needs the
+          # property path / proto → bail.
+          bail("LoadElem non-index key on array")
+      else:
+        let o = asObjectCell(recv)
+        if o == nil: bail("LoadElem on non-object/array receiver")
+        # Object property by key: the key must ToString to a name. Only a
+        # string key is in scope (a numeric key would need ToString digits
+        # to match property_get) — bail otherwise.
+        if key.kind == vkString:
+          if objHas(heap, o, key.s):
+            regs[int(inst.a)] = vv(objGet(heap, o, key.s))
+          elif isObjectInherited(key.s):
+            bail("LoadElem inherited property (needs prototype chain)")
+          else:
+            regs[int(inst.a)] = vv(undefinedVal())
+        else:
+          bail("LoadElem non-string key on object")
+    of StoreElem:
+      # a=obj, b=idxReg, c=val. Array element / object property set
+      # (interpreter.zc ~6875). Growing an array fills holes → undefined.
+      let recv = regs[int(inst.a)]
+      let value = regs[int(inst.c)]
+      if value.kind != vkVal: bail("StoreElem value is string/function")
+      let key = regs[int(inst.b)]
+      let a = asArrayCell(recv)
+      if a != nil:
+        if key.kind != vkVal: bail("StoreElem array key is string/function")
+        let idx = arrayIndex(key.v)
+        if idx >= 0:
+          arrSet(heap, a, idx, value.v)
+        else:
+          bail("StoreElem non-index key on array")
+      else:
+        let o = asObjectCell(recv)
+        if o == nil: bail("StoreElem on non-object/array receiver")
+        if key.kind == vkString:
+          objSet(heap, o, key.s, value.v)
+        else:
+          bail("StoreElem non-string key on object")
+    of ArrayLength:
+      # a=dst, b=src. Element count of an array, else 0 (interpreter.zc
+      # ~8371). Not emitted by the current Nim compiler (`.length` goes via
+      # LoadProp), but handled for completeness / faithfulness.
+      let a = asArrayCell(regs[int(inst.b)])
+      if a == nil: bail("ArrayLength on non-array")
+      regs[int(inst.a)] = vv(int32Val(int32(arrLength(heap, a))))
 
     # --- return / halt ------------------------------------------------
     of Return:

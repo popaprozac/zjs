@@ -271,3 +271,98 @@ suite "stress: rolling rooted window":
     check collect(heap) == Window
     check liveCellCount(heap) == 0
     destroyHeap(heap)
+
+# =====================================================================
+# Slice B1 — object model cells (ObjectCell / ArrayCell) on the GC.
+# The property/element data lives in an ARC-managed side table hung off
+# the cell; markCell must walk those GC-value contents so property /
+# element values stay live. These tests are the correctness bar for the
+# object-model rep BEFORE the VM wires it (the eval differential is the
+# other bar).
+# =====================================================================
+
+suite "object cell — own-property semantics":
+  test "set/get by name, insertion order, missing → undefined":
+    var heap = newGcHeap()
+    let o = allocObject(heap)
+    objSet(heap, o, "a", int32Val(1))
+    objSet(heap, o, "b", int32Val(2))
+    check isInt32(objGet(heap, o, "a")) and asInt32(objGet(heap, o, "a")) == 1
+    check asInt32(objGet(heap, o, "b")) == 2
+    # A missing own property reads back as undefined (no proto chain here).
+    check isUndefined(objGet(heap, o, "z"))
+    # Re-setting an existing key UPDATES in place (does not append).
+    objSet(heap, o, "a", int32Val(9))
+    check asInt32(objGet(heap, o, "a")) == 9
+    check objKeys(heap, o) == @["a", "b"]     # insertion order preserved
+    destroyHeap(heap)
+
+  test "property VALUES that are cells stay live across collect":
+    var heap = newGcHeap()
+    let parent = allocObject(heap)
+    let child = allocObject(heap)
+    objSet(heap, child, "leaf", int32Val(0x1234))
+    objSet(heap, parent, "kid", cellValue(child))   # parent.kid -> child cell
+    block:
+      let r = rooted(heap, cellValue(parent))
+      # Noise the child would be swept without interior marking.
+      for i in 0 ..< 30: discard allocObject(heap)
+      let freed = collect(heap)
+      check freed == 30
+      check liveCellCount(heap) == 2                 # parent + child survive
+      # Walk parent.kid.leaf — proves the child value was not swept.
+      let pv = r.value
+      let cv = objGet(heap, cast[ptr ObjectCell](cellAsPtr(pv)), "kid")
+      check isCell(cv)
+      check asInt32(objGet(heap, cast[ptr ObjectCell](cellAsPtr(cv)), "leaf")) == 0x1234
+    check collect(heap) == 2                          # unrooted now
+    check liveCellCount(heap) == 0
+    destroyHeap(heap)
+
+suite "array cell — element semantics":
+  test "length, indexed get, out-of-range → undefined, grow with holes":
+    var heap = newGcHeap()
+    let a = allocArray(heap, [int32Val(10), int32Val(20), int32Val(30)])
+    check arrLength(heap, a) == 3
+    check asInt32(arrGet(heap, a, 0)) == 10
+    check asInt32(arrGet(heap, a, 2)) == 30
+    check isUndefined(arrGet(heap, a, 5))             # out of range → undefined
+    # Grow past the end: intervening slots are holes → undefined.
+    arrSet(heap, a, 5, int32Val(99))
+    check arrLength(heap, a) == 6
+    check isUndefined(arrGet(heap, a, 4))             # hole
+    check asInt32(arrGet(heap, a, 5)) == 99
+    destroyHeap(heap)
+
+  test "element cell values stay live across collect (nested arrays)":
+    var heap = newGcHeap()
+    let inner = allocArray(heap, [int32Val(7)])
+    let outer = allocArray(heap, [cellValue(inner)])
+    block:
+      let r = rooted(heap, cellValue(outer))
+      for i in 0 ..< 20: discard allocArray(heap, [])
+      let freed = collect(heap)
+      check freed == 20
+      check liveCellCount(heap) == 2                  # outer + inner
+      let ov = cast[ptr ArrayCell](cellAsPtr(r.value))
+      let iv = arrGet(heap, ov, 0)
+      check isCell(iv)
+      check asInt32(arrGet(heap, cast[ptr ArrayCell](cellAsPtr(iv)), 0)) == 7
+    check collect(heap) == 2
+    destroyHeap(heap)
+
+suite "object/array cell free releases its side table":
+  test "swept object/array leave no side-table entry (no leak)":
+    var heap = newGcHeap()
+    for i in 0 ..< 50:
+      let o = allocObject(heap)
+      objSet(heap, o, "k", int32Val(int32(i)))
+      let a = allocArray(heap, [int32Val(int32(i)), int32Val(int32(i))])
+      discard a
+    # None rooted → all swept; the side tables must be emptied so the
+    # host seqs are released (ARC) and reused pointers can't read stale data.
+    check collect(heap) == 100
+    check liveCellCount(heap) == 0
+    check objTableLen(heap) == 0
+    check arrTableLen(heap) == 0
+    destroyHeap(heap)

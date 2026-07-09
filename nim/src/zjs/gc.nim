@@ -47,8 +47,10 @@ type
 # extends this in slice B. Values are local to Nim (no need to match the
 # Zen-c TAG_* numbering yet — cells are GC-internal until the C ABI).
 const
-  TAG_OBJ*  = 1'u8    ## ObjCell: header + nfields + inline ZjsValue[]
-  TAG_LEAF* = 2'u8    ## a childless cell (mark recursion terminates)
+  TAG_OBJ*    = 1'u8   ## ObjCell: header + nfields + inline ZjsValue[]
+  TAG_LEAF*   = 2'u8   ## a childless cell (mark recursion terminates)
+  TAG_OBJECT* = 3'u8   ## ObjectCell: header only; props live in heap.objTable
+  TAG_ARRAY*  = 4'u8   ## ArrayCell:  header only; elems live in heap.arrTable
 
 # =====================================================================
 # cellHeader — reinterpret a boxed cell value as its header. UB (as in
@@ -97,9 +99,26 @@ type
     p:    pointer   ## the cell block
     size: int       ## its rounded byte size (free-list bucket key)
 
+  ## Slice B1 property table for an ObjectCell. Parallel arrays keep
+  ## INSERTION ORDER (needed for future enumeration + the write_value
+  ## printer). `names[i]` is the property key, `values[i]` its ZjsValue.
+  ## The seqs are ARC-managed HOST memory kept in `heap.objTable` keyed by
+  ## the cell block pointer — so the raw GC cell stays a pure header (safe
+  ## to zeroMem/recycle on sweep) while the value contents are still
+  ## reachable-marked via markCell.
+  ObjProps* = object
+    names*:  seq[string]
+    values*: seq[ZjsValue]
+
   GcHeap* = object
     chunks:     seq[NurseryChunk]        ## non-moving nursery chunks
     allCells:   seq[CellRec]             ## every live cell, for sweep
+    ## Side tables for the object-model cells. Keyed by the cell block
+    ## pointer (cells never move, so the key is stable). Sweep DELETES the
+    ## entry when the cell is freed, releasing the ARC seqs and preventing
+    ## a reused block from reading a previous tenant's data.
+    objTable*: Table[pointer, ObjProps]  ## ObjectCell -> its properties
+    arrTable*: Table[pointer, seq[ZjsValue]]  ## ArrayCell -> its elements
     ## Free list of reclaimed slots, keyed by rounded byte-size. Sweep
     ## pushes each dead cell's block here; allocCell pops a same-size
     ## block before bumping. Reuse (not chunk growth) is what keeps live
@@ -109,8 +128,15 @@ type
     rootStack*: seq[ZjsValue]            ## the Rooted shadow-stack (a)
     frameRoots*: seq[ptr seq[ZjsValue]]  ## registered VM frames (b)
     ctxRoots*:  seq[ZjsValue]            ## stubbed ctx roots (c)
+    ## An extra root-marking hook the VM installs to mark its own frame
+    ## register files (`seq[VmVal]`), which the GC module can't name
+    ## without importing vm.nim (circular). Called at the end of markRoots.
+    customMark*: proc() {.closure.}
     totalAllocated*: int                 ## lifetime cells handed out
     totalFreed*:     int                 ## lifetime cells swept
+    lastCollectAt*:  int                  ## totalAllocated at the last VM-
+                                          ## triggered collect (alloc-interval
+                                          ## GC trigger; see vm.nim)
 
 proc newGcHeap*(): GcHeap =
   ## A fresh empty heap. `GcHeap` is a value; keep it in a `var` the
@@ -199,6 +225,119 @@ proc allocLeafCell*(heap: var GcHeap): ZjsValue =
   cellFromPtr(allocCell(heap, TAG_LEAF, sizeof(CellHeader)))
 
 # =====================================================================
+# ObjectCell / ArrayCell — the slice-B1 object model. The GC cell is a
+# pure CellHeader (a leaf block); its property / element data lives in an
+# ARC-managed side table in the heap, keyed by the cell block pointer.
+# `cellValue` boxes a cell block pointer as a ZjsValue.
+# =====================================================================
+
+type
+  ObjectCell* = object
+    header*: CellHeader     ## a pure header; props are in heap.objTable
+  ArrayCell* = object
+    header*: CellHeader     ## a pure header; elems are in heap.arrTable
+
+proc cellValue*(o: ptr ObjectCell): ZjsValue {.inline.} =
+  cellFromPtr(cast[pointer](o))
+proc cellValue*(a: ptr ArrayCell): ZjsValue {.inline.} =
+  cellFromPtr(cast[pointer](a))
+
+# --- ObjectCell ------------------------------------------------------
+
+proc allocObject*(heap: var GcHeap): ptr ObjectCell =
+  ## Allocate an empty ObjectCell. Its (empty) property table is created
+  ## eagerly so the side-table entry exists for the lifetime of the cell.
+  let p = allocCell(heap, TAG_OBJECT, sizeof(ObjectCell))
+  heap.objTable[p] = ObjProps()
+  cast[ptr ObjectCell](p)
+
+proc objGet*(heap: GcHeap, o: ptr ObjectCell, name: string): ZjsValue =
+  ## Own-property get by name (interpreter.zc LoadProp own-slot semantics):
+  ## the value if present, else `undefined`. NO prototype chain here.
+  let p = cast[pointer](o)
+  if heap.objTable.hasKey(p):
+    let props = heap.objTable[p]
+    for i in 0 ..< props.names.len:
+      if props.names[i] == name:
+        return props.values[i]
+  undefinedVal()
+
+proc objHas*(heap: GcHeap, o: ptr ObjectCell, name: string): bool =
+  ## Whether `o` has an OWN property named `name`.
+  let p = cast[pointer](o)
+  if heap.objTable.hasKey(p):
+    for n in heap.objTable[p].names:
+      if n == name: return true
+  false
+
+proc objSet*(heap: var GcHeap, o: ptr ObjectCell, name: string, v: ZjsValue) =
+  ## Own-property set (interpreter.zc InitObjData / StoreProp): update in
+  ## place if the key exists, else append (insertion order preserved for
+  ## future enumeration).
+  let p = cast[pointer](o)
+  var props = heap.objTable.mgetOrPut(p, ObjProps())
+  for i in 0 ..< props.names.len:
+    if props.names[i] == name:
+      props.values[i] = v
+      heap.objTable[p] = props
+      return
+  props.names.add(name)
+  props.values.add(v)
+  heap.objTable[p] = props
+
+proc objKeys*(heap: GcHeap, o: ptr ObjectCell): seq[string] =
+  ## Own-property names in insertion order.
+  let p = cast[pointer](o)
+  if heap.objTable.hasKey(p):
+    return heap.objTable[p].names
+  @[]
+
+proc objTableLen*(heap: GcHeap): int {.inline.} = heap.objTable.len
+
+# --- ArrayCell -------------------------------------------------------
+
+proc allocArray*(heap: var GcHeap, elems: openArray[ZjsValue]): ptr ArrayCell =
+  ## Allocate an ArrayCell seeded with `elems` (in order). The empty case
+  ## (`allocArray(heap, [])`) yields a length-0 array.
+  let p = allocCell(heap, TAG_ARRAY, sizeof(ArrayCell))
+  var s: seq[ZjsValue] = @[]
+  for e in elems: s.add(e)
+  heap.arrTable[p] = s
+  cast[ptr ArrayCell](p)
+
+proc arrLength*(heap: GcHeap, a: ptr ArrayCell): int =
+  ## Element count (interpreter.zc ArrayLength / `arr.length`).
+  let p = cast[pointer](a)
+  if heap.arrTable.hasKey(p): heap.arrTable[p].len else: 0
+
+proc arrGet*(heap: GcHeap, a: ptr ArrayCell, i: int): ZjsValue =
+  ## Indexed element get (interpreter.zc LoadElem): the element if `0 <= i
+  ## < length` AND it is not a hole, else `undefined`.
+  let p = cast[pointer](a)
+  if heap.arrTable.hasKey(p):
+    let s = heap.arrTable[p]
+    if i >= 0 and i < s.len:
+      let v = s[i]
+      if v.bits != VALUE_DELETED:      # holes read back as undefined
+        return v
+  undefinedVal()
+
+proc arrSet*(heap: var GcHeap, a: ptr ArrayCell, i: int, v: ZjsValue) =
+  ## Indexed element set (interpreter.zc StoreElem): write element `i`,
+  ## growing the backing seq with HOLES (which read back as undefined) for
+  ## any intervening slots. Negative indices are ignored here (the VM
+  ## routes non-array-index keys to the object path).
+  if i < 0: return
+  let p = cast[pointer](a)
+  var s = heap.arrTable.mgetOrPut(p, @[])
+  while s.len <= i:
+    s.add(deletedVal())                # hole sentinel; arrGet → undefined
+  s[i] = v
+  heap.arrTable[p] = s
+
+proc arrTableLen*(heap: GcHeap): int {.inline.} = heap.arrTable.len
+
+# =====================================================================
 # Rooted — RAII rooting. Construction pushes a slot on the shadow-stack;
 # `=destroy` pops it (LIFO, asserted). Because the slot lives in the
 # root stack and holds the CURRENT value, a `let r = rooted(heap, cell)`
@@ -248,8 +387,13 @@ proc `[]=`*(r: Rooted, v: ZjsValue) {.inline.} =
 # so a fields-cycle terminates).
 # =====================================================================
 
-proc markCell*(v: ZjsValue) =
+proc markCell*(heap: GcHeap, v: ZjsValue) =
   if not isCell(v):
+    return
+  # A zero-bits value passes isCell (NOT_CELL_MASK==0) but is a NULL cell
+  # pointer, not a live cell — it shows up wherever a VmVal seq was grown
+  # by setLen (globals) or a register was left zeroed. Never dereference it.
+  if cellAsPtr(v) == nil:
     return
   let h = cellHeader(v)
   if h.mark != 0:
@@ -260,22 +404,42 @@ proc markCell*(v: ZjsValue) =
     let o = cast[ptr ObjCell](cellAsPtr(v))
     let f = fieldsBase(o)
     for i in 0 ..< int(o.nfields):
-      markCell(f[i])            # interior marking of field values
+      markCell(heap, f[i])      # interior marking of field values
+  of TAG_OBJECT:
+    # Interior-mark every property VALUE (side table). The names are ARC
+    # strings; only the ZjsValues can be cells.
+    let p = cellAsPtr(v)
+    if heap.objTable.hasKey(p):
+      for pv in heap.objTable[p].values:
+        markCell(heap, pv)
+  of TAG_ARRAY:
+    let p = cellAsPtr(v)
+    if heap.arrTable.hasKey(p):
+      for ev in heap.arrTable[p]:
+        markCell(heap, ev)
   of TAG_LEAF:
     discard                     # no children
   else:
     discard                     # unknown tag: treat as leaf (safe)
 
+# `heap.customMark` lets a higher layer (the VM) contribute roots the GC
+# module can't name without a circular import — e.g. the VM's frame
+# register files, which are `seq[VmVal]`, not `seq[ZjsValue]`. The VM sets
+# this closure (capturing `addr heap`) so markRoots reaches every active
+# frame's cell-holding registers. See vm.nim's frame rooting.
+
 proc markRoots*(heap: var GcHeap) =
   ## Mark from every root source. Order is irrelevant (mark is idempotent).
   for v in heap.rootStack:
-    markCell(v)
+    markCell(heap, v)
   for fr in heap.frameRoots:
     if fr != nil:
       for v in fr[]:
-        markCell(v)
+        markCell(heap, v)
   for v in heap.ctxRoots:
-    markCell(v)
+    markCell(heap, v)
+  if heap.customMark != nil:
+    heap.customMark()
 
 # =====================================================================
 # collect — full mark/sweep. Returns the count of cells freed.
@@ -294,8 +458,14 @@ proc collect*(heap: var GcHeap): int =
   for rec in heap.allCells:
     let h = cast[ptr CellHeader](rec.p)
     if h.mark == 0:
-      # Unreachable. Zero the block (poisons any stale ZjsValue so a
-      # dangling read fails an isCell/tag check loudly) and recycle it.
+      # Unreachable. Release any object-model side table FIRST (so ARC
+      # frees the seqs and a reused block can't read stale props), then
+      # zero the block (poisons any stale ZjsValue so a dangling read fails
+      # an isCell/tag check loudly) and recycle it.
+      case h.typeTag
+      of TAG_OBJECT: heap.objTable.del(rec.p)
+      of TAG_ARRAY:  heap.arrTable.del(rec.p)
+      else: discard
       zeroMem(rec.p, rec.size)
       heap.freeBySize.mgetOrPut(rec.size, @[]).add(rec.p)
       inc freed
@@ -324,6 +494,9 @@ proc destroyHeap*(heap: var GcHeap) =
   heap.chunks.setLen(0)
   heap.allCells.setLen(0)
   heap.freeBySize.clear()
+  heap.objTable.clear()
+  heap.arrTable.clear()
   heap.rootStack.setLen(0)
   heap.frameRoots.setLen(0)
   heap.ctxRoots.setLen(0)
+  heap.customMark = nil
