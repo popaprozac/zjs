@@ -1336,6 +1336,20 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
           regs[int(inst.a)] = vv(getOrCreateFnProto(heap, recv.fn))
         else:
           bail("LoadProp non-prototype name on function")
+      elif recv.kind == vkVal and isCell(recv.v) and cellAsPtr(recv.v) != nil and
+           cellHeader(recv.v).typeTag == TAG_HOSTFN and
+           heap.objTable.hasKey(cellAsPtr(recv.v)):
+        # A native CONSTRUCTOR value (e.g. Object@g57) that carries its static
+        # methods in an objTable property bag. Read its OWN static (Object.keys,
+        # Object.is, …). A name we don't model — a deferred static (freeze /
+        # getPrototypeOf / defineProperty / …), `.name` / `.length`, or an
+        # inherited Function.prototype member — is a REAL reference property we
+        # can't produce → BAIL (never a wrong `undefined`).
+        let bag = cast[ptr ObjectCell](cellAsPtr(recv.v))
+        if objHas(heap, bag, name):
+          regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, bag, name))
+        else:
+          bail("LoadProp unmodeled static/member on native constructor")
       else:
         let a = asArrayCell(recv)
         if a != nil:

@@ -442,6 +442,286 @@ proc nativeMathSumPrecise(heap: var GcHeap, args: openArray[VmVal],
   ## BAILS (clean, never a wrong value) rather than approximate.
   bail("Math.sumPrecise not implemented")
 
+# --- Object (src/context.zc host_object_* ; realm install g57) ----------
+# The `Object` global is a native CONSTRUCTOR: `typeof Object` is "function"
+# (NOT "object" like Math), so it is installed as a HostFnCell — a callable
+# whose native BAILS (constructor form deferred) — that ALSO carries its
+# static methods in an objTable property bag. The compiler emits
+# `LoadGlobal g57 + LoadProp .keys + MethodInvoke` for `Object.keys(o)`; the
+# VM's LoadProp reads the static off that bag (see vm.nim), MethodInvoke
+# dispatches to the native. This is the first "native that allocates and
+# returns a new array/object" pattern: keys/values/entries/fromEntries/
+# getOwnPropertyNames build fresh cells on the SAME heap threaded into
+# runFunction (rooted via the return register / caller frame). The model has
+# no non-enumerable / symbol / accessor properties, so own-enumerable = own =
+# getOwnPropertyNames for a plain object.
+#
+# Bail discipline: everything outside the plain-object model — a primitive /
+# array / string-wrapper receiver needing ToObject, descriptor flags,
+# prototype-chain identity, the constructor form — BAILS (empty stdout, exit
+# 1), never a wrong value.
+
+proc objArg(x: VmVal): ptr ObjectCell {.inline.} =
+  ## The arg as a plain ObjectCell, or nil if it isn't one (a primitive /
+  ## array / function / string wrapper → the caller BAILS: outside the model).
+  if x.kind == vkVal and isCell(x.v) and cellAsPtr(x.v) != nil and
+     cellHeader(x.v).typeTag == TAG_OBJECT:
+    cast[ptr ObjectCell](cellAsPtr(x.v))
+  else:
+    nil
+
+proc argArrayCell(x: VmVal): ptr ArrayCell {.inline.} =
+  ## The arg as a plain ArrayCell, or nil otherwise.
+  if x.kind == vkVal and isCell(x.v) and cellAsPtr(x.v) != nil and
+     cellHeader(x.v).typeTag == TAG_ARRAY:
+    cast[ptr ArrayCell](cellAsPtr(x.v))
+  else:
+    nil
+
+proc strAsArrayIndex(s: string): int64 =
+  ## Port of context.zc string_as_array_index: the numeric value if `s` is a
+  ## CanonicalNumericIndexString for a non-negative integer in u32 range (no
+  ## leading zero except the singleton "0"), else -1. Drives the
+  ## OrdinaryOwnPropertyKeys integer-key ordering below.
+  let n = s.len
+  if n == 0 or n > 10: return -1
+  if s[0] == '0':
+    if n == 1: return 0
+    return -1
+  if s[0] < '1' or s[0] > '9': return -1
+  var v: uint64 = 0
+  for ch in s:
+    if ch < '0' or ch > '9': return -1
+    v = v * 10 + uint64(ord(ch) - ord('0'))
+  if v > 4294967295'u64: return -1
+  int64(v)
+
+proc orderedOwnKeys(heap: GcHeap, o: ptr ObjectCell): seq[string] =
+  ## ECMA-262 OrdinaryOwnPropertyKeys over the model's own string keys:
+  ## integer-index keys FIRST in ascending numeric order, then the remaining
+  ## string keys in insertion order (context.zc object_keys_impl's two-pass).
+  ## Probed byte-identical: `{2:3,1:4,x:5}` → ["1","2","x"], `{10:1,2:2,1:3}`
+  ## → ["1","2","10"], `{b:1,a:2,c:3}` → ["b","a","c"] (pure string keys stay
+  ## insertion order). Object keys are unique, so the index order is total.
+  let names = objKeys(heap, o)
+  var idxVals: seq[uint64] = @[]
+  var idxNames: seq[string] = @[]
+  var strNames: seq[string] = @[]
+  for nm in names:
+    let ix = strAsArrayIndex(nm)
+    if ix >= 0:
+      # insertion-sort (idxVals, idxNames) ascending by numeric value.
+      var pos = idxVals.len
+      idxVals.add(0'u64); idxNames.add("")
+      while pos > 0 and idxVals[pos-1] > uint64(ix):
+        idxVals[pos] = idxVals[pos-1]; idxNames[pos] = idxNames[pos-1]
+        dec pos
+      idxVals[pos] = uint64(ix); idxNames[pos] = nm
+    else:
+      strNames.add(nm)
+  result = @[]
+  for nm in idxNames: result.add(nm)
+  for nm in strNames: result.add(nm)
+
+proc nativeObjectKeys(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.keys(o) — new Array of own enumerable string keys in
+  ## OrdinaryOwnPropertyKeys order (context.zc host_object_keys). null /
+  ## undefined → the reference throws a TypeError (empty stdout); a non-plain
+  ## object receiver needs ToObject we don't model → both BAIL.
+  if args.len == 0: bail("Object.keys with no argument")
+  let o = objArg(args[0])
+  if o == nil: bail("Object.keys on non-plain-object")
+  var elems: seq[ZjsValue] = @[]
+  for nm in orderedOwnKeys(heap, o):
+    elems.add(cellValue(allocStringCell(heap, nm)))
+  vv(cellValue(allocArray(heap, elems)))
+
+proc nativeObjectValues(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.values(o) — new Array of the corresponding own-enumerable values,
+  ## in the same key order (context.zc host_object_values).
+  if args.len == 0: bail("Object.values with no argument")
+  let o = objArg(args[0])
+  if o == nil: bail("Object.values on non-plain-object")
+  var elems: seq[ZjsValue] = @[]
+  for nm in orderedOwnKeys(heap, o):
+    elems.add(objGet(heap, o, nm))      # stored ZjsValue passes through
+  vv(cellValue(allocArray(heap, elems)))
+
+proc nativeObjectEntries(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.entries(o) — new Array of 2-element [key, value] Arrays
+  ## (context.zc host_object_entries). No collect fires between the child
+  ## allocations and the outer allocArray (allocCell never collects), so the
+  ## fresh pair cells are safe until the outer array roots them.
+  if args.len == 0: bail("Object.entries with no argument")
+  let o = objArg(args[0])
+  if o == nil: bail("Object.entries on non-plain-object")
+  var elems: seq[ZjsValue] = @[]
+  for nm in orderedOwnKeys(heap, o):
+    let keyV = cellValue(allocStringCell(heap, nm))
+    let valV = objGet(heap, o, nm)
+    elems.add(cellValue(allocArray(heap, [keyV, valV])))
+  vv(cellValue(allocArray(heap, elems)))
+
+proc nativeObjectAssign(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.assign(target, ...sources) — copy own-enumerable props from each
+  ## source into target (later sources overwrite), return target (context.zc
+  ## host_object_assign). target must be a plain object (a primitive target
+  ## needs ToObject; null/undefined throws → BAIL). Sources: null/undefined
+  ## AND number/boolean/string PRIMITIVES contribute no own enumerable string
+  ## keys (the reference's Object.keys on them yields [] — probed:
+  ## `Object.assign({a:1},5)`→ a=1, `Object.assign({a:1},"xy")`→ {"a":1}), so
+  ## they are SKIPPED. A plain-object source's keys are copied in
+  ## OrdinaryOwnPropertyKeys order. Array / function / string-object sources
+  ## need index / .props enumeration we don't model → BAIL.
+  if args.len == 0: bail("Object.assign with no target")
+  let target = objArg(args[0])
+  if target == nil: bail("Object.assign target is not a plain object")
+  for i in 1 ..< args.len:
+    let src = args[i]
+    case src.kind
+    of vkString: discard                # primitive string → no own keys → skip
+    of vkFunction: bail("Object.assign function source (unmodeled own keys)")
+    of vkVal:
+      let sv = src.v
+      if isUndefined(sv) or isNull(sv):
+        discard                         # skipped per spec
+      elif isInt32(sv) or isDouble(sv) or isBool(sv):
+        discard                         # primitive wrapper has no own enum keys
+      elif isCell(sv) and cellAsPtr(sv) != nil:
+        case cellHeader(sv).typeTag
+        of TAG_OBJECT:
+          let so = cast[ptr ObjectCell](cellAsPtr(sv))
+          for nm in orderedOwnKeys(heap, so):
+            objSet(heap, target, nm, objGet(heap, so, nm))
+        of TAG_STRING:
+          discard                       # primitive string cell → no own keys
+        else:
+          bail("Object.assign source needs unmodeled enumeration")
+      else:
+        bail("Object.assign unrepresentable source")
+  args[0]                               # return the (mutated) target
+
+proc vmStringVal(heap: GcHeap, x: VmVal, s: var string): bool =
+  ## True (and binds `s`) if `x` is a string value — a vkString or a StringCell.
+  if x.kind == vkString:
+    s = x.s; return true
+  if x.kind == vkVal and isCell(x.v) and cellAsPtr(x.v) != nil and
+     cellHeader(x.v).typeTag == TAG_STRING:
+    s = strCellVal(heap, x.v); return true
+  false
+
+proc objectSameValue(heap: GcHeap, a, b: VmVal): bool =
+  ## ECMA-262 SameValue (context.zc host_object_is): NaN≡NaN; +0≢-0; strings
+  ## by value; objects/arrays by cell identity; else strict-equal. A function
+  ## operand needs stable value identity the model doesn't give (a vkFunction
+  ## has no cell) → BAIL (never a wrong true/false).
+  if a.kind == vkFunction or b.kind == vkFunction:
+    bail("Object.is on function operand")
+  var sa, sb: string
+  let aStr = vmStringVal(heap, a, sa)
+  let bStr = vmStringVal(heap, b, sb)
+  if aStr and bStr: return sa == sb
+  if aStr or bStr: return false          # string vs non-string
+  # Both are vkVal (non-string) here.
+  let va = a.v
+  let vb = b.v
+  template isFnCell(v: ZjsValue): bool =
+    isCell(v) and cellAsPtr(v) != nil and
+      (cellHeader(v).typeTag == TAG_FUNCTION or cellHeader(v).typeTag == TAG_HOSTFN)
+  if isFnCell(va) or isFnCell(vb):
+    bail("Object.is on function operand")
+  let aNum = isInt32(va) or isDouble(va)
+  let bNum = isInt32(vb) or isDouble(vb)
+  if aNum and bNum:
+    let da = (if isInt32(va): float64(asInt32(va)) else: asDouble(va))
+    let db = (if isInt32(vb): float64(asInt32(vb)) else: asDouble(vb))
+    if da != da and db != db: return true          # NaN, NaN
+    if da != da or db != db: return false
+    if da == 0.0 and db == 0.0:
+      return isNegZero(da) == isNegZero(db)         # +0 ≢ -0
+    return da == db
+  if aNum or bNum: return false
+  if isBool(va) and isBool(vb): return asBool(va) == asBool(vb)
+  if isBool(va) or isBool(vb): return false
+  if isNull(va) and isNull(vb): return true
+  if isNull(va) or isNull(vb): return false
+  if isUndefined(va) and isUndefined(vb): return true
+  if isUndefined(va) or isUndefined(vb): return false
+  # Remaining: object / array cells → identity (same cell pointer).
+  if isCell(va) and cellAsPtr(va) != nil and isCell(vb) and cellAsPtr(vb) != nil:
+    return cellAsPtr(va) == cellAsPtr(vb)
+  bail("Object.is on unsupported operands")
+
+proc nativeObjectIs(heap: var GcHeap, args: openArray[VmVal],
+                    thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.is(a, b) — SameValue. Pure value comparison, no allocation.
+  let a = if args.len >= 1: args[0] else: vv(undefinedVal())
+  let b = if args.len >= 2: args[1] else: vv(undefinedVal())
+  vv(boolVal(objectSameValue(heap, a, b)))
+
+proc nativeObjectFromEntries(heap: var GcHeap, args: openArray[VmVal],
+                             thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.fromEntries(iterable) — new object from an Array of [k,v] pairs
+  ## (context.zc host_object_from_entries ARRAY fast path). A non-array
+  ## argument would need the iterator protocol (GetIterator) → BAIL. Matching
+  ## the reference's MVP, a non-array ENTRY is silently skipped (probed:
+  ## `Object.fromEntries([1,2])` → {}). Keys via ToString.
+  let outObj = allocObject(heap)
+  if args.len == 0: return vv(cellValue(outObj))
+  let a = argArrayCell(args[0])
+  if a == nil: bail("Object.fromEntries non-array iterable")
+  let n = arrLength(heap, a)
+  for i in 0 ..< n:
+    let elem = arrGet(heap, a, i)
+    if isCell(elem) and cellAsPtr(elem) != nil and
+       cellHeader(elem).typeTag == TAG_ARRAY:
+      let pair = cast[ptr ArrayCell](cellAsPtr(elem))
+      if arrLength(heap, pair) >= 2:
+        let keyStr = vmToString(unboxLoaded(heap, arrGet(heap, pair, 0)))
+        objSet(heap, outObj, keyStr, arrGet(heap, pair, 1))
+  vv(cellValue(outObj))
+
+proc nativeObjectHasOwn(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.hasOwn(o, key) — own-property presence, key via ToString
+  ## (context.zc host_object_has_own). null/undefined receiver throws → BAIL;
+  ## a non-plain-object receiver (array / function / string wrapper) is
+  ## outside the model → BAIL.
+  if args.len == 0: bail("Object.hasOwn with no argument")
+  let o = objArg(args[0])
+  if o == nil: bail("Object.hasOwn on non-plain-object")
+  let key = if args.len >= 2: args[1] else: vv(undefinedVal())
+  vv(boolVal(objHas(heap, o, vmToString(key))))
+
+proc nativeObjectGetOwnPropertyNames(heap: var GcHeap, args: openArray[VmVal],
+                                     thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.getOwnPropertyNames(o) — own string keys in OrdinaryOwnPropertyKeys
+  ## order (context.zc host_object_get_own_property_names). The model has no
+  ## non-enumerable string keys, so this equals Object.keys for a plain object.
+  ## argc==0 → [] (the reference returns an empty array); non-plain-object → BAIL.
+  if args.len == 0:
+    var empty: seq[ZjsValue] = @[]
+    return vv(cellValue(allocArray(heap, empty)))
+  let o = objArg(args[0])
+  if o == nil: bail("Object.getOwnPropertyNames on non-plain-object")
+  var elems: seq[ZjsValue] = @[]
+  for nm in orderedOwnKeys(heap, o):
+    elems.add(cellValue(allocStringCell(heap, nm)))
+  vv(cellValue(allocArray(heap, elems)))
+
+proc nativeObjectCtor(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## `Object(value)` / `new Object()` — the constructor form (context.zc
+  ## host_object_ctor). Needs Object.prototype identity + ToObject wrapper
+  ## materialization the model lacks → BAIL (never a wrong value). Installed
+  ## only so `typeof Object` is "function" and `Object.<static>` resolves off
+  ## its property bag.
+  bail("Object constructor not implemented")
+
 # --- realm install -----------------------------------------------------
 
 const USER_GLOBAL_BASE = 108
@@ -544,3 +824,30 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
     objSet(heap, math, "SQRT2",   doubleVal(1.4142135623730951))
     objSet(heap, math, "SQRT1_2", doubleVal(0.7071067811865476))
     globals[builtinSlot("Math")] = vv(cellValue(math))
+  # Object (g57) — a native CONSTRUCTOR (typeof → "function", so a HostFnCell,
+  # NOT an ObjectCell like Math) whose native BAILS (the `Object(x)` /
+  # `new Object()` form is deferred) but which carries its static methods in an
+  # objTable property bag. The VM's LoadProp reads a static off that bag; a
+  # missing static (freeze / getPrototypeOf / defineProperty / .name / …) BAILS
+  # there (never a wrong `undefined`). markCell(TAG_HOSTFN) traverses this bag,
+  # so the boxed method cells survive a collect (same rooting story as Math /
+  # console). Object.keys/values/entries/fromEntries/getOwnPropertyNames build
+  # fresh arrays/objects on this heap, rooted via the caller's return register.
+  block installObject:
+    let objectFn = allocHostFunction(
+      heap, cast[pointer](nativeObjectCtor), "Object", 1)
+    # objSet/objGet key the objTable by cell-pointer identity only (they never
+    # dereference ObjectCell fields), so a HostFnCell can carry a property bag.
+    let objectBag = cast[ptr ObjectCell](objectFn)
+    template setO(nm: string, fn: NativeFn, arity: int) =
+      objSet(heap, objectBag, nm,
+             cellValue(allocHostFunction(heap, cast[pointer](fn), nm, arity)))
+    setO("keys",                nativeObjectKeys,                1)
+    setO("values",              nativeObjectValues,              1)
+    setO("entries",             nativeObjectEntries,             1)
+    setO("assign",              nativeObjectAssign,              2)
+    setO("is",                  nativeObjectIs,                  2)
+    setO("fromEntries",         nativeObjectFromEntries,         1)
+    setO("hasOwn",              nativeObjectHasOwn,              2)
+    setO("getOwnPropertyNames", nativeObjectGetOwnPropertyNames, 1)
+    globals[builtinSlot("Object")] = vv(cellValue(objectFn))

@@ -596,7 +596,14 @@ proc markCell*(heap: GcHeap, v: ZjsValue) =
   of TAG_STRING:
     discard                     # a string cell is a leaf (bytes in strTable)
   of TAG_HOSTFN:
-    discard                     # a host-fn cell is a leaf (fn/name in hostFnTable)
+    # Normally a leaf (fn/name/arity live in hostFnTable), BUT a native
+    # constructor object (e.g. Object@g57) carries its static methods in an
+    # objTable property bag; mark those VALUES so the boxed method cells
+    # survive a collect. Plain natives have no bag → hasKey is false → no-op.
+    let p = cellAsPtr(v)
+    if heap.objTable.hasKey(p):
+      for pv in heap.objTable[p].values:
+        markCell(heap, pv)
   of TAG_LEAF:
     discard                     # no children
   else:
