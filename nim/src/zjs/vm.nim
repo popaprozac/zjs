@@ -57,6 +57,14 @@ type
     ## Raised when the VM hits an op or value shape it can't faithfully
     ## execute. The CLI must then print NOTHING and exit nonzero.
 
+  JsThrow* = object of CatchableError
+    ## A JavaScript exception in flight (the `throw` completion). Carries the
+    ## thrown value and unwinds the Nim call stack (through natives / callbacks /
+    ## callFunction) to the nearest frame with an active try-region. Distinct
+    ## from VmBail: a JS try/catch catches JsThrow but NOT VmBail (an
+    ## unimplemented op still aborts the whole eval, never becomes catchable).
+    val*: VmVal
+
   NativeFn* = proc(heap: var GcHeap, args: openArray[VmVal],
                    thisv: VmVal): VmVal {.nimcall.}
     ## A Nim-implemented (native/host) builtin — the Nim analogue of the
@@ -92,6 +100,13 @@ proc vf(f: Function, env: ZjsValue): VmVal {.inline.} =
 
 proc bail*(msg: string) {.noreturn.} =
   raise newException(VmBail, msg)
+
+proc raiseJs(v: VmVal) {.noreturn.} =
+  ## Raise a JavaScript exception carrying `v` (a `throw` propagating to the
+  ## nearest enclosing try-region, across frames via the Nim call stack).
+  var e = newException(JsThrow, "js exception")
+  e.val = v
+  raise e
 
 # --- GC frame rooting ---------------------------------------------------
 # The GC scans `heap.frameRoots` (seq[ptr seq[ZjsValue]]) natively, but a
@@ -814,6 +829,10 @@ proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
     # The top-level program has no receiver and no captured env.
     result = runFrame(f, [], globals, heap, depth,
                       vv(undefinedVal()), vv(undefinedVal()))
+  except JsThrow as e:
+    # An uncaught top-level throw: the eval CLI prints the thrown value as the
+    # completion (`throw 1` → 1), so surface it as the result.
+    result = e.val
   finally:
     heap.customMark = nil
     vmFrames = savedFrames
@@ -869,6 +888,32 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
   let code = f.code
   let codeLen = code.len
   var ip = 0
+  # This frame's active try-regions (EnterTry pushes, LeaveTry pops). On a throw
+  # — the Throw op OR a JsThrow propagating out of a call — the nearest region's
+  # catch_ip receives control and the thrown value is bound into catch_reg.
+  var tryStack: seq[tuple[catchIp: int, catchReg: int]]
+
+  # Bind `thrownVal` to the nearest try-region in THIS frame if any: pop it, put
+  # the value in its catch reg, jump ip to its catch handler → returns true (the
+  # caller must `continue`). Else returns false (propagate to the caller frame).
+  template catchHere(thrownVal: VmVal): bool =
+    if tryStack.len > 0:
+      let h = tryStack.pop()
+      regs[h.catchReg] = thrownVal
+      ip = h.catchIp
+      true
+    else:
+      false
+
+  # Run a call; a JsThrow propagating out of it is routed to this frame's
+  # try-stack (jump to the catch handler, `continue` the dispatch loop) or
+  # re-raised to propagate to the caller frame.
+  template routeThrow(callBody: untyped) =
+    try:
+      callBody
+    except JsThrow as jse:
+      if catchHere(jse.val): continue
+      raise
 
   # Fetch a numeric ZjsValue from register `r` (bails on string).
   template rn(r: uint8): ZjsValue = numVal(regs[int(r)])
@@ -1114,6 +1159,20 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
     of Jmp:
       ip = ip + 1 + int(instBcI16(inst))
       continue
+    of EnterTry:
+      # a=catch_reg; i16 = signed offset to the catch handler from ip+1
+      # (interpreter.zc Op::EnterTry). Push the region; body runs next.
+      tryStack.add((catchIp: ip + 1 + int(instBcI16(inst)), catchReg: int(inst.a)))
+    of LeaveTry:
+      # Normal exit from a try body — pop its region (interpreter.zc Op::LeaveTry).
+      if tryStack.len > 0: discard tryStack.pop()
+    of Throw:
+      # Throw regs[a]: catch in this frame if a region is active, else propagate
+      # to the caller frame via JsThrow (finally is compiler-encoded via nested
+      # regions + a rethrow flag, so no special handling needed here).
+      let tv = regs[int(inst.a)]
+      if catchHere(tv): continue
+      raiseJs(tv)
     of JmpIfTrue:
       # ToBoolean over the VmVal (a string condition, e.g. `""?1:2`, must
       # distinguish ""→false from "x"→true; rn's ToNumber would lose it).
@@ -1291,12 +1350,12 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # function call: `this` is undefined (a non-method callee); env is the
       # invoked closure's captured environment.
       if calleeVal.kind == vkVal and isHostFunctionCell(calleeVal.v):
-        regs[int(inst.a)] = callNative(heap, calleeVal.v, callArgs,
-                                       vv(undefinedVal()))
+        routeThrow: regs[int(inst.a)] = callNative(heap, calleeVal.v, callArgs,
+                                                   vv(undefinedVal()))
       else:
         let callee = resolveCallee(calleeVal)
-        regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
-                                         vv(undefinedVal()), vv(calleeVal.env))
+        routeThrow: regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap,
+                                                     depth, vv(undefinedVal()), vv(calleeVal.env))
     of InvokeGlobal:
       # Fused global-callee call (interpreter.zc ~5634): a=ret_dst, b=base,
       # c=argc; the carrier at code[ip+1] holds the u16 global slot. The
@@ -1317,8 +1376,8 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # HostFnCell value here (non-zero bits) and dispatches to its Nim proc;
       # `this` is undefined for a global call.
       if calleeVal.kind == vkVal and isHostFunctionCell(calleeVal.v):
-        regs[int(inst.a)] = callNative(heap, calleeVal.v, callArgs,
-                                       vv(undefinedVal()))
+        routeThrow: regs[int(inst.a)] = callNative(heap, calleeVal.v, callArgs,
+                                                   vv(undefinedVal()))
       else:
         # An un-installed / undeclared slot (a zero-bits placeholder) is out of
         # scope — the reference would ObjectRecord-fallback to globalThis or
@@ -1326,8 +1385,8 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         if calleeVal.kind == vkVal and calleeVal.v.bits == 0'u64:
           bail("InvokeGlobal of undeclared slot")
         let callee = resolveCallee(calleeVal)
-        regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
-                                         vv(undefinedVal()), vv(calleeVal.env))
+        routeThrow: regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap,
+                                                     depth, vv(undefinedVal()), vv(calleeVal.env))
     of MethodInvoke, TailMethodInvoke:
       # Method call (interpreter.zc ~5539 MethodInvoke): a=ret_dst, b=base,
       # c=argc. regs[base]=method, regs[base+1]=receiver, regs[base+2..]=args.
@@ -1344,11 +1403,11 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # A native method (a HostFnCell loaded from a property) dispatches to its
       # Nim proc with `this` = the receiver. Otherwise a normal JS method call.
       if methodVal.kind == vkVal and isHostFunctionCell(methodVal.v):
-        regs[int(inst.a)] = callNative(heap, methodVal.v, callArgs, recv)
+        routeThrow: regs[int(inst.a)] = callNative(heap, methodVal.v, callArgs, recv)
       else:
         let callee = resolveCallee(methodVal)
-        regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
-                                         recv, vv(methodVal.env))
+        routeThrow: regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap,
+                                                     depth, recv, vv(methodVal.env))
 
     # --- object / array model (slice B1) ------------------------------
     of NewObject:
@@ -1675,8 +1734,9 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         runEnv = parent.env
       # The instance is rooted for the whole ctor call as that frame's `this`
       # (FrameRoot.thisv), so a collect triggered inside the ctor keeps it.
-      let ctorResult = callFunction(runFn, callArgs, globals, heap, depth,
-                                    instanceVal, vv(runEnv))
+      var ctorResult: VmVal
+      routeThrow: ctorResult = callFunction(runFn, callArgs, globals, heap, depth,
+                                            instanceVal, vv(runEnv))
       # Object return replaces the instance (ECMA-262 [[Construct]] step 13);
       # a primitive / undefined return is ignored → the instance.
       if isObjectResult(ctorResult):
@@ -1734,8 +1794,9 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # object — no new allocation. thisVal is already this frame's rooted
       # receiver (FrameRoot.thisv), so it survives any collect the parent
       # ctor triggers; callArgs live in the callee frame's regs (also roots).
-      let superResult = callFunction(runFn, callArgs, globals, heap, depth,
-                                     thisVal, vv(runEnv))
+      var superResult: VmVal
+      routeThrow: superResult = callFunction(runFn, callArgs, globals, heap, depth,
+                                             thisVal, vv(runEnv))
       # ECMA-262 §13.3.7.1: super() evaluates to the `this` binding. Our
       # in-scope parent ctors return undefined (a primitive) → ignored; the
       # result register receives the instance. A parent that returns an
