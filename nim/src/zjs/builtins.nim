@@ -883,13 +883,15 @@ proc nativeArrayIsArray(heap: var GcHeap, args: openArray[VmVal],
 
 proc nativeArrayPush(heap: var GcHeap, args: openArray[VmVal],
                      thisv: VmVal): VmVal {.nimcall.} =
-  ## Array.prototype.push(...items) — append, return the new length.
+  ## Array.prototype.push(...items) — append, return the new length. Appends via
+  ## the in-place arrSet (O(1) amortized) — copy-and-replace would be O(n) per push.
   let a = arrThis(thisv)
   if a == nil: bail("Array.prototype.push on non-array receiver")
-  var s = arrElems(heap, a)
-  for arg in args: s.add(boxForStore(heap, arg))
-  arrReplace(heap, a, s)
-  vv(int32Val(int32(s.len)))
+  var n = arrLength(heap, a)
+  for arg in args:
+    arrSet(heap, a, n, boxForStore(heap, arg))
+    inc n
+  vv(int32Val(int32(n)))
 
 proc nativeArrayPop(heap: var GcHeap, args: openArray[VmVal],
                     thisv: VmVal): VmVal {.nimcall.} =

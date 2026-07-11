@@ -356,28 +356,27 @@ proc objSet*(heap: var GcHeap, o: ptr ObjectCell, name: string, v: ZjsValue) =
   ## place if the key exists, else append (insertion order preserved for
   ## future enumeration).
   let p = cast[pointer](o)
-  var props = heap.objTable.mgetOrPut(p, ObjProps())
-  for i in 0 ..< props.names.len:
-    if props.names[i] == name:
-      props.values[i] = v
-      heap.objTable[p] = props
-      return
-  props.names.add(name)
-  props.values.add(v)
-  heap.objTable[p] = props
+  if not heap.objTable.hasKey(p): heap.objTable[p] = ObjProps()
+  # Mutate the prop lists IN PLACE — a copy-back would make wide-object / large
+  # property-set loops O(n²).
+  heap.objTable.withValue(p, props):
+    for i in 0 ..< props[].names.len:
+      if props[].names[i] == name:
+        props[].values[i] = v
+        return
+    props[].names.add(name)
+    props[].values.add(v)
 
 proc objDelete*(heap: var GcHeap, o: ptr ObjectCell, name: string): bool =
   ## Delete own property `name` (removing it from the insertion-ordered lists).
   ## Returns true — every model property is configurable, and `delete` of an
   ## absent property also succeeds (interpreter.zc DeleteElem / DeleteProp).
   let p = cast[pointer](o)
-  if heap.objTable.hasKey(p):
-    var props = heap.objTable[p]
-    for i in 0 ..< props.names.len:
-      if props.names[i] == name:
-        props.names.delete(i)
-        props.values.delete(i)
-        heap.objTable[p] = props
+  heap.objTable.withValue(p, props):
+    for i in 0 ..< props[].names.len:
+      if props[].names[i] == name:
+        props[].names.delete(i)
+        props[].values.delete(i)
         return true
   true
 
@@ -433,14 +432,15 @@ proc arrSet*(heap: var GcHeap, a: ptr ArrayCell, i: int, v: ZjsValue) =
   ## Indexed element set (interpreter.zc StoreElem): write element `i`,
   ## growing the backing seq with HOLES (which read back as undefined) for
   ## any intervening slots. Negative indices are ignored here (the VM
-  ## routes non-array-index keys to the object path).
+  ## routes non-array-index keys to the object path). Mutates the backing seq
+  ## IN PLACE (via withValue) — a copy-back would make array building O(n²).
   if i < 0: return
   let p = cast[pointer](a)
-  var s = heap.arrTable.mgetOrPut(p, @[])
-  while s.len <= i:
-    s.add(deletedVal())                # hole sentinel; arrGet → undefined
-  s[i] = v
-  heap.arrTable[p] = s
+  if not heap.arrTable.hasKey(p): heap.arrTable[p] = @[]
+  heap.arrTable.withValue(p, s):
+    while s[].len <= i:
+      s[].add(deletedVal())            # hole sentinel; arrGet → undefined
+    s[][i] = v
 
 proc arrElems*(heap: GcHeap, a: ptr ArrayCell): seq[ZjsValue] =
   ## The whole backing element seq (a copy; holes are VALUE_DELETED sentinels
