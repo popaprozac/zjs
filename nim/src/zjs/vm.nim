@@ -159,6 +159,12 @@ proc popNativeRoot*() =
 # top-level run so a reused Function address can't read a prior run's state.
 var fnProtos {.threadvar.}: Table[pointer, ZjsValue]      ## fn -> .prototype obj
 var fnParentCtors {.threadvar.}: Table[pointer, VmVal]    ## child ctor -> parent
+var funcProps {.threadvar.}: Table[pointer, ZjsValue]
+  ## Function EXPANDO properties (`fn.x = v`), keyed by the shared Function ref
+  ## address → a props ObjectCell. Correct for distinct top-level functions (one
+  ## closure per Function ref — e.g. test262's `assert` / `Test262Error`); two
+  ## closures of the SAME source fn would alias (a rare pattern). Pinned as a GC
+  ## root in vmMarkFrames; reset per top-level run.
 var vmObjectProto {.threadvar.}: ZjsValue
   ## The realm's `Object.prototype` cell, installed by `installBuiltins` via
   ## `setObjectProto`. `NewObject` links every plain object literal's
@@ -247,6 +253,8 @@ proc vmMarkFrames() =
     markCell(heap[], pv)
   for pc in fnParentCtors.values:
     markVmVal(heap[], pc)
+  for fp in funcProps.values:
+    markCell(heap[], fp)
   # Native-method accumulator roots (Array.prototype map/filter/reduce build a
   # result / carry an accumulator across callbacks that can allocate + collect).
   for r in vmNativeRoots:
@@ -379,6 +387,16 @@ proc getOrCreateFnProto(heap: var GcHeap, fn: Function): ZjsValue =
   let proto = cellValue(protoObj)
   fnProtos[key] = proto
   proto
+
+proc getOrCreateFuncProps(heap: var GcHeap, fn: Function): ptr ObjectCell =
+  ## The function's expando-property bag (created on first `fn.x = v`), keyed by
+  ## the shared Function ref address and pinned in funcProps (a GC root).
+  let key = cast[pointer](fn)
+  if funcProps.hasKey(key):
+    return cast[ptr ObjectCell](cellAsPtr(funcProps[key]))
+  let o = allocObject(heap)
+  funcProps[key] = cellValue(o)
+  o
 
 proc isObjectResult(v: VmVal): bool {.inline.} =
   ## Whether a constructor's return value is an Object (ECMA-262 [[Construct]]
@@ -832,8 +850,10 @@ proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
   # be mistaken for a live one and hand back a stale prototype (a wrong value).
   let savedProtos = fnProtos
   let savedParents = fnParentCtors
+  let savedFuncProps = funcProps
   fnProtos = initTable[pointer, ZjsValue]()
   fnParentCtors = initTable[pointer, VmVal]()
+  funcProps = initTable[pointer, ZjsValue]()
   vmFrames.setLen(0)
   vmGlobals = addr globals
   vmHeap = addr heap
@@ -853,6 +873,7 @@ proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
     vmHeap = savedHeap
     fnProtos = savedProtos
     fnParentCtors = savedParents
+    funcProps = savedFuncProps
 
 proc runFunction*(f: Function, globals: var seq[VmVal]): VmVal =
   ## Backward-compatible entry that owns a private heap for the run (used by
@@ -1510,13 +1531,19 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # a=obj, b=ic, c=val. Own-property set by name f.ics[ic]
       # (interpreter.zc ~6678). Only plain object receivers are in scope;
       # a string / number / array-with-a-named-prop receiver bails.
-      let o = asObjectCell(regs[int(inst.a)])
-      if o == nil: bail("StoreProp on non-object receiver")
       let name = f.ics[int(inst.b)]
       let sv = regs[int(inst.c)]
+      let recv = regs[int(inst.a)]
+      let o = asObjectCell(recv)
       # boxForStore boxes a function value into a FunctionCell; a plain value
-      # passes through; a string value still bails.
-      objSet(heap, o, name, boxForStore(heap, sv))
+      # passes through.
+      if o != nil:
+        objSet(heap, o, name, boxForStore(heap, sv))
+      elif recv.kind == vkFunction and recv.fn != nil:
+        # Function expando (`fn.x = v`) — stored on the function's props bag.
+        objSet(heap, getOrCreateFuncProps(heap, recv.fn), name, boxForStore(heap, sv))
+      else:
+        bail("StoreProp on non-object / non-function receiver")
     of LoadProp:
       # a=dst, b=obj, c=ic. Own-property get by name f.ics[ic]
       # (interpreter.zc ~6503). Missing own prop → undefined. NO proto
@@ -1549,8 +1576,15 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         # lacks → bail (never a wrong value).
         if name == "prototype":
           regs[int(inst.a)] = vv(getOrCreateFnProto(heap, recv.fn))
+        elif recv.fn != nil and funcProps.hasKey(cast[pointer](recv.fn)) and
+             objHas(heap, cast[ptr ObjectCell](cellAsPtr(funcProps[cast[pointer](recv.fn)])), name):
+          # A function expando (`fn.x` previously set).
+          let props = cast[ptr ObjectCell](cellAsPtr(funcProps[cast[pointer](recv.fn)]))
+          regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, props, name))
         else:
-          bail("LoadProp non-prototype name on function")
+          # .length / .call / .apply / an unset expando — inherited Function.
+          # prototype machinery we don't model → bail (never a wrong undefined).
+          bail("LoadProp unmodeled function member")
       elif recv.kind == vkVal and isCell(recv.v) and cellAsPtr(recv.v) != nil and
            cellHeader(recv.v).typeTag == TAG_HOSTFN and
            heap.objTable.hasKey(cellAsPtr(recv.v)):
@@ -1563,6 +1597,9 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         let bag = cast[ptr ObjectCell](cellAsPtr(recv.v))
         if objHas(heap, bag, name):
           regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, bag, name))
+        elif name == "name":
+          # `TypeError.name` → "TypeError" (the native's name).
+          regs[int(inst.a)] = vs(hostFnName(heap, recv.v))
         else:
           bail("LoadProp unmodeled static/member on native constructor")
       elif recv.kind == vkString:

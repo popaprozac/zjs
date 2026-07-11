@@ -4444,9 +4444,12 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
   # ctor as a NAMED FunctionExpr (name = class name) precisely so
   # bind_callee_local fires and emits LoadCallee — that's the oracle shape
   # for `class C {}`. So allow a named FunctionExpr through when isClassCtor.
+  # A NAMED FunctionExpr binds its own name as a self-referencing callee local
+  # (LoadCallee prologue below); the class-ctor path uses the same machinery. The
+  # binding + prologue are emitted whenever bindCalleeLocal, byte-identical to the
+  # oracle (zjs emits LoadCallee for every named FunctionExpr, self-referencing or
+  # not) — so no longer gated to isClassCtor.
   let bindCalleeLocal = node.kind == FunctionExpr and node.fnNameLen > 0
-  if bindCalleeLocal and not isClassCtor:
-    return nil
   let body = fnBodyOf(node)
 
   var c = Compiler(

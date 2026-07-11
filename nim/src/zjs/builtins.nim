@@ -949,14 +949,18 @@ proc nativeArrayIndexOf(heap: var GcHeap, args: openArray[VmVal],
 
 proc nativeArrayLastIndexOf(heap: var GcHeap, args: openArray[VmVal],
                             thisv: VmVal): VmVal {.nimcall.} =
-  ## Array.prototype.lastIndexOf(search) — strict-equal, from the end; skips holes.
+  ## Array.prototype.lastIndexOf(search, fromIndex?) — strict-equal, from the end
+  ## (or from fromIndex, negative counts from the end); skips holes.
   let a = arrThis(thisv)
   if a == nil: bail("Array.prototype.lastIndexOf on non-array receiver")
   let s = arrElems(heap, a)
   let search = (if args.len >= 1: args[0] else: vv(undefinedVal()))
   var i = s.len - 1
+  if args.len >= 2:
+    let f = toIntArg(args[1])
+    i = (if f < 0: s.len + f else: min(f, s.len - 1))
   while i >= 0:
-    if s[i].bits != deletedVal().bits and vmStrictEq(search, unboxLoaded(heap, s[i])):
+    if i < s.len and s[i].bits != deletedVal().bits and vmStrictEq(search, unboxLoaded(heap, s[i])):
       return vv(int32Val(int32(i)))
     dec i
   vv(int32Val(-1'i32))
@@ -2085,6 +2089,9 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
     template setErr(nm: string, fn: NativeFn, proto: ZjsValue) =
       let ef = allocHostFunction(heap, cast[pointer](fn), nm, 1, isCtor = true)
       objSet(heap, cast[ptr ObjectCell](ef), "prototype", proto)
+      # <Ctor>.prototype.constructor === <Ctor> (so `err.constructor` resolves —
+      # test262's assert.throws checks `thrown.constructor !== expectedCtor`).
+      objSet(heap, cast[ptr ObjectCell](cellAsPtr(proto)), "constructor", cellValue(ef))
       globals[builtinSlot(nm)] = vv(cellValue(ef))
       errorProtos[nm] = proto
     setErr("Error", nativeError, cellValue(errorProto))

@@ -949,9 +949,12 @@ suite "slice 4a structure + capture bail":
     # Formerly deferred; slice 6e lowers an array-pattern param via the
     # iterator fan-out (IterGet/IterStep + try-region).
     discard disasmToString("function f([a]) { return a; }")
-  test "named function expression -> compile error (LoadCallee deferred)":
-    expect ValueError:
-      discard disasmToString("(function foo(){});")
+  test "named function expression -> compiles (LoadCallee self-bind)":
+    # A named FunctionExpr binds its own name via a LoadCallee prologue
+    # (byte-identical to the oracle); no longer deferred.
+    let d = disasmToString("(function foo(){});")
+    check d.len > 0
+    check "LoadCallee" in d
   # NOTE (slice 7e): async / generator functions NO LONGER bail — they now
   # compile (see the "slice 7e generator/async" suite). Sanity: they no
   # longer raise.
