@@ -1181,6 +1181,34 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let tv = regs[int(inst.a)]
       if catchHere(tv): continue
       raiseJs(tv)
+    of AssertCoercible:
+      # a=x: RequireObjectCoercible (destructuring source / `with`). null or
+      # undefined throws a TypeError; anything else is a no-op. Building that
+      # exact TypeError from the VM isn't wired → BAIL on null/undefined (never a
+      # wrong value); a coercible value passes through so object destructuring runs.
+      let x = regs[int(inst.a)]
+      if x.kind == vkVal and (isNull(x.v) or isUndefined(x.v)):
+        bail("AssertCoercible on null/undefined (TypeError)")
+    of BuildRestArgs:
+      # a=dst, b=first_param_index: gather this call's args from index b onward
+      # into a fresh Array (interpreter.zc BuildRestArgs) — the `...rest` param.
+      let firstIdx = int(inst.b)
+      var rest: seq[ZjsValue] = @[]
+      var i = firstIdx
+      while i < args.len:
+        rest.add(boxForStore(heap, args[i]))
+        inc i
+      regs[int(inst.a)] = vv(cellValue(allocArray(heap, rest)))
+      maybeCollect(heap)
+    of DeleteElem:
+      # a=dst, b=obj, c=key: `delete obj[key]` → true (every model prop is
+      # configurable). Plain-object receiver + string key only; else bail.
+      let o = asObjectCell(regs[int(inst.b)])
+      let key = regs[int(inst.c)]
+      if o == nil or key.kind != vkString:
+        bail("DeleteElem on non-object receiver / non-string key")
+      discard objDelete(heap, o, key.s)
+      regs[int(inst.a)] = vv(boolVal(true))
     of JmpIfTrue:
       # ToBoolean over the VmVal (a string condition, e.g. `""?1:2`, must
       # distinguish ""→false from "x"→true; rn's ToNumber would lose it).

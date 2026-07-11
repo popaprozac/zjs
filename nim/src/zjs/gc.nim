@@ -366,6 +366,21 @@ proc objSet*(heap: var GcHeap, o: ptr ObjectCell, name: string, v: ZjsValue) =
   props.values.add(v)
   heap.objTable[p] = props
 
+proc objDelete*(heap: var GcHeap, o: ptr ObjectCell, name: string): bool =
+  ## Delete own property `name` (removing it from the insertion-ordered lists).
+  ## Returns true — every model property is configurable, and `delete` of an
+  ## absent property also succeeds (interpreter.zc DeleteElem / DeleteProp).
+  let p = cast[pointer](o)
+  if heap.objTable.hasKey(p):
+    var props = heap.objTable[p]
+    for i in 0 ..< props.names.len:
+      if props.names[i] == name:
+        props.names.delete(i)
+        props.values.delete(i)
+        heap.objTable[p] = props
+        return true
+  true
+
 proc objGetProto*(o: ptr ObjectCell): ZjsValue {.inline.} =
   ## The object's [[Prototype]] link (slice B3): another ObjectCell, or
   ## `undefined` when it has none.
