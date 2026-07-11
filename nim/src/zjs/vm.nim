@@ -170,6 +170,17 @@ proc setArrayProto*(v: ZjsValue) =
   ## Register the realm's Array.prototype cell (called by installBuiltins).
   vmArrayProto = v
 
+var vmStringProto {.threadvar.}: ZjsValue
+  ## The realm's `String.prototype` cell (methods as natives; proto = Object.
+  ## prototype). String primitives (vkString) carry no proto, so LoadProp on a
+  ## string resolves an inherited method by looking the name up here. zjs strings
+  ## are UTF-8 BYTE sequences (length/charAt/charCodeAt/slice are byte-indexed),
+  ## which nim's `string` mirrors — so String methods are plain byte ops.
+
+proc setStringProto*(v: ZjsValue) =
+  ## Register the realm's String.prototype cell (called by installBuiltins).
+  vmStringProto = v
+
 proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
   ## Mark any GC cell a VmVal can hold: a vkVal's cell, OR a closure's
   ## captured env (a vkFunction's env is an ObjectCell that must survive
@@ -1410,6 +1421,24 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
           regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, bag, name))
         else:
           bail("LoadProp unmodeled static/member on native constructor")
+      elif recv.kind == vkString:
+        # String primitive: `.length` is the BYTE count (zjs's UTF-8 model);
+        # every other name resolves on String.prototype (→ Object.prototype),
+        # bound to the string as `this` by MethodInvoke. A name absent from the
+        # chain bails (a real string has many proto members we don't model) —
+        # never a wrong undefined.
+        if name == "length":
+          regs[int(inst.a)] = vv(int32Val(int32(recv.s.len)))
+        elif isCell(vmStringProto) and cellAsPtr(vmStringProto) != nil:
+          let sp = cast[ptr ObjectCell](cellAsPtr(vmStringProto))
+          var found = false
+          let v = protoChainLookup(heap, sp, name, found)
+          if found:
+            regs[int(inst.a)] = unboxLoaded(heap, v)
+          else:
+            bail("LoadProp unmodeled String.prototype member")
+        else:
+          bail("LoadProp on string (String.prototype not installed)")
       else:
         let a = asArrayCell(recv)
         if a != nil:
@@ -1468,6 +1497,17 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
           # Non-index key on an array (e.g. a[-1], a["length"]) — needs the
           # property path / proto → bail.
           bail("LoadElem non-index key on array")
+      elif recv.kind == vkString:
+        # String index: `s[i]` → the 1-BYTE substring at i (zjs UTF-8 model),
+        # or undefined out of range. A non-index key (s["length"]/s[-1]) bails.
+        if key.kind == vkVal and (isInt32(key.v) or isDouble(key.v)):
+          let idx = arrayIndex(key.v)
+          if idx >= 0 and idx < recv.s.len:
+            regs[int(inst.a)] = vs($recv.s[idx])
+          else:
+            regs[int(inst.a)] = vv(undefinedVal())
+        else:
+          bail("LoadElem non-index key on string")
       else:
         let o = asObjectCell(recv)
         if o == nil: bail("LoadElem on non-object/array receiver")

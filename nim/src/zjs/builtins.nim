@@ -1231,6 +1231,172 @@ proc nativeArrayCtor(heap: var GcHeap, args: openArray[VmVal],
   ## and `Array.isArray` / `Array.prototype` resolve off the property bag.
   bail("Array constructor not implemented")
 
+# --- String.prototype methods (src/context.zc host_string_* ; g12) ------
+# zjs strings are UTF-8 BYTE sequences: length/charAt/charCodeAt/slice index by
+# byte, which nim's `string` mirrors — so these are plain byte ops, byte-
+# identical to the reference. Each native gets the string primitive as `thisv`.
+
+proc strThis(heap: GcHeap, thisv: VmVal): string =
+  ## The receiver coerced to its string value (a vkString or a StringCell).
+  var s: string
+  if vmStringVal(heap, thisv, s): return s
+  bail("String.prototype method on non-string receiver")
+
+proc nativeStringCharAt(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.charAt(i) — the 1-byte substring at i, or "".
+  let s = strThis(heap, thisv)
+  let i = toIntArg(if args.len >= 1: args[0] else: vv(int32Val(0)))
+  if i >= 0 and i < s.len: vs($s[i]) else: vs("")
+
+proc nativeStringCharCodeAt(heap: var GcHeap, args: openArray[VmVal],
+                            thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.charCodeAt(i) — the byte value (0..255) at i, or NaN.
+  let s = strThis(heap, thisv)
+  let i = toIntArg(if args.len >= 1: args[0] else: vv(int32Val(0)))
+  if i >= 0 and i < s.len: vv(int32Val(int32(ord(s[i])))) else: vv(doubleVal(NaN))
+
+proc nativeStringAt(heap: var GcHeap, args: openArray[VmVal],
+                    thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.at(i) — byte substring at i (negative from end), else undefined.
+  let s = strThis(heap, thisv)
+  var i = toIntArg(if args.len >= 1: args[0] else: vv(int32Val(0)))
+  if i < 0: i = s.len + i
+  if i >= 0 and i < s.len: vs($s[i]) else: vv(undefinedVal())
+
+proc nativeStringIndexOf(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.indexOf(search, from?) — byte substring index, or -1.
+  let s = strThis(heap, thisv)
+  let needle = vmToString(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  var start = 0
+  if args.len >= 2: start = max(0, toIntArg(args[1]))
+  if start > s.len: return vv(int32Val(if needle.len == 0: int32(s.len) else: -1'i32))
+  vv(int32Val(int32(s.find(needle, start))))
+
+proc nativeStringLastIndexOf(heap: var GcHeap, args: openArray[VmVal],
+                             thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.lastIndexOf(search) — last byte substring index, or -1.
+  let s = strThis(heap, thisv)
+  let needle = vmToString(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  vv(int32Val(int32(s.rfind(needle))))
+
+proc nativeStringIncludes(heap: var GcHeap, args: openArray[VmVal],
+                          thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.includes(search, from?) — substring presence.
+  let s = strThis(heap, thisv)
+  let needle = vmToString(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  var start = 0
+  if args.len >= 2: start = max(0, toIntArg(args[1]))
+  vv(boolVal(s.find(needle, start) >= 0))
+
+proc nativeStringStartsWith(heap: var GcHeap, args: openArray[VmVal],
+                            thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.startsWith(search, pos?).
+  let s = strThis(heap, thisv)
+  let needle = vmToString(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  var pos = 0
+  if args.len >= 2: pos = max(0, toIntArg(args[1]))
+  if pos + needle.len > s.len: return vv(boolVal(false))
+  vv(boolVal(s.continuesWith(needle, pos)))
+
+proc nativeStringEndsWith(heap: var GcHeap, args: openArray[VmVal],
+                          thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.endsWith(search, endPos?).
+  let s = strThis(heap, thisv)
+  let needle = vmToString(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  var endPos = s.len
+  if args.len >= 2: endPos = min(max(0, toIntArg(args[1])), s.len)
+  if needle.len > endPos: return vv(boolVal(false))
+  vv(boolVal(s.continuesWith(needle, endPos - needle.len)))
+
+proc nativeStringSlice(heap: var GcHeap, args: openArray[VmVal],
+                       thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.slice(start?, end?) — byte range, negatives from the end.
+  let s = strThis(heap, thisv)
+  let n = s.len
+  var start = 0
+  if args.len >= 1 and not (args[0].kind == vkVal and isUndefined(args[0].v)):
+    start = relStart(args[0], n)
+  var stop = n
+  if args.len >= 2 and not (args[1].kind == vkVal and isUndefined(args[1].v)):
+    stop = relStart(args[1], n)
+  if start >= stop: return vs("")
+  vs(s[start ..< stop])
+
+proc nativeStringSubstring(heap: var GcHeap, args: openArray[VmVal],
+                           thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.substring(start, end?) — negatives clamp to 0; swap if start>end.
+  let s = strThis(heap, thisv)
+  let n = s.len
+  var start = clamp(toIntArg(if args.len >= 1: args[0] else: vv(int32Val(0))), 0, n)
+  var stop = n
+  if args.len >= 2 and not (args[1].kind == vkVal and isUndefined(args[1].v)):
+    stop = clamp(toIntArg(args[1]), 0, n)
+  if start > stop: swap(start, stop)
+  vs(s[start ..< stop])
+
+proc nativeStringToUpperCase(heap: var GcHeap, args: openArray[VmVal],
+                             thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.toUpperCase() — ASCII byte-wise upper (matches the
+  ## reference's byte model for ASCII; non-ASCII bytes pass through).
+  vs(strThis(heap, thisv).toUpperAscii())
+
+proc nativeStringToLowerCase(heap: var GcHeap, args: openArray[VmVal],
+                             thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.toLowerCase() — ASCII byte-wise lower.
+  vs(strThis(heap, thisv).toLowerAscii())
+
+proc nativeStringTrim(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.trim() — strip leading/trailing ASCII whitespace.
+  vs(strThis(heap, thisv).strip())
+
+proc nativeStringRepeat(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.repeat(count) — count copies. Negative → RangeError (BAIL).
+  let s = strThis(heap, thisv)
+  let count = toIntArg(if args.len >= 1: args[0] else: vv(int32Val(0)))
+  if count < 0: bail("String.prototype.repeat count is negative (RangeError)")
+  var res = newStringOfCap(s.len * count)
+  for _ in 0 ..< count: res.add(s)
+  vs(res)
+
+proc nativeStringConcat(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.concat(...args) — this ++ each ToString(arg).
+  var res = strThis(heap, thisv)
+  for arg in args: res.add(vmToString(arg))
+  vs(res)
+
+proc nativeStringSplit(heap: var GcHeap, args: openArray[VmVal],
+                       thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.split(sep?) — no sep → [whole]; sep "" → per-byte; else
+  ## byte split. (limit + regexp separators deferred.)
+  let s = strThis(heap, thisv)
+  if args.len == 0 or (args[0].kind == vkVal and isUndefined(args[0].v)):
+    return vv(cellValue(allocArray(heap, [cellValue(allocStringCell(heap, s))])))
+  let sep = vmToString(args[0])
+  var parts: seq[ZjsValue] = @[]
+  if sep.len == 0:
+    for c in s: parts.add(cellValue(allocStringCell(heap, $c)))
+  else:
+    for part in s.split(sep):
+      parts.add(cellValue(allocStringCell(heap, part)))
+  vv(cellValue(allocArray(heap, parts)))
+
+proc nativeStringToString(heap: var GcHeap, args: openArray[VmVal],
+                          thisv: VmVal): VmVal {.nimcall.} =
+  ## String.prototype.toString() / valueOf() — the primitive string value.
+  vs(strThis(heap, thisv))
+
+proc nativeStringCtor(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## `String(v)` — ToString(v); `new String(v)` (wrapper) deferred. The plain
+  ## call form is common enough to implement (no wrapper identity needed).
+  if args.len == 0: return vs("")
+  vs(vmToString(args[0]))
+
 # --- realm install -----------------------------------------------------
 
 const USER_GLOBAL_BASE = 108
@@ -1425,3 +1591,36 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
            cellValue(allocHostFunction(heap, cast[pointer](nativeArrayIsArray), "isArray", 1)))
     objSet(heap, arrayBag, "prototype", cellValue(arrayProto))
     globals[builtinSlot("Array")] = vv(cellValue(arrayFn))
+  # String (g12) — native constructor (typeof → "function"; String(v) coerces).
+  # Its prototype carries the byte-based method natives, dispatched via the VM's
+  # LoadProp vkString branch. Chain = String.prototype → Object.prototype.
+  block installString:
+    let stringProto = allocObject(heap)
+    if isCell(objectProtoVal) and cellAsPtr(objectProtoVal) != nil:
+      objSetProto(stringProto, objectProtoVal)
+    template setS(nm: string, fn: NativeFn, arity: int) =
+      objSet(heap, stringProto, nm,
+             cellValue(allocHostFunction(heap, cast[pointer](fn), nm, arity)))
+    setS("charAt",      nativeStringCharAt,      1)
+    setS("charCodeAt",  nativeStringCharCodeAt,  1)
+    setS("at",          nativeStringAt,          1)
+    setS("indexOf",     nativeStringIndexOf,     1)
+    setS("lastIndexOf", nativeStringLastIndexOf, 1)
+    setS("includes",    nativeStringIncludes,    1)
+    setS("startsWith",  nativeStringStartsWith,  1)
+    setS("endsWith",    nativeStringEndsWith,    1)
+    setS("slice",       nativeStringSlice,       2)
+    setS("substring",   nativeStringSubstring,   2)
+    setS("toUpperCase", nativeStringToUpperCase, 0)
+    setS("toLowerCase", nativeStringToLowerCase, 0)
+    setS("trim",        nativeStringTrim,        0)
+    setS("repeat",      nativeStringRepeat,      1)
+    setS("concat",      nativeStringConcat,      1)
+    setS("split",       nativeStringSplit,       2)
+    setS("toString",    nativeStringToString,    0)
+    setS("valueOf",     nativeStringToString,    0)
+    setStringProto(cellValue(stringProto))
+    let stringFn = allocHostFunction(heap, cast[pointer](nativeStringCtor), "String", 1)
+    let stringBag = cast[ptr ObjectCell](stringFn)
+    objSet(heap, stringBag, "prototype", cellValue(stringProto))
+    globals[builtinSlot("String")] = vv(cellValue(stringFn))

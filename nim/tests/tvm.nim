@@ -342,8 +342,10 @@ suite "vm bail discipline":
     # integral double past the %lld window prints exact (%.0f), not
     # shortest-round-trip: 86161958985030656 stays exact.
     check ev("\"\"+86161958985030656") == "86161958985030656"
-  test "property access / built-ins bail":
-    check bails("\"foo\".length")   # object model = Phase 5
+  test "string property access + methods resolve (Phase 6 String)":
+    check evB("\"foo\".length") == "3"
+    check evB("\"foo\".toUpperCase()") == "FOO"
+    check evB("\"a,b,c\".split(\",\").length") == "3"
   test "arrow calls bail (lexical this/env)":
     check bails("var f=()=>1; f()")
   test "calling a non-function bails":
