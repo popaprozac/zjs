@@ -437,6 +437,14 @@ proc arrReplace*(heap: var GcHeap, a: ptr ArrayCell, s: seq[ZjsValue]) =
   ## fill/…). The ArrayCell keeps its identity; only its elements change.
   heap.arrTable[cast[pointer](a)] = s
 
+proc arrHasIndex*(heap: GcHeap, a: ptr ArrayCell, i: int): bool =
+  ## True iff index `i` is present (0 <= i < length AND not a hole) — the
+  ## HasProperty check the callback iterators (forEach/map/…) use to skip holes.
+  let p = cast[pointer](a)
+  if i < 0 or not heap.arrTable.hasKey(p): return false
+  let s = heap.arrTable[p]
+  i < s.len and s[i].bits != VALUE_DELETED
+
 proc arrTableLen*(heap: GcHeap): int {.inline.} = heap.arrTable.len
 
 # --- FunctionCell (slice B2) -----------------------------------------

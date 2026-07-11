@@ -1063,6 +1063,167 @@ proc nativeArrayToString(heap: var GcHeap, args: openArray[VmVal],
   ## callable, which it always is here).
   nativeArrayJoin(heap, [], thisv)
 
+# --- Array.prototype callback methods (native → JS re-entrancy) ---------
+# Each invokes a JS callback per element via invokeCallback (re-enters the
+# interpreter). map/filter/reduce root their accumulator across callbacks (a
+# callback can allocate + collect) via pushNativeRoot. Callbacks see element
+# values fresh per iteration through arrGet (safe under a self-mutating callback,
+# since the receiver array is rooted by the caller's frame).
+
+proc isCallableVal(x: VmVal): bool {.inline.} =
+  if x.kind == vkFunction: return true
+  if x.kind == vkVal and isCell(x.v) and cellAsPtr(x.v) != nil:
+    let t = cellHeader(x.v).typeTag
+    return t == TAG_FUNCTION or t == TAG_HOSTFN
+  false
+
+template cbSetup(methodName: string) {.dirty.} =
+  ## Bind `a` (the receiver array), `cb` (the callback), `thisArg`, `n` (length).
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype." & methodName & " on non-array receiver")
+  if args.len == 0 or not isCallableVal(args[0]):
+    bail("Array.prototype." & methodName & " callback is not a function")
+  let cb = args[0]
+  let thisArg = (if args.len >= 2: args[1] else: vv(undefinedVal()))
+  let n = arrLength(heap, a)
+
+proc nativeArrayForEach(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.forEach(cb, thisArg?) — call cb for each present element;
+  ## returns undefined. Skips holes.
+  cbSetup("forEach")
+  var i = 0
+  while i < n:
+    if arrHasIndex(heap, a, i):
+      let v = unboxLoaded(heap, arrGet(heap, a, i))
+      discard invokeCallback(heap, cb, thisArg, [v, vv(int32Val(int32(i))), thisv])
+    inc i
+  vv(undefinedVal())
+
+proc nativeArraySome(heap: var GcHeap, args: openArray[VmVal],
+                     thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.some(cb) — true iff cb is truthy for any present element.
+  cbSetup("some")
+  var i = 0
+  while i < n:
+    if arrHasIndex(heap, a, i):
+      let v = unboxLoaded(heap, arrGet(heap, a, i))
+      if vmToBool(invokeCallback(heap, cb, thisArg, [v, vv(int32Val(int32(i))), thisv])):
+        return vv(boolVal(true))
+    inc i
+  vv(boolVal(false))
+
+proc nativeArrayEvery(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.every(cb) — true iff cb is truthy for every present element.
+  cbSetup("every")
+  var i = 0
+  while i < n:
+    if arrHasIndex(heap, a, i):
+      let v = unboxLoaded(heap, arrGet(heap, a, i))
+      if not vmToBool(invokeCallback(heap, cb, thisArg, [v, vv(int32Val(int32(i))), thisv])):
+        return vv(boolVal(false))
+    inc i
+  vv(boolVal(true))
+
+proc nativeArrayFind(heap: var GcHeap, args: openArray[VmVal],
+                     thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.find(cb) — first element (via Get, holes→undefined) where
+  ## cb is truthy, else undefined.
+  cbSetup("find")
+  var i = 0
+  while i < n:
+    let v = unboxLoaded(heap, arrGet(heap, a, i))
+    if vmToBool(invokeCallback(heap, cb, thisArg, [v, vv(int32Val(int32(i))), thisv])):
+      return v
+    inc i
+  vv(undefinedVal())
+
+proc nativeArrayFindIndex(heap: var GcHeap, args: openArray[VmVal],
+                          thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.findIndex(cb) — first index where cb is truthy, else -1.
+  cbSetup("findIndex")
+  var i = 0
+  while i < n:
+    let v = unboxLoaded(heap, arrGet(heap, a, i))
+    if vmToBool(invokeCallback(heap, cb, thisArg, [v, vv(int32Val(int32(i))), thisv])):
+      return vv(int32Val(int32(i)))
+    inc i
+  vv(int32Val(-1'i32))
+
+proc nativeArrayMap(heap: var GcHeap, args: openArray[VmVal],
+                    thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.map(cb) — new Array of cb results (holes preserved). The
+  ## result is rooted across callbacks (each callback can allocate + collect).
+  cbSetup("map")
+  let resultCell = allocArray(heap, [])
+  let resultVal = cellValue(resultCell)
+  pushNativeRoot(resultVal)
+  var i = 0
+  while i < n:
+    if arrHasIndex(heap, a, i):
+      let v = unboxLoaded(heap, arrGet(heap, a, i))
+      let r = invokeCallback(heap, cb, thisArg, [v, vv(int32Val(int32(i))), thisv])
+      arrSet(heap, resultCell, i, boxForStore(heap, r))   # write into the rooted result
+    inc i
+  var built = arrElems(heap, resultCell)      # pad to length n (trailing holes)
+  while built.len < n: built.add(deletedVal())
+  arrReplace(heap, resultCell, built)
+  popNativeRoot()
+  vv(resultVal)
+
+proc nativeArrayFilter(heap: var GcHeap, args: openArray[VmVal],
+                       thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.filter(cb) — new (compacted) Array of elements where cb is
+  ## truthy. Rooted across callbacks.
+  cbSetup("filter")
+  let resultCell = allocArray(heap, [])
+  let resultVal = cellValue(resultCell)
+  pushNativeRoot(resultVal)
+  var i = 0
+  var outIdx = 0
+  while i < n:
+    if arrHasIndex(heap, a, i):
+      let v = unboxLoaded(heap, arrGet(heap, a, i))
+      if vmToBool(invokeCallback(heap, cb, thisArg, [v, vv(int32Val(int32(i))), thisv])):
+        arrSet(heap, resultCell, outIdx, boxForStore(heap, v))
+        inc outIdx
+    inc i
+  popNativeRoot()
+  vv(resultVal)
+
+proc nativeArrayReduce(heap: var GcHeap, args: openArray[VmVal],
+                       thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.reduce(cb, initialValue?) — cb(acc, cur, i, arr) left-to-
+  ## right. No initialValue + empty → TypeError (BAIL). The accumulator is rooted
+  ## across callbacks.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.reduce on non-array receiver")
+  if args.len == 0 or not isCallableVal(args[0]):
+    bail("Array.prototype.reduce callback is not a function")
+  let cb = args[0]
+  let n = arrLength(heap, a)
+  var i = 0
+  var acc: VmVal
+  if args.len >= 2:
+    acc = args[1]
+  else:
+    while i < n and not arrHasIndex(heap, a, i): inc i
+    if i >= n: bail("Reduce of empty array with no initial value")
+    acc = unboxLoaded(heap, arrGet(heap, a, i)); inc i
+  pushNativeRoot(boxForStore(heap, acc))
+  while i < n:
+    if arrHasIndex(heap, a, i):
+      let v = unboxLoaded(heap, arrGet(heap, a, i))
+      let r = invokeCallback(heap, cb, vv(undefinedVal()),
+                             [acc, v, vv(int32Val(int32(i))), thisv])
+      popNativeRoot()
+      acc = r
+      pushNativeRoot(boxForStore(heap, acc))
+    inc i
+  popNativeRoot()
+  acc
+
 proc nativeArrayCtor(heap: var GcHeap, args: openArray[VmVal],
                      thisv: VmVal): VmVal {.nimcall.} =
   ## `Array(...)` / `new Array(...)` — the constructor form (length-arg vs
@@ -1249,6 +1410,14 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
     setA("at",          nativeArrayAt,          1)
     setA("reverse",     nativeArrayReverse,     0)
     setA("toString",    nativeArrayToString,    0)
+    setA("forEach",     nativeArrayForEach,     1)
+    setA("some",        nativeArraySome,        1)
+    setA("every",       nativeArrayEvery,       1)
+    setA("find",        nativeArrayFind,        1)
+    setA("findIndex",   nativeArrayFindIndex,   1)
+    setA("map",         nativeArrayMap,         1)
+    setA("filter",      nativeArrayFilter,      1)
+    setA("reduce",      nativeArrayReduce,      1)
     setArrayProto(cellValue(arrayProto))
     let arrayFn = allocHostFunction(heap, cast[pointer](nativeArrayCtor), "Array", 1)
     let arrayBag = cast[ptr ObjectCell](arrayFn)

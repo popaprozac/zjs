@@ -122,6 +122,14 @@ type FrameRoot = object
 var vmFrames {.threadvar.}: seq[FrameRoot]
 var vmGlobals {.threadvar.}: ptr seq[VmVal]
 var vmHeap {.threadvar.}: ptr GcHeap   ## the heap the customMark hook reads
+var vmNativeRoots {.threadvar.}: seq[ZjsValue]
+  ## GC roots held by an in-flight native method (Array map/filter/reduce build a
+  ## result array / carry an accumulator across callbacks that can allocate and
+  ## trigger a collect). Marked by vmMarkFrames; LIFO push/pop by the native.
+
+proc pushNativeRoot*(v: ZjsValue) = vmNativeRoots.add(v)
+proc popNativeRoot*() =
+  if vmNativeRoots.len > 0: vmNativeRoots.setLen(vmNativeRoots.len - 1)
 
 # --- per-function runtime state (slice B3) ------------------------------
 # A function VALUE gets an associated `.prototype` OBJECT and (for a class
@@ -192,6 +200,10 @@ proc vmMarkFrames() =
     markCell(heap[], pv)
   for pc in fnParentCtors.values:
     markVmVal(heap[], pc)
+  # Native-method accumulator roots (Array.prototype map/filter/reduce build a
+  # result / carry an accumulator across callbacks that can allocate + collect).
+  for r in vmNativeRoots:
+    markCell(heap[], r)
 
 # --- object-model op helpers -------------------------------------------
 # Slice B1 has NO prototype chain: a receiver must be a plain object or
@@ -613,7 +625,7 @@ proc vmToString*(x: VmVal): string =
     if isUndefined(v): return "undefined"
     bail("ToString on non-primitive")
 
-proc vmToBool(x: VmVal): bool =
+proc vmToBool*(x: VmVal): bool =
   ## ToBoolean over a VmVal (zjs_to_bool_coerce, value.zc ~270): a
   ## non-empty string is truthy, ""→false; else defer to the ZjsValue arm.
   case x.kind
@@ -735,6 +747,24 @@ proc callFunction(callee: Function, args: openArray[VmVal],
   if depth + 1 > MAX_CALL_DEPTH:
     bail("call stack depth exceeded")
   runFrame(callee, args, globals, heap, depth + 1, thisVal, env)
+
+proc invokeCallback*(heap: var GcHeap, fn: VmVal, thisArg: VmVal,
+                     cbArgs: openArray[VmVal]): VmVal =
+  ## Invoke an Array-method callback `fn(...cbArgs)` with `thisArg` as receiver,
+  ## re-entering the interpreter. Uses the thread's globals and the CURRENT frame
+  ## depth (vmFrames.len) so nested callbacks respect MAX_CALL_DEPTH. A host-fn
+  ## callback dispatches the native directly. Bails on a non-callable callback
+  ## (the array-method TypeError path — never a wrong value). The CALLER must root
+  ## any accumulator across this call (the callback can allocate + trigger a
+  ## collect; see pushNativeRoot).
+  if vmGlobals == nil: bail("Array callback: no active globals")
+  if fn.kind == vkVal and isCell(fn.v) and cellAsPtr(fn.v) != nil and
+     cellHeader(fn.v).typeTag == TAG_HOSTFN:
+    return callNative(heap, fn.v, cbArgs, thisArg)
+  let callee = resolveCallee(fn)
+  var a = newSeq[VmVal](cbArgs.len)
+  for i in 0 ..< cbArgs.len: a[i] = cbArgs[i]
+  callFunction(callee, a, vmGlobals[], heap, vmFrames.len, thisArg, vv(fn.env))
 
 proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
                   depth: int = 0): VmVal =
