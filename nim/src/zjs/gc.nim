@@ -254,6 +254,13 @@ proc allocLeafCell*(heap: var GcHeap): ZjsValue =
 type
   ObjectCell* = object
     header*: CellHeader     ## a pure header; props are in heap.objTable
+    proto*:  ZjsValue       ## [[Prototype]] link (slice B3). Another
+                            ## ObjectCell (a ctor.prototype), or `undefined` =
+                            ## no proto. Lives INLINE in the cell (mirrors the
+                            ## reference `ZjsObject.proto`); marked in
+                            ## markCell(TAG_OBJECT) so an instance keeps its
+                            ## whole prototype chain (and the methods on it)
+                            ## alive. Sweep's zeroMem clears it on recycle.
   ArrayCell* = object
     header*: CellHeader     ## a pure header; elems are in heap.arrTable
   FunctionCell* = object
@@ -273,7 +280,9 @@ proc allocObject*(heap: var GcHeap): ptr ObjectCell =
   ## eagerly so the side-table entry exists for the lifetime of the cell.
   let p = allocCell(heap, TAG_OBJECT, sizeof(ObjectCell))
   heap.objTable[p] = ObjProps()
-  cast[ptr ObjectCell](p)
+  let o = cast[ptr ObjectCell](p)
+  o.proto = undefinedVal()          # no [[Prototype]] until SetProto / NewInvoke
+  o
 
 proc objGet*(heap: GcHeap, o: ptr ObjectCell, name: string): ZjsValue =
   ## Own-property get by name (interpreter.zc LoadProp own-slot semantics):
@@ -308,6 +317,17 @@ proc objSet*(heap: var GcHeap, o: ptr ObjectCell, name: string, v: ZjsValue) =
   props.names.add(name)
   props.values.add(v)
   heap.objTable[p] = props
+
+proc objGetProto*(o: ptr ObjectCell): ZjsValue {.inline.} =
+  ## The object's [[Prototype]] link (slice B3): another ObjectCell, or
+  ## `undefined` when it has none.
+  o.proto
+
+proc objSetProto*(o: ptr ObjectCell, v: ZjsValue) {.inline.} =
+  ## Wire the object's [[Prototype]] (interpreter.zc SetProto / the NewInvoke
+  ## instance-alloc). `v` is an ObjectCell (a ctor.prototype) or a non-cell
+  ## sentinel (undefined / null) = no proto.
+  o.proto = v
 
 proc objKeys*(heap: GcHeap, o: ptr ObjectCell): seq[string] =
   ## Own-property names in insertion order.
@@ -454,6 +474,10 @@ proc markCell*(heap: GcHeap, v: ZjsValue) =
     for i in 0 ..< int(o.nfields):
       markCell(heap, f[i])      # interior marking of field values
   of TAG_OBJECT:
+    # The [[Prototype]] link (slice B3): keep the whole prototype chain (and
+    # the methods installed on it) reachable while any instance is reachable.
+    let oc = cast[ptr ObjectCell](cellAsPtr(v))
+    markCell(heap, oc.proto)
     # Interior-mark every property VALUE (side table). The names are ARC
     # strings; only the ZjsValues can be cells.
     let p = cellAsPtr(v)

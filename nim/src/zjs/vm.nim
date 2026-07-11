@@ -21,6 +21,7 @@
 ## comments for the exact source anchor.
 
 import std/math
+import std/tables
 import bytecode, value, gc
 
 # C strtod for the ECMA-262 StringToNumber path (value.zc ~217): ported
@@ -105,6 +106,20 @@ var vmFrames {.threadvar.}: seq[FrameRoot]
 var vmGlobals {.threadvar.}: ptr seq[VmVal]
 var vmHeap {.threadvar.}: ptr GcHeap   ## the heap the customMark hook reads
 
+# --- per-function runtime state (slice B3) ------------------------------
+# A function VALUE gets an associated `.prototype` OBJECT and (for a class
+# `extends`) a parent constructor. In the reference these are FIELDS on the
+# `Function*` cell (`f.prototype`, `f.parent_ctor`); here the `Function` is an
+# ARC-managed ref shared by every VmVal that carries it (LoadConst of one
+# const-pool entry + Mov copies), so the state is keyed by the ref's stable
+# address. Both tables are GC ROOTS (marked in vmMarkFrames): a lazily-created
+# `.prototype` (and everything on it) must not be freed while the function is
+# usable, even in a momentary window where no register holds the function
+# value. Bounded — one entry per distinct function in the program. Reset per
+# top-level run so a reused Function address can't read a prior run's state.
+var fnProtos {.threadvar.}: Table[pointer, ZjsValue]      ## fn -> .prototype obj
+var fnParentCtors {.threadvar.}: Table[pointer, VmVal]    ## child ctor -> parent
+
 proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
   ## Mark any GC cell a VmVal can hold: a vkVal's cell, OR a closure's
   ## captured env (a vkFunction's env is an ObjectCell that must survive
@@ -129,6 +144,12 @@ proc vmMarkFrames() =
         markVmVal(heap[], x)
     markVmVal(heap[], fr.env)
     markVmVal(heap[], fr.thisv)
+  # slice B3: pin every function's `.prototype` object (and thus the methods
+  # installed on it) and any recorded parent-ctor value. See fnProtos above.
+  for pv in fnProtos.values:
+    markCell(heap[], pv)
+  for pc in fnParentCtors.values:
+    markVmVal(heap[], pc)
 
 # --- object-model op helpers -------------------------------------------
 # Slice B1 has NO prototype chain: a receiver must be a plain object or
@@ -224,6 +245,60 @@ proc maybeCollect(heap: var GcHeap) {.inline.} =
   if heap.totalAllocated - heap.lastCollectAt >= GC_TRIGGER_INTERVAL:
     discard collect(heap)
     heap.lastCollectAt = heap.totalAllocated
+
+# --- prototype / new helpers (slice B3) --------------------------------
+
+proc objCellOfValue(v: ZjsValue): ptr ObjectCell {.inline.} =
+  ## `v` as a plain ObjectCell pointer, or nil if it isn't one (used to walk
+  ## the [[Prototype]] chain, whose links are stored as ZjsValues).
+  if isCell(v) and cellAsPtr(v) != nil and cellHeader(v).typeTag == TAG_OBJECT:
+    cast[ptr ObjectCell](cellAsPtr(v))
+  else:
+    nil
+
+proc getOrCreateFnProto(heap: var GcHeap, fn: Function): ZjsValue =
+  ## The function's `.prototype` OBJECT, created lazily on first access
+  ## (interpreter.zc ~7663 / property_get ~1084: `if f.prototype == NULL { … }`).
+  ## Keyed by the shared Function ref address and pinned in fnProtos (a GC
+  ## root) so DefineMethod's installs, a later `new`, and every copy of the
+  ## function value all see the SAME object. We omit the spec
+  ## `.prototype.constructor` back-link: no target reads it, and a `.constructor`
+  ## access harmlessly BAILS via the Object.prototype guard (never wrong).
+  let key = cast[pointer](fn)
+  if fnProtos.hasKey(key):
+    return fnProtos[key]
+  let proto = cellValue(allocObject(heap))
+  fnProtos[key] = proto
+  proto
+
+proc isObjectResult(v: VmVal): bool {.inline.} =
+  ## Whether a constructor's return value is an Object (ECMA-262 [[Construct]]
+  ## step 13: an object return REPLACES the fresh instance; a primitive is
+  ## ignored). A function value is an object; a string is a primitive.
+  case v.kind
+  of vkFunction: true
+  of vkString:   false
+  of vkVal:
+    if isCell(v.v) and cellAsPtr(v.v) != nil:
+      let t = cellHeader(v.v).typeTag
+      t == TAG_OBJECT or t == TAG_ARRAY or t == TAG_FUNCTION
+    else:
+      false
+
+proc protoChainLookup(heap: GcHeap, start: ptr ObjectCell, name: string,
+                      found: var bool): ZjsValue =
+  ## Resolve `name` on `start` then up its [[Prototype]] chain (property_get's
+  ## `while cur != NULL { … cur = cur.proto }`, interpreter.zc ~964). Returns
+  ## the OWN value at the first cell that has it; `found` reports a hit. The
+  ## chain ends when a proto link is not an ObjectCell (undefined = no proto).
+  var cur = start
+  while cur != nil:
+    if objHas(heap, cur, name):
+      found = true
+      return objGet(heap, cur, name)
+    cur = objCellOfValue(objGetProto(cur))
+  found = false
+  undefinedVal()
 
 # --- ZjsValue arithmetic / comparison (ports of src/value.zc) ----------
 
@@ -594,6 +669,13 @@ proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
   let savedFrames = vmFrames
   let savedGlobals = vmGlobals
   let savedHeap = vmHeap
+  # Reset the B3 per-function state (prototypes / parent ctors). Kept per-run
+  # so a reused Function ref address from a PRIOR run (this heap/thread) can't
+  # be mistaken for a live one and hand back a stale prototype (a wrong value).
+  let savedProtos = fnProtos
+  let savedParents = fnParentCtors
+  fnProtos = initTable[pointer, ZjsValue]()
+  fnParentCtors = initTable[pointer, VmVal]()
   vmFrames.setLen(0)
   vmGlobals = addr globals
   vmHeap = addr heap
@@ -607,6 +689,8 @@ proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
     vmFrames = savedFrames
     vmGlobals = savedGlobals
     vmHeap = savedHeap
+    fnProtos = savedProtos
+    fnParentCtors = savedParents
 
 proc runFunction*(f: Function, globals: var seq[VmVal]): VmVal =
   ## Backward-compatible entry that owns a private heap for the run (used by
@@ -1001,6 +1085,16 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # `undefined` for a non-capturing callee). The body then reads captured
       # variables via LoadProp on this reg (slice B1).
       regs[int(inst.a)] = env
+    of LoadCallee:
+      # a=dst (interpreter.zc ~6491): the function value currently invoking
+      # this frame — used by a named FunctionExpr / a class ctor to bind its
+      # own name inside the body, and emitted as the first op of a synthesized
+      # (empty / default-derived) class constructor. We reconstruct the value
+      # from this frame's `f` + captured `env` (equivalent to the invoked
+      # closure). Our targets discard it (the synthesized ctor bodies never
+      # read it back), so this is never observably wrong.
+      let envZ = if env.kind == vkVal: env.v else: undefinedVal()
+      regs[int(inst.a)] = vf(f, envZ)
     of SetFunctionName:
       # ECMA-262 SetFunctionName (interpreter.zc ~6218): installs `.name` on
       # a function value. The name is NOT part of the printed completion
@@ -1106,18 +1200,30 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let recv = regs[int(inst.b)]
       let o = asObjectCell(recv)
       if o != nil:
-        if objHas(heap, o, name):
-          # unboxLoaded turns a stored FunctionCell back into a vkFunction
-          # closure (fn + env) so a loaded method is callable; other values
-          # pass through as vkVal.
-          regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, o, name))
+        # Slice B3: walk own → [[Prototype]] chain (property_get ~964). An
+        # instance's proto is a ctor.prototype object we built, so an
+        # inherited METHOD resolves here. unboxLoaded turns a stored
+        # FunctionCell back into a callable vkFunction closure.
+        var found = false
+        let v = protoChainLookup(heap, o, name, found)
+        if found:
+          regs[int(inst.a)] = unboxLoaded(heap, v)
         elif isObjectInherited(name):
-          # Absent OWN prop but the name lives on Object.prototype — the
-          # real run resolves an inherited value (function / accessor) B1
-          # can't produce. Bail rather than return a wrong `undefined`.
-          bail("LoadProp inherited property (needs prototype chain)")
+          # Chain exhausted, but the name lives on Object.prototype (which we
+          # have no built-in for) — the real run resolves an inherited value
+          # B3 can't produce. Bail rather than a wrong `undefined`.
+          bail("LoadProp inherited Object.prototype property")
         else:
           regs[int(inst.a)] = vv(undefinedVal())
+      elif recv.kind == vkFunction:
+        # `fn.prototype` — the constructor's prototype object (lazily created,
+        # interpreter.zc property_get ~1084). Any OTHER name on a function
+        # (.name / .length / .call / a static member) needs machinery B3
+        # lacks → bail (never a wrong value).
+        if name == "prototype":
+          regs[int(inst.a)] = vv(getOrCreateFnProto(heap, recv.fn))
+        else:
+          bail("LoadProp non-prototype name on function")
       else:
         let a = asArrayCell(recv)
         if a != nil:
@@ -1168,10 +1274,13 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         # string key is in scope (a numeric key would need ToString digits
         # to match property_get) — bail otherwise.
         if key.kind == vkString:
-          if objHas(heap, o, key.s):
-            regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, o, key.s))
+          # Slice B3: own → [[Prototype]] chain, same as LoadProp.
+          var found = false
+          let v = protoChainLookup(heap, o, key.s, found)
+          if found:
+            regs[int(inst.a)] = unboxLoaded(heap, v)
           elif isObjectInherited(key.s):
-            bail("LoadElem inherited property (needs prototype chain)")
+            bail("LoadElem inherited Object.prototype property")
           else:
             regs[int(inst.a)] = vv(undefinedVal())
         else:
@@ -1205,6 +1314,104 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let a = asArrayCell(regs[int(inst.b)])
       if a == nil: bail("ArrayLength on non-array")
       regs[int(inst.a)] = vv(int32Val(int32(arrLength(heap, a))))
+
+    # --- class machinery + `new` (slice B3) ---------------------------
+    of DefineMethod:
+      # a=target, b=nameIc, c=methodReg (interpreter.zc ~6095): install the
+      # method (regs[c], a function value) as the property f.ics[b] on the
+      # target. For instance methods the target is the ctor.prototype OBJECT;
+      # for STATIC methods it is the constructor FUNCTION — deferred, so a
+      # non-object target BAILS. boxForStore boxes the closure into a
+      # FunctionCell so LoadProp can unbox it back to a callable value.
+      let target = asObjectCell(regs[int(inst.a)])
+      if target == nil:
+        bail("DefineMethod on non-object target (static / other)")
+      let mname = f.ics[int(inst.b)]
+      let mv = regs[int(inst.c)]
+      if mv.kind != vkFunction:
+        bail("DefineMethod value is not a function")
+      objSet(heap, target, mname, boxForStore(heap, mv))
+    of SetProto:
+      # a=proto, b=obj (interpreter.zc ~6168): wire obj.[[Prototype]] = proto.
+      # Used by `extends` to chain Child.prototype.proto = Parent.prototype.
+      # NOTE the operand order (a=proto, b=obj) — verified against the
+      # reference and the disasm; a mixed-up order would build a wrong chain.
+      let protoVal = regs[int(inst.a)]
+      let obj = asObjectCell(regs[int(inst.b)])
+      if obj == nil: bail("SetProto obj is not an object")
+      if protoVal.kind == vkVal and objCellOfValue(protoVal.v) != nil:
+        objSetProto(obj, protoVal.v)
+      elif protoVal.kind == vkVal and isNull(protoVal.v):
+        objSetProto(obj, nullVal())      # `extends null` (compiler bails; safe)
+      else:
+        bail("SetProto proto is not an object / null")
+    of SetParentCtor:
+      # a=ctor, b=parent (interpreter.zc ~6181): record the parent constructor
+      # on the child ctor so a default-derived ctor's implicit super(...args)
+      # can forward to it. Stored in fnParentCtors keyed by the child's shared
+      # Function ref. Both must be function values (a non-function parent is a
+      # "extends value is not a constructor" TypeError → bail here).
+      let ctorVal = regs[int(inst.a)]
+      let parentVal = regs[int(inst.b)]
+      if ctorVal.kind != vkFunction or ctorVal.fn == nil:
+        bail("SetParentCtor target is not a function")
+      if parentVal.kind != vkFunction or parentVal.fn == nil:
+        bail("SetParentCtor parent is not a function")
+      fnParentCtors[cast[pointer](ctorVal.fn)] = parentVal
+    of NewInvoke:
+      # a=dst, b=base, c=argc (interpreter.zc ~7594): `new Ctor(args)`.
+      # Allocate a fresh instance whose [[Prototype]] = Ctor.prototype, call
+      # the ctor with `this` = the instance + args at base+1.., and return the
+      # instance UNLESS the ctor returns an Object (then that object wins).
+      let dst  = int(inst.a)
+      let base = int(inst.b)
+      let argc = int(inst.c)
+      let calleeVal = regs[base]
+      if calleeVal.kind != vkFunction or calleeVal.fn == nil:
+        bail("NewInvoke callee is not a constructable function")
+      let ctorFn = calleeVal.fn
+      # Arrow / async / generator are not constructors (TypeError in the
+      # oracle → nothing on stdout). A class ctor / plain function / default-
+      # derived ctor ARE allowed here (unlike resolveCallee, which bails on
+      # isClassCtor because a class ctor needs `new`).
+      if ctorFn.isArrow or ctorFn.isAsync or ctorFn.isGenerator:
+        bail("NewInvoke on arrow / async / generator")
+      # Instance: fresh object, [[Prototype]] = ctor.prototype (lazily made).
+      let protoV = getOrCreateFnProto(heap, ctorFn)
+      let instance = allocObject(heap)
+      objSetProto(instance, protoV)
+      let instanceVal = vv(cellValue(instance))
+      # Args at base+1 .. base+argc.
+      var callArgs = newSeq[VmVal](argc)
+      for i in 0 ..< argc:
+        callArgs[i] = regs[base + 1 + i]
+      # Skip default-derived-ctor forwarders: they carry no body, only an
+      # implicit super(...args), so we run the first REAL ancestor ctor with
+      # `this` = the instance (interpreter.zc ~7739 / ctor_skip_default_forwarders).
+      var runFn = ctorFn
+      var runEnv = calleeVal.env
+      while runFn.isDefaultDerivedCtor:
+        let pk = cast[pointer](runFn)
+        if not fnParentCtors.hasKey(pk):
+          bail("default-derived ctor without a parent")
+        let parent = fnParentCtors[pk]
+        if parent.kind != vkFunction or parent.fn == nil:
+          bail("parent ctor is not a function")
+        if parent.fn.isArrow or parent.fn.isAsync or parent.fn.isGenerator:
+          bail("parent ctor is arrow / async / generator")
+        runFn = parent.fn
+        runEnv = parent.env
+      # The instance is rooted for the whole ctor call as that frame's `this`
+      # (FrameRoot.thisv), so a collect triggered inside the ctor keeps it.
+      let ctorResult = callFunction(runFn, callArgs, globals, heap, depth,
+                                    instanceVal, vv(runEnv))
+      # Object return replaces the instance (ECMA-262 [[Construct]] step 13);
+      # a primitive / undefined return is ignored → the instance.
+      if isObjectResult(ctorResult):
+        regs[dst] = ctorResult
+      else:
+        regs[dst] = instanceVal
+      maybeCollect(heap)
 
     # --- return / halt ------------------------------------------------
     of Return:

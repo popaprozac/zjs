@@ -436,3 +436,51 @@ suite "function cell + captured env (slice B2)":
     check liveCellCount(heap) == 0
     check funcTableLen(heap) == 0
     destroyHeap(heap)
+
+suite "class instances + [[Prototype]] chain (slice B3)":
+  test "instance keeps its proto + methods alive; churn stays bounded":
+    var heap = newGcHeap()
+    let mfn = Function()
+    # A prototype object carrying a method `m` (a FunctionCell), just like a
+    # class value's `Ctor.prototype` after DefineMethod. Kept alive here ONLY
+    # through the ONE instance we root — exercising markCell(TAG_OBJECT)'s new
+    # proto-marking path (nothing else references the proto).
+    let proto = allocObject(heap)
+    objSet(heap, proto, "m", cellValue(allocFunction(heap, mfn, undefinedVal())))
+    let protoV = cellValue(proto)
+    # The instance we keep: a fresh object whose [[Prototype]] = proto.
+    let keep = allocObject(heap)
+    objSetProto(keep, protoV)
+    objSet(heap, keep, "id", int32Val(99))
+    block:
+      let r = rooted(heap, cellValue(keep))
+      var reservedBaseline = 0
+      # Churn: many throwaway instances, each with proto = the shared proto,
+      # forcing collections. The kept instance, its proto, and the method on
+      # the proto must NEVER be freed; reused blocks keep memory BOUNDED.
+      for i in 0 ..< 5000:
+        let inst = allocObject(heap)
+        objSetProto(inst, protoV)
+        objSet(heap, inst, "id", int32Val(int32(i)))
+        if i mod 500 == 0:
+          discard collect(heap)
+          if i == 500: reservedBaseline = reservedBytes(heap)
+          if i >= 1000: check reservedBytes(heap) <= reservedBaseline
+      discard collect(heap)
+      # Survivors: the kept instance + its proto + the proto's method cell.
+      check liveCellCount(heap) == 3
+      # The instance's own prop survives, AND the method resolves through the
+      # [[Prototype]] link (proto not dangling; method cell not freed).
+      let ko = cast[ptr ObjectCell](cellAsPtr(r.value))
+      check asInt32(objGet(heap, ko, "id")) == 99
+      let pv = objGetProto(ko)
+      check isCell(pv)
+      let po = cast[ptr ObjectCell](cellAsPtr(pv))
+      let mv = objGet(heap, po, "m")
+      check isFunctionCell(heap, mv)
+      check funcCellFn(heap, mv) == mfn
+    # r destroyed → instance + proto + method now unreachable.
+    check collect(heap) == 3
+    check liveCellCount(heap) == 0
+    check funcTableLen(heap) == 0             # method side table released
+    destroyHeap(heap)
