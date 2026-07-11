@@ -2461,9 +2461,17 @@ proc compileObjectLiteral(c: var Compiler, node: AstNode): uint8 =
     # Computed key `[e]: v` (keyLength==0, computedKey set) -> deferred.
     if prop.computedKey != nil or prop.keyLength == 0:
       c.hadError = true; return dst
-    # Method / get / set -> the value is a FunctionExpr synthesized by the
-    # parser (`k(){}`, `get k(){}`). Deferred.
-    if prop.propVal != nil and prop.propVal.kind == FunctionExpr:
+    # Method shorthand `k(){}` / accessor `get k(){}`: the parser
+    # synthesizes a FunctionExpr whose SLICE begins exactly at the key token
+    # (fn.start == keyStart), and the oracle lowers it via DefineMethod /
+    # DefineGetter — DEFERRED, bail. A DATA property whose VALUE is a
+    # function (`k: function(){}`) has its FunctionExpr starting at the
+    # `function` keyword (after the colon), so fn.start != keyStart — that IS
+    # compilable (LoadConst + SetFunctionName + InitObjData), matching the
+    # oracle. This narrowing is what lets object methods reach the VM's
+    # MethodInvoke (slice B2).
+    if prop.propVal != nil and prop.propVal.kind == FunctionExpr and
+       prop.propVal.start == prop.keyStart:
       c.hadError = true; return dst
     # Shorthand `{a}` / shorthand-with-default `{a = e}`: the value is a
     # bare IdentExpr (or Assignment) whose slice coincides with the key.
@@ -4658,6 +4666,10 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
     # ~4454). The ENCLOSING compiler reads this at MakeClosure to decide
     # whether to env-wrap us.
     needsEnv: c.hasOuterRefs,
+    # The reg the VM seeds with `this` on frame entry (reserved after params
+    # iff the body uses `this`), or -1. Carried into the emitted Function so
+    # MethodInvoke / call frames can seed the receiver (slice B2).
+    thisReg: c.thisReg,
     # Arrow flag drives the disasm " arrow" header and (at runtime) the
     # MakeClosure creation-time `this` snapshot. Set from the node kind
     # (compiler.zc ~4459 `f.is_arrow = node.kind == ArrowFunc`).
@@ -5665,6 +5677,9 @@ proc compileProgram*(src: string, root: AstNode): Function =
     constCount: uint32(c.constants.len),
     icCount: uint32(c.ics.len),
     ics: c.ics,
+    # Program top has no `this` register (c.thisReg == -1); the VM seeds
+    # nothing. Set explicitly so the field isn't the int default 0 (= reg 0).
+    thisReg: c.thisReg,
   )
   if f.registerCount == 0: f.registerCount = 1
   if f.fixedRegs > f.registerCount: f.fixedRegs = f.registerCount

@@ -303,12 +303,24 @@ suite "vm bail discipline":
     check bails("\"\"+(0.1+0.2)")
   test "property access / built-ins bail":
     check bails("\"foo\".length")   # object model = Phase 5
-  test "capturing closures bail (need object model)":
-    # inner fn references outer local `x` → needsEnv → resolveCallee bails.
-    check bails("function outer(){ var x=1; function inner(){ return x; } return inner(); } outer()")
   test "arrow calls bail (lexical this/env)":
     check bails("var f=()=>1; f()")
-  test "method / object calls bail (no object model)":
-    check bails("var o={m:function(){return 1;}}; o.m()")
   test "calling a non-function bails":
     check bails("var x=5; x()")
+
+suite "vm closures + this (slice B2)":
+  test "capturing closure reads an outer local through its env":
+    # inner fn references outer local `x` → needsEnv closure carrying an env
+    # object {x:1}; calling it seeds frame.env, LoadEnv+LoadProp read x.
+    check ev("function outer(){ var x=1; function inner(){ return x; } return inner(); } outer()") == "1"
+    check ev("function o(){ let x=10; return function(){ return x; }; } o()()") == "10"
+    check ev("function mk(n){ return function(){ return n; }; } mk(7)()") == "7"
+    check ev("function add(a){ return function(b){ return a+b; }; } add(3)(4)") == "7"
+    check ev("function o(){ let x=1; let y=2; return function(){ return x+y; }; } o()()") == "3"
+  test "closure mutates its captured var (shared env across calls)":
+    check ev("function counter(){ let c=0; return function(){ c=c+1; return c; }; } var f=counter(); f(); f(); f()") == "3"
+  test "method call binds `this` to the receiver":
+    check ev("var o={m:function(){return 1;}}; o.m()") == "1"
+    check ev("var o={x:5, f:function(){ return this.x; }}; o.f()") == "5"
+    check ev("var o={a:2,b:3, sum:function(){ return this.a+this.b; }}; o.sum()") == "5"
+    check ev("var o={n:10, inc:function(){ this.n=this.n+1; return this.n; }}; o.inc(); o.inc()") == "12"

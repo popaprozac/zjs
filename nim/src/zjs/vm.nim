@@ -33,16 +33,19 @@ type
   VmValKind* = enum
     vkVal       ## a plain NaN-boxed ZjsValue (number / bool / null / undefined)
     vkString    ## a string constant (from LoadConst ckString); print-only
-    vkFunction  ## a callable function value (slice 2): a bare Function* from a
-                ## function-constant LoadConst, or a NON-capturing closure from
-                ## MakeClosure. Capturing closures (real env object) BAIL — no
-                ## object model yet.
+    vkFunction  ## a callable function value: a bare Function* from a
+                ## function-constant LoadConst, or a closure from MakeClosure
+                ## carrying a captured `env` (slice B2). `env` is a ZjsValue —
+                ## an ObjectCell for a real closure, or `undefined` for a
+                ## non-capturing function. The env is a GC root (markVmVal).
 
   VmVal* = object
     case kind*: VmValKind
     of vkVal:      v*: ZjsValue
     of vkString:   s*: string
-    of vkFunction: fn*: Function
+    of vkFunction:
+      fn*:  Function
+      env*: ZjsValue   ## captured environment object, or undefined = none
 
   VmBail* = object of CatchableError
     ## Raised when the VM hits an op or value shape it can't faithfully
@@ -62,7 +65,12 @@ const
 
 proc vv(v: ZjsValue): VmVal {.inline.} = VmVal(kind: vkVal, v: v)
 proc vs(s: string): VmVal {.inline.} = VmVal(kind: vkString, s: s)
-proc vf(f: Function): VmVal {.inline.} = VmVal(kind: vkFunction, fn: f)
+proc vf(f: Function): VmVal {.inline.} =
+  ## A non-capturing function value (env = none).
+  VmVal(kind: vkFunction, fn: f, env: undefinedVal())
+proc vf(f: Function, env: ZjsValue): VmVal {.inline.} =
+  ## A closure value carrying its captured env object (or `undefined`).
+  VmVal(kind: vkFunction, fn: f, env: env)
 
 proc bail(msg: string) {.noreturn.} =
   raise newException(VmBail, msg)
@@ -82,27 +90,45 @@ proc bail(msg: string) {.noreturn.} =
 # allocating NewObject inside a loop). This is what makes the object model
 # safe under GC pressure — no live object reachable from a register is
 # ever freed.
-var vmFrames {.threadvar.}: seq[ptr seq[VmVal]]
+# A frame contributes THREE root sources: its register file (the seq the
+# handlers write), plus the frame's `env` and `thisVal` — which live as
+# runFrame locals (NOT necessarily in a register) and hold GC cells that
+# must survive a collect triggered mid-frame. env is only copied into a
+# register by a LoadEnv the body may not have reached yet, so rooting it
+# here is what keeps a captured env / `this` receiver alive.
+type FrameRoot = object
+  regs*:  ptr seq[VmVal]
+  env*:   VmVal
+  thisv*: VmVal
+
+var vmFrames {.threadvar.}: seq[FrameRoot]
 var vmGlobals {.threadvar.}: ptr seq[VmVal]
 var vmHeap {.threadvar.}: ptr GcHeap   ## the heap the customMark hook reads
 
 proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
-  if x.kind == vkVal:
-    markCell(heap, x.v)
+  ## Mark any GC cell a VmVal can hold: a vkVal's cell, OR a closure's
+  ## captured env (a vkFunction's env is an ObjectCell that must survive
+  ## while the closure is reachable). vkString is Nim-managed (skipped).
+  case x.kind
+  of vkVal:      markCell(heap, x.v)
+  of vkFunction: markCell(heap, x.env)
+  of vkString:   discard
 
 proc vmMarkFrames() =
-  ## Mark every cell held in an active frame's registers and in globals.
-  ## Reads the current heap from the threadvar so the closure captures
-  ## nothing (Nim forbids capturing a `var GcHeap` param).
+  ## Mark every cell held in an active frame's registers, its env / this,
+  ## and in globals. Reads the current heap from the threadvar so the
+  ## closure captures nothing (Nim forbids capturing a `var GcHeap` param).
   if vmHeap == nil: return
   let heap = vmHeap
   if vmGlobals != nil:
     for x in vmGlobals[]:
       markVmVal(heap[], x)
   for fr in vmFrames:
-    if fr != nil:
-      for x in fr[]:
+    if fr.regs != nil:
+      for x in fr.regs[]:
         markVmVal(heap[], x)
+    markVmVal(heap[], fr.env)
+    markVmVal(heap[], fr.thisv)
 
 # --- object-model op helpers -------------------------------------------
 # Slice B1 has NO prototype chain: a receiver must be a plain object or
@@ -172,6 +198,24 @@ proc arrayIndex(key: ZjsValue): int =
     if d == d and d >= 0.0 and d <= 2147483647.0 and d == d.int.float64:
       return int(d)
   -1
+
+proc boxForStore(heap: var GcHeap, x: VmVal): ZjsValue =
+  ## Convert a VmVal into a ZjsValue for storage in an object side table
+  ## (which holds ZjsValues, not the VM's function variant). A vkFunction is
+  ## boxed into a FunctionCell so a closure VALUE can live as a property and
+  ## round-trip on load; a vkVal passes through. A vkString has no cell
+  ## representation yet → bail (never a wrong stored value).
+  case x.kind
+  of vkVal:      x.v
+  of vkFunction: cellValue(allocFunction(heap, x.fn, x.env))
+  of vkString:   bail("store string property value (no string cell yet)")
+
+proc unboxLoaded(heap: GcHeap, v: ZjsValue): VmVal =
+  ## Convert a stored ZjsValue back into a VmVal: a FunctionCell → the
+  ## vkFunction closure it boxes (fn + env); anything else → a plain vkVal.
+  if isFunctionCell(heap, v):
+    return vf(funcCellFn(heap, v), funcCellEnv(heap, v))
+  vv(v)
 
 proc maybeCollect(heap: var GcHeap) {.inline.} =
   ## Trigger a full collect once the allocation count crosses the interval.
@@ -502,7 +546,7 @@ proc vmLooseEq(a, b: VmVal): bool =
 # --- the interpreter ----------------------------------------------------
 
 proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
-              heap: var GcHeap, depth: int): VmVal
+              heap: var GcHeap, depth: int, thisVal: VmVal, env: VmVal): VmVal
 
 proc resolveCallee(v: VmVal): Function =
   ## A call target must be a callable function value. Anything else (a
@@ -515,24 +559,31 @@ proc resolveCallee(v: VmVal): Function =
     bail("callee is not a function value")
   let f = v.fn
   if f == nil: bail("callee has no function")
-  if f.isArrow or f.isAsync or f.isGenerator or f.isClassCtor or f.needsEnv:
+  if f.isArrow or f.isAsync or f.isGenerator or f.isClassCtor:
     # arrow: lexical this/env; async: must yield a Promise; generator: must
-    # return an iterator; class-ctor: needs `new`; needsEnv: captures outer
-    # scope (real env object) — all deferred to later slices.
-    bail("callee shape needs object model / env / this")
+    # return an iterator; class-ctor: needs `new` — all deferred to later
+    # slices. A `needsEnv` callee is NO LONGER bailed (slice B2): it carries
+    # its captured env in the VmVal (from a capturing MakeClosure), which the
+    # call site threads into the new frame. If a needsEnv function somehow
+    # lacks its env, LoadEnv reads `undefined` and the ensuing LoadProp bails
+    # — never a wrong result.
+    bail("callee shape needs object model / new / async / generator")
   f
 
 proc callFunction(callee: Function, args: openArray[VmVal],
-                  globals: var seq[VmVal], heap: var GcHeap, depth: int): VmVal =
+                  globals: var seq[VmVal], heap: var GcHeap, depth: int,
+                  thisVal: VmVal, env: VmVal): VmVal =
   ## Create a fresh frame for `callee`, bind `args` to its low registers
   ## r0..r(argc-1) (the params), run it from ip 0, and return its Return
   ## value. Mirrors push_call_frame + the Op::Invoke frame push
   ## (interpreter.zc ~5716-5731): a NEW register file sized
   ## callee.registerCount, args copied into the param slots, extras dropped,
-  ## missing params left undefined.
+  ## missing params left undefined. `thisVal` seeds the callee's `this`
+  ## register (MethodInvoke receiver, else undefined); `env` is the callee
+  ## closure's captured environment (LoadEnv reads it).
   if depth + 1 > MAX_CALL_DEPTH:
     bail("call stack depth exceeded")
-  runFrame(callee, args, globals, heap, depth + 1)
+  runFrame(callee, args, globals, heap, depth + 1, thisVal, env)
 
 proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
                   depth: int = 0): VmVal =
@@ -548,7 +599,9 @@ proc runFunction*(f: Function, globals: var seq[VmVal], heap: var GcHeap,
   vmHeap = addr heap
   heap.customMark = vmMarkFrames
   try:
-    result = runFrame(f, [], globals, heap, depth)
+    # The top-level program has no receiver and no captured env.
+    result = runFrame(f, [], globals, heap, depth,
+                      vv(undefinedVal()), vv(undefinedVal()))
   finally:
     heap.customMark = nil
     vmFrames = savedFrames
@@ -564,23 +617,28 @@ proc runFunction*(f: Function, globals: var seq[VmVal]): VmVal =
   destroyHeap(heap)
 
 proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
-              heap: var GcHeap, depth: int): VmVal =
+              heap: var GcHeap, depth: int, thisVal: VmVal, env: VmVal): VmVal =
   ## Execute `f`'s bytecode in a fresh register frame, returning the value in
   ## its `Return` operand register. `args` seed the callee's low param
   ## registers r0..; extras drop, missing params stay undefined (matching
   ## push_call_frame's arg-copy). `globals` is the shared slot array (indexed
   ## by the full u16 global slot, ≥ USER_GLOBAL_BASE). `depth` is the
-  ## call-frame nesting. Raises `VmBail` on any op / value shape outside the
-  ## supported subset.
+  ## call-frame nesting. `thisVal` seeds the reserved `this` register
+  ## (f.thisReg) — the receiver for a MethodInvoke, else undefined; no
+  ## prologue op materializes it (interpreter.zc ~2125). `env` is the
+  ## invoked closure's captured environment, read by LoadEnv. Raises
+  ## `VmBail` on any op / value shape outside the supported subset.
   var regs = newSeq[VmVal](int(f.registerCount))
   for i in 0 ..< regs.len:
     regs[i] = vv(undefinedVal())
-  # Register THIS frame's register file as a GC root for its whole
-  # lifetime (LIFO push/pop). Every cell a register holds is now scanned
-  # by markRoots via heap.customMark, so a collect() triggered by an
-  # allocating op inside this frame keeps the live objects. `defer` pops
-  # on EVERY exit path (normal return, VmBail, deep-recursion).
-  vmFrames.add(addr regs)
+  # Register THIS frame's register file (plus its env / this) as GC roots
+  # for its whole lifetime (LIFO push/pop). Every cell a register — or the
+  # frame's env / receiver — holds is scanned by markRoots via
+  # heap.customMark, so a collect() triggered by an allocating op inside
+  # this frame keeps the live objects (a captured env survives even before
+  # a LoadEnv copies it into a register). `defer` pops on EVERY exit path
+  # (normal return, VmBail, deep-recursion).
+  vmFrames.add(FrameRoot(regs: addr regs, env: env, thisv: thisVal))
   defer: vmFrames.setLen(vmFrames.len - 1)
   # Bind args into the callee's low registers r0..r(argc-1) — the param
   # slots (compileFunction lays params out at r0.. in declaration order).
@@ -589,6 +647,11 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
   if na > regs.len: na = regs.len
   for i in 0 ..< na:
     regs[i] = args[i]
+  # Seed `this` into its reserved register (compiler reserved it after the
+  # params iff the body uses `this`). thisReg < 0 → the body never reads
+  # `this`, so nothing to seed. No prologue op — the seed IS the mechanism.
+  if f.thisReg >= 0 and f.thisReg < regs.len:
+    regs[f.thisReg] = thisVal
   let code = f.code
   let codeLen = code.len
   var ip = 0
@@ -913,19 +976,31 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
     of MakeClosure:
       # a=dst, b=function-value reg, c=env-object reg (interpreter.zc
       # ~6448). The compiler emits the NON-capturing in-place form
-      # `MakeClosure r,r,r` for a function that references no outer scope;
-      # there env == the function value itself (not a real env object), so
-      # the closure just wraps the Function with a NULL env. A CAPTURING
-      # closure needs a real env object from NewObject (which we don't
-      # model) — resolveCallee already bails on `f.needsEnv`, and such a
-      # function only ever reaches MakeClosure via the env-wrapping form
-      # whose env reg would (in a real run) hold an object. Here we simply
-      # carry the Function forward as a value; a later Invoke of a
-      # needsEnv/arrow function bails at resolve time (never a wrong value).
+      # `MakeClosure r,r,r` (a==b==c) for a function that references no outer
+      # scope: env == the function value itself, so the closure carries no
+      # env (none). A CAPTURING closure uses distinct regs: env comes from
+      # regs[c] — an ObjectCell built by the enclosing frame's NewObject +
+      # StoreProp (slice B1), or a forwarded outer env from LoadEnv. The
+      # closure carries that env ZjsValue so a later Invoke seeds the callee
+      # frame's env with it (LoadEnv + LoadProp then read the captured vars).
       let src = regs[int(inst.b)]
       if src.kind != vkFunction:
         bail("MakeClosure on non-function")
-      regs[int(inst.a)] = vf(src.fn)
+      if inst.a == inst.b and inst.b == inst.c:
+        # Non-capturing in-place form: no env.
+        regs[int(inst.a)] = vf(src.fn)
+      else:
+        # Capturing form: env is the object cell (or forwarded env) at regs[c].
+        let er = regs[int(inst.c)]
+        let envv = if er.kind == vkVal: er.v else: undefinedVal()
+        regs[int(inst.a)] = vf(src.fn, envv)
+    of LoadEnv:
+      # a=dst (interpreter.zc ~6470): load THIS frame's captured environment
+      # object into a register. The env was threaded in at call time from the
+      # invoked closure's `env` (a MakeClosure-captured ObjectCell, or
+      # `undefined` for a non-capturing callee). The body then reads captured
+      # variables via LoadProp on this reg (slice B1).
+      regs[int(inst.a)] = env
     of SetFunctionName:
       # ECMA-262 SetFunctionName (interpreter.zc ~6218): installs `.name` on
       # a function value. The name is NOT part of the printed completion
@@ -940,11 +1015,15 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # needed to produce the right value.
       let base = int(inst.b)
       let argc = int(inst.c)
-      let callee = resolveCallee(regs[base])
+      let calleeVal = regs[base]
+      let callee = resolveCallee(calleeVal)
       var callArgs = newSeq[VmVal](argc)
       for i in 0 ..< argc:
         callArgs[i] = regs[base + 1 + i]
-      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth)
+      # Plain call: `this` is undefined (a non-method callee); env is the
+      # invoked closure's captured environment.
+      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
+                                       vv(undefinedVal()), vv(calleeVal.env))
     of InvokeGlobal:
       # Fused global-callee call (interpreter.zc ~5634): a=ret_dst, b=base,
       # c=argc; the carrier at code[ip+1] holds the u16 global slot. The
@@ -967,7 +1046,24 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       var callArgs = newSeq[VmVal](argc)
       for i in 0 ..< argc:
         callArgs[i] = regs[base + 1 + i]
-      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth)
+      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
+                                       vv(undefinedVal()), vv(calleeVal.env))
+    of MethodInvoke, TailMethodInvoke:
+      # Method call (interpreter.zc ~5539 MethodInvoke): a=ret_dst, b=base,
+      # c=argc. regs[base]=method, regs[base+1]=receiver, regs[base+2..]=args.
+      # The receiver becomes the callee's `this`; env is the method closure's
+      # captured environment. TailMethodInvoke shares the layout and runs as
+      # a normal call (the trailing Return reads its result).
+      let base = int(inst.b)
+      let argc = int(inst.c)
+      let methodVal = regs[base]
+      let recv = regs[base + 1]
+      let callee = resolveCallee(methodVal)
+      var callArgs = newSeq[VmVal](argc)
+      for i in 0 ..< argc:
+        callArgs[i] = regs[base + 2 + i]
+      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
+                                       recv, vv(methodVal.env))
 
     # --- object / array model (slice B1) ------------------------------
     of NewObject:
@@ -985,10 +1081,10 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let keyv = regs[int(inst.b)]
       if keyv.kind != vkString: bail("InitObjData non-string key")
       let valv = regs[int(inst.c)]
-      # The side table stores ZjsValues; a string / function property value
-      # can't be represented here → out of scope, bail (never wrong).
-      if valv.kind != vkVal: bail("InitObjData string/function value")
-      objSet(heap, o, keyv.s, valv.v)
+      # boxForStore represents a function VALUE as a FunctionCell (so a
+      # method / stored closure round-trips on load); a plain value passes
+      # through; a string value still bails (no string cell yet).
+      objSet(heap, o, keyv.s, boxForStore(heap, valv))
     of StoreProp:
       # a=obj, b=ic, c=val. Own-property set by name f.ics[ic]
       # (interpreter.zc ~6678). Only plain object receivers are in scope;
@@ -997,8 +1093,9 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       if o == nil: bail("StoreProp on non-object receiver")
       let name = f.ics[int(inst.b)]
       let sv = regs[int(inst.c)]
-      if sv.kind != vkVal: bail("StoreProp string/function value")
-      objSet(heap, o, name, sv.v)
+      # boxForStore boxes a function value into a FunctionCell; a plain value
+      # passes through; a string value still bails.
+      objSet(heap, o, name, boxForStore(heap, sv))
     of LoadProp:
       # a=dst, b=obj, c=ic. Own-property get by name f.ics[ic]
       # (interpreter.zc ~6503). Missing own prop → undefined. NO proto
@@ -1010,7 +1107,10 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let o = asObjectCell(recv)
       if o != nil:
         if objHas(heap, o, name):
-          regs[int(inst.a)] = vv(objGet(heap, o, name))
+          # unboxLoaded turns a stored FunctionCell back into a vkFunction
+          # closure (fn + env) so a loaded method is callable; other values
+          # pass through as vkVal.
+          regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, o, name))
         elif isObjectInherited(name):
           # Absent OWN prop but the name lives on Object.prototype — the
           # real run resolves an inherited value (function / accessor) B1
@@ -1069,7 +1169,7 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         # to match property_get) — bail otherwise.
         if key.kind == vkString:
           if objHas(heap, o, key.s):
-            regs[int(inst.a)] = vv(objGet(heap, o, key.s))
+            regs[int(inst.a)] = unboxLoaded(heap, objGet(heap, o, key.s))
           elif isObjectInherited(key.s):
             bail("LoadElem inherited property (needs prototype chain)")
           else:

@@ -6,7 +6,7 @@
 ##   nim c -r --mm:arc -d:release --hints:off --warnings:off nim/tests/tgc.nim
 
 import std/unittest
-import ../src/zjs/[value, gc]
+import ../src/zjs/[value, gc, bytecode]
 
 suite "cell encode/decode round-trip":
   test "cellFromPtr / cellAsPtr round-trip and isCell":
@@ -365,4 +365,74 @@ suite "object/array cell free releases its side table":
     check liveCellCount(heap) == 0
     check objTableLen(heap) == 0
     check arrTableLen(heap) == 0
+    destroyHeap(heap)
+
+# Slice B2: a closure VALUE stored in the object model is a FunctionCell
+# carrying its captured env (an ObjectCell). The env — and anything
+# reachable from it — must survive a collect while the closure is
+# reachable, and be freed once the closure is not. This is the GC bar for
+# capturing closures + `this` receivers held across a collection.
+suite "function cell + captured env (slice B2)":
+  test "rooted closure keeps its env (and env's children) alive":
+    var heap = newGcHeap()
+    let fn = Function()                       # opaque payload; GC ignores it
+    # env = { cap: <inner object {v:42}> } — a closure that captured an object.
+    let inner = allocObject(heap)
+    objSet(heap, inner, "v", int32Val(42))
+    let env = allocObject(heap)
+    objSet(heap, env, "cap", cellValue(inner))
+    let clo = allocFunction(heap, fn, cellValue(env))
+    block:
+      let r = rooted(heap, cellValue(clo))
+      # A pile of unrooted garbage across a collect while the closure is rooted.
+      for i in 0 ..< 30: discard allocObject(heap)
+      let freed = collect(heap)
+      check freed == 30
+      # Survivors: the FunctionCell + its env + the env's captured inner obj.
+      check liveCellCount(heap) == 3
+      # Reach the captured value THROUGH the function cell's env — proves the
+      # env pointer is still valid (not a dangling freed block).
+      let envv = funcCellEnv(heap, r.value)
+      let eo = cast[ptr ObjectCell](cellAsPtr(envv))
+      let capv = objGet(heap, eo, "cap")
+      check isCell(capv)
+      let io = cast[ptr ObjectCell](cellAsPtr(capv))
+      check asInt32(objGet(heap, io, "v")) == 42
+    # r destroyed → the whole closure/env/inner chain is now collectable.
+    check collect(heap) == 3
+    check liveCellCount(heap) == 0
+    check funcTableLen(heap) == 0             # side table released (no leak)
+    destroyHeap(heap)
+
+  test "closure-heavy stress: one live closure survives, memory bounded":
+    var heap = newGcHeap()
+    let fn = Function()
+    # Build ONE closure we keep, capturing an env {id: 7}.
+    let keepEnv = allocObject(heap)
+    objSet(heap, keepEnv, "id", int32Val(7))
+    let keep = allocFunction(heap, fn, cellValue(keepEnv))
+    block:
+      let r = rooted(heap, cellValue(keep))
+      var reservedBaseline = 0
+      # Churn: many throwaway closures each capturing their own throwaway env,
+      # forcing collections. The kept closure's env must never be freed, and
+      # reused blocks must keep the live memory BOUNDED (no unbounded growth).
+      for i in 0 ..< 5000:
+        let e = allocObject(heap)
+        objSet(heap, e, "k", int32Val(int32(i)))
+        discard allocFunction(heap, fn, cellValue(e))
+        if i mod 500 == 0:
+          discard collect(heap)
+          if i == 500: reservedBaseline = reservedBytes(heap)
+          # Steady state: reserved memory must not grow (blocks are reused).
+          if i >= 1000: check reservedBytes(heap) <= reservedBaseline
+      # The kept closure + its env are the only survivors after collect.
+      discard collect(heap)
+      check liveCellCount(heap) == 2
+      let envv = funcCellEnv(heap, r.value)
+      check asInt32(objGet(heap, cast[ptr ObjectCell](cellAsPtr(envv)), "id")) == 7
+    # r destroyed at block exit → keep + env now collectable.
+    check collect(heap) == 2
+    check liveCellCount(heap) == 0
+    check funcTableLen(heap) == 0
     destroyHeap(heap)

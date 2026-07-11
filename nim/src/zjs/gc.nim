@@ -24,6 +24,7 @@
 ##       pending exception, microtask queue land here in slice B.
 
 import value
+import bytecode          # `Function` — a FunctionCell's payload (ARC side table)
 import std/tables
 
 # =====================================================================
@@ -47,10 +48,16 @@ type
 # extends this in slice B. Values are local to Nim (no need to match the
 # Zen-c TAG_* numbering yet — cells are GC-internal until the C ABI).
 const
-  TAG_OBJ*    = 1'u8   ## ObjCell: header + nfields + inline ZjsValue[]
-  TAG_LEAF*   = 2'u8   ## a childless cell (mark recursion terminates)
-  TAG_OBJECT* = 3'u8   ## ObjectCell: header only; props live in heap.objTable
-  TAG_ARRAY*  = 4'u8   ## ArrayCell:  header only; elems live in heap.arrTable
+  TAG_OBJ*      = 1'u8 ## ObjCell: header + nfields + inline ZjsValue[]
+  TAG_LEAF*     = 2'u8 ## a childless cell (mark recursion terminates)
+  TAG_OBJECT*   = 3'u8 ## ObjectCell: header only; props live in heap.objTable
+  TAG_ARRAY*    = 4'u8 ## ArrayCell:  header only; elems live in heap.arrTable
+  TAG_FUNCTION* = 5'u8 ## FunctionCell (slice B2): header only; the Function
+                       ## ref + captured env live in heap.funcTable. This is
+                       ## how a closure VALUE round-trips through an object
+                       ## property (the side table stores ZjsValues, not the
+                       ## VM's vkFunction variant) — box on store, unbox on
+                       ## load. Its `env` is a GC root (marked below).
 
 # =====================================================================
 # cellHeader — reinterpret a boxed cell value as its header. UB (as in
@@ -110,6 +117,14 @@ type
     names*:  seq[string]
     values*: seq[ZjsValue]
 
+  ## Payload of a FunctionCell (slice B2): the compiled `Function` and the
+  ## captured environment object (a ZjsValue — an ObjectCell for a real
+  ## closure, or `undefined` for a non-capturing function). Kept in an
+  ## ARC-managed side table keyed by the cell block pointer.
+  FuncRec* = object
+    fn*:  Function
+    env*: ZjsValue
+
   GcHeap* = object
     chunks:     seq[NurseryChunk]        ## non-moving nursery chunks
     allCells:   seq[CellRec]             ## every live cell, for sweep
@@ -119,6 +134,11 @@ type
     ## a reused block from reading a previous tenant's data.
     objTable*: Table[pointer, ObjProps]  ## ObjectCell -> its properties
     arrTable*: Table[pointer, seq[ZjsValue]]  ## ArrayCell -> its elements
+    ## FunctionCell -> (Function, captured env). The Function ref lives HERE
+    ## (ARC-managed host memory), so the raw GC cell stays a pure header and
+    ## the ref is never held in manually-managed cell memory. The `env`
+    ## ZjsValue is interior-marked via markCell (TAG_FUNCTION).
+    funcTable*: Table[pointer, FuncRec]
     ## Free list of reclaimed slots, keyed by rounded byte-size. Sweep
     ## pushes each dead cell's block here; allocCell pops a same-size
     ## block before bumping. Reuse (not chunk growth) is what keeps live
@@ -236,11 +256,15 @@ type
     header*: CellHeader     ## a pure header; props are in heap.objTable
   ArrayCell* = object
     header*: CellHeader     ## a pure header; elems are in heap.arrTable
+  FunctionCell* = object
+    header*: CellHeader     ## a pure header; fn/env are in heap.funcTable
 
 proc cellValue*(o: ptr ObjectCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](o))
 proc cellValue*(a: ptr ArrayCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](a))
+proc cellValue*(fc: ptr FunctionCell): ZjsValue {.inline.} =
+  cellFromPtr(cast[pointer](fc))
 
 # --- ObjectCell ------------------------------------------------------
 
@@ -337,6 +361,30 @@ proc arrSet*(heap: var GcHeap, a: ptr ArrayCell, i: int, v: ZjsValue) =
 
 proc arrTableLen*(heap: GcHeap): int {.inline.} = heap.arrTable.len
 
+# --- FunctionCell (slice B2) -----------------------------------------
+
+proc allocFunction*(heap: var GcHeap, fn: Function, env: ZjsValue): ptr FunctionCell =
+  ## Allocate a FunctionCell wrapping `fn` and its captured `env`. Used to
+  ## box a closure VALUE for storage in an object/array side table (which
+  ## holds ZjsValues, not the VM's function variant). The cell is a pure
+  ## header; (fn, env) live in the ARC-managed funcTable.
+  let p = allocCell(heap, TAG_FUNCTION, sizeof(FunctionCell))
+  heap.funcTable[p] = FuncRec(fn: fn, env: env)
+  cast[ptr FunctionCell](p)
+
+proc isFunctionCell*(heap: GcHeap, v: ZjsValue): bool {.inline.} =
+  ## Whether `v` boxes a live FunctionCell (used to unbox on load).
+  isCell(v) and cellAsPtr(v) != nil and
+    cellHeader(v).typeTag == TAG_FUNCTION and
+    heap.funcTable.hasKey(cellAsPtr(v))
+
+proc funcCellFn*(heap: GcHeap, v: ZjsValue): Function {.inline.} =
+  heap.funcTable[cellAsPtr(v)].fn
+proc funcCellEnv*(heap: GcHeap, v: ZjsValue): ZjsValue {.inline.} =
+  heap.funcTable[cellAsPtr(v)].env
+
+proc funcTableLen*(heap: GcHeap): int {.inline.} = heap.funcTable.len
+
 # =====================================================================
 # Rooted — RAII rooting. Construction pushes a slot on the shadow-stack;
 # `=destroy` pops it (LIFO, asserted). Because the slot lives in the
@@ -417,6 +465,13 @@ proc markCell*(heap: GcHeap, v: ZjsValue) =
     if heap.arrTable.hasKey(p):
       for ev in heap.arrTable[p]:
         markCell(heap, ev)
+  of TAG_FUNCTION:
+    # A closure's captured env is a root: keep it (and anything reachable
+    # from it) alive while the function value is reachable. The Function ref
+    # is ARC-managed (side table), not a GC concern.
+    let p = cellAsPtr(v)
+    if heap.funcTable.hasKey(p):
+      markCell(heap, heap.funcTable[p].env)
   of TAG_LEAF:
     discard                     # no children
   else:
@@ -463,8 +518,9 @@ proc collect*(heap: var GcHeap): int =
       # zero the block (poisons any stale ZjsValue so a dangling read fails
       # an isCell/tag check loudly) and recycle it.
       case h.typeTag
-      of TAG_OBJECT: heap.objTable.del(rec.p)
-      of TAG_ARRAY:  heap.arrTable.del(rec.p)
+      of TAG_OBJECT:   heap.objTable.del(rec.p)
+      of TAG_ARRAY:    heap.arrTable.del(rec.p)
+      of TAG_FUNCTION: heap.funcTable.del(rec.p)
       else: discard
       zeroMem(rec.p, rec.size)
       heap.freeBySize.mgetOrPut(rec.size, @[]).add(rec.p)
@@ -496,6 +552,7 @@ proc destroyHeap*(heap: var GcHeap) =
   heap.freeBySize.clear()
   heap.objTable.clear()
   heap.arrTable.clear()
+  heap.funcTable.clear()
   heap.rootStack.setLen(0)
   heap.frameRoots.setLen(0)
   heap.ctxRoots.setLen(0)

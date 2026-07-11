@@ -254,6 +254,13 @@ type
     ## env-capturing MakeClosure (needsEnv/arrow) or the in-place
     ## no-capture form. See compile.zc ~4454.
     needsEnv*: bool
+    ## The register the VM seeds with `this` on frame entry, or -1 if the
+    ## body never references `this` (mirrors the compiler's `c.this_reg`;
+    ## interpreter.zc seeds regs[this_reg] from the receiver — "No prologue
+    ## Op::LoadThis"). The compiler reserves it AFTER params; the VM's
+    ## MethodInvoke passes the receiver as `this`, a plain call passes
+    ## undefined. Default -1 = no this reg (e.g. the top-level program).
+    thisReg*: int
     ## Names for the global slots this function references, so disasm can
     ## print `; <name>` for the global ops. Keyed by slot number.
     globalNames*: seq[GlobalName]
