@@ -835,6 +835,241 @@ proc nativeObjectCtor(heap: var GcHeap, args: openArray[VmVal],
   ## its property bag.
   bail("Object constructor not implemented")
 
+# --- Array (src/context.zc host_array_* ; Array.prototype + g9) ---------
+# Array.prototype's methods dispatch via the VM's LoadProp array branch (which
+# looks the name up on the registered Array.prototype cell). Each native gets
+# the array as `thisv`. Tranche 1 = non-callback methods; the callback family
+# (forEach/map/filter/reduce/…) needs native→JS re-entrancy → a later tranche.
+
+proc arrThis(thisv: VmVal): ptr ArrayCell {.inline.} =
+  ## The receiver as an ArrayCell (or nil).
+  argArrayCell(thisv)
+
+proc toIntArg(x: VmVal): int =
+  ## ECMA ToIntegerOrInfinity, clamped to Nim int (NaN→0, truncate toward 0).
+  ## Used for fromIndex / start / end / at index args.
+  let d = argToDouble(x)
+  if d != d: return 0
+  if d >= 9.2e18: return high(int)
+  if d <= -9.2e18: return low(int)
+  int(d)
+
+proc relStart(x: VmVal, n: int): int =
+  ## Relative start index: negative counts from the end, clamp to [0, n].
+  let i = toIntArg(x)
+  if i < 0: max(n + i, 0) else: min(i, n)
+
+proc sameValueZero(a, b: VmVal): bool =
+  ## SameValueZero (Array.prototype.includes): === but NaN matches NaN.
+  if vmStrictEq(a, b): return true
+  if a.kind == vkVal and b.kind == vkVal:
+    let av = a.v; let bv = b.v
+    let an = isInt32(av) or isDouble(av)
+    let bn = isInt32(bv) or isDouble(bv)
+    if an and bn:
+      let ad = (if isInt32(av): float64(asInt32(av)) else: asDouble(av))
+      let bd = (if isInt32(bv): float64(asInt32(bv)) else: asDouble(bv))
+      return ad != ad and bd != bd
+  false
+
+proc nativeArrayIsArray(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.isArray(v) — true iff v is an Array exotic object.
+  if args.len == 0: return vv(boolVal(false))
+  vv(boolVal(argArrayCell(args[0]) != nil))
+
+proc nativeArrayPush(heap: var GcHeap, args: openArray[VmVal],
+                     thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.push(...items) — append, return the new length.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.push on non-array receiver")
+  var s = arrElems(heap, a)
+  for arg in args: s.add(boxForStore(heap, arg))
+  arrReplace(heap, a, s)
+  vv(int32Val(int32(s.len)))
+
+proc nativeArrayPop(heap: var GcHeap, args: openArray[VmVal],
+                    thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.pop() — remove & return the last element (undefined if empty).
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.pop on non-array receiver")
+  var s = arrElems(heap, a)
+  if s.len == 0: return vv(undefinedVal())
+  let last = s[^1]
+  s.setLen(s.len - 1)
+  arrReplace(heap, a, s)
+  if last.bits == deletedVal().bits: return vv(undefinedVal())
+  unboxLoaded(heap, last)
+
+proc nativeArrayShift(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.shift() — remove & return the first element.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.shift on non-array receiver")
+  var s = arrElems(heap, a)
+  if s.len == 0: return vv(undefinedVal())
+  let first = s[0]
+  s.delete(0)
+  arrReplace(heap, a, s)
+  if first.bits == deletedVal().bits: return vv(undefinedVal())
+  unboxLoaded(heap, first)
+
+proc nativeArrayUnshift(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.unshift(...items) — prepend, return the new length.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.unshift on non-array receiver")
+  let s = arrElems(heap, a)
+  var prep: seq[ZjsValue] = @[]
+  for arg in args: prep.add(boxForStore(heap, arg))
+  arrReplace(heap, a, prep & s)
+  vv(int32Val(int32(prep.len + s.len)))
+
+proc nativeArrayIndexOf(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.indexOf(search, fromIndex?) — strict-equal; skips holes;
+  ## indexOf(NaN) = -1.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.indexOf on non-array receiver")
+  let s = arrElems(heap, a)
+  let search = (if args.len >= 1: args[0] else: vv(undefinedVal()))
+  var start = 0
+  if args.len >= 2:
+    let f = toIntArg(args[1])
+    start = (if f < 0: max(s.len + f, 0) else: f)
+  var i = start
+  while i < s.len:
+    if s[i].bits != deletedVal().bits and vmStrictEq(search, unboxLoaded(heap, s[i])):
+      return vv(int32Val(int32(i)))
+    inc i
+  vv(int32Val(-1'i32))
+
+proc nativeArrayLastIndexOf(heap: var GcHeap, args: openArray[VmVal],
+                            thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.lastIndexOf(search) — strict-equal, from the end; skips holes.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.lastIndexOf on non-array receiver")
+  let s = arrElems(heap, a)
+  let search = (if args.len >= 1: args[0] else: vv(undefinedVal()))
+  var i = s.len - 1
+  while i >= 0:
+    if s[i].bits != deletedVal().bits and vmStrictEq(search, unboxLoaded(heap, s[i])):
+      return vv(int32Val(int32(i)))
+    dec i
+  vv(int32Val(-1'i32))
+
+proc nativeArrayIncludes(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.includes(search, fromIndex?) — SameValueZero; holes read as
+  ## undefined; includes(NaN) = true.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.includes on non-array receiver")
+  let n = arrLength(heap, a)
+  let search = (if args.len >= 1: args[0] else: vv(undefinedVal()))
+  var start = 0
+  if args.len >= 2:
+    let f = toIntArg(args[1])
+    start = (if f < 0: max(n + f, 0) else: f)
+  var i = start
+  while i < n:
+    if sameValueZero(search, unboxLoaded(heap, arrGet(heap, a, i))):
+      return vv(boolVal(true))
+    inc i
+  vv(boolVal(false))
+
+proc nativeArrayJoin(heap: var GcHeap, args: openArray[VmVal],
+                     thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.join(sep?) — sep defaults to ",". undefined/null/hole → "".
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.join on non-array receiver")
+  var sep = ","
+  if args.len >= 1 and not (args[0].kind == vkVal and isUndefined(args[0].v)):
+    sep = vmToString(args[0])
+  let n = arrLength(heap, a)
+  var res = ""
+  var i = 0
+  while i < n:
+    if i > 0: res.add(sep)
+    let ev = arrGet(heap, a, i)          # hole → undefined
+    if not (isUndefined(ev) or isNull(ev)):
+      res.add(vmToString(unboxLoaded(heap, ev)))
+    inc i
+  vs(res)
+
+proc nativeArraySlice(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.slice(start?, end?) — new Array of the [start,end) range
+  ## (negative = from end); holes preserved.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.slice on non-array receiver")
+  let s = arrElems(heap, a)
+  let n = s.len
+  var start = 0
+  if args.len >= 1 and not (args[0].kind == vkVal and isUndefined(args[0].v)):
+    start = relStart(args[0], n)
+  var stop = n
+  if args.len >= 2 and not (args[1].kind == vkVal and isUndefined(args[1].v)):
+    stop = relStart(args[1], n)
+  var outv: seq[ZjsValue] = @[]
+  var i = start
+  while i < stop:
+    outv.add(s[i])
+    inc i
+  vv(cellValue(allocArray(heap, outv)))
+
+proc nativeArrayConcat(heap: var GcHeap, args: openArray[VmVal],
+                       thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.concat(...args) — new Array = this ++ (array args spread one
+  ## level, other args appended).
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.concat on non-array receiver")
+  var outv = arrElems(heap, a)
+  for arg in args:
+    let ac = argArrayCell(arg)
+    if ac != nil:
+      for e in arrElems(heap, ac): outv.add(e)
+    else:
+      outv.add(boxForStore(heap, arg))
+  vv(cellValue(allocArray(heap, outv)))
+
+proc nativeArrayAt(heap: var GcHeap, args: openArray[VmVal],
+                   thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.at(i) — element at i (negative from end), else undefined.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.at on non-array receiver")
+  let n = arrLength(heap, a)
+  var i = toIntArg(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  if i < 0: i = n + i
+  if i < 0 or i >= n: return vv(undefinedVal())
+  unboxLoaded(heap, arrGet(heap, a, i))
+
+proc nativeArrayReverse(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.reverse() — reverse in place, return this.
+  let a = arrThis(thisv)
+  if a == nil: bail("Array.prototype.reverse on non-array receiver")
+  var s = arrElems(heap, a)
+  var i = 0
+  var j = s.len - 1
+  while i < j:
+    swap(s[i], s[j]); inc i; dec j
+  arrReplace(heap, a, s)
+  thisv
+
+proc nativeArrayToString(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## Array.prototype.toString() — join with the default separator "," (the
+  ## reference falls back to Object.prototype.toString only if join isn't
+  ## callable, which it always is here).
+  nativeArrayJoin(heap, [], thisv)
+
+proc nativeArrayCtor(heap: var GcHeap, args: openArray[VmVal],
+                     thisv: VmVal): VmVal {.nimcall.} =
+  ## `Array(...)` / `new Array(...)` — the constructor form (length-arg vs
+  ## element-list). Deferred → BAIL. Installed so `typeof Array` is "function"
+  ## and `Array.isArray` / `Array.prototype` resolve off the property bag.
+  bail("Array constructor not implemented")
+
 # --- realm install -----------------------------------------------------
 
 const USER_GLOBAL_BASE = 108
@@ -850,6 +1085,9 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
   ## unimplemented builtin).
   if globals.len < USER_GLOBAL_BASE:
     globals.setLen(USER_GLOBAL_BASE)
+  # Object.prototype value, captured in installObject so installArray can chain
+  # Array.prototype → Object.prototype (undefined until installObject runs).
+  var objectProtoVal = undefinedVal()
   # Value globals referenced by the isNaN/isFinite battery: `NaN` (g2) and
   # `Infinity` (g3) are plain numeric realm globals (the compiler emits
   # `LoadGlobal g2` / `g3` for the identifiers), so they MUST hold real values
@@ -985,4 +1223,36 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
       let protoVal = cellValue(objectProto)
       objSet(heap, objectBag, "prototype", protoVal)   # Object.prototype
       setObjectProto(protoVal)                          # NewObject default proto
+      objectProtoVal = protoVal                          # for Array.prototype chaining
     globals[builtinSlot("Object")] = vv(cellValue(objectFn))
+  # Array (g9) — native constructor (typeof → "function"); its prototype carries
+  # the method natives, dispatched via the VM's LoadProp array branch. Chain =
+  # Array.prototype → Object.prototype (so `[].hasOwnProperty` resolves too).
+  # Rooted via globals → Array bag → `.prototype` → the method cells.
+  block installArray:
+    let arrayProto = allocObject(heap)
+    if isCell(objectProtoVal) and cellAsPtr(objectProtoVal) != nil:
+      objSetProto(arrayProto, objectProtoVal)
+    template setA(nm: string, fn: NativeFn, arity: int) =
+      objSet(heap, arrayProto, nm,
+             cellValue(allocHostFunction(heap, cast[pointer](fn), nm, arity)))
+    setA("push",        nativeArrayPush,        1)
+    setA("pop",         nativeArrayPop,         0)
+    setA("shift",       nativeArrayShift,       0)
+    setA("unshift",     nativeArrayUnshift,     1)
+    setA("indexOf",     nativeArrayIndexOf,     1)
+    setA("lastIndexOf", nativeArrayLastIndexOf, 1)
+    setA("includes",    nativeArrayIncludes,    1)
+    setA("join",        nativeArrayJoin,        1)
+    setA("slice",       nativeArraySlice,       2)
+    setA("concat",      nativeArrayConcat,      1)
+    setA("at",          nativeArrayAt,          1)
+    setA("reverse",     nativeArrayReverse,     0)
+    setA("toString",    nativeArrayToString,    0)
+    setArrayProto(cellValue(arrayProto))
+    let arrayFn = allocHostFunction(heap, cast[pointer](nativeArrayCtor), "Array", 1)
+    let arrayBag = cast[ptr ObjectCell](arrayFn)
+    objSet(heap, arrayBag, "isArray",
+           cellValue(allocHostFunction(heap, cast[pointer](nativeArrayIsArray), "isArray", 1)))
+    objSet(heap, arrayBag, "prototype", cellValue(arrayProto))
+    globals[builtinSlot("Array")] = vv(cellValue(arrayFn))

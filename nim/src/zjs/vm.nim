@@ -151,6 +151,17 @@ proc setObjectProto*(v: ZjsValue) =
   ## run, before any NewObject executes).
   vmObjectProto = v
 
+var vmArrayProto {.threadvar.}: ZjsValue
+  ## The realm's `Array.prototype` cell (an ObjectCell whose props are the array
+  ## method natives; its own proto = Object.prototype). ArrayCells carry no inline
+  ## proto link, so LoadProp on an array resolves an inherited method by looking
+  ## the name up here directly. Installed by installBuiltins via setArrayProto;
+  ## rooted via globals (Array's bag holds it as `.prototype`).
+
+proc setArrayProto*(v: ZjsValue) =
+  ## Register the realm's Array.prototype cell (called by installBuiltins).
+  vmArrayProto = v
+
 proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
   ## Mark any GC cell a VmVal can hold: a vkVal's cell, OR a closure's
   ## captured env (a vkFunction's env is an ObjectCell that must survive
@@ -251,7 +262,7 @@ proc arrayIndex(key: ZjsValue): int =
       return int(d)
   -1
 
-proc boxForStore(heap: var GcHeap, x: VmVal): ZjsValue =
+proc boxForStore*(heap: var GcHeap, x: VmVal): ZjsValue =
   ## Convert a VmVal into a ZjsValue for storage in an object side table
   ## (which holds ZjsValues, not the VM's function variant). A vkFunction is
   ## boxed into a FunctionCell so a closure VALUE can live as a property and
@@ -642,7 +653,7 @@ proc vmCmpLe(a, b: VmVal): bool =
     return a.s <= b.s
   cmpLe(numVal(a), numVal(b))
 
-proc vmStrictEq(a, b: VmVal): bool =
+proc vmStrictEq*(a, b: VmVal): bool =
   ## zjs_strict_eq (value.zc ~488). String===String → byte equality;
   ## String===non-string (or vice versa) → false (different type); else
   ## numeric strict-eq. A function value never appears in our targets'
@@ -1374,11 +1385,23 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         if a != nil:
           if name == "length":
             regs[int(inst.a)] = vv(int32Val(int32(arrLength(heap, a))))
+          elif isCell(vmArrayProto) and cellAsPtr(vmArrayProto) != nil:
+            # Resolve an inherited member off Array.prototype (→ Object.prototype).
+            # ArrayCells have no inline proto, so we look the name up on the
+            # fixed Array.prototype cell; a hit is the method (bound to the array
+            # as `this` by MethodInvoke). A name on the proto chain we don't model
+            # (isArrayInherited) bails; anything else is a genuinely-absent prop → undefined.
+            let ap = cast[ptr ObjectCell](cellAsPtr(vmArrayProto))
+            var found = false
+            let v = protoChainLookup(heap, ap, name, found)
+            if found:
+              regs[int(inst.a)] = unboxLoaded(heap, v)
+            elif isArrayInherited(name):
+              bail("LoadProp inherited Array.prototype property (unmodeled)")
+            else:
+              regs[int(inst.a)] = vv(undefinedVal())
           else:
-            # A named (non-index) property on an array: only own props are
-            # in scope. B1 arrays carry no named props, and inherited Array
-            # methods need built-ins → bail.
-            bail("LoadProp named property on array (needs proto/props)")
+            bail("LoadProp named property on array (Array.prototype not installed)")
         else:
           bail("LoadProp on non-object/array receiver")
     of NewArray:

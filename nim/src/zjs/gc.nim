@@ -425,6 +425,18 @@ proc arrSet*(heap: var GcHeap, a: ptr ArrayCell, i: int, v: ZjsValue) =
   s[i] = v
   heap.arrTable[p] = s
 
+proc arrElems*(heap: GcHeap, a: ptr ArrayCell): seq[ZjsValue] =
+  ## The whole backing element seq (a copy; holes are VALUE_DELETED sentinels
+  ## which read back as undefined). For bulk reads (join/indexOf/slice) and as
+  ## the basis for structural mutations via arrReplace.
+  let p = cast[pointer](a)
+  if heap.arrTable.hasKey(p): heap.arrTable[p] else: @[]
+
+proc arrReplace*(heap: var GcHeap, a: ptr ArrayCell, s: seq[ZjsValue]) =
+  ## Replace the entire backing element seq (push/pop/shift/unshift/reverse/
+  ## fill/…). The ArrayCell keeps its identity; only its elements change.
+  heap.arrTable[cast[pointer](a)] = s
+
 proc arrTableLen*(heap: GcHeap): int {.inline.} = heap.arrTable.len
 
 # --- FunctionCell (slice B2) -----------------------------------------
