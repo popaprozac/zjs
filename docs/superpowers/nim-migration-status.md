@@ -50,13 +50,22 @@ Legend: ✅ done (byte-parity where applicable) · 🟡 partial/in-progress · �
   TypedArrays/ArrayBuffer, BigInt, Temporal
 - **Stdlib / runtime layer** — fetch / timers / codecs (WinterTC rings), batteries-included
 
-## Progress
-- **Frontend (lex + parse): essentially complete** — only the error-reporting tail remains;
-  byte-identical on every *accepted* input across the whole test262 language corpus.
-- **Everything else (compile → VM → runtime → GC → built-ins): not started** (Phases 3–6).
-- Raw LOC migrated ≈ 6,200 / ~66,500 ≈ **9%** — undercounts, since the frontend is the
-  hardest to get byte-exact (done) and much of `context.zc` is repetitive built-in surface
-  that ports faster once the object model + GC + VM exist.
+## Progress (updated 2026-07-11)
+- **Frontend (lex + parse): complete**, byte-identical, merged.
+- **Compiler (Phase 3): complete**, byte-identical `disasm` across the language, merged. Incl.
+  `++`/`--` UpdateExpression + the builtin-global slot registry (g0–g107 map).
+- **VM (Phase 4): running** — arithmetic/control-flow/functions/recursion/strings/coercion, both
+  loop forms, exact-match vs `zjs eval`.
+- **GC + object model (Phase 5 A/B): running** — non-moving nursery mark/sweep + `Rooted[T]`;
+  objects/arrays/closures/methods/classes/inheritance/`new`/`super` on the collector. Slice C
+  (generational: promote + remembered-set + write-barriers) deferred.
+- **Built-ins (Phase 6): FOUNDATION COMPLETE** — builtin-slot registry, native-function
+  mechanism (`TAG_HOSTFN` + Invoke dispatch), spec dtoa (`Number::toString`), `console.log`.
+  A full FizzBuzz runs end-to-end. Branch `nim-phase4`, through commit `1fa1a8b`.
+- **Active arc:** core intrinsics (Object/Array/String/Number/Math/JSON/Error/Symbol) — additive
+  native-registration slices on the foundation → then the **test262 execution** differential.
+- Still `main`-untouched throughout; ~152 commits ahead. See
+  `docs/superpowers/plans/2026-07-11-zjs-nim-phase6-builtins-foundation.md`.
 
 ## Order for the rest
 1. **Finish parser error-reporting tail** → merge Phase 2 → `nim`.
