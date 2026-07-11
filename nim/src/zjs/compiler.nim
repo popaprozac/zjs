@@ -14,6 +14,7 @@ import std/unicode
 import std/strutils
 import ast, token
 import bytecode
+import builtins_globals
 
 const
   ## User globals start at slot 108 in the disasm: built-ins occupy
@@ -519,6 +520,21 @@ proc internGlobal(c: var Compiler, name: string): uint32 =
   ## fresh slot at the next base offset if unseen. Names compare by
   ## decoded text; slice 1 has no `\u` escapes so a plain string compare
   ## suffices.
+  ##
+  ## Built-ins (Object, Array, Math, isNaN, …) occupy the fixed low slots
+  ## 0..107 assigned by the Zen-c realm at init. Look `name` up in the
+  ## const built-in table FIRST and, on a hit, return that fixed slot
+  ## immediately — WITHOUT adding it to `g.names`/`g.slots`. This is
+  ## load-bearing: the user-slot formula is `USER_GLOBAL_BASE +
+  ## g.names.len`, so a built-in that entered `g.names` would wrongly bump
+  ## every subsequent user slot. Built-ins bypass the user table entirely;
+  ## dedup of a repeated built-in reference is handled by the const lookup
+  ## returning the same fixed slot each time. Shadowing (`var Object = 5`)
+  ## is handled for free: the table hit routes the DefineGlobal to g57,
+  ## matching the reference reusing the existing built-in binding.
+  let b = builtinSlot(name)
+  if b >= 0:
+    return uint32(b)
   let g = c.globals
   for i in 0 ..< g.names.len:
     if g.names[i] == name:

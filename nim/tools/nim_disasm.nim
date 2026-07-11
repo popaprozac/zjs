@@ -9,7 +9,7 @@
 ## can assert on it directly; `main()` streams it to stdout.
 
 import std/[os, strutils, strformat, tables]
-import ../src/zjs/[parser, bytecode, compiler]
+import ../src/zjs/[parser, bytecode, compiler, builtins_globals]
 
 # --- C `%g` for doubles (used by LoadConst) -------------------------
 # Nim's `&"{d:g}"` matches C printf `%g` byte-for-byte for the values a
@@ -67,7 +67,8 @@ proc disasmFunction(buf: var string, f: Function, label: string) =
     of LoadGlobal, LoadGlobalOrUndefined, StoreGlobal, DefineGlobal,
        StoreGlobalStrict:
       let slot = instBcU16(inst)
-      let nm = if gnames.hasKey(uint32(slot)): gnames[uint32(slot)] else: ""
+      let nm = if gnames.hasKey(uint32(slot)): gnames[uint32(slot)]
+               else: builtinName(uint32(slot))
       # `r%-3u g%-4u ; %.*s`
       buf.add("r" & padRight($inst.a, 3) & " g" & padRight($slot, 4) & " ; " & nm)
     of LoadConst:
@@ -126,7 +127,8 @@ proc disasmFunction(buf: var string, f: Function, label: string) =
       # 2-slot fused global-callee call: operands here, u16 global slot in
       # the J+1 carrier. `r%-3u <- g%u(base=r%u argc=%u)  [carrier@N] ; name`.
       let gslot = instBcU16(f.code[i + 1])
-      let gnm = if gnames.hasKey(uint32(gslot)): gnames[uint32(gslot)] else: ""
+      let gnm = if gnames.hasKey(uint32(gslot)): gnames[uint32(gslot)]
+                else: builtinName(uint32(gslot))
       buf.add("r" & padRight($inst.a, 3) & " <- g" & $gslot &
         "(base=r" & $inst.b & " argc=" & $inst.c & ")  [carrier@" &
         $(i + 1) & "] ; " & gnm)
