@@ -1540,8 +1540,20 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       if o != nil:
         objSet(heap, o, name, boxForStore(heap, sv))
       elif recv.kind == vkFunction and recv.fn != nil:
-        # Function expando (`fn.x = v`) — stored on the function's props bag.
-        objSet(heap, getOrCreateFuncProps(heap, recv.fn), name, boxForStore(heap, sv))
+        if name == "prototype":
+          # `fn.prototype = <object>` reassigns the function's [[Prototype]]
+          # object (getOrCreateFnProto / LoadProp .prototype read it back; new
+          # instances chain to it). A PRIMITIVE prototype value hits a
+          # declaration-vs-expression writability quirk in the oracle we can't
+          # faithfully replicate → bail (never a wrong value).
+          if sv.kind == vkVal and isCell(sv.v) and cellAsPtr(sv.v) != nil and
+             cellHeader(sv.v).typeTag in {TAG_OBJECT, TAG_ARRAY}:
+            fnProtos[cast[pointer](recv.fn)] = sv.v
+          else:
+            bail("fn.prototype set to a non-object (oracle writability quirk)")
+        else:
+          # Function expando (`fn.x = v`) — stored on the function's props bag.
+          objSet(heap, getOrCreateFuncProps(heap, recv.fn), name, boxForStore(heap, sv))
       else:
         bail("StoreProp on non-object / non-function receiver")
     of LoadProp:

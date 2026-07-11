@@ -141,9 +141,12 @@ proc main() =
   try:
     let completion = runFunction(f, globals, heap, 0)
     outText = inspectVmVal(heap, completion, false)
-  except VmBail:
-    # Honest "can't run / can't format" — print NOTHING, exit nonzero.
+  except VmBail as e:
+    # Honest "can't run / can't format" — print NOTHING, exit nonzero. With
+    # ZJS_TRACE_BAIL=1 the bail reason goes to stderr (for gap ranking only).
     ok = false
+    if getEnv("ZJS_TRACE_BAIL") == "1":
+      stderr.write("BAIL: " & e.msg & "\n")
   finally:
     destroyHeap(heap)
 
