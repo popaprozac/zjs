@@ -12,6 +12,7 @@
 ## — a clean VmBail (empty stdout, nonzero exit), NEVER a wrong value.
 
 import std/strutils
+import std/tables
 import value, gc, vm
 import builtins_globals
 
@@ -1742,9 +1743,14 @@ proc nativeJsonParse(heap: var GcHeap, args: openArray[VmVal],
 # marker (shown by write_value/inspect, hidden from Object.keys / JSON) — special-
 # cased in orderedOwnKeys + jsonNested since the model has no enumerable flag.
 
+var errorProtos {.threadvar.}: Table[string, ZjsValue]
+  ## Each error type's own .prototype (TypeError.prototype → Error.prototype → …),
+  ## so `instanceof` distinguishes subtypes. Populated by installErrors; the
+  ## proto cells are rooted via each ctor's bag (globals). Keyed by error name.
+
 proc makeError(heap: var GcHeap, ename: string, args: openArray[VmVal]): VmVal =
   let o = allocObject(heap)
-  let ep = getErrorProto()
+  let ep = (if errorProtos.hasKey(ename): errorProtos[ename] else: getErrorProto())
   if isCell(ep) and cellAsPtr(ep) != nil: objSetProto(o, ep)
   objSet(heap, o, "__zjs_tag__", boxForStore(heap, vs("Error")))
   if args.len >= 1 and not (args[0].kind == vkVal and isUndefined(args[0].v)):
@@ -2067,20 +2073,28 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
   # Error.prototype (toString → "name: message") suffices — the per-error `name`
   # own-prop drives the subtype-correct toString.
   block installErrors:
-    let errorProto = allocObject(heap)
+    errorProtos = initTable[string, ZjsValue]()
+    let errorProto = allocObject(heap)      # Error.prototype (has toString)
     if isCell(objectProtoVal) and cellAsPtr(objectProtoVal) != nil:
       objSetProto(errorProto, objectProtoVal)
     objSet(heap, errorProto, "toString",
            cellValue(allocHostFunction(heap, cast[pointer](nativeErrorToString), "toString", 0)))
     setErrorProto(cellValue(errorProto))
-    template setErr(nm: string, fn: NativeFn) =
+    # `ename` gets `proto` as its .prototype (and as instanceof's chain target);
+    # subtype protos chain to Error.prototype so their errors inherit toString.
+    template setErr(nm: string, fn: NativeFn, proto: ZjsValue) =
       let ef = allocHostFunction(heap, cast[pointer](fn), nm, 1, isCtor = true)
-      objSet(heap, cast[ptr ObjectCell](ef), "prototype", cellValue(errorProto))
+      objSet(heap, cast[ptr ObjectCell](ef), "prototype", proto)
       globals[builtinSlot(nm)] = vv(cellValue(ef))
-    setErr("Error",          nativeError)
-    setErr("TypeError",      nativeTypeError)
-    setErr("RangeError",     nativeRangeError)
-    setErr("ReferenceError", nativeReferenceError)
-    setErr("SyntaxError",    nativeSyntaxError)
-    setErr("EvalError",      nativeEvalError)
-    setErr("URIError",       nativeURIError)
+      errorProtos[nm] = proto
+    setErr("Error", nativeError, cellValue(errorProto))
+    template setSub(nm: string, fn: NativeFn) =
+      let sp = allocObject(heap)
+      objSetProto(sp, cellValue(errorProto))
+      setErr(nm, fn, cellValue(sp))
+    setSub("TypeError",      nativeTypeError)
+    setSub("RangeError",     nativeRangeError)
+    setSub("ReferenceError", nativeReferenceError)
+    setSub("SyntaxError",    nativeSyntaxError)
+    setSub("EvalError",      nativeEvalError)
+    setSub("URIError",       nativeURIError)

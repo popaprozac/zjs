@@ -371,7 +371,12 @@ proc getOrCreateFnProto(heap: var GcHeap, fn: Function): ZjsValue =
   let key = cast[pointer](fn)
   if fnProtos.hasKey(key):
     return fnProtos[key]
-  let proto = cellValue(allocObject(heap))
+  let protoObj = allocObject(heap)
+  # A function's .prototype chains to Object.prototype (so instances inherit
+  # Object.prototype methods and `instanceof Object` holds).
+  if isCell(vmObjectProto) and cellAsPtr(vmObjectProto) != nil:
+    objSetProto(protoObj, vmObjectProto)
+  let proto = cellValue(protoObj)
   fnProtos[key] = proto
   proto
 
@@ -1209,6 +1214,37 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         bail("DeleteElem on non-object receiver / non-string key")
       discard objDelete(heap, o, key.s)
       regs[int(inst.a)] = vv(boolVal(true))
+    of Instanceof:
+      # a=dst, b=lhs, c=rhs: `lhs instanceof rhs` — true iff rhs.prototype appears
+      # in lhs's [[Prototype]] chain. rhs must be callable (a JS function or a
+      # native constructor); else a TypeError in the oracle → bail.
+      let lhs = regs[int(inst.b)]
+      let rhs = regs[int(inst.c)]
+      var rhsProto: ZjsValue = undefinedVal()
+      if rhs.kind == vkFunction and rhs.fn != nil:
+        rhsProto = getOrCreateFnProto(heap, rhs.fn)
+      elif rhs.kind == vkVal and isHostFunctionCell(rhs.v) and
+           heap.objTable.hasKey(cellAsPtr(rhs.v)) and
+           objHas(heap, cast[ptr ObjectCell](cellAsPtr(rhs.v)), "prototype"):
+        rhsProto = objGet(heap, cast[ptr ObjectCell](cellAsPtr(rhs.v)), "prototype")
+      else:
+        bail("instanceof RHS is not a constructor with a prototype")
+      let rp = cellAsPtr(rhsProto)
+      # Starting [[Prototype]] of lhs: an object's own proto link; an array's is
+      # Array.prototype; a primitive is not a chain-instance → false.
+      var curProto: ZjsValue = undefinedVal()
+      if lhs.kind == vkVal and isCell(lhs.v) and cellAsPtr(lhs.v) != nil:
+        case cellHeader(lhs.v).typeTag
+        of TAG_OBJECT: curProto = objGetProto(cast[ptr ObjectCell](cellAsPtr(lhs.v)))
+        of TAG_ARRAY:  curProto = vmArrayProto
+        else: discard
+      var found = false
+      while isCell(curProto) and cellAsPtr(curProto) != nil and
+            cellHeader(curProto).typeTag == TAG_OBJECT:
+        if cellAsPtr(curProto) == rp:
+          found = true; break
+        curProto = objGetProto(cast[ptr ObjectCell](cellAsPtr(curProto)))
+      regs[int(inst.a)] = vv(boolVal(found))
     of JmpIfTrue:
       # ToBoolean over the VmVal (a string condition, e.g. `""?1:2`, must
       # distinguish ""→false from "x"→true; rn's ToNumber would lose it).
