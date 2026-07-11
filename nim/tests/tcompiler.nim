@@ -1067,9 +1067,12 @@ suite "slice 5a literal edges (handled)":
     check "const#0 = \"k\"" in disasmToString("var o = {\"k\": 2};")
 
 suite "slice 5a deferred forms bail (nim_missing, not text_diff)":
-  test "computed key {[e]:1} -> compile error":
-    expect ValueError:
-      discard disasmToString("var o = {[e]: 1};")
+  test "computed key {[e]:1} -> compiles (key expr + InitObjData)":
+    # The key expression is evaluated into the key reg; InitObjData is the same
+    # op as a static key (byte-identical to the oracle).
+    let d = disasmToString("var k=1; var o = {[k]: 1};")
+    check d.len > 0
+    check "InitObjData" in d
   test "shorthand {a} -> compile error":
     expect ValueError:
       discard disasmToString("var o = {a};")

@@ -1521,12 +1521,14 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let o = asObjectCell(regs[int(inst.a)])
       if o == nil: bail("InitObjData on non-object")
       let keyv = regs[int(inst.b)]
-      if keyv.kind != vkString: bail("InitObjData non-string key")
+      # A static key is a vkString; a COMPUTED key (`{[e]: v}`) is the evaluated
+      # expression → ToPropertyKey via ToString (a number → its digits, etc.).
+      let keyName = (if keyv.kind == vkString: keyv.s else: vmToString(keyv))
       let valv = regs[int(inst.c)]
       # boxForStore represents a function VALUE as a FunctionCell (so a
       # method / stored closure round-trips on load); a plain value passes
       # through; a string value still bails (no string cell yet).
-      objSet(heap, o, keyv.s, boxForStore(heap, valv))
+      objSet(heap, o, keyName, boxForStore(heap, valv))
     of StoreProp:
       # a=obj, b=ic, c=val. Own-property set by name f.ics[ic]
       # (interpreter.zc ~6678). Only plain object receivers are in scope;
@@ -1718,21 +1720,22 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       else:
         let o = asObjectCell(recv)
         if o == nil: bail("LoadElem on non-object/array receiver")
-        # Object property by key: the key must ToString to a name. Only a
-        # string key is in scope (a numeric key would need ToString digits
-        # to match property_get) — bail otherwise.
-        if key.kind == vkString:
-          # Slice B3: own → [[Prototype]] chain, same as LoadProp.
-          var found = false
-          let v = protoChainLookup(heap, o, key.s, found)
-          if found:
-            regs[int(inst.a)] = unboxLoaded(heap, v)
-          elif isObjectInherited(key.s):
-            bail("LoadElem inherited Object.prototype property")
-          else:
-            regs[int(inst.a)] = vv(undefinedVal())
+        # Object property by key: a string key, or a NUMERIC key ToString'd to
+        # its digits (`o[2]` → "2", matching property_get). A symbol / object
+        # key needs ToPropertyKey we don't model → bail.
+        var keyName: string
+        if key.kind == vkString: keyName = key.s
+        elif key.kind == vkVal and (isInt32(key.v) or isDouble(key.v)): keyName = vmToString(key)
+        else: bail("LoadElem non-string/number key on object")
+        # Slice B3: own → [[Prototype]] chain, same as LoadProp.
+        var found = false
+        let v = protoChainLookup(heap, o, keyName, found)
+        if found:
+          regs[int(inst.a)] = unboxLoaded(heap, v)
+        elif isObjectInherited(keyName):
+          bail("LoadElem inherited Object.prototype property")
         else:
-          bail("LoadElem non-string key on object")
+          regs[int(inst.a)] = vv(undefinedVal())
     of StoreElem:
       # a=obj, b=idxReg, c=val. Array element / object property set
       # (interpreter.zc ~6875). Growing an array fills holes → undefined.
@@ -1755,10 +1758,12 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       else:
         let o = asObjectCell(recv)
         if o == nil: bail("StoreElem on non-object/array receiver")
-        if key.kind == vkString:
-          objSet(heap, o, key.s, stored)
-        else:
-          bail("StoreElem non-string key on object")
+        # String key, or a numeric key ToString'd to its digits (`o[2] = v`).
+        var keyName: string
+        if key.kind == vkString: keyName = key.s
+        elif key.kind == vkVal and (isInt32(key.v) or isDouble(key.v)): keyName = vmToString(key)
+        else: bail("StoreElem non-string/number key on object")
+        objSet(heap, o, keyName, stored)
     of ArrayLength:
       # a=dst, b=src. Element count of an array, else 0 (interpreter.zc
       # ~8371). Not emitted by the current Nim compiler (`.length` goes via

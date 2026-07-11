@@ -2610,8 +2610,20 @@ proc compileObjectLiteral(c: var Compiler, node: AstNode): uint8 =
       c.hadError = true; return dst
     if prop.kind != ObjectProp:
       c.hadError = true; return dst
-    # Computed key `[e]: v` (keyLength==0, computedKey set) -> deferred.
-    if prop.computedKey != nil or prop.keyLength == 0:
+    # Computed key `[e]: v` — evaluate the key expression into the key reg, then
+    # the value, then InitObjData (the SAME op, key in a register rather than a
+    # LoadConst string). A computed METHOD/accessor is still deferred.
+    if prop.computedKey != nil:
+      if prop.propVal != nil and prop.propVal.kind == FunctionExpr and
+         prop.propVal.start == prop.keyStart:
+        c.hadError = true; return dst          # computed method / accessor
+      let keyReg = compileExpr(c, prop.computedKey)
+      let valReg = compileExpr(c, prop.propVal)
+      emit(c, instABC(InitObjData, dst, keyReg, valReg))
+      releaseReg(c, valReg)
+      releaseReg(c, keyReg)
+      continue
+    if prop.keyLength == 0:
       c.hadError = true; return dst
     # Method shorthand `k(){}` / accessor `get k(){}`: the parser
     # synthesizes a FunctionExpr whose SLICE begins exactly at the key token
