@@ -248,7 +248,7 @@ proc boxForStore(heap: var GcHeap, x: VmVal): ZjsValue =
   of vkFunction: cellValue(allocFunction(heap, x.fn, x.env))
   of vkString:   cellValue(allocStringCell(heap, x.s))  # Phase 6: string cell
 
-proc unboxLoaded(heap: GcHeap, v: ZjsValue): VmVal =
+proc unboxLoaded*(heap: GcHeap, v: ZjsValue): VmVal =
   ## Convert a stored ZjsValue back into a VmVal: a FunctionCell → the
   ## vkFunction closure it boxes (fn + env); a StringCell → the vkString it
   ## boxes; anything else → a plain vkVal.
@@ -526,7 +526,7 @@ proc vmToNumber*(x: VmVal): ZjsValue =
     if isUndefined(v): return doubleVal(NaN)
     bail("ToNumber on non-primitive")
 
-proc vmToString(x: VmVal): string =
+proc vmToString*(x: VmVal): string =
   ## ToString over a VmVal (zjs_to_string, context.zc ~33638). string→
   ## itself; int32→decimal digits; bool/null/undefined→literals. Double:
   ## NaN/±Infinity have fixed spellings; an INTEGER-valued double in the
@@ -977,6 +977,18 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
           elif isNull(v):    "object"
           elif isBool(v):    "boolean"
           elif isNumber(v):  "number"
+          elif isCell(v) and cellAsPtr(v) != nil:
+            # Heap cells (object model + Phase 6 natives): an object/array is
+            # "object"; a function value — a JS closure (TAG_FUNCTION) or a
+            # native builtin (TAG_HOSTFN, e.g. `typeof console.log`) — is
+            # "function"; a boxed string is "string". Matches the oracle
+            # (`typeof {}`/`typeof console` → "object"; `typeof console.log`
+            # → "function"). Any other cell shape bails (never a wrong type).
+            case cellHeader(v).typeTag
+            of TAG_OBJECT, TAG_ARRAY:    "object"
+            of TAG_FUNCTION, TAG_HOSTFN: "function"
+            of TAG_STRING:               "string"
+            else: bail("typeof on unknown cell")
           else: bail("typeof on non-primitive")
       regs[int(inst.a)] = vs(label)
 
