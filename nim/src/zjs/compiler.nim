@@ -2803,17 +2803,36 @@ proc compileCallInner(c: var Compiler, node: AstNode, retHint: int): uint8 =
     return base
   if callee != nil and callee.kind in {OptionalMember, OptionalComputed, OptionalCall}:
     c.hadError = true; return 0
-  # Math.sqrt/abs/floor/ceil intrinsic fusion is DEFERRED -- the plain
-  # method-call path below still produces correct bytecode for those
-  # (LoadGlobal+LoadProp+MethodInvoke), but the oracle would emit the
-  # specialized op. So bail on the exact intrinsic shape to stay honest.
+  # Math.sqrt/abs/floor/ceil(x) intrinsic fusion (compiler.zc ~5857): when
+  # `Math` statically resolves to the global object (no local index and no
+  # captured-outer shadow) and the single-arg method is one of the four
+  # specialized ops, fold LoadGlobal(Math)+LoadProp+MethodInvoke into a single
+  # MathX op (a=dst, b=arg reg) — byte-identical to the oracle's disasm. Spread
+  # args are already bailed above, so this shape is always non-spread. A method
+  # name outside the four (e.g. round/pow/sin) falls through to the ordinary
+  # method-call path below (→ the host_math_* native).
   if isMethod and callee.kind == Member and argCount == 1 and
      callee.recv != nil and callee.recv.kind == IdentExpr and
      c.slice(callee.recv.start, callee.recv.`end`) == "Math" and
-     findLocalIndex(c, "Math") < 0:
+     findLocalIndex(c, "Math") < 0 and outerCaptureDepth(c, "Math") == 0:
     let mname = c.slice(callee.propStart, callee.propStart + callee.propLength)
-    if mname in ["sqrt", "abs", "floor", "ceil"]:
-      c.hadError = true; return 0
+    var specOp = MathSqrt
+    var matched = true
+    case mname
+    of "sqrt":  specOp = MathSqrt
+    of "abs":   specOp = MathAbs
+    of "floor": specOp = MathFloor
+    of "ceil":  specOp = MathCeil
+    else:       matched = false
+    if matched:
+      # dst is allocated BEFORE the arg is compiled (reference order), so the
+      # arg lands one register above dst.
+      let dst = allocReg(c)
+      let argR = compileExpr(c, node.args[0])
+      emit(c, instAB(specOp, dst, argR))
+      if argR + 1 == c.nextReg and argR != dst: c.nextReg = c.nextReg - 1
+      if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+      return dst
 
   if isMethod:
     # Method call: regs[base]=method, regs[base+1]=recv, regs[base+2..]=args.

@@ -401,6 +401,32 @@ suite "vm native builtins (Phase 6 slice 2)":
   test "deferred / unimplemented shapes bail cleanly (never wrong)":
     check bailsB("isNaN({})")             # object arg needs valueOf coercion
     check bailsB("isNaN([])")             # array arg needs ToPrimitive
-    check bailsB("Math.floor(1.5)")       # Math not installed (zero-bits slot)
+    check bailsB("Math.max(1,{})")        # object arg needs ToPrimitive
+    check bailsB("Math.sumPrecise([1,2])")# TC39 proposal: iterator drain deferred
     check bailsB("parseInt(\"5\")")       # parseInt not installed
     check bailsB("new isNaN()")           # native constructor is a later slice
+
+  # --- Math (Phase 6): namespace object @ g56 ------------------------
+  # Fast-path fused ops (MathSqrt/Abs/Floor/Ceil), native methods via
+  # MethodInvoke, and numeric constants. Full oracle parity is proven by the
+  # eval battery + transcendental fuzz; these are the in-suite smoke checks.
+  test "Math: fast-path ops + native methods + constants + edges":
+    check evB("Math.floor(1.5)") == "1"          # MathFloor fusion
+    check evB("Math.ceil(1.2)") == "2"           # MathCeil fusion
+    check evB("Math.abs(-5)") == "5"             # MathAbs fusion, int32
+    check evB("Math.sqrt(2)") == "1.41421"       # MathSqrt fusion (%g)
+    check evB("Math.max(1,2,3)") == "3"          # native, identity=-Inf
+    check evB("Math.max()") == "-Infinity"
+    check evB("Math.min(-1,NaN,2)") == "NaN"     # NaN propagation
+    check evB("Math.round(-2.5)") == "-2"        # half toward +Inf
+    check evB("Math.round(-0.5)") == "-0"        # negative-zero result
+    check evB("Math.sign(-3)") == "-1"
+    check evB("Math.pow(2,10)") == "1024"
+    check evB("Math.hypot(3,4)") == "5"
+    check evB("Math.cbrt(27)") == "3"
+    check evB("Math.clz32(1)") == "31"
+    check evB("Math.imul(3,4)") == "12"
+    check evB("''+Math.PI") == "3.141592653589793"
+    check evB("''+Math.E") == "2.718281828459045"
+    check evB("''+Math.SQRT2") == "1.4142135623730951"
+    check evB("var s=0; for(var i=0;i<5;i++){ s+=Math.floor(i+0.5); } s") == "10"

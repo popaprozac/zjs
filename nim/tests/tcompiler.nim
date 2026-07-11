@@ -1219,12 +1219,18 @@ suite "slice 5b deferred forms bail (nim_missing, not text_diff)":
   test "optional-member call a?.b() -> compile error":
     expect ValueError:
       discard disasmToString("a?.b();")
-  test "Math.sqrt(x) intrinsic -> compile error (deferred fusion)":
-    expect ValueError:
-      discard disasmToString("Math.sqrt(x);")
-  test "Math.floor(x) intrinsic -> compile error (deferred fusion)":
-    expect ValueError:
-      discard disasmToString("Math.floor(x);")
+  test "Math.sqrt(x) intrinsic -> MathSqrt fusion (byte-identical to oracle)":
+    let d = disasmToString("Math.sqrt(x);")
+    check d.contains("MathSqrt            a=1   b=2   c=0")
+    check not d.contains("MethodInvoke")
+  test "Math.floor(x) intrinsic -> MathFloor fusion (byte-identical to oracle)":
+    let d = disasmToString("Math.floor(x);")
+    check d.contains("MathFloor           a=1   b=2   c=0")
+    check not d.contains("MethodInvoke")
+  test "Math.round(x) is NOT fused (falls through to MethodInvoke native)":
+    let d = disasmToString("Math.round(x);")
+    check d.contains("MethodInvoke")
+    check not d.contains("MathRound")
 
 # --- Slice 4c: this / arguments / new.target ------------------------
 # Ground-truth constants captured from `build/zjs disasm` (the oracle);

@@ -329,6 +329,14 @@ const
 # C fmod (Nim's math.floorMod is integer; we need the double fmod).
 proc c_fmod(x, y: float64): float64 {.importc: "fmod", header: "<math.h>".}
 
+# libm for the specialized 1-arg Math ops (Op::MathSqrt/Abs/Floor/Ceil,
+# interpreter.zc ~6759). Bind the SAME C routines the reference calls so the
+# results are byte-identical (importc, not std/math — zero doubt).
+proc c_sqrt(x: float64): float64  {.importc: "sqrt",  header: "<math.h>".}
+proc c_fabs(x: float64): float64  {.importc: "fabs",  header: "<math.h>".}
+proc c_floor(x: float64): float64 {.importc: "floor", header: "<math.h>".}
+proc c_ceil(x: float64): float64  {.importc: "ceil",  header: "<math.h>".}
+
 proc toDoubleNum(v: ZjsValue): float64 {.inline.} =
   ## number_to_double (value.zc ~300): caller has proven isNumber(v).
   if isInt32(v): float64(asInt32(v)) else: asDouble(v)
@@ -877,6 +885,37 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       regs[int(inst.a)] = vv(arithMod(rn(inst.b), rn(inst.c)))
     of Pow:
       regs[int(inst.a)] = vv(arithPow(rn(inst.b), rn(inst.c)))
+    of MathSqrt, MathAbs, MathFloor, MathCeil:
+      # Specialized 1-arg Math.X(x) (interpreter.zc ~6759): the compiler
+      # emits these instead of LoadGlobal+LoadProp+MethodInvoke when `Math`
+      # statically resolves to the global object. b=arg reg, a=dst. Straight
+      # ToNumber + libm — byte-identical to the host_math_* natives.
+      let mv = regs[int(inst.b)]
+      let mvInt32 = mv.kind == vkVal and isInt32(mv.v)
+      var d: float64
+      if mvInt32:
+        d = float64(asInt32(mv.v))
+      elif mv.kind == vkVal and isDouble(mv.v):
+        d = asDouble(mv.v)
+      else:
+        # bool/null/undefined/string → ToNumber; object/function → bail
+        # (reference routes objects through zjs_to_double's valueOf; deferred).
+        let n = vmToNumber(mv)
+        d = if isInt32(n): float64(asInt32(n)) else: asDouble(n)
+      var r: float64
+      if inst.op == MathSqrt:    r = c_sqrt(d)
+      elif inst.op == MathAbs:   r = c_fabs(d)
+      elif inst.op == MathFloor: r = c_floor(d)
+      else:                      r = c_ceil(d)      # MathCeil
+      # Abs/Floor/Ceil of an int32 that lands back in int32 range stays int32
+      # (interpreter.zc ~6792: i=(i32)r; keep if (f64)i==r). r is integer-
+      # valued here, so an in-range guard reproduces that exactly (and avoids
+      # a Nim float→int RangeDefect on the abs(INT32_MIN) overflow → double).
+      if inst.op != MathSqrt and mvInt32 and
+         r >= -2147483648.0 and r <= 2147483647.0:
+        regs[int(inst.a)] = vv(int32Val(int32(r)))
+      else:
+        regs[int(inst.a)] = vv(doubleVal(r))
     of AddImm:
       # interpreter.zc ~3613: int32 + i8 fast path, overflow → double.
       let a = regs[int(inst.b)]
