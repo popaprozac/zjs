@@ -327,14 +327,21 @@ suite "vm bail discipline":
   test "built-in globals bail (out of slice-1 scope)":
     check bails("NaN")           # LoadGlobal of a built-in slot
     check bails("Infinity")
-  test "non-integer-double ToString bails (dtoa deferred)":
-    # CRITICAL: must NOT emit "0.333333" — the shortest-round-trip dtoa is
-    # a later slice; a wrong result is far worse than a bail.
-    check bails("\"\"+(1/3)")
-    check bails("\"\"+0.5")
-    check bails("0.1+\"\"")
-    check bails("`${1/3}`")
-    check bails("\"\"+(0.1+0.2)")
+  test "non-integer-double ToString: shortest-round-trip dtoa (Phase 6 slice 3)":
+    # js_double_to_chars port: full-precision shortest round-trip, NOT
+    # "%g"'s "0.333333". Byte-identical to the oracle (see the fuzz sweep).
+    check ev("\"\"+(1/3)") == "0.3333333333333333"
+    check ev("\"\"+0.5") == "0.5"
+    check ev("0.1+\"\"") == "0.1"
+    check ev("`${1/3}`") == "0.3333333333333333"
+    check ev("\"\"+(0.1+0.2)") == "0.30000000000000004"
+    # fixed-vs-exponential boundaries + JS-shaped exponent
+    check ev("\"\"+1e21") == "1e+21"
+    check ev("\"\"+0.0000001") == "1e-7"
+    check ev("\"\"+1e20") == "100000000000000000000"
+    # integral double past the %lld window prints exact (%.0f), not
+    # shortest-round-trip: 86161958985030656 stays exact.
+    check ev("\"\"+86161958985030656") == "86161958985030656"
   test "property access / built-ins bail":
     check bails("\"foo\".length")   # object model = Phase 5
   test "arrow calls bail (lexical this/env)":

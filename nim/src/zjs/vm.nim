@@ -22,13 +22,18 @@
 
 import std/math
 import std/tables
-import bytecode, value, gc
+import bytecode, value, gc, dtoa
 
 # C strtod for the ECMA-262 StringToNumber path (value.zc ~217): ported
 # verbatim so hex ("0x1F"→31), decimals, and whitespace-trim match the
 # oracle exactly rather than being re-approximated in Nim.
 proc c_strtod(s: cstring, endp: ptr cstring): float64 {.importc: "strtod", header: "<stdlib.h>".}
 proc c_snprintf_ll(buf: cstring, n: csize_t, fmt: cstring, v: clonglong): cint {.importc: "snprintf", header: "<stdio.h>", varargs.}
+# "%.0f" for integral doubles in [1e15, 1e21): exact-integer print that
+# respects IEEE rounding past 2^53, mirroring zjs_to_string (context.zc
+# ~33680). MUST use libc snprintf, not js_double_to_chars — the oracle
+# prints the exact integer digits here, not the shortest-round-trip form.
+proc c_snprintf_f(buf: cstring, n: csize_t, fmt: cstring, v: cdouble): cint {.importc: "snprintf", header: "<stdio.h>", varargs.}
 
 type
   VmValKind* = enum
@@ -554,8 +559,22 @@ proc vmToString(x: VmVal): string =
         var res = newString(n)
         for i in 0 ..< n: res[i] = buf[i]
         return res
-      # Non-integer (or integral beyond the %lld window) double → dtoa.
-      bail("ToString non-integer double (needs dtoa)")
+      # Integral double past the %lld window but below 1e21: the oracle
+      # prints the EXACT integer via %.0f (context.zc ~33680), NOT the
+      # shortest-round-trip form — e.g. 86161958985030656 stays exact
+      # rather than collapsing to 86161958985030660. Reproduce %.0f here.
+      if d == floor(d) and abs(d) < 1e21:
+        var buf: array[64, char]
+        let n = c_snprintf_f(cast[cstring](addr buf[0]), csize_t(64),
+                             cstring("%.0f"), cdouble(d))
+        if n <= 0 or n >= 64: bail("ToString double overflow")
+        var res = newString(n)
+        for i in 0 ..< n: res[i] = buf[i]
+        return res
+      # Non-integral (or integral >= 1e21) double → dtoa: the ECMAScript
+      # shortest-round-trip formatter (§6.1.6.1.20), ported verbatim from
+      # js_double_to_chars for byte-identity with the oracle.
+      return doubleToChars(d)
     if isBool(v):      return (if asBool(v) != 0: "true" else: "false")
     if isNull(v):      return "null"
     if isUndefined(v): return "undefined"
