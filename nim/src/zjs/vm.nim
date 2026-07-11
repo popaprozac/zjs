@@ -229,13 +229,16 @@ proc boxForStore(heap: var GcHeap, x: VmVal): ZjsValue =
   case x.kind
   of vkVal:      x.v
   of vkFunction: cellValue(allocFunction(heap, x.fn, x.env))
-  of vkString:   bail("store string property value (no string cell yet)")
+  of vkString:   cellValue(allocStringCell(heap, x.s))  # Phase 6: string cell
 
 proc unboxLoaded(heap: GcHeap, v: ZjsValue): VmVal =
   ## Convert a stored ZjsValue back into a VmVal: a FunctionCell → the
-  ## vkFunction closure it boxes (fn + env); anything else → a plain vkVal.
+  ## vkFunction closure it boxes (fn + env); a StringCell → the vkString it
+  ## boxes; anything else → a plain vkVal.
   if isFunctionCell(heap, v):
     return vf(funcCellFn(heap, v), funcCellEnv(heap, v))
+  if isStringCell(heap, v):
+    return vs(strCellVal(heap, v))
   vv(v)
 
 proc maybeCollect(heap: var GcHeap) {.inline.} =
@@ -1243,12 +1246,13 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let count = int(inst.c)
       var elems = newSeq[ZjsValue](count)
       for i in 0 ..< count:
-        let e = regs[base + i]
-        # An element must be a plain ZjsValue (number/bool/null/undefined
-        # or a cell). A string / function element can't be a NaN-boxed
-        # ZjsValue here → out of scope, bail.
-        if e.kind != vkVal: bail("NewArray element is string/function")
-        elems[i] = e.v
+        # boxForStore represents a string element as a StringCell and a
+        # function element as a FunctionCell (both round-trip on load), and
+        # passes a plain ZjsValue (number/bool/null/undefined/object cell)
+        # through. No collect fires inside this loop (allocCell never
+        # collects; maybeCollect runs only after the array is in a register),
+        # so the freshly-boxed cells are safe until the array roots them.
+        elems[i] = boxForStore(heap, regs[base + i])
       regs[int(inst.a)] = vv(cellValue(allocArray(heap, elems)))
       maybeCollect(heap)
     of LoadElem:
@@ -1262,7 +1266,9 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
         if key.kind != vkVal: bail("LoadElem array key is string/function")
         let idx = arrayIndex(key.v)
         if idx >= 0:
-          regs[int(inst.a)] = vv(arrGet(heap, a, idx))
+          # unboxLoaded turns a stored StringCell / FunctionCell back into a
+          # vkString / vkFunction; a plain value passes through.
+          regs[int(inst.a)] = unboxLoaded(heap, arrGet(heap, a, idx))
         else:
           # Non-index key on an array (e.g. a[-1], a["length"]) — needs the
           # property path / proto → bail.
@@ -1290,21 +1296,25 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       # (interpreter.zc ~6875). Growing an array fills holes → undefined.
       let recv = regs[int(inst.a)]
       let value = regs[int(inst.c)]
-      if value.kind != vkVal: bail("StoreElem value is string/function")
+      # boxForStore boxes a string / function value into a cell (round-trips
+      # on load); a plain value passes through. No collect fires between here
+      # and the arrSet/objSet, so the boxed cell is safe until the container
+      # roots it.
+      let stored = boxForStore(heap, value)
       let key = regs[int(inst.b)]
       let a = asArrayCell(recv)
       if a != nil:
         if key.kind != vkVal: bail("StoreElem array key is string/function")
         let idx = arrayIndex(key.v)
         if idx >= 0:
-          arrSet(heap, a, idx, value.v)
+          arrSet(heap, a, idx, stored)
         else:
           bail("StoreElem non-index key on array")
       else:
         let o = asObjectCell(recv)
         if o == nil: bail("StoreElem on non-object/array receiver")
         if key.kind == vkString:
-          objSet(heap, o, key.s, value.v)
+          objSet(heap, o, key.s, stored)
         else:
           bail("StoreElem non-string key on object")
     of ArrayLength:

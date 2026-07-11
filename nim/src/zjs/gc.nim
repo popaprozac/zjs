@@ -58,6 +58,14 @@ const
                        ## property (the side table stores ZjsValues, not the
                        ## VM's vkFunction variant) — box on store, unbox on
                        ## load. Its `env` is a GC root (marked below).
+  TAG_STRING*   = 6'u8 ## StringCell (Phase 6 slice 1): header only; the UTF-8
+                       ## bytes live in heap.strTable (ARC-managed host string).
+                       ## This is how a STRING VALUE round-trips through an
+                       ## object/array side table (which holds ZjsValues, not
+                       ## the VM's vkString variant) — box on store, unbox on
+                       ## load. A leaf (no cell children); marked reachable by
+                       ## the generic mark bit so a string held by a live
+                       ## object/array survives collect.
 
 # =====================================================================
 # cellHeader — reinterpret a boxed cell value as its header. UB (as in
@@ -139,6 +147,10 @@ type
     ## the ref is never held in manually-managed cell memory. The `env`
     ## ZjsValue is interior-marked via markCell (TAG_FUNCTION).
     funcTable*: Table[pointer, FuncRec]
+    ## StringCell -> its UTF-8 bytes (Phase 6 slice 1). ARC-managed host
+    ## string keyed by the cell block pointer; sweep DELETES the entry when
+    ## the cell is freed. A string cell is a leaf, so nothing here is marked.
+    strTable*: Table[pointer, string]
     ## Free list of reclaimed slots, keyed by rounded byte-size. Sweep
     ## pushes each dead cell's block here; allocCell pops a same-size
     ## block before bumping. Reuse (not chunk growth) is what keeps live
@@ -265,6 +277,8 @@ type
     header*: CellHeader     ## a pure header; elems are in heap.arrTable
   FunctionCell* = object
     header*: CellHeader     ## a pure header; fn/env are in heap.funcTable
+  StringCell* = object
+    header*: CellHeader     ## a pure header; the bytes are in heap.strTable
 
 proc cellValue*(o: ptr ObjectCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](o))
@@ -272,6 +286,8 @@ proc cellValue*(a: ptr ArrayCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](a))
 proc cellValue*(fc: ptr FunctionCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](fc))
+proc cellValue*(sc: ptr StringCell): ZjsValue {.inline.} =
+  cellFromPtr(cast[pointer](sc))
 
 # --- ObjectCell ------------------------------------------------------
 
@@ -405,6 +421,28 @@ proc funcCellEnv*(heap: GcHeap, v: ZjsValue): ZjsValue {.inline.} =
 
 proc funcTableLen*(heap: GcHeap): int {.inline.} = heap.funcTable.len
 
+# --- StringCell (Phase 6 slice 1) ------------------------------------
+
+proc allocStringCell*(heap: var GcHeap, s: string): ptr StringCell =
+  ## Allocate a StringCell wrapping `s`. Used to box a STRING VALUE for
+  ## storage in an object/array side table (which holds ZjsValues, not the
+  ## VM's vkString variant) — box on store, unbox on load. The cell is a
+  ## pure header; the bytes live in the ARC-managed strTable.
+  let p = allocCell(heap, TAG_STRING, sizeof(StringCell))
+  heap.strTable[p] = s
+  cast[ptr StringCell](p)
+
+proc isStringCell*(heap: GcHeap, v: ZjsValue): bool {.inline.} =
+  ## Whether `v` boxes a live StringCell (used to unbox on load / inspect).
+  isCell(v) and cellAsPtr(v) != nil and
+    cellHeader(v).typeTag == TAG_STRING and
+    heap.strTable.hasKey(cellAsPtr(v))
+
+proc strCellVal*(heap: GcHeap, v: ZjsValue): string {.inline.} =
+  heap.strTable[cellAsPtr(v)]
+
+proc strTableLen*(heap: GcHeap): int {.inline.} = heap.strTable.len
+
 # =====================================================================
 # Rooted — RAII rooting. Construction pushes a slot on the shadow-stack;
 # `=destroy` pops it (LIFO, asserted). Because the slot lives in the
@@ -496,6 +534,8 @@ proc markCell*(heap: GcHeap, v: ZjsValue) =
     let p = cellAsPtr(v)
     if heap.funcTable.hasKey(p):
       markCell(heap, heap.funcTable[p].env)
+  of TAG_STRING:
+    discard                     # a string cell is a leaf (bytes in strTable)
   of TAG_LEAF:
     discard                     # no children
   else:
@@ -545,6 +585,7 @@ proc collect*(heap: var GcHeap): int =
       of TAG_OBJECT:   heap.objTable.del(rec.p)
       of TAG_ARRAY:    heap.arrTable.del(rec.p)
       of TAG_FUNCTION: heap.funcTable.del(rec.p)
+      of TAG_STRING:   heap.strTable.del(rec.p)
       else: discard
       zeroMem(rec.p, rec.size)
       heap.freeBySize.mgetOrPut(rec.size, @[]).add(rec.p)
@@ -577,6 +618,7 @@ proc destroyHeap*(heap: var GcHeap) =
   heap.objTable.clear()
   heap.arrTable.clear()
   heap.funcTable.clear()
+  heap.strTable.clear()
   heap.rootStack.setLen(0)
   heap.frameRoots.setLen(0)
   heap.ctxRoots.setLen(0)
