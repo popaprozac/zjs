@@ -153,6 +153,8 @@ type
     fn*:    pointer
     name*:  string
     arity*: int
+    isCtor*: bool   ## true only for native constructors invocable with `new`
+                    ## (Error/TypeError/…); a `new` on a non-ctor native bails.
 
   GcHeap* = object
     chunks:     seq[NurseryChunk]        ## non-moving nursery chunks
@@ -496,15 +498,20 @@ proc strTableLen*(heap: GcHeap): int {.inline.} = heap.strTable.len
 # --- HostFnCell (Phase 6 slice 2) ------------------------------------
 
 proc allocHostFunction*(heap: var GcHeap, fn: pointer, name: string,
-                        arity: int): ptr HostFnCell =
+                        arity: int, isCtor: bool = false): ptr HostFnCell =
   ## Allocate a HostFnCell wrapping the native proc pointer `fn` (a VM
   ## `NativeFn` cast to `pointer`), its `name`, and `arity`. The cell is a
   ## pure header; the payload lives in the ARC-managed hostFnTable keyed by
   ## the cell block pointer. Used to box a native builtin as a callable JS
   ## VALUE that lives uniformly in a global slot AND as an object property.
   let p = allocCell(heap, TAG_HOSTFN, sizeof(HostFnCell))
-  heap.hostFnTable[p] = HostFnData(fn: fn, name: name, arity: arity)
+  heap.hostFnTable[p] = HostFnData(fn: fn, name: name, arity: arity, isCtor: isCtor)
   cast[ptr HostFnCell](p)
+
+proc hostFnIsCtor*(heap: GcHeap, v: ZjsValue): bool {.inline.} =
+  ## Whether this host fn may be invoked with `new` (a native constructor).
+  let p = cellAsPtr(v)
+  heap.hostFnTable.hasKey(p) and heap.hostFnTable[p].isCtor
 
 proc isHostFunctionCell*(v: ZjsValue): bool {.inline.} =
   ## Whether `v` boxes a HostFnCell (used to dispatch a call to the native).

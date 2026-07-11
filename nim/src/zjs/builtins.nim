@@ -131,6 +131,7 @@ proc jsonNested(heap: GcHeap, x: VmVal, seen: var seq[pointer],
       let o = cast[ptr ObjectCell](p)
       var parts: seq[string] = @[]
       for name in objKeys(heap, o):
+        if name == "__zjs_tag__": continue   # non-enumerable error marker
         let child = unboxLoaded(heap, objGet(heap, o, name))
         let r = jsonNested(heap, child, seen, depth + 1)
         if r.rep:                          # undefined / function props dropped
@@ -508,6 +509,7 @@ proc orderedOwnKeys(heap: GcHeap, o: ptr ObjectCell): seq[string] =
   var idxNames: seq[string] = @[]
   var strNames: seq[string] = @[]
   for nm in names:
+    if nm == "__zjs_tag__": continue     # internal non-enumerable error marker
     let ix = strAsArrayIndex(nm)
     if ix >= 0:
       # insertion-sort (idxVals, idxNames) ascending by numeric value.
@@ -1734,6 +1736,55 @@ proc nativeJsonParse(heap: var GcHeap, args: openArray[VmVal],
   if p.i != s.len: bail("JSON.parse unexpected trailing content")
   res
 
+# --- Error types (src/context.zc host_error_* ; Error g1 + subtypes) ----
+# An error is a plain object { __zjs_tag__:"Error", message?, name } linking to
+# Error.prototype (toString → "name: message"). __zjs_tag__ is a NON-ENUMERABLE
+# marker (shown by write_value/inspect, hidden from Object.keys / JSON) — special-
+# cased in orderedOwnKeys + jsonNested since the model has no enumerable flag.
+
+proc makeError(heap: var GcHeap, ename: string, args: openArray[VmVal]): VmVal =
+  let o = allocObject(heap)
+  let ep = getErrorProto()
+  if isCell(ep) and cellAsPtr(ep) != nil: objSetProto(o, ep)
+  objSet(heap, o, "__zjs_tag__", boxForStore(heap, vs("Error")))
+  if args.len >= 1 and not (args[0].kind == vkVal and isUndefined(args[0].v)):
+    objSet(heap, o, "message", boxForStore(heap, vs(vmToString(args[0]))))
+  objSet(heap, o, "name", boxForStore(heap, vs(ename)))
+  vv(cellValue(o))
+
+proc nativeError(heap: var GcHeap, args: openArray[VmVal], thisv: VmVal): VmVal {.nimcall.} =
+  makeError(heap, "Error", args)
+proc nativeTypeError(heap: var GcHeap, args: openArray[VmVal], thisv: VmVal): VmVal {.nimcall.} =
+  makeError(heap, "TypeError", args)
+proc nativeRangeError(heap: var GcHeap, args: openArray[VmVal], thisv: VmVal): VmVal {.nimcall.} =
+  makeError(heap, "RangeError", args)
+proc nativeReferenceError(heap: var GcHeap, args: openArray[VmVal], thisv: VmVal): VmVal {.nimcall.} =
+  makeError(heap, "ReferenceError", args)
+proc nativeSyntaxError(heap: var GcHeap, args: openArray[VmVal], thisv: VmVal): VmVal {.nimcall.} =
+  makeError(heap, "SyntaxError", args)
+proc nativeEvalError(heap: var GcHeap, args: openArray[VmVal], thisv: VmVal): VmVal {.nimcall.} =
+  makeError(heap, "EvalError", args)
+proc nativeURIError(heap: var GcHeap, args: openArray[VmVal], thisv: VmVal): VmVal {.nimcall.} =
+  makeError(heap, "URIError", args)
+
+proc nativeErrorToString(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## Error.prototype.toString() — "name: message" (just name if no message, just
+  ## message if no name). Reads own name/message (the per-subtype own name makes
+  ## this one shared method correct for every error type).
+  let o = objArg(thisv)
+  if o == nil: bail("Error.prototype.toString on non-object receiver")
+  var name = "Error"
+  let nv = objGet(heap, o, "name")
+  if not (isUndefined(nv) or isNull(nv)): name = vmToString(unboxLoaded(heap, nv))
+  var msg = ""
+  if objHas(heap, o, "message"):
+    let mv = objGet(heap, o, "message")
+    if not (isUndefined(mv) or isNull(mv)): msg = vmToString(unboxLoaded(heap, mv))
+  if name.len == 0: return vs(msg)
+  if msg.len == 0: return vs(name)
+  vs(name & ": " & msg)
+
 # --- realm install -----------------------------------------------------
 
 const USER_GLOBAL_BASE = 108
@@ -2010,3 +2061,26 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
     objSet(heap, json, "parse",
            cellValue(allocHostFunction(heap, cast[pointer](nativeJsonParse), "parse", 2)))
     globals[builtinSlot("JSON")] = vv(cellValue(json))
+  # Error + subtypes (Error g1, and TypeError/RangeError/… at their fixed slots).
+  # Each is a native constructor (typeof → "function"); `new X(msg)` and `X(msg)`
+  # both build { __zjs_tag__:"Error", message?, name }. A single shared
+  # Error.prototype (toString → "name: message") suffices — the per-error `name`
+  # own-prop drives the subtype-correct toString.
+  block installErrors:
+    let errorProto = allocObject(heap)
+    if isCell(objectProtoVal) and cellAsPtr(objectProtoVal) != nil:
+      objSetProto(errorProto, objectProtoVal)
+    objSet(heap, errorProto, "toString",
+           cellValue(allocHostFunction(heap, cast[pointer](nativeErrorToString), "toString", 0)))
+    setErrorProto(cellValue(errorProto))
+    template setErr(nm: string, fn: NativeFn) =
+      let ef = allocHostFunction(heap, cast[pointer](fn), nm, 1, isCtor = true)
+      objSet(heap, cast[ptr ObjectCell](ef), "prototype", cellValue(errorProto))
+      globals[builtinSlot(nm)] = vv(cellValue(ef))
+    setErr("Error",          nativeError)
+    setErr("TypeError",      nativeTypeError)
+    setErr("RangeError",     nativeRangeError)
+    setErr("ReferenceError", nativeReferenceError)
+    setErr("SyntaxError",    nativeSyntaxError)
+    setErr("EvalError",      nativeEvalError)
+    setErr("URIError",       nativeURIError)

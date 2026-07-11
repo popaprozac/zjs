@@ -209,6 +209,14 @@ proc setNumberProto*(v: ZjsValue) =
   ## Register the realm's Number.prototype cell (called by installBuiltins).
   vmNumberProto = v
 
+var vmErrorProto {.threadvar.}: ZjsValue
+  ## The realm's `Error.prototype` cell (its toString reads this.name/.message).
+  ## Every error object (Error / TypeError / …) links to it so `.toString()`
+  ## resolves; the per-subtype `name` own-prop makes one shared toString correct.
+
+proc setErrorProto*(v: ZjsValue) = vmErrorProto = v
+proc getErrorProto*(): ZjsValue = vmErrorProto
+
 proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
   ## Mark any GC cell a VmVal can hold: a vkVal's cell, OR a closure's
   ## captured env (a vkFunction's env is an ObjectCell that must survive
@@ -1698,52 +1706,64 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let base = int(inst.b)
       let argc = int(inst.c)
       let calleeVal = regs[base]
-      if calleeVal.kind != vkFunction or calleeVal.fn == nil:
+      if calleeVal.kind == vkVal and isHostFunctionCell(calleeVal.v):
+        # A native callee: only a real native CONSTRUCTOR (Error/TypeError/…) may
+        # be `new`'d — it builds and returns the object (`new X(a)` == `X(a)`). A
+        # non-constructor native (isNaN / Math.floor / …) `new`'d is a TypeError
+        # in the oracle → BAIL (never call it, never a wrong value).
+        if not hostFnIsCtor(heap, calleeVal.v):
+          bail("NewInvoke on a non-constructor native")
+        var natArgs = newSeq[VmVal](argc)
+        for i in 0 ..< argc: natArgs[i] = regs[base + 1 + i]
+        routeThrow: regs[dst] = callNative(heap, calleeVal.v, natArgs, vv(undefinedVal()))
+        maybeCollect(heap)
+      elif calleeVal.kind != vkFunction or calleeVal.fn == nil:
         bail("NewInvoke callee is not a constructable function")
-      let ctorFn = calleeVal.fn
-      # Arrow / async / generator are not constructors (TypeError in the
-      # oracle → nothing on stdout). A class ctor / plain function / default-
-      # derived ctor ARE allowed here (unlike resolveCallee, which bails on
-      # isClassCtor because a class ctor needs `new`).
-      if ctorFn.isArrow or ctorFn.isAsync or ctorFn.isGenerator:
-        bail("NewInvoke on arrow / async / generator")
-      # Instance: fresh object, [[Prototype]] = ctor.prototype (lazily made).
-      let protoV = getOrCreateFnProto(heap, ctorFn)
-      let instance = allocObject(heap)
-      objSetProto(instance, protoV)
-      let instanceVal = vv(cellValue(instance))
-      # Args at base+1 .. base+argc.
-      var callArgs = newSeq[VmVal](argc)
-      for i in 0 ..< argc:
-        callArgs[i] = regs[base + 1 + i]
-      # Skip default-derived-ctor forwarders: they carry no body, only an
-      # implicit super(...args), so we run the first REAL ancestor ctor with
-      # `this` = the instance (interpreter.zc ~7739 / ctor_skip_default_forwarders).
-      var runFn = ctorFn
-      var runEnv = calleeVal.env
-      while runFn.isDefaultDerivedCtor:
-        let pk = cast[pointer](runFn)
-        if not fnParentCtors.hasKey(pk):
-          bail("default-derived ctor without a parent")
-        let parent = fnParentCtors[pk]
-        if parent.kind != vkFunction or parent.fn == nil:
-          bail("parent ctor is not a function")
-        if parent.fn.isArrow or parent.fn.isAsync or parent.fn.isGenerator:
-          bail("parent ctor is arrow / async / generator")
-        runFn = parent.fn
-        runEnv = parent.env
-      # The instance is rooted for the whole ctor call as that frame's `this`
-      # (FrameRoot.thisv), so a collect triggered inside the ctor keeps it.
-      var ctorResult: VmVal
-      routeThrow: ctorResult = callFunction(runFn, callArgs, globals, heap, depth,
-                                            instanceVal, vv(runEnv))
-      # Object return replaces the instance (ECMA-262 [[Construct]] step 13);
-      # a primitive / undefined return is ignored → the instance.
-      if isObjectResult(ctorResult):
-        regs[dst] = ctorResult
       else:
-        regs[dst] = instanceVal
-      maybeCollect(heap)
+        let ctorFn = calleeVal.fn
+        # Arrow / async / generator are not constructors (TypeError in the
+        # oracle → nothing on stdout). A class ctor / plain function / default-
+        # derived ctor ARE allowed here (unlike resolveCallee, which bails on
+        # isClassCtor because a class ctor needs `new`).
+        if ctorFn.isArrow or ctorFn.isAsync or ctorFn.isGenerator:
+          bail("NewInvoke on arrow / async / generator")
+        # Instance: fresh object, [[Prototype]] = ctor.prototype (lazily made).
+        let protoV = getOrCreateFnProto(heap, ctorFn)
+        let instance = allocObject(heap)
+        objSetProto(instance, protoV)
+        let instanceVal = vv(cellValue(instance))
+        # Args at base+1 .. base+argc.
+        var callArgs = newSeq[VmVal](argc)
+        for i in 0 ..< argc:
+          callArgs[i] = regs[base + 1 + i]
+        # Skip default-derived-ctor forwarders: they carry no body, only an
+        # implicit super(...args), so we run the first REAL ancestor ctor with
+        # `this` = the instance (interpreter.zc ~7739 / ctor_skip_default_forwarders).
+        var runFn = ctorFn
+        var runEnv = calleeVal.env
+        while runFn.isDefaultDerivedCtor:
+          let pk = cast[pointer](runFn)
+          if not fnParentCtors.hasKey(pk):
+            bail("default-derived ctor without a parent")
+          let parent = fnParentCtors[pk]
+          if parent.kind != vkFunction or parent.fn == nil:
+            bail("parent ctor is not a function")
+          if parent.fn.isArrow or parent.fn.isAsync or parent.fn.isGenerator:
+            bail("parent ctor is arrow / async / generator")
+          runFn = parent.fn
+          runEnv = parent.env
+        # The instance is rooted for the whole ctor call as that frame's `this`
+        # (FrameRoot.thisv), so a collect triggered inside the ctor keeps it.
+        var ctorResult: VmVal
+        routeThrow: ctorResult = callFunction(runFn, callArgs, globals, heap, depth,
+                                              instanceVal, vv(runEnv))
+        # Object return replaces the instance (ECMA-262 [[Construct]] step 13);
+        # a primitive / undefined return is ignored → the instance.
+        if isObjectResult(ctorResult):
+          regs[dst] = ctorResult
+        else:
+          regs[dst] = instanceVal
+        maybeCollect(heap)
     of SuperCall:
       # a=dst, b=base, c=argc (interpreter.zc ~6244): explicit `super(args)`
       # in a derived-class constructor. Call the PARENT constructor with
