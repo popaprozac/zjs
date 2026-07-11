@@ -1468,6 +1468,9 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler,
 # Object / array literals recurse into compileExpr (defined just below),
 # so forward-declare them here.
 proc compileExpr(c: var Compiler, node: AstNode): uint8
+# UpdateExpression (`++x`/`--x`/`x++`/`x--`) codegen — the Unary (prefix) and
+# Postfix arms both dispatch here; implemented after compileExpr.
+proc compileUpdate(c: var Compiler, node: AstNode, isPrefix: bool): uint8
 proc compileObjectLiteral(c: var Compiler, node: AstNode): uint8
 proc compileArrayLiteral(c: var Compiler, node: AstNode): uint8
 # compileObjectLiteral applies NamedEvaluation to anon-function values;
@@ -1779,8 +1782,11 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       # lowered to `x - 0` (SubImm) below — the SubImm handler runs the
       # same coercion ladder (true→1, "5"→5) as zjs_arith_sub.
       discard
+    of PlusPlus, MinusMinus:
+      # Prefix `++x` / `--x`: shared UpdateExpression codegen, returns the
+      # NEW value. (Postfix `x++`/`x--` is a separate NodeKind.Postfix arm.)
+      return compileUpdate(c, node, isPrefix = true)
     else:
-      # ++/-- -- later slices.
       c.hadError = true
       return 0
     let src = compileExpr(c, node.operand)
@@ -2415,10 +2421,140 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     emitYieldWithReturnDispatch(c, dst, src)
     if src + 1 == c.nextReg and src != dst: c.nextReg = c.nextReg - 1
     return dst
+  of Postfix:
+    # Postfix `x++` / `x--`: shared UpdateExpression codegen, returns the
+    # OLD value.
+    return compileUpdate(c, node, isPrefix = false)
   else:
     # Not yet supported.
     c.hadError = true
     return 0
+
+# --- UpdateExpression: `++x` / `--x` / `x++` / `x--` ----------------
+#
+# Shared codegen for prefix (NodeKind.Unary, unOp PlusPlus/MinusMinus) and
+# postfix (NodeKind.Postfix). `++` → AddImm, `--` → SubImm, imm=1. The core
+# is the compound-assignment shape (load current → op → store back) but with
+# an imm-fused increment and an old-vs-new result:
+#   * POSTFIX returns the OLD value (the reg holding the pre-update read).
+#   * PREFIX returns the NEW value (the op's dst).
+#
+# PREFIX also redundantly EVALUATES the operand once BEFORE the update — a
+# reference quirk replicated for byte-identity: for an ident this is a second
+# load into the same reg (the throwaway temp is released, so the real `cur`
+# load reuses it); for a member it RE-EVALUATES the whole base + reloads the
+# prop; in a borrow context (e.g. `return ++x`) the throwaway read borrows the
+# local and emits nothing, collapsing the two loads into one. All of this is
+# matched by feeding the throwaway through compileExpr with the AMBIENT borrow
+# AND preferred-dst setting: a caller's arg-slot hint (`isNaN(++x)`) drops the
+# throwaway's first load straight into the arg slot, exactly as the reference
+# does — so preferredDst is deliberately NOT cleared here (the compound-assign
+# path likewise leaves it untouched, and allocReg — used for cur/dst — never
+# consumes it, so the postfix path returns its natural reg regardless).
+#
+# Targets: global ident / non-captured register local (Mov borrow-copy),
+# member `o.x` (IC LoadProp/StoreProp — NOT the element path the compound
+# member assign uses), computed `a[i]` (LoadElem/StoreElem, base+index
+# evaluated once). Captured / outer-env locals, private members `o.#x`, const
+# and TDZ-uninitialized locals BAIL cleanly (they'd need env prop stores /
+# ThrowIfHole guards — out of this slice).
+proc compileUpdate(c: var Compiler, node: AstNode, isPrefix: bool): uint8 =
+  let target = node.operand
+  if target == nil:
+    c.hadError = true
+    return 0
+  let op = if node.unOp == PlusPlus: AddImm else: SubImm
+  # === Member target `o.x` -> IC LoadProp / StoreProp (shared ic slot) ===
+  if target.kind == Member:
+    # `super.x++` / private `o.#x++` -> deferred.
+    if target.recv != nil and target.recv.kind == SuperExpr:
+      c.hadError = true
+      return 0
+    if isPrivateName(c, target.propStart, target.propLength):
+      c.hadError = true
+      return 0
+    let name = c.slice(target.propStart, target.propStart + target.propLength)
+    if isPrefix:
+      # Redundant eval: the whole member expression (base + LoadProp); the
+      # base is re-evaluated below (the reference quirk).
+      let tmp = compileExpr(c, target)
+      if c.hadError: return 0
+      releaseReg(c, tmp)
+    let objReg = compileExpr(c, target.recv)
+    if c.hadError: return 0
+    let cur = allocReg(c)
+    if not emitLoadPropAtom(c, cur, objReg, name): return 0
+    let dst = allocReg(c)
+    emit(c, instABC(op, dst, cur, 1))
+    if not emitStorePropAtom(c, objReg, name, dst): return 0
+    if isPrefix:
+      if c.nextReg <= dst: c.nextReg = dst + 1
+      return dst
+    releaseReg(c, dst)
+    return cur
+  # === Computed target `a[i]` -> LoadElem / StoreElem (base+index once) ===
+  if target.kind == Computed:
+    if isPrefix:
+      let tmp = compileExpr(c, target)
+      if c.hadError: return 0
+      releaseReg(c, tmp)
+    let objReg = compileExpr(c, target.recv)
+    let keyReg = compileExpr(c, target.index)
+    if c.hadError: return 0
+    let cur = allocReg(c)
+    emit(c, instABC(LoadElem, cur, objReg, keyReg))
+    let dst = allocReg(c)
+    emit(c, instABC(op, dst, cur, 1))
+    emit(c, instABC(StoreElem, objReg, keyReg, dst))
+    if isPrefix:
+      if c.nextReg <= dst: c.nextReg = dst + 1
+      return dst
+    releaseReg(c, dst)
+    return cur
+  # === Ident target: global / non-captured register local ===
+  if target.kind != IdentExpr:
+    c.hadError = true
+    return 0
+  let name = c.slice(target.start, target.`end`)
+  let localIdx = findLocalIndex(c, name)
+  if localIdx >= 0:
+    # Captured (env-slot), const (TypeError), or TDZ-uninitialized locals
+    # would need the env prop store / a ThrowIfHole guard — deferred.
+    if c.locals[localIdx].captured or c.locals[localIdx].isConst or
+       c.locals[localIdx].isTdz:
+      c.hadError = true
+      return 0
+  elif outerCaptureDepth(c, name) > 0:
+    # Outer captured local (enclosing-function env property) — deferred.
+    c.hadError = true
+    return 0
+  # Prefix redundant operand eval (throwaway; ambient borrow → the local
+  # borrow collapses it away in a `return ++x` context).
+  if isPrefix:
+    let tmp = compileExpr(c, target)
+    if c.hadError: return 0
+    releaseReg(c, tmp)
+  # cur = the current value. A local is Mov-copied into a fresh temp (never
+  # borrowed) so the OLD value survives the store-back into the local's reg.
+  let cur = allocReg(c)
+  if localIdx >= 0:
+    emit(c, instAB(Mov, cur, c.locals[localIdx].reg))
+  else:
+    let slot = internGlobal(c, name)
+    emit(c, instAU16(LoadGlobal, cur, uint16(slot)))
+  let dst = allocReg(c)
+  emit(c, instABC(op, dst, cur, 1))
+  # Store the new value back (local Mov / global StoreGlobal).
+  if localIdx >= 0:
+    emit(c, instAB(Mov, c.locals[localIdx].reg, dst))
+  else:
+    let slot = internGlobal(c, name)
+    emit(c, instAU16(StoreGlobal, dst, uint16(slot)))
+  if isPrefix:
+    if c.nextReg <= dst: c.nextReg = dst + 1
+    return dst
+  releaseReg(c, dst)
+  return cur
 
 # --- Object & array literals (mirrors compile_object/array_literal) --
 

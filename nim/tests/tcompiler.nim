@@ -1424,13 +1424,40 @@ suite "slice 2b: register-model + shape invariants":
     check "JmpIfFalse          r1   -> 5" in txt
     check "Mov                 r1   <- r2" in txt
 
+suite "UpdateExpression ++ / -- byte-identity (phase 4)":
+  test "postfix a++ -> load ONCE, AddImm, store, result = OLD (r1)":
+    let expected = "\n" &
+      "=== <program>  code_len=6 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r1   g108  ; a\n" &
+      "    2  AddImm              r2   <- r1, imm=1\n" &
+      "    3  StoreGlobal         r2   g108  ; a\n" &
+      "    4  Mov                 r0   <- r1\n" &
+      "    5  Return              r0\n"
+    check disasmToString("a++;") == expected
+  test "prefix ++a -> DOUBLE load (prefix quirk), AddImm, store, result = NEW (r2)":
+    let expected = "\n" &
+      "=== <program>  code_len=7 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r1   g108  ; a\n" &
+      "    2  LoadGlobal          r1   g108  ; a\n" &
+      "    3  AddImm              r2   <- r1, imm=1\n" &
+      "    4  StoreGlobal         r2   g108  ; a\n" &
+      "    5  Mov                 r0   <- r2\n" &
+      "    6  Return              r0\n"
+    check disasmToString("++a;") == expected
+  test "postfix a-- lowers to SubImm (result = OLD)":
+    let expected = "\n" &
+      "=== <program>  code_len=6 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r1   g108  ; a\n" &
+      "    2  SubImm              r2   <- r1, imm=1\n" &
+      "    3  StoreGlobal         r2   g108  ; a\n" &
+      "    4  Mov                 r0   <- r1\n" &
+      "    5  Return              r0\n"
+    check disasmToString("a--;") == expected
+
 suite "slice 2b: deferred shapes bail to nim-missing":
-  test "prefix ++ is deferred (later slice)":
-    expect ValueError:
-      discard disasmToString("++a;")
-  test "postfix ++ is deferred":
-    expect ValueError:
-      discard disasmToString("a++;")
   test "logical-assign &&= is deferred":
     expect ValueError:
       discard disasmToString("a &&= b;")
