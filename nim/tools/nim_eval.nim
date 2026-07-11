@@ -89,9 +89,13 @@ proc inspectZ(heap: GcHeap, v: ZjsValue, quoted: bool, depth: int): string =
     for name in names:
       parts.add(name & ": " & inspectZ(heap, objGet(heap, o, name), true, depth + 1))
     return "{ " & parts.join(", ") & " }"
+  of TAG_FUNCTION, TAG_HOSTFN:
+    # write_value function arm: every callable prints "[function]" (top-level
+    # and nested), matching the oracle for host fns / user fns / arrows.
+    return "[function]"
   else:
-    # TAG_FUNCTION (deferred) / any other cell shape → bail (never wrong).
-    raise newException(VmBail, "inspect on function / unsupported cell")
+    # Any other cell shape → bail (never wrong).
+    raise newException(VmBail, "inspect on unsupported cell")
 
 proc inspectVmVal(heap: GcHeap, x: VmVal, quoted: bool): string =
   ## Top-level completion inspect over a VmVal. A bare string is UNQUOTED at
@@ -101,7 +105,7 @@ proc inspectVmVal(heap: GcHeap, x: VmVal, quoted: bool): string =
   of vkString:
     return (if quoted: "\"" & x.s & "\"" else: x.s)
   of vkFunction:
-    raise newException(VmBail, "inspect on function value")
+    return "[function]"
   of vkVal:
     return inspectZ(heap, x.v, quoted, 0)
 

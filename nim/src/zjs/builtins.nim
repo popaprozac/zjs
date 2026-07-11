@@ -1567,6 +1567,173 @@ proc nativeNumberValueOf(heap: var GcHeap, args: openArray[VmVal],
   ## Number.prototype.valueOf() — the primitive number value.
   vv(boxNum(numThisD(thisv)))
 
+# --- JSON (src/context.zc host_json_* ; g58) ----------------------------
+# stringify reuses the console JSON serializer (jsonNested — identical to
+# SerializeJSONProperty). parse is a recursive-descent JSON parser. No collect
+# fires during parse (allocCell never collects on its own), so the partial tree
+# needs no explicit rooting.
+
+proc nativeJsonStringify(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## JSON.stringify(value[, replacer, space]) — compact form. A replacer or a
+  ## meaningful space arg is deferred → BAIL. Top-level undefined/function →
+  ## returns undefined.
+  if args.len == 0: return vv(undefinedVal())
+  if args.len >= 2 and not (args[1].kind == vkVal and
+                            (isUndefined(args[1].v) or isNull(args[1].v))):
+    bail("JSON.stringify replacer deferred")
+  if args.len >= 3 and not (args[2].kind == vkVal and isUndefined(args[2].v)):
+    bail("JSON.stringify space (pretty-print) deferred")
+  var seen: seq[pointer] = @[]
+  let r = jsonNested(heap, args[0], seen, 0)
+  if not r.rep: return vv(undefinedVal())
+  vs(r.s)
+
+type JsonParser = object
+  s: string
+  i: int
+
+proc jpWs(p: var JsonParser) =
+  while p.i < p.s.len and p.s[p.i] in {' ', '\t', '\n', '\r'}: inc p.i
+
+proc appendUtf8(res: var string, cp: int) =
+  ## Encode a code point as UTF-8 bytes (zjs's byte string model).
+  if cp < 0x80: res.add(char(cp))
+  elif cp < 0x800:
+    res.add(char(0xC0 or (cp shr 6))); res.add(char(0x80 or (cp and 0x3F)))
+  elif cp < 0x10000:
+    res.add(char(0xE0 or (cp shr 12))); res.add(char(0x80 or ((cp shr 6) and 0x3F)))
+    res.add(char(0x80 or (cp and 0x3F)))
+  else:
+    res.add(char(0xF0 or (cp shr 18))); res.add(char(0x80 or ((cp shr 12) and 0x3F)))
+    res.add(char(0x80 or ((cp shr 6) and 0x3F))); res.add(char(0x80 or (cp and 0x3F)))
+
+proc jpHex4(p: var JsonParser): int =
+  if p.i + 4 > p.s.len: bail("JSON.parse bad \\u escape")
+  var v = 0
+  for _ in 0 ..< 4:
+    let c = p.s[p.i]
+    v = v shl 4
+    if c >= '0' and c <= '9': v = v or (ord(c) - ord('0'))
+    elif c >= 'a' and c <= 'f': v = v or (ord(c) - ord('a') + 10)
+    elif c >= 'A' and c <= 'F': v = v or (ord(c) - ord('A') + 10)
+    else: bail("JSON.parse bad \\u hex digit")
+    inc p.i
+  v
+
+proc jpString(p: var JsonParser): string =
+  inc p.i                                   # opening quote
+  var res = ""
+  while p.i < p.s.len and p.s[p.i] != '"':
+    let c = p.s[p.i]
+    if c == '\\':
+      inc p.i
+      if p.i >= p.s.len: bail("JSON.parse bad escape")
+      case p.s[p.i]
+      of '"': res.add('"'); inc p.i
+      of '\\': res.add('\\'); inc p.i
+      of '/': res.add('/'); inc p.i
+      of 'b': res.add('\b'); inc p.i
+      of 'f': res.add('\x0C'); inc p.i
+      of 'n': res.add('\n'); inc p.i
+      of 'r': res.add('\r'); inc p.i
+      of 't': res.add('\t'); inc p.i
+      of 'u':
+        inc p.i
+        var cu = jpHex4(p)
+        if cu >= 0xD800 and cu <= 0xDBFF and p.i + 1 < p.s.len and
+           p.s[p.i] == '\\' and p.s[p.i+1] == 'u':
+          p.i += 2
+          let lo = jpHex4(p)
+          if lo >= 0xDC00 and lo <= 0xDFFF:
+            appendUtf8(res, 0x10000 + ((cu - 0xD800) shl 10) + (lo - 0xDC00))
+          else:
+            appendUtf8(res, cu); appendUtf8(res, lo)
+        else:
+          appendUtf8(res, cu)
+      else: bail("JSON.parse bad escape char")
+    else:
+      res.add(c); inc p.i
+  if p.i >= p.s.len: bail("JSON.parse unterminated string")
+  inc p.i                                   # closing quote
+  res
+
+proc jpValue(heap: var GcHeap, p: var JsonParser): VmVal =
+  jpWs(p)
+  if p.i >= p.s.len: bail("JSON.parse unexpected end of input")
+  let c = p.s[p.i]
+  case c
+  of '{':
+    inc p.i
+    let o = allocObject(heap)
+    let op = getObjectProto()
+    if isCell(op) and cellAsPtr(op) != nil:
+      objSetProto(o, op)
+    jpWs(p)
+    if p.i < p.s.len and p.s[p.i] == '}': inc p.i; return vv(cellValue(o))
+    while true:
+      jpWs(p)
+      if p.i >= p.s.len or p.s[p.i] != '"': bail("JSON.parse expected string key")
+      let key = jpString(p)
+      jpWs(p)
+      if p.i >= p.s.len or p.s[p.i] != ':': bail("JSON.parse expected ':'")
+      inc p.i
+      let val = jpValue(heap, p)
+      objSet(heap, o, key, boxForStore(heap, val))
+      jpWs(p)
+      if p.i >= p.s.len: bail("JSON.parse unterminated object")
+      if p.s[p.i] == ',': inc p.i; continue
+      if p.s[p.i] == '}': inc p.i; break
+      bail("JSON.parse expected ',' or '}'")
+    vv(cellValue(o))
+  of '[':
+    inc p.i
+    let a = allocArray(heap, [])
+    jpWs(p)
+    if p.i < p.s.len and p.s[p.i] == ']': inc p.i; return vv(cellValue(a))
+    var idx = 0
+    while true:
+      let val = jpValue(heap, p)
+      arrSet(heap, a, idx, boxForStore(heap, val)); inc idx
+      jpWs(p)
+      if p.i >= p.s.len: bail("JSON.parse unterminated array")
+      if p.s[p.i] == ',': inc p.i; continue
+      if p.s[p.i] == ']': inc p.i; break
+      bail("JSON.parse expected ',' or ']'")
+    vv(cellValue(a))
+  of '"':
+    vs(jpString(p))
+  of 't':
+    if p.s.continuesWith("true", p.i): p.i += 4; return vv(boolVal(true))
+    bail("JSON.parse invalid literal")
+  of 'f':
+    if p.s.continuesWith("false", p.i): p.i += 5; return vv(boolVal(false))
+    bail("JSON.parse invalid literal")
+  of 'n':
+    if p.s.continuesWith("null", p.i): p.i += 4; return vv(nullVal())
+    bail("JSON.parse invalid literal")
+  of '-', '0'..'9':
+    let start = p.i
+    if p.s[p.i] == '-': inc p.i
+    while p.i < p.s.len and (p.s[p.i] in {'0'..'9', '.', 'e', 'E', '+', '-'}): inc p.i
+    let numStr = p.s[start ..< p.i]
+    vv(boxNum(c_strtod2(numStr.cstring, nil)))
+  else:
+    bail("JSON.parse unexpected token")
+
+proc nativeJsonParse(heap: var GcHeap, args: openArray[VmVal],
+                     thisv: VmVal): VmVal {.nimcall.} =
+  ## JSON.parse(text[, reviver]) — reviver deferred → BAIL. Trailing content or a
+  ## malformed token → SyntaxError (BAIL).
+  if args.len >= 2 and not (args[1].kind == vkVal and isUndefined(args[1].v)):
+    bail("JSON.parse reviver deferred")
+  let s = (if args.len >= 1: vmToString(args[0]) else: "undefined")
+  var p = JsonParser(s: s, i: 0)
+  let res = jpValue(heap, p)
+  jpWs(p)
+  if p.i != s.len: bail("JSON.parse unexpected trailing content")
+  res
+
 # --- realm install -----------------------------------------------------
 
 const USER_GLOBAL_BASE = 108
@@ -1834,3 +2001,12 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
     objSet(heap, numberBag, "NaN", doubleVal(NaN))
     objSet(heap, numberBag, "prototype", cellValue(numberProto))
     globals[builtinSlot("Number")] = vv(cellValue(numberFn))
+  # JSON (g58) — a namespace object (typeof → "object", like Math) with
+  # stringify + parse.
+  block installJson:
+    let json = allocObject(heap)
+    objSet(heap, json, "stringify",
+           cellValue(allocHostFunction(heap, cast[pointer](nativeJsonStringify), "stringify", 3)))
+    objSet(heap, json, "parse",
+           cellValue(allocHostFunction(heap, cast[pointer](nativeJsonParse), "parse", 2)))
+    globals[builtinSlot("JSON")] = vv(cellValue(json))

@@ -159,6 +159,10 @@ proc setObjectProto*(v: ZjsValue) =
   ## run, before any NewObject executes).
   vmObjectProto = v
 
+proc getObjectProto*(): ZjsValue = vmObjectProto
+  ## The realm's Object.prototype (for natives that build plain objects, e.g.
+  ## JSON.parse, so they inherit the standard proto chain). Undefined if unset.
+
 var vmArrayProto {.threadvar.}: ZjsValue
   ## The realm's `Array.prototype` cell (an ObjectCell whose props are the array
   ## method natives; its own proto = Object.prototype). ArrayCells carry no inline
