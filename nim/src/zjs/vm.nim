@@ -82,7 +82,7 @@ const
 # --- VmVal constructors -------------------------------------------------
 
 proc vv*(v: ZjsValue): VmVal {.inline.} = VmVal(kind: vkVal, v: v)
-proc vs(s: string): VmVal {.inline.} = VmVal(kind: vkString, s: s)
+proc vs*(s: string): VmVal {.inline.} = VmVal(kind: vkString, s: s)
 proc vf(f: Function): VmVal {.inline.} =
   ## A non-capturing function value (env = none).
   VmVal(kind: vkFunction, fn: f, env: undefinedVal())
@@ -136,6 +136,20 @@ var vmHeap {.threadvar.}: ptr GcHeap   ## the heap the customMark hook reads
 # top-level run so a reused Function address can't read a prior run's state.
 var fnProtos {.threadvar.}: Table[pointer, ZjsValue]      ## fn -> .prototype obj
 var fnParentCtors {.threadvar.}: Table[pointer, VmVal]    ## child ctor -> parent
+var vmObjectProto {.threadvar.}: ZjsValue
+  ## The realm's `Object.prototype` cell, installed by `installBuiltins` via
+  ## `setObjectProto`. `NewObject` links every plain object literal's
+  ## [[Prototype]] to it, so inherited Object.prototype methods (hasOwnProperty,
+  ## toString, …) resolve through `protoChainLookup`. A non-cell default (before
+  ## install) leaves plain objects proto-less — the pre-builtins fallback where
+  ## an inherited-name access bails rather than returning a wrong value. The cell
+  ## is rooted via `globals` (Object's bag holds it as `.prototype`), so this
+  ## cached pointer stays live; the collector is non-moving so it stays valid.
+
+proc setObjectProto*(v: ZjsValue) =
+  ## Register the realm's Object.prototype cell (called by installBuiltins each
+  ## run, before any NewObject executes).
+  vmObjectProto = v
 
 proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
   ## Mark any GC cell a VmVal can hold: a vkVal's cell, OR a closure's
@@ -1275,8 +1289,13 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
     of NewObject:
       # a=dst. Allocate an empty ObjectCell (interpreter.zc ~6802
       # ctx_new_object). The cell is boxed into a vkVal ZjsValue; it is a
-      # root immediately (this frame's regs are scanned).
-      regs[int(inst.a)] = vv(cellValue(allocObject(heap)))
+      # root immediately (this frame's regs are scanned). Its [[Prototype]] is
+      # Object.prototype (installed via setObjectProto) so inherited proto
+      # methods resolve; before builtins install it, the object stays proto-less.
+      let newObjCell = allocObject(heap)
+      if isCell(vmObjectProto) and cellAsPtr(vmObjectProto) != nil:
+        objSetProto(newObjCell, vmObjectProto)
+      regs[int(inst.a)] = vv(cellValue(newObjCell))
       maybeCollect(heap)
     of InitObjData:
       # a=obj, b=keyReg (a string const), c=valReg. CreateDataProperty on

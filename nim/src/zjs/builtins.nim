@@ -713,6 +713,119 @@ proc nativeObjectGetOwnPropertyNames(heap: var GcHeap, args: openArray[VmVal],
     elems.add(cellValue(allocStringCell(heap, nm)))
   vv(cellValue(allocArray(heap, elems)))
 
+proc protoCellOf(v: ZjsValue): ptr ObjectCell {.inline.} =
+  ## `v` as a plain ObjectCell pointer, or nil (used to walk / validate a
+  ## [[Prototype]] link, which is stored as a ZjsValue).
+  if isCell(v) and cellAsPtr(v) != nil and cellHeader(v).typeTag == TAG_OBJECT:
+    cast[ptr ObjectCell](cellAsPtr(v))
+  else:
+    nil
+
+# --- Object.prototype methods (src/context.zc host_object_proto_*) ------
+# Installed on the single Object.prototype cell (the root of the plain-object
+# [[Prototype]] chain). Each receives the receiver as `thisv`; a non-plain-
+# object receiver (array / primitive / wrapper needing ToObject) BAILS.
+
+proc nativeObjProtoHasOwnProperty(heap: var GcHeap, args: openArray[VmVal],
+                                  thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.prototype.hasOwnProperty(key) — OWN property presence on `this`
+  ## (NOT the chain); ToString(key). Inherited names → false.
+  let o = objArg(thisv)
+  if o == nil: bail("hasOwnProperty on non-plain-object receiver")
+  let key = vmToString(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  vv(boolVal(objHas(heap, o, key)))
+
+proc nativeObjProtoIsPrototypeOf(heap: var GcHeap, args: openArray[VmVal],
+                                 thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.prototype.isPrototypeOf(V) — true if `this` occurs in V's
+  ## [[Prototype]] chain (starting ABOVE V). Non-object V → false.
+  let self = objArg(thisv)
+  if self == nil: bail("isPrototypeOf on non-plain-object receiver")
+  if args.len == 0: return vv(boolVal(false))
+  let start = objArg(args[0])
+  if start == nil: return vv(boolVal(false))
+  let selfPtr = cast[pointer](self)
+  var node = protoCellOf(objGetProto(start))
+  while node != nil:
+    if cast[pointer](node) == selfPtr: return vv(boolVal(true))
+    node = protoCellOf(objGetProto(node))
+  vv(boolVal(false))
+
+proc nativeObjProtoPropertyIsEnumerable(heap: var GcHeap, args: openArray[VmVal],
+                                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.prototype.propertyIsEnumerable(key) — own AND enumerable. Every own
+  ## property is enumerable in this model → equivalent to hasOwnProperty.
+  let o = objArg(thisv)
+  if o == nil: bail("propertyIsEnumerable on non-plain-object receiver")
+  let key = vmToString(if args.len >= 1: args[0] else: vv(undefinedVal()))
+  vv(boolVal(objHas(heap, o, key)))
+
+proc nativeObjProtoToString(heap: var GcHeap, args: openArray[VmVal],
+                            thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.prototype.toString() — "[object Object]" for a plain object.
+  ## (Array/Function/wrapper builtinTag + Symbol.toStringTag variants deferred.)
+  let o = objArg(thisv)
+  if o == nil: bail("Object.prototype.toString on non-plain-object receiver")
+  vs("[object Object]")
+
+proc nativeObjProtoValueOf(heap: var GcHeap, args: openArray[VmVal],
+                           thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.prototype.valueOf() — ToObject(this); for a plain object, itself.
+  let o = objArg(thisv)
+  if o == nil: bail("Object.prototype.valueOf on non-plain-object receiver")
+  thisv
+
+proc nativeObjProtoToLocaleString(heap: var GcHeap, args: openArray[VmVal],
+                                  thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.prototype.toLocaleString() — this.toString(); "[object Object]".
+  let o = objArg(thisv)
+  if o == nil: bail("toLocaleString on non-plain-object receiver")
+  vs("[object Object]")
+
+# --- Object statics that require the prototype chain --------------------
+
+proc nativeObjectGetPrototypeOf(heap: var GcHeap, args: openArray[VmVal],
+                                thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.getPrototypeOf(o) — o's [[Prototype]] (Object.prototype for a plain
+  ## object literal, the class prototype for an instance, null for a null-proto
+  ## object). Primitive / null / undefined arg → ToObject/throws → BAIL.
+  if args.len == 0: bail("Object.getPrototypeOf with no argument")
+  let o = objArg(args[0])
+  if o == nil: bail("Object.getPrototypeOf on non-plain-object")
+  vv(objGetProto(o))
+
+proc nativeObjectSetPrototypeOf(heap: var GcHeap, args: openArray[VmVal],
+                                thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.setPrototypeOf(o, proto) — set o's [[Prototype]] (object or null),
+  ## return o. Non-plain-object o or a non-object/non-null proto → BAIL.
+  if args.len < 2: bail("Object.setPrototypeOf needs 2 arguments")
+  let o = objArg(args[0])
+  if o == nil: bail("Object.setPrototypeOf on non-plain-object")
+  let p = args[1]
+  if p.kind == vkVal and (isNull(p.v) or protoCellOf(p.v) != nil):
+    objSetProto(o, p.v)
+  else:
+    bail("Object.setPrototypeOf proto is not object-or-null")
+  args[0]
+
+proc nativeObjectCreate(heap: var GcHeap, args: openArray[VmVal],
+                        thisv: VmVal): VmVal {.nimcall.} =
+  ## Object.create(proto[, propsDescriptors]) — new object with the given
+  ## [[Prototype]] (object or null). The 2nd (descriptor) arg needs descriptor
+  ## machinery → BAIL when present. proto undefined/primitive → throws → BAIL.
+  if args.len == 0: bail("Object.create with no argument")
+  if args.len >= 2 and not (args[1].kind == vkVal and isUndefined(args[1].v)):
+    bail("Object.create with property descriptors (deferred)")
+  let proto = args[0]
+  let newO = allocObject(heap)
+  if proto.kind == vkVal and isNull(proto.v):
+    objSetProto(newO, nullVal())
+  elif proto.kind == vkVal and protoCellOf(proto.v) != nil:
+    objSetProto(newO, proto.v)
+  else:
+    bail("Object.create proto is not object-or-null")
+  vv(cellValue(newO))
+
 proc nativeObjectCtor(heap: var GcHeap, args: openArray[VmVal],
                       thisv: VmVal): VmVal {.nimcall.} =
   ## `Object(value)` / `new Object()` — the constructor form (context.zc
@@ -850,4 +963,26 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
     setO("fromEntries",         nativeObjectFromEntries,         1)
     setO("hasOwn",              nativeObjectHasOwn,              2)
     setO("getOwnPropertyNames", nativeObjectGetOwnPropertyNames, 1)
+    setO("getPrototypeOf",      nativeObjectGetPrototypeOf,      1)
+    setO("setPrototypeOf",      nativeObjectSetPrototypeOf,      2)
+    setO("create",              nativeObjectCreate,              2)
+    # Object.prototype — the single cell at the root of every plain object's
+    # [[Prototype]] chain. Its native methods resolve through protoChainLookup
+    # for any `{}`.method(). Reachable via the Object bag (`.prototype`), so
+    # markCell(TAG_HOSTFN)->bag->this object->its method cells keeps it alive;
+    # its own proto stays undefined (the chain terminates here).
+    block installObjectProto:
+      let objectProto = allocObject(heap)
+      template setP(nm: string, fn: NativeFn, arity: int) =
+        objSet(heap, objectProto, nm,
+               cellValue(allocHostFunction(heap, cast[pointer](fn), nm, arity)))
+      setP("hasOwnProperty",       nativeObjProtoHasOwnProperty,       1)
+      setP("isPrototypeOf",        nativeObjProtoIsPrototypeOf,        1)
+      setP("propertyIsEnumerable", nativeObjProtoPropertyIsEnumerable, 1)
+      setP("toString",             nativeObjProtoToString,             0)
+      setP("valueOf",              nativeObjProtoValueOf,              0)
+      setP("toLocaleString",       nativeObjProtoToLocaleString,       0)
+      let protoVal = cellValue(objectProto)
+      objSet(heap, objectBag, "prototype", protoVal)   # Object.prototype
+      setObjectProto(protoVal)                          # NewObject default proto
     globals[builtinSlot("Object")] = vv(cellValue(objectFn))
