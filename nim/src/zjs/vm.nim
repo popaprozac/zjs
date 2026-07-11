@@ -181,6 +181,15 @@ proc setStringProto*(v: ZjsValue) =
   ## Register the realm's String.prototype cell (called by installBuiltins).
   vmStringProto = v
 
+var vmNumberProto {.threadvar.}: ZjsValue
+  ## The realm's `Number.prototype` cell (toFixed/toString/valueOf natives; proto
+  ## = Object.prototype). Number primitives carry no proto, so LoadProp on a
+  ## number resolves an inherited method by looking the name up here.
+
+proc setNumberProto*(v: ZjsValue) =
+  ## Register the realm's Number.prototype cell (called by installBuiltins).
+  vmNumberProto = v
+
 proc markVmVal(heap: GcHeap, x: VmVal) {.inline.} =
   ## Mark any GC cell a VmVal can hold: a vkVal's cell, OR a closure's
   ## captured env (a vkFunction's env is an ObjectCell that must survive
@@ -1439,6 +1448,20 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
             bail("LoadProp unmodeled String.prototype member")
         else:
           bail("LoadProp on string (String.prototype not installed)")
+      elif recv.kind == vkVal and (isInt32(recv.v) or isDouble(recv.v)):
+        # Number primitive: resolve an inherited method (toFixed/toString/…) on
+        # Number.prototype (→ Object.prototype), bound to the number as `this`.
+        # An absent name bails (never a wrong undefined).
+        if isCell(vmNumberProto) and cellAsPtr(vmNumberProto) != nil:
+          let np = cast[ptr ObjectCell](cellAsPtr(vmNumberProto))
+          var found = false
+          let v = protoChainLookup(heap, np, name, found)
+          if found:
+            regs[int(inst.a)] = unboxLoaded(heap, v)
+          else:
+            bail("LoadProp unmodeled Number.prototype member")
+        else:
+          bail("LoadProp on number (Number.prototype not installed)")
       else:
         let a = asArrayCell(recv)
         if a != nil:

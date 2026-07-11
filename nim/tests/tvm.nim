@@ -405,7 +405,7 @@ suite "vm native builtins (Phase 6 slice 2)":
     check bailsB("isNaN([])")             # array arg needs ToPrimitive
     check bailsB("Math.max(1,{})")        # object arg needs ToPrimitive
     check bailsB("Math.sumPrecise([1,2])")# TC39 proposal: iterator drain deferred
-    check bailsB("parseInt(\"5\")")       # parseInt not installed
+    check bailsB("\"abc\".replace(\"a\",\"z\")") # String.prototype.replace deferred
     check bailsB("new isNaN()")           # native constructor is a later slice
 
   # --- Math (Phase 6): namespace object @ g56 ------------------------

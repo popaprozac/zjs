@@ -1397,6 +1397,176 @@ proc nativeStringCtor(heap: var GcHeap, args: openArray[VmVal],
   if args.len == 0: return vs("")
   vs(vmToString(args[0]))
 
+# --- Number + parseInt/parseFloat (src/context.zc host_number_* ; g11/g8/g7) -
+proc c_strtod2(s: cstring, endp: ptr cstring): cdouble {.importc: "strtod", header: "<stdlib.h>".}
+
+proc boxNum(d: float64): ZjsValue =
+  ## Box a float64 as int32 when integral and in i32 range (preserving -0 as a
+  ## double), else as a double — the VM's numeric representation.
+  if d == d and d >= -2147483648.0 and d <= 2147483647.0 and d == float64(int(d)) and
+     not (d == 0.0 and isNegZero(d)):
+    return int32Val(int32(d))
+  doubleVal(d)
+
+const AsciiWs = {' ', '\t', '\n', '\r', '\x0B', '\x0C'}
+
+proc nativeParseInt(heap: var GcHeap, args: openArray[VmVal],
+                    thisv: VmVal): VmVal {.nimcall.} =
+  ## parseInt(string, radix?) — ECMA-262 §19.2.5. Trim leading whitespace, sign,
+  ## radix detection (0x→16), parse valid digits, stop at the first invalid.
+  let s = (if args.len >= 1: vmToString(args[0]) else: "undefined")
+  var i = 0
+  while i < s.len and s[i] in AsciiWs: inc i
+  var sign = 1.0
+  if i < s.len and (s[i] == '+' or s[i] == '-'):
+    if s[i] == '-': sign = -1.0
+    inc i
+  var R = (if args.len >= 2: toIntArg(args[1]) else: 0)
+  var stripPrefix = true
+  if R != 0:
+    if R < 2 or R > 36: return vv(doubleVal(NaN))
+    if R != 16: stripPrefix = false
+  else:
+    R = 10
+  if stripPrefix and i + 1 < s.len and s[i] == '0' and (s[i+1] == 'x' or s[i+1] == 'X'):
+    i += 2; R = 16
+  var value = 0.0
+  var any = false
+  while i < s.len:
+    let c = s[i]
+    var d = -1
+    if c >= '0' and c <= '9': d = ord(c) - ord('0')
+    elif c >= 'a' and c <= 'z': d = ord(c) - ord('a') + 10
+    elif c >= 'A' and c <= 'Z': d = ord(c) - ord('A') + 10
+    if d < 0 or d >= R: break
+    value = value * float64(R) + float64(d)
+    any = true
+    inc i
+  if not any: return vv(doubleVal(NaN))
+  vv(boxNum(sign * value))
+
+proc nativeParseFloat(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## parseFloat(string) — the reference is strtod-based (skips leading whitespace,
+  ## parses the longest numeric prefix INCLUDING hex like "0x10"→16 and
+  ## "Infinity", non-spec but what zjs does). No chars consumed → NaN.
+  let s = (if args.len >= 1: vmToString(args[0]) else: "undefined")
+  let cs = s.cstring
+  var endp: cstring
+  let d = c_strtod2(cs, addr endp)
+  if endp == cs: return vv(doubleVal(NaN))
+  vv(boxNum(d))
+
+proc nativeNumberCtor(heap: var GcHeap, args: openArray[VmVal],
+                      thisv: VmVal): VmVal {.nimcall.} =
+  ## Number(v) — ToNumber(v) (plain call; `new Number` wrapper deferred).
+  if args.len == 0: return vv(int32Val(0))
+  vv(vmToNumber(args[0]))
+
+proc numArgD(args: openArray[VmVal]): float64 {.inline.} =
+  ## The first arg's numeric value WITHOUT coercion (Number.isNaN/isFinite/… do
+  ## NOT coerce — a non-number arg yields a value that fails their tests).
+  if args.len == 0: return NaN
+  let v = args[0]
+  if v.kind == vkVal and isInt32(v.v): return float64(asInt32(v.v))
+  if v.kind == vkVal and isDouble(v.v): return asDouble(v.v)
+  NaN   # a non-number: isInteger/isFinite/isNaN all false for it
+
+proc argIsNumber(args: openArray[VmVal]): bool {.inline.} =
+  args.len >= 1 and args[0].kind == vkVal and (isInt32(args[0].v) or isDouble(args[0].v))
+
+proc nativeNumberIsInteger(heap: var GcHeap, args: openArray[VmVal],
+                           thisv: VmVal): VmVal {.nimcall.} =
+  ## Number.isInteger(v) — true iff v is a Number with an integral value.
+  if not argIsNumber(args): return vv(boolVal(false))
+  let d = numArgD(args)
+  vv(boolVal(d == d and d != Inf and d != NegInf and d == float64(int64(d))))
+
+proc nativeNumberIsNaN(heap: var GcHeap, args: openArray[VmVal],
+                       thisv: VmVal): VmVal {.nimcall.} =
+  ## Number.isNaN(v) — true iff v IS the Number NaN (no coercion).
+  if not argIsNumber(args): return vv(boolVal(false))
+  let d = numArgD(args)
+  vv(boolVal(d != d))
+
+proc nativeNumberIsFinite(heap: var GcHeap, args: openArray[VmVal],
+                          thisv: VmVal): VmVal {.nimcall.} =
+  ## Number.isFinite(v) — true iff v is a finite Number (no coercion).
+  if not argIsNumber(args): return vv(boolVal(false))
+  let d = numArgD(args)
+  vv(boolVal(d == d and d != Inf and d != NegInf))
+
+proc nativeNumberIsSafeInteger(heap: var GcHeap, args: openArray[VmVal],
+                               thisv: VmVal): VmVal {.nimcall.} =
+  ## Number.isSafeInteger(v) — integral Number with |v| <= 2^53-1.
+  if not argIsNumber(args): return vv(boolVal(false))
+  let d = numArgD(args)
+  vv(boolVal(d == d and d != Inf and d != NegInf and d == float64(int64(d)) and
+             d >= -9007199254740991.0 and d <= 9007199254740991.0))
+
+proc c_snprintf_f(buf: cstring, n: csize_t, fmt: cstring, prec: cint,
+                  d: cdouble): cint {.importc: "snprintf", header: "<stdio.h>", varargs.}
+
+proc numThisD(thisv: VmVal): float64 =
+  ## The receiver's numeric value for a Number.prototype method.
+  if thisv.kind == vkVal and isInt32(thisv.v): return float64(asInt32(thisv.v))
+  if thisv.kind == vkVal and isDouble(thisv.v): return asDouble(thisv.v)
+  bail("Number.prototype method on non-number receiver")
+
+proc nativeNumberToFixed(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## Number.prototype.toFixed(digits) — fixed-point notation (via snprintf %.*f,
+  ## matching the reference's byte formatting). digits 0..100.
+  let d = numThisD(thisv)
+  let digits = toIntArg(if args.len >= 1: args[0] else: vv(int32Val(0)))
+  if digits < 0 or digits > 100: bail("toFixed() digits out of range (RangeError)")
+  if d != d: return vs("NaN")
+  if d == Inf: return vs("Infinity")
+  if d == NegInf: return vs("-Infinity")
+  var buf: array[512, char]
+  let nn = c_snprintf_f(cast[cstring](addr buf[0]), csize_t(512), cstring("%.*f"),
+                        cint(digits), cdouble(d))
+  if nn <= 0 or nn >= 512: bail("toFixed() formatting overflow")
+  var res = newString(nn)
+  for k in 0 ..< nn: res[k] = buf[k]
+  vs(res)
+
+proc nativeNumberToStr(heap: var GcHeap, args: openArray[VmVal],
+                       thisv: VmVal): VmVal {.nimcall.} =
+  ## Number.prototype.toString(radix?) — radix 10 uses the language ToString
+  ## (dtoa); other radices convert the integer value (non-integer + radix != 10
+  ## deferred → BAIL).
+  let d = numThisD(thisv)
+  var radix = 10
+  if args.len >= 1 and not (args[0].kind == vkVal and isUndefined(args[0].v)):
+    radix = toIntArg(args[0])
+    if radix < 2 or radix > 36: bail("toString() radix out of range (RangeError)")
+  if radix == 10:
+    return vs(vmToString(thisv))
+  if d != d: return vs("NaN")
+  if d == Inf: return vs("Infinity")
+  if d == NegInf: return vs("-Infinity")
+  if d != float64(int64(d)): bail("Number.toString non-integer with radix != 10 (deferred)")
+  var n = int64(d)
+  let neg = n < 0
+  if neg: n = -n
+  if n == 0: return vs("0")
+  const digitset = "0123456789abcdefghijklmnopqrstuvwxyz"
+  var rev = ""
+  while n > 0:
+    rev.add(digitset[int(n mod int64(radix))])
+    n = n div int64(radix)
+  var res = newString(rev.len + (if neg: 1 else: 0))
+  var k = 0
+  if neg: res[0] = '-'; k = 1
+  for m in 0 ..< rev.len: res[k + m] = rev[rev.len - 1 - m]
+  vs(res)
+
+proc nativeNumberValueOf(heap: var GcHeap, args: openArray[VmVal],
+                         thisv: VmVal): VmVal {.nimcall.} =
+  ## Number.prototype.valueOf() — the primitive number value.
+  vv(boxNum(numThisD(thisv)))
+
 # --- realm install -----------------------------------------------------
 
 const USER_GLOBAL_BASE = 108
@@ -1624,3 +1794,43 @@ proc installBuiltins*(globals: var seq[VmVal], heap: var GcHeap) =
     let stringBag = cast[ptr ObjectCell](stringFn)
     objSet(heap, stringBag, "prototype", cellValue(stringProto))
     globals[builtinSlot("String")] = vv(cellValue(stringFn))
+  # Global parseInt (g8) / parseFloat (g7) — number-parsing functions.
+  globals[builtinSlot("parseInt")] =
+    vv(cellValue(allocHostFunction(heap, cast[pointer](nativeParseInt), "parseInt", 2)))
+  globals[builtinSlot("parseFloat")] =
+    vv(cellValue(allocHostFunction(heap, cast[pointer](nativeParseFloat), "parseFloat", 1)))
+  # Number (g11) — native ctor (typeof → "function"; Number(v) coerces) + statics
+  # + numeric constants + prototype (toFixed/toString/valueOf, dispatched via the
+  # VM's LoadProp number branch). Chain = Number.prototype → Object.prototype.
+  block installNumber:
+    let numberProto = allocObject(heap)
+    if isCell(objectProtoVal) and cellAsPtr(objectProtoVal) != nil:
+      objSetProto(numberProto, objectProtoVal)
+    objSet(heap, numberProto, "toFixed",
+           cellValue(allocHostFunction(heap, cast[pointer](nativeNumberToFixed), "toFixed", 1)))
+    objSet(heap, numberProto, "toString",
+           cellValue(allocHostFunction(heap, cast[pointer](nativeNumberToStr), "toString", 1)))
+    objSet(heap, numberProto, "valueOf",
+           cellValue(allocHostFunction(heap, cast[pointer](nativeNumberValueOf), "valueOf", 0)))
+    setNumberProto(cellValue(numberProto))
+    let numberFn = allocHostFunction(heap, cast[pointer](nativeNumberCtor), "Number", 1)
+    let numberBag = cast[ptr ObjectCell](numberFn)
+    template setN(nm: string, fn: NativeFn, arity: int) =
+      objSet(heap, numberBag, nm,
+             cellValue(allocHostFunction(heap, cast[pointer](fn), nm, arity)))
+    setN("isInteger",     nativeNumberIsInteger,     1)
+    setN("isNaN",         nativeNumberIsNaN,         1)
+    setN("isFinite",      nativeNumberIsFinite,      1)
+    setN("isSafeInteger", nativeNumberIsSafeInteger, 1)
+    setN("parseInt",      nativeParseInt,            2)
+    setN("parseFloat",    nativeParseFloat,          1)
+    objSet(heap, numberBag, "MAX_SAFE_INTEGER", doubleVal(9007199254740991.0))
+    objSet(heap, numberBag, "MIN_SAFE_INTEGER", doubleVal(-9007199254740991.0))
+    objSet(heap, numberBag, "EPSILON", doubleVal(2.220446049250313e-16))
+    objSet(heap, numberBag, "MAX_VALUE", doubleVal(1.7976931348623157e308))
+    objSet(heap, numberBag, "MIN_VALUE", doubleVal(5e-324))
+    objSet(heap, numberBag, "POSITIVE_INFINITY", doubleVal(Inf))
+    objSet(heap, numberBag, "NEGATIVE_INFINITY", doubleVal(NegInf))
+    objSet(heap, numberBag, "NaN", doubleVal(NaN))
+    objSet(heap, numberBag, "prototype", cellValue(numberProto))
+    globals[builtinSlot("Number")] = vv(cellValue(numberFn))
