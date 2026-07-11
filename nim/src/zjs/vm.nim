@@ -52,6 +52,18 @@ type
     ## Raised when the VM hits an op or value shape it can't faithfully
     ## execute. The CLI must then print NOTHING and exit nonzero.
 
+  NativeFn* = proc(heap: var GcHeap, args: openArray[VmVal],
+                   thisv: VmVal): VmVal {.nimcall.}
+    ## A Nim-implemented (native/host) builtin — the Nim analogue of the
+    ## reference `(ctx, args, argc) -> ZjsValue` (src/context.zc host_*). The
+    ## `{.nimcall.}` convention makes it a plain function pointer (no closure
+    ## env), so it is storable as a raw `pointer` in a HostFnCell and cast back
+    ## here to dispatch. `heap` is threaded for natives that allocate; `args`
+    ## are the argument registers; `thisv` the receiver (undefined for plain /
+    ## global calls, the receiver for a method call). A native MAY `bail(msg)`
+    ## for arg shapes outside its subset (e.g. an object arg needing valueOf
+    ## coercion) — a clean VmBail, never a wrong value.
+
 const
   ## Recursion-depth guard for the call-frame stack. `build/zjs` throws a
   ## RangeError ("Maximum call stack size exceeded") on deep recursion, which
@@ -64,7 +76,7 @@ const
 
 # --- VmVal constructors -------------------------------------------------
 
-proc vv(v: ZjsValue): VmVal {.inline.} = VmVal(kind: vkVal, v: v)
+proc vv*(v: ZjsValue): VmVal {.inline.} = VmVal(kind: vkVal, v: v)
 proc vs(s: string): VmVal {.inline.} = VmVal(kind: vkString, s: s)
 proc vf(f: Function): VmVal {.inline.} =
   ## A non-capturing function value (env = none).
@@ -73,7 +85,7 @@ proc vf(f: Function, env: ZjsValue): VmVal {.inline.} =
   ## A closure value carrying its captured env object (or `undefined`).
   VmVal(kind: vkFunction, fn: f, env: env)
 
-proc bail(msg: string) {.noreturn.} =
+proc bail*(msg: string) {.noreturn.} =
   raise newException(VmBail, msg)
 
 # --- GC frame rooting ---------------------------------------------------
@@ -487,7 +499,7 @@ proc strToNumber(s: string): float64 =
       return NaN
   parsed
 
-proc vmToNumber(x: VmVal): ZjsValue =
+proc vmToNumber*(x: VmVal): ZjsValue =
   ## ToNumber over a VmVal (zjs_to_double, value.zc ~207). Numbers pass
   ## through; a string is parsed by StringToNumber → int32 if it lands on
   ## an exact int32-range integer, else a double (so `"5"*2`→10 stays a
@@ -625,6 +637,15 @@ proc vmLooseEq(a, b: VmVal): bool =
 
 proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
               heap: var GcHeap, depth: int, thisVal: VmVal, env: VmVal): VmVal
+
+proc callNative(heap: var GcHeap, cell: ZjsValue, args: openArray[VmVal],
+                thisv: VmVal): VmVal =
+  ## Dispatch a call to a boxed native builtin: cast the HostFnCell's stored
+  ## proc pointer back to a `NativeFn` and call it with `args` + `thisv`. The
+  ## native returns the result VmVal, or raises VmBail for an unsupported arg
+  ## shape (never a wrong value). Caller has proven `isHostFunctionCell(cell)`.
+  let fn = cast[NativeFn](hostFnPtr(heap, cell))
+  fn(heap, args, thisv)
 
 proc resolveCallee(v: VmVal): Function =
   ## A call target must be a callable function value. Anything else (a
@@ -1113,14 +1134,20 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let base = int(inst.b)
       let argc = int(inst.c)
       let calleeVal = regs[base]
-      let callee = resolveCallee(calleeVal)
       var callArgs = newSeq[VmVal](argc)
       for i in 0 ..< argc:
         callArgs[i] = regs[base + 1 + i]
-      # Plain call: `this` is undefined (a non-method callee); env is the
+      # A boxed native builtin (isNaN / isFinite / …) dispatches to its Nim
+      # proc — `this` is undefined for a plain call. Otherwise a normal JS
+      # function call: `this` is undefined (a non-method callee); env is the
       # invoked closure's captured environment.
-      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
-                                       vv(undefinedVal()), vv(calleeVal.env))
+      if calleeVal.kind == vkVal and isHostFunctionCell(calleeVal.v):
+        regs[int(inst.a)] = callNative(heap, calleeVal.v, callArgs,
+                                       vv(undefinedVal()))
+      else:
+        let callee = resolveCallee(calleeVal)
+        regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
+                                         vv(undefinedVal()), vv(calleeVal.env))
     of InvokeGlobal:
       # Fused global-callee call (interpreter.zc ~5634): a=ret_dst, b=base,
       # c=argc; the carrier at code[ip+1] holds the u16 global slot. The
@@ -1134,17 +1161,24 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       if gslot >= globals.len:
         bail("InvokeGlobal of undeclared slot")
       let calleeVal = globals[gslot]
-      # An undeclared / built-in slot (a zero-bits placeholder) is out of
-      # scope — the reference would ObjectRecord-fallback to globalThis or
-      # throw a ReferenceError; either way, not a value we can produce.
-      if calleeVal.kind == vkVal and calleeVal.v.bits == 0'u64:
-        bail("InvokeGlobal of undeclared slot")
-      let callee = resolveCallee(calleeVal)
       var callArgs = newSeq[VmVal](argc)
       for i in 0 ..< argc:
         callArgs[i] = regs[base + 1 + i]
-      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
-                                       vv(undefinedVal()), vv(calleeVal.env))
+      # An INSTALLED native builtin (isNaN / isFinite / …) holds a real
+      # HostFnCell value here (non-zero bits) and dispatches to its Nim proc;
+      # `this` is undefined for a global call.
+      if calleeVal.kind == vkVal and isHostFunctionCell(calleeVal.v):
+        regs[int(inst.a)] = callNative(heap, calleeVal.v, callArgs,
+                                       vv(undefinedVal()))
+      else:
+        # An un-installed / undeclared slot (a zero-bits placeholder) is out of
+        # scope — the reference would ObjectRecord-fallback to globalThis or
+        # throw a ReferenceError; either way, not a value we can produce.
+        if calleeVal.kind == vkVal and calleeVal.v.bits == 0'u64:
+          bail("InvokeGlobal of undeclared slot")
+        let callee = resolveCallee(calleeVal)
+        regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
+                                         vv(undefinedVal()), vv(calleeVal.env))
     of MethodInvoke, TailMethodInvoke:
       # Method call (interpreter.zc ~5539 MethodInvoke): a=ret_dst, b=base,
       # c=argc. regs[base]=method, regs[base+1]=receiver, regs[base+2..]=args.
@@ -1155,12 +1189,17 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let argc = int(inst.c)
       let methodVal = regs[base]
       let recv = regs[base + 1]
-      let callee = resolveCallee(methodVal)
       var callArgs = newSeq[VmVal](argc)
       for i in 0 ..< argc:
         callArgs[i] = regs[base + 2 + i]
-      regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
-                                       recv, vv(methodVal.env))
+      # A native method (a HostFnCell loaded from a property) dispatches to its
+      # Nim proc with `this` = the receiver. Otherwise a normal JS method call.
+      if methodVal.kind == vkVal and isHostFunctionCell(methodVal.v):
+        regs[int(inst.a)] = callNative(heap, methodVal.v, callArgs, recv)
+      else:
+        let callee = resolveCallee(methodVal)
+        regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap, depth,
+                                         recv, vv(methodVal.env))
 
     # --- object / array model (slice B1) ------------------------------
     of NewObject:

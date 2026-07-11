@@ -4,7 +4,7 @@
 ## tcompiler.nim style (parse+compile), then runs the VM.
 
 import std/[unittest, strformat]
-import ../src/zjs/[parser, compiler, vm, value]
+import ../src/zjs/[parser, compiler, vm, value, gc, builtins]
 
 # Local copy of printValue (nim_eval.nim) so tests can assert on the
 # string. Kept in sync with tools/nim_eval.nim.
@@ -50,6 +50,40 @@ proc bails(src: string): bool =
     discard render(runFunction(f, globals))
     return false
   except VmBail:
+    return true
+
+proc evB(src: string): string =
+  ## Like `ev`, but installs the realm's native built-ins (isNaN/isFinite +
+  ## value globals NaN/Infinity) first — Phase 6 slice 2. Threads its own heap
+  ## so the native cells stay rooted via `globals` for the run.
+  var p = initParser(src)
+  let root = p.parseProgram()
+  check (not p.hadError)
+  let f = compileProgram(src, root)
+  check f != nil
+  var globals: seq[VmVal] = @[]
+  var heap = newGcHeap()
+  installBuiltins(globals, heap)
+  result = render(runFunction(f, globals, heap, 0))
+  destroyHeap(heap)
+
+proc bailsB(src: string): bool =
+  ## True if `src` bails WITH built-ins installed (an unimplemented builtin or
+  ## a deferred arg shape — a clean bail, never a wrong value).
+  var p = initParser(src)
+  let root = p.parseProgram()
+  if p.hadError: return true
+  let f = compileProgram(src, root)
+  if f == nil: return true
+  var globals: seq[VmVal] = @[]
+  var heap = newGcHeap()
+  installBuiltins(globals, heap)
+  try:
+    discard render(runFunction(f, globals, heap, 0))
+    destroyHeap(heap)
+    return false
+  except VmBail:
+    destroyHeap(heap)
     return true
 
 suite "vm arithmetic":
@@ -324,3 +358,42 @@ suite "vm closures + this (slice B2)":
     check ev("var o={x:5, f:function(){ return this.x; }}; o.f()") == "5"
     check ev("var o={a:2,b:3, sum:function(){ return this.a+this.b; }}; o.sum()") == "5"
     check ev("var o={n:10, inc:function(){ this.n=this.n+1; return this.n; }}; o.inc(); o.inc()") == "12"
+
+suite "vm native builtins (Phase 6 slice 2)":
+  test "isNaN over the primitive coercion ladder":
+    check evB("isNaN(NaN)") == "true"
+    check evB("isNaN(5)") == "false"
+    check evB("isNaN(0)") == "false"
+    check evB("isNaN(3.14)") == "false"
+    check evB("isNaN(Infinity)") == "false"
+    check evB("isNaN(\"x\")") == "true"
+    check evB("isNaN(\"12\")") == "false"
+    check evB("isNaN(\"\")") == "false"      # "" → 0 → not NaN
+    check evB("isNaN(true)") == "false"
+    check evB("isNaN(null)") == "false"
+    check evB("isNaN(undefined)") == "true"
+    check evB("isNaN()") == "true"           # no args → ToNumber(undefined)=NaN
+  test "isFinite over the primitive coercion ladder":
+    check evB("isFinite(5)") == "true"
+    check evB("isFinite(Infinity)") == "false"
+    check evB("isFinite(NaN)") == "false"
+    check evB("isFinite(\"100\")") == "true"
+    check evB("isFinite()") == "false"       # no args → false
+    check evB("isFinite(-Infinity)") == "false"
+  test "native called from a JS frame / a loop":
+    check evB("var x = isNaN(NaN); x") == "true"
+    check evB("function f(n){ return isNaN(n); } f(NaN)") == "true"
+    check evB("var s=0; for(var i=0;i<3;i++){ if(!isNaN(i)) s=s+i; } s") == "3"
+    check evB("isNaN(2+3)") == "false"
+  test "native round-trips through an object property / array element":
+    check evB("var o={f:isNaN}; o.f(NaN)") == "true"   # MethodInvoke native
+    check evB("var a=[isNaN]; a[0](NaN)") == "true"    # Invoke after LoadElem
+  test "value globals NaN / Infinity resolve":
+    check evB("NaN") == "NaN"
+    check evB("Infinity") == "Infinity"
+  test "deferred / unimplemented shapes bail cleanly (never wrong)":
+    check bailsB("isNaN({})")             # object arg needs valueOf coercion
+    check bailsB("isNaN([])")             # array arg needs ToPrimitive
+    check bailsB("Math.floor(1.5)")       # Math not installed (zero-bits slot)
+    check bailsB("parseInt(\"5\")")       # parseInt not installed
+    check bailsB("new isNaN()")           # native constructor is a later slice

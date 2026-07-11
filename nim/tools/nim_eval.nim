@@ -13,7 +13,7 @@
 ## Phase 6 slice 1: a bare OBJECT / ARRAY completion value).
 
 import std/[os, strformat, strutils, tables]
-import ../src/zjs/[parser, compiler, vm, value, gc]
+import ../src/zjs/[parser, compiler, vm, value, gc, builtins]
 
 # --- inspectValue: port of write_value (tools/zjs.zc ~339) --------------
 # Recursive value printer. `quoted` controls whether a STRING is wrapped in
@@ -128,6 +128,10 @@ proc main() =
   # then destroy.
   var globals: seq[VmVal] = @[]
   var heap = newGcHeap()
+  # Install the realm's built-in globals (native isNaN/isFinite + value globals
+  # NaN/Infinity) BEFORE the run, into the SAME heap threaded into runFunction
+  # so the native cells are rooted via `globals` and survive any collect.
+  installBuiltins(globals, heap)
   var outText: string
   var ok = true
   try:

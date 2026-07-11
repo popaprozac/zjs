@@ -66,6 +66,16 @@ const
                        ## load. A leaf (no cell children); marked reachable by
                        ## the generic mark bit so a string held by a live
                        ## object/array survives collect.
+  TAG_HOSTFN*   = 7'u8 ## HostFnCell (Phase 6 slice 2): a Nim-implemented
+                       ## native/host function boxed as a GC cell (mirrors the
+                       ## reference TAG_HOST_FUNCTION, src/context.zc:3993). The
+                       ## cell is a pure header; the native proc pointer, name,
+                       ## and arity live in heap.hostFnTable (ARC-managed host
+                       ## memory). Because it is a boxed ZjsValue it lives
+                       ## uniformly in a global slot AND as an object property.
+                       ## A leaf: the proc pointer and name are host memory, not
+                       ## GC children — marked reachable by the generic mark bit
+                       ## so a native held by a live global/object survives.
 
 # =====================================================================
 # cellHeader — reinterpret a boxed cell value as its header. UB (as in
@@ -133,6 +143,17 @@ type
     fn*:  Function
     env*: ZjsValue
 
+  ## Payload of a HostFnCell (Phase 6 slice 2): the native proc pointer
+  ## (stored as a raw `pointer` so gc.nim stays agnostic of the VM's
+  ## `NativeFn` proc type — the VM casts it back before calling), plus the
+  ## function's `name` and declared `arity` (`.length`). Kept in an
+  ## ARC-managed side table keyed by the cell block pointer. A leaf — no
+  ## GC children — so nothing here is marked.
+  HostFnData* = object
+    fn*:    pointer
+    name*:  string
+    arity*: int
+
   GcHeap* = object
     chunks:     seq[NurseryChunk]        ## non-moving nursery chunks
     allCells:   seq[CellRec]             ## every live cell, for sweep
@@ -151,6 +172,11 @@ type
     ## string keyed by the cell block pointer; sweep DELETES the entry when
     ## the cell is freed. A string cell is a leaf, so nothing here is marked.
     strTable*: Table[pointer, string]
+    ## HostFnCell -> its native proc pointer + name + arity (Phase 6 slice 2).
+    ## ARC-managed host memory keyed by the cell block pointer; sweep DELETES
+    ## the entry when the cell is freed. A host-fn cell is a leaf (the proc
+    ## pointer and name are host memory), so nothing here is marked.
+    hostFnTable*: Table[pointer, HostFnData]
     ## Free list of reclaimed slots, keyed by rounded byte-size. Sweep
     ## pushes each dead cell's block here; allocCell pops a same-size
     ## block before bumping. Reuse (not chunk growth) is what keeps live
@@ -279,6 +305,8 @@ type
     header*: CellHeader     ## a pure header; fn/env are in heap.funcTable
   StringCell* = object
     header*: CellHeader     ## a pure header; the bytes are in heap.strTable
+  HostFnCell* = object
+    header*: CellHeader     ## a pure header; fn/name/arity are in heap.hostFnTable
 
 proc cellValue*(o: ptr ObjectCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](o))
@@ -288,6 +316,8 @@ proc cellValue*(fc: ptr FunctionCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](fc))
 proc cellValue*(sc: ptr StringCell): ZjsValue {.inline.} =
   cellFromPtr(cast[pointer](sc))
+proc cellValue*(hc: ptr HostFnCell): ZjsValue {.inline.} =
+  cellFromPtr(cast[pointer](hc))
 
 # --- ObjectCell ------------------------------------------------------
 
@@ -443,6 +473,35 @@ proc strCellVal*(heap: GcHeap, v: ZjsValue): string {.inline.} =
 
 proc strTableLen*(heap: GcHeap): int {.inline.} = heap.strTable.len
 
+# --- HostFnCell (Phase 6 slice 2) ------------------------------------
+
+proc allocHostFunction*(heap: var GcHeap, fn: pointer, name: string,
+                        arity: int): ptr HostFnCell =
+  ## Allocate a HostFnCell wrapping the native proc pointer `fn` (a VM
+  ## `NativeFn` cast to `pointer`), its `name`, and `arity`. The cell is a
+  ## pure header; the payload lives in the ARC-managed hostFnTable keyed by
+  ## the cell block pointer. Used to box a native builtin as a callable JS
+  ## VALUE that lives uniformly in a global slot AND as an object property.
+  let p = allocCell(heap, TAG_HOSTFN, sizeof(HostFnCell))
+  heap.hostFnTable[p] = HostFnData(fn: fn, name: name, arity: arity)
+  cast[ptr HostFnCell](p)
+
+proc isHostFunctionCell*(v: ZjsValue): bool {.inline.} =
+  ## Whether `v` boxes a HostFnCell (used to dispatch a call to the native).
+  ## Heap-agnostic: the typeTag is authoritative (a recycled block is re-tagged
+  ## by allocCell and its table entry deleted on sweep). A zero-bits value
+  ## passes isCell but has a nil cell pointer — guarded here.
+  isCell(v) and cellAsPtr(v) != nil and cellHeader(v).typeTag == TAG_HOSTFN
+
+proc hostFnPtr*(heap: GcHeap, v: ZjsValue): pointer {.inline.} =
+  heap.hostFnTable[cellAsPtr(v)].fn
+proc hostFnName*(heap: GcHeap, v: ZjsValue): string {.inline.} =
+  heap.hostFnTable[cellAsPtr(v)].name
+proc hostFnArity*(heap: GcHeap, v: ZjsValue): int {.inline.} =
+  heap.hostFnTable[cellAsPtr(v)].arity
+
+proc hostFnTableLen*(heap: GcHeap): int {.inline.} = heap.hostFnTable.len
+
 # =====================================================================
 # Rooted — RAII rooting. Construction pushes a slot on the shadow-stack;
 # `=destroy` pops it (LIFO, asserted). Because the slot lives in the
@@ -536,6 +595,8 @@ proc markCell*(heap: GcHeap, v: ZjsValue) =
       markCell(heap, heap.funcTable[p].env)
   of TAG_STRING:
     discard                     # a string cell is a leaf (bytes in strTable)
+  of TAG_HOSTFN:
+    discard                     # a host-fn cell is a leaf (fn/name in hostFnTable)
   of TAG_LEAF:
     discard                     # no children
   else:
@@ -586,6 +647,7 @@ proc collect*(heap: var GcHeap): int =
       of TAG_ARRAY:    heap.arrTable.del(rec.p)
       of TAG_FUNCTION: heap.funcTable.del(rec.p)
       of TAG_STRING:   heap.strTable.del(rec.p)
+      of TAG_HOSTFN:   heap.hostFnTable.del(rec.p)
       else: discard
       zeroMem(rec.p, rec.size)
       heap.freeBySize.mgetOrPut(rec.size, @[]).add(rec.p)
@@ -619,6 +681,7 @@ proc destroyHeap*(heap: var GcHeap) =
   heap.arrTable.clear()
   heap.funcTable.clear()
   heap.strTable.clear()
+  heap.hostFnTable.clear()
   heap.rootStack.setLen(0)
   heap.frameRoots.setLen(0)
   heap.ctxRoots.setLen(0)
