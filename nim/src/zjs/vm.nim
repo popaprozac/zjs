@@ -1412,6 +1412,67 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       else:
         regs[dst] = instanceVal
       maybeCollect(heap)
+    of SuperCall:
+      # a=dst, b=base, c=argc (interpreter.zc ~6244): explicit `super(args)`
+      # in a derived-class constructor. Call the PARENT constructor with
+      # `this` = the CURRENT frame's instance (thisVal — the object the outer
+      # NewInvoke allocated and threaded in as this ctor's receiver) so the
+      # parent's `this.x=...` initializes the SAME object; super() does NOT
+      # allocate a new instance, it initializes the existing one. The parent
+      # ctor value is regs[base] (the compiler loads it there via
+      # LoadEnv+LoadProp / LoadGlobal); args are regs[base+1 .. base+argc].
+      let dst  = int(inst.a)
+      let base = int(inst.b)
+      let argc = int(inst.c)
+      # The instance under construction MUST be a live object cell. A derived
+      # class ctor only ever runs via NewInvoke, which seeds `thisVal` with
+      # the fresh instance (even when the ctor has no this-register, as in
+      # `constructor(){ super(x); }` — the seed lives in the frame's thisVal,
+      # not a register). `super` outside a derived ctor (no object `this`) is
+      # out of scope → bail, never a wrong store target.
+      if asObjectCell(thisVal) == nil:
+        bail("SuperCall with no object `this` (super outside derived ctor)")
+      let parentVal = regs[base]
+      if parentVal.kind != vkFunction or parentVal.fn == nil:
+        bail("SuperCall parent is not a constructable function")
+      # Args at base+1 .. base+argc — held in this frame's regs (GC roots).
+      var callArgs = newSeq[VmVal](argc)
+      for i in 0 ..< argc:
+        callArgs[i] = regs[base + 1 + i]
+      let runFn = parentVal.fn
+      let runEnv = parentVal.env
+      # IMPORTANT: unlike NewInvoke's construct path, Op::SuperCall calls
+      # regs[base] DIRECTLY (interpreter.zc ~6304 zjs_call_value_with_this) —
+      # it does NOT skip default-derived forwarders for the call (that skip
+      # only serves brand install). A default-derived parent has an empty body
+      # (LoadCallee; Return) that never calls super, so the reference's
+      # "must call super before return" gate THROWS. We don't model that throw
+      # (and a normal one-level `extends RealCtor` never hits it), so a
+      # default-derived DIRECT parent is out of scope → bail (never a wrong
+      # value). A nested chain where each level has an EXPLICIT super still
+      # works: each ctor's parent is a real ctor, resolved uniformly here.
+      if runFn.isDefaultDerivedCtor:
+        bail("SuperCall parent is a default-derived ctor (reference throws)")
+      # Arrow / async / generator are not constructors → bail (a class ctor
+      # or plain function is fine, matching NewInvoke's constructability rule).
+      if runFn.isArrow or runFn.isAsync or runFn.isGenerator:
+        bail("SuperCall parent is arrow / async / generator")
+      # Call the parent ctor with `this` = the SHARED instance (thisVal). It
+      # runs its body (this.x=... StoreProp / field inits) on the existing
+      # object — no new allocation. thisVal is already this frame's rooted
+      # receiver (FrameRoot.thisv), so it survives any collect the parent
+      # ctor triggers; callArgs live in the callee frame's regs (also roots).
+      let superResult = callFunction(runFn, callArgs, globals, heap, depth,
+                                     thisVal, vv(runEnv))
+      # ECMA-262 §13.3.7.1: super() evaluates to the `this` binding. Our
+      # in-scope parent ctors return undefined (a primitive) → ignored; the
+      # result register receives the instance. A parent that returns an
+      # OBJECT would rebind `this` to it (not modeled here) → bail rather than
+      # store the derived ctor's later fields on the wrong instance.
+      if isObjectResult(superResult):
+        bail("SuperCall parent ctor returned an object (this-rebind unsupported)")
+      regs[dst] = thisVal
+      maybeCollect(heap)
 
     # --- return / halt ------------------------------------------------
     of Return:
