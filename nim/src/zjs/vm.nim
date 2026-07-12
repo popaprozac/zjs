@@ -1215,6 +1215,14 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let x = regs[int(inst.a)]
       if x.kind == vkVal and (isNull(x.v) or isUndefined(x.v)):
         bail("AssertCoercible on null/undefined (TypeError)")
+    of BuildArguments:
+      # a=dst: the `arguments` object, built from this frame's actual args. The
+      # oracle models arguments as an ARRAY (Array.isArray(arguments) is true), so
+      # we do too — byte-identical for length / indexing / isArray / enumeration.
+      var elems = newSeq[ZjsValue](args.len)
+      for i in 0 ..< args.len: elems[i] = boxForStore(heap, args[i])
+      regs[int(inst.a)] = vv(cellValue(allocArray(heap, elems)))
+      maybeCollect(heap)
     of BuildRestArgs:
       # a=dst, b=first_param_index: gather this call's args from index b onward
       # into a fresh Array (interpreter.zc BuildRestArgs) — the `...rest` param.
