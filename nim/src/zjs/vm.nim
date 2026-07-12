@@ -1771,6 +1771,41 @@ proc runFrame(f: Function, args: openArray[VmVal], globals: var seq[VmVal],
       let a = asArrayCell(regs[int(inst.b)])
       if a == nil: bail("ArrayLength on non-array")
       regs[int(inst.a)] = vv(int32Val(int32(arrLength(heap, a))))
+    of ArrayPush:
+      # a=arr, b=val: append regs[b] to the array regs[a] (the dynamic array-
+      # literal build used once a `[... , ...]` literal contains a spread).
+      let arr = asArrayCell(regs[int(inst.a)])
+      if arr == nil: bail("ArrayPush on non-array")
+      arrSet(heap, arr, arrLength(heap, arr), boxForStore(heap, regs[int(inst.b)]))
+    of ArraySpread:
+      # a=dstArr, b=srcArr: append every element of regs[b] to regs[a]. Only an
+      # ARRAY source is in scope (a general iterable needs the iterator protocol
+      # → bail, never a wrong value).
+      let dst = asArrayCell(regs[int(inst.a)])
+      if dst == nil: bail("ArraySpread destination is not an array")
+      let src = asArrayCell(regs[int(inst.b)])
+      if src == nil: bail("ArraySpread of a non-array (iterable protocol deferred)")
+      let n = arrLength(heap, src)
+      var i = 0
+      while i < n:
+        arrSet(heap, dst, arrLength(heap, dst), arrGet(heap, src, i))
+        inc i
+    of SpreadInvoke:
+      # a=retDst, b=base: callee = regs[base], args ARRAY = regs[base+1]. Call
+      # with the array's elements spread as arguments (interpreter.zc SpreadInvoke).
+      let base = int(inst.b)
+      let calleeVal = regs[base]
+      let argsArr = asArrayCell(regs[base + 1])
+      if argsArr == nil: bail("SpreadInvoke args is not an array")
+      let argc = arrLength(heap, argsArr)
+      var callArgs = newSeq[VmVal](argc)
+      for i in 0 ..< argc: callArgs[i] = unboxLoaded(heap, arrGet(heap, argsArr, i))
+      if calleeVal.kind == vkVal and isHostFunctionCell(calleeVal.v):
+        routeThrow: regs[int(inst.a)] = callNative(heap, calleeVal.v, callArgs, vv(undefinedVal()))
+      else:
+        let callee = resolveCallee(calleeVal)
+        routeThrow: regs[int(inst.a)] = callFunction(callee, callArgs, globals, heap,
+                                                     depth, vv(undefinedVal()), vv(calleeVal.env))
 
     # --- class machinery + `new` (slice B3) ---------------------------
     of DefineMethod:

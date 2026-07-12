@@ -1091,9 +1091,9 @@ suite "slice 5a deferred forms bail (nim_missing, not text_diff)":
   test "__proto__ colon setter -> compile error":
     expect ValueError:
       discard disasmToString("var o = {__proto__: p};")
-  test "array spread [...x] -> compile error":
-    expect ValueError:
-      discard disasmToString("var a = [...x];")
+  test "array spread [...x] -> compiles (dynamic build: NewArray + ArraySpread)":
+    let d = disasmToString("var x=[1]; var a = [...x, 2];")
+    check "ArraySpread" in d and "ArrayPush" in d
   test "array hole [1,,2] -> compile error":
     expect ValueError:
       discard disasmToString("var a = [1,,2];")
@@ -1210,9 +1210,9 @@ suite "slice 5b call structure sanity":
     check "NewInvoke           r1   <- base=r1 argc=2" in disasmToString("new F(a, b);")
 
 suite "slice 5b deferred forms bail (nim_missing, not text_diff)":
-  test "spread call f(...x) -> compile error":
-    expect ValueError:
-      discard disasmToString("f(...x);")
+  test "spread call f(...x) -> compiles (SpreadInvoke)":
+    let d = disasmToString("var f=function(){}; var x=[1]; f(...x);")
+    check "SpreadInvoke" in d and "ArraySpread" in d
   test "spread method o.m(...x) -> compile error":
     expect ValueError:
       discard disasmToString("o.m(...x);")

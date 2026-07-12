@@ -2683,11 +2683,28 @@ proc compileArrayLiteral(c: var Compiler, node: AstNode): uint8 =
     let dst = allocReg(c)
     emit(c, instABC(NewArray, dst, 0, 0))
     return dst
-  # Spread / hole / large -> deferred (dynamic-build path not ported).
+  # A spread element switches the WHOLE literal to the dynamic build (empty
+  # array + ArraySpread per spread / ArrayPush per normal element), matching the
+  # oracle. Holes still bail.
+  var hasSpread = false
   for el in node.elems:
-    if el == nil or el.kind == Spread:
-      c.hadError = true
-      return allocReg(c)
+    if el == nil:
+      c.hadError = true; return allocReg(c)      # hole `[1,,2]`
+    if el.kind == Spread: hasSpread = true
+  if hasSpread:
+    let dst = allocReg(c)
+    emit(c, instABC(NewArray, dst, 0, 0))        # empty accumulator
+    for el in node.elems:
+      if el.kind == Spread:
+        let srcReg = compileExpr(c, el.spreadArg)
+        emit(c, instAB(ArraySpread, dst, srcReg))
+        releaseReg(c, srcReg)
+      else:
+        let valReg = compileExpr(c, el)
+        emit(c, instAB(ArrayPush, dst, valReg))
+        releaseReg(c, valReg)
+    if c.nextReg <= dst: c.nextReg = dst + 1
+    return dst
   if count > 32:
     c.hadError = true
     return allocReg(c)
@@ -2771,7 +2788,33 @@ proc compileCallInner(c: var Compiler, node: AstNode, retHint: int): uint8 =
   # Optional callee shapes are distinct node kinds (OptionalMember/
   # OptionalComputed) that never reach the Member/Computed compile arms.
   if callHasSpreadArg(node):
-    c.hadError = true; return 0
+    # Plain function call with spread `f(...xs)`: callee into base, an args ARRAY
+    # at base+1 built via NewArray + ArraySpread (per spread) / ArrayPush (per
+    # normal arg), then SpreadInvoke base, base. Method/new/super spread
+    # (SpreadMethodInvoke/SpreadNewInvoke/SpreadSuperCall) still deferred.
+    if isMethod or (callee != nil and callee.kind == SuperExpr):
+      c.hadError = true; return 0
+    let base = c.nextReg
+    discard allocReg(c)                       # base   = callee
+    discard allocReg(c)                       # base+1 = args array
+    let calleeR = compileExpr(c, callee)
+    if calleeR != base:
+      emit(c, instAB(Mov, base, calleeR))
+      releaseReg(c, calleeR)
+    emit(c, instABC(NewArray, base + 1'u8, 0, 0))
+    for a in node.args:
+      if a != nil and a.kind == Spread:
+        let srcR = compileExpr(c, a.spreadArg)
+        emit(c, instAB(ArraySpread, base + 1'u8, srcR))
+        releaseReg(c, srcR)
+      else:
+        let valR = compileExpr(c, a)
+        emit(c, instAB(ArrayPush, base + 1'u8, valR))
+        releaseReg(c, valR)
+    emit(c, instAB(SpreadInvoke, base, base))
+    c.nextReg = base + 1
+    if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+    return base
   # `super(...)` in a derived-class constructor (slice 7b). Emits Op::SuperCall
   # which preserves the current `this` / new-target; the parent constructor is
   # materialized by compiling the enclosing class's `extends` expression into
