@@ -21,6 +21,10 @@ endif
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
+MACOSX_DEPLOYMENT_TARGET ?= 12.0
+export MACOSX_DEPLOYMENT_TARGET
+PLATFORM_TARGET_CFLAGS := -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
+MACOS_DEPLOYMENT_STAMP := $(BUILD_DIR)/.macos-deployment-target
 SHLIB_EXT := dylib
 RPATH_FLAG := -Wl,-rpath,@loader_path
 PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/process_posix.c
@@ -33,6 +37,8 @@ PROFDATA         := xcrun llvm-profdata
 # passed on the command line. Linux gets -lz via lib.zc's link: directive.
 ZC_LINK := -lz
 else
+PLATFORM_TARGET_CFLAGS :=
+MACOS_DEPLOYMENT_STAMP :=
 SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
 PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c src/platform/socket_posix.c src/platform/process_posix.c
@@ -51,7 +57,9 @@ endif
 # We probe each candidate for `std/third-party/tre/tre_full.c` so a wrong
 # guess fails loud instead of producing a half-resolved build.
 ZC_ROOT ?= $(shell \
-  for d in "$$ZC_ROOT" "$$(dirname $$(command -v zc))" /usr/local/share/zenc /usr/share/zenc; do \
+  zc_path="$$(command -v zc 2>/dev/null)"; zc_dir=""; \
+  if [ -n "$$zc_path" ]; then zc_dir="$$(dirname "$$zc_path")"; fi; \
+  for d in "$$ZC_ROOT" "$$zc_dir" /usr/local/share/zenc /usr/share/zenc; do \
     if [ -n "$$d" ] && [ -f "$$d/std/third-party/tre/tre_full.c" ]; then echo "$$d"; exit 0; fi; \
   done)
 
@@ -75,10 +83,7 @@ T262_RUNNER  := $(BUILD_DIR)/test262_runner
 # zc's stdlib include roots (regex via tre lives here). Driven off
 # ZC_ROOT so they track wherever the Zen-c stdlib lives — bin and data
 # directories diverge on Linux package layouts.
-ifeq ($(ZC_ROOT),)
-$(error Could not locate Zen-c stdlib. Set ZC_ROOT to the dir containing `std/` (e.g. /usr/local/share/zenc), or install zc such that its sibling `std/` is discoverable.)
-endif
-ZC_STDLIB_INCS := -I$(ZC_ROOT) -I$(ZC_ROOT)/std/third-party/tre/include
+ZC_STDLIB_INCS := $(if $(ZC_ROOT),-I$(ZC_ROOT) -I$(ZC_ROOT)/std/third-party/tre/include)
 
 # Warning silencers required for the transpiled C — Zen-c emits patterns
 # (unused params on accessor stubs, intentional sign comparisons, etc.)
@@ -138,6 +143,16 @@ all: lib lib-static cli smoke smoke-static lexer-test parser-test interp-test
 $(BUILD_DIR):
 	mkdir -p $@
 
+.PHONY: FORCE
+FORCE:
+
+ifneq ($(MACOS_DEPLOYMENT_STAMP),)
+$(MACOS_DEPLOYMENT_STAMP): FORCE | $(BUILD_DIR)
+	@if [ ! -f "$@" ] || [ "$$(cat "$@")" != "$(MACOSX_DEPLOYMENT_TARGET)" ]; then \
+		printf '%s\n' "$(MACOSX_DEPLOYMENT_TARGET)" > "$@"; \
+	fi
+endif
+
 # zc's stdlib carries `@link("std/third-party/tre/tre_full.c")` in
 # std/regex.zc, but zc resolves that path with `realpath()` against the
 # *invoking* cwd rather than the stdlib root. With cwd=$(CURDIR) the
@@ -146,9 +161,8 @@ $(BUILD_DIR):
 # Until that's fixed upstream, point a project-root `std` symlink at
 # $(ZC_ROOT)/std so the cwd-relative lookup succeeds. (.gitignored.)
 .PHONY: stdlib-link
-stdlib-link: std
-std:
-	@ln -sfn $(ZC_ROOT)/std $@
+stdlib-link:
+	@if [ -n "$(ZC_ROOT)" ]; then ln -sfn "$(ZC_ROOT)/std" std; fi
 
 # Embed .js stdlib sources as C string literals in matching .gen.h
 # headers. The .zc files just `#include` the generated header instead
@@ -253,17 +267,18 @@ else
 endif
 
 $(LIBA_C): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
+	@test -n "$(ZC_ROOT)" || (echo "Could not locate the Zen-c stdlib needed to regenerate $@. Set ZC_ROOT to the directory containing std/." >&2; exit 1)
 	$(ZC) transpile $(ZC_FLAGS) $(LIB_SRC) -o $@
 
-$(LIBA_OBJ): $(LIBA_C)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) $(ZJS_TIER_DEFINES) -c $< -o $@
+$(LIBA_OBJ): $(LIBA_C) $(MACOS_DEPLOYMENT_STAMP)
+	$(CLANG) -O3 -fPIC $(PLATFORM_TARGET_CFLAGS) -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) $(ZJS_TIER_DEFINES) -c $< -o $@
 
 
-$(BUILD_DIR)/%.o: src/platform/%.m | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC $(PLATFORM_CFLAGS) -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
+$(BUILD_DIR)/%.o: src/platform/%.m $(MACOS_DEPLOYMENT_STAMP) | $(BUILD_DIR)
+	$(CLANG) -O3 -fPIC $(PLATFORM_TARGET_CFLAGS) $(PLATFORM_CFLAGS) -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/%.o: src/platform/%.c | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
+$(BUILD_DIR)/%.o: src/platform/%.c $(MACOS_DEPLOYMENT_STAMP) | $(BUILD_DIR)
+	$(CLANG) -O3 -fPIC $(PLATFORM_TARGET_CFLAGS) -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
 # QuickJS-NG libregexp (#294) — vendored ECMA-262 regex engine, replaces TRE.
 # Three .c files: the regex engine itself, the Unicode tables /
@@ -272,18 +287,18 @@ $(BUILD_DIR)/%.o: src/platform/%.c | $(BUILD_DIR)
 # the host. CONFIG_ALL_UNICODE turns on the \p{...} property tables.
 QJSRE_DIR := src/third-party/qjs-regex
 QJSRE_OBJS := $(BUILD_DIR)/qjs_libregexp.o $(BUILD_DIR)/qjs_libunicode.o $(BUILD_DIR)/qjs_regex_shim.o
-QJSRE_CFLAGS := -O3 -fPIC -I$(QJSRE_DIR) -DCONFIG_ALL_UNICODE \
+QJSRE_CFLAGS := -O3 -fPIC $(PLATFORM_TARGET_CFLAGS) -I$(QJSRE_DIR) -DCONFIG_ALL_UNICODE \
                 -Wno-parentheses -Wno-unused-value -Wno-unused-variable \
                 -Wno-unused-parameter -Wno-unused-function $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS)
 
-$(BUILD_DIR)/qjs_libregexp.o: $(QJSRE_DIR)/libregexp.c $(QJSRE_DIR)/libregexp.h $(QJSRE_DIR)/libregexp-opcode.h | $(BUILD_DIR)
+$(BUILD_DIR)/qjs_libregexp.o: $(QJSRE_DIR)/libregexp.c $(QJSRE_DIR)/libregexp.h $(QJSRE_DIR)/libregexp-opcode.h $(MACOS_DEPLOYMENT_STAMP) | $(BUILD_DIR)
 	$(CLANG) $(QJSRE_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/qjs_libunicode.o: $(QJSRE_DIR)/libunicode.c $(QJSRE_DIR)/libunicode.h $(QJSRE_DIR)/libunicode-table.h | $(BUILD_DIR)
+$(BUILD_DIR)/qjs_libunicode.o: $(QJSRE_DIR)/libunicode.c $(QJSRE_DIR)/libunicode.h $(QJSRE_DIR)/libunicode-table.h $(MACOS_DEPLOYMENT_STAMP) | $(BUILD_DIR)
 	$(CLANG) $(QJSRE_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/qjs_regex_shim.o: src/platform/qjs_regex_shim.c | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
+$(BUILD_DIR)/qjs_regex_shim.o: src/platform/qjs_regex_shim.c $(MACOS_DEPLOYMENT_STAMP) | $(BUILD_DIR)
+	$(CLANG) -O3 -fPIC $(PLATFORM_TARGET_CFLAGS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
 # Vendored AES-GCM (crypto.subtle on Apple). The dylib/CLI build pulls
 # this in via the `cflags:` directive in src/lib.zc; the static archive
@@ -292,8 +307,8 @@ $(BUILD_DIR)/qjs_regex_shim.o: src/platform/qjs_regex_shim.c | $(BUILD_DIR)
 # _zjs_pc_aes_gcm_{encrypt,decrypt}.
 AESGCM_DIR := src/third-party/aes-gcm
 AESGCM_OBJ := $(BUILD_DIR)/aes_gcm.o
-$(AESGCM_OBJ): $(AESGCM_DIR)/aes_gcm.c $(AESGCM_DIR)/aes_gcm.h | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
+$(AESGCM_OBJ): $(AESGCM_DIR)/aes_gcm.c $(AESGCM_DIR)/aes_gcm.h $(MACOS_DEPLOYMENT_STAMP) | $(BUILD_DIR)
+	$(CLANG) -O3 -fPIC $(PLATFORM_TARGET_CFLAGS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
 $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS) $(AESGCM_OBJ)
 	@rm -f $@

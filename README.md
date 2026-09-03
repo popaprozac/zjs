@@ -178,6 +178,18 @@ make test       # runs every test target
 make clean      # removes build/
 ```
 
+On macOS, embedders can set the minimum deployment version for every static
+archive object:
+
+```bash
+make lib-static MACOSX_DEPLOYMENT_TARGET=14.0
+```
+
+The Makefile records that value in `build/.macos-deployment-target` and rebuilds
+all archive members when it changes. This keeps the library's object versions
+aligned with applications such as Zapp instead of deferring a mismatch to the
+final linker invocation.
+
 On **Windows** the Makefile is POSIX-only; build through the PowerShell
 driver instead (`scripts\build-windows.ps1` for the CLI,
 `-Lib` for the static archive). Full instructions, prerequisites, and
