@@ -1,16 +1,13 @@
-var log = "";
-try { log += "a"; undefined_name; log += "!"; } catch (e) { log += e.name + ":" + e.message; }
-try { null.prop; } catch (e) { log += "|" + e.message; }
-try { (42)(); } catch (e) { log += "|" + e.name + ":" + e.message; }
-try { throw new TypeError("custom"); } catch (err) { log += "|" + err.name + ":" + err.message; }
-try { throw { code: 7 }; } catch (thrown) { log += "|" + thrown.code; }
-try { throw "plain"; } catch (s) { log += "|" + s + typeof s; }
-var e1 = new Error();
-var e2 = Error("called");
-log += "|" + (e1.message === undefined || e1.message === "") + ":" + e2.message + ":" + e1.name + ":" + (typeof RangeError);
-function risky(n) { if (n > 2) throw new RangeError("too big: " + n); return n; }
-function guarded(n) { try { return risky(n); } catch (e) { return e.message; } }
-log += "|" + guarded(1) + "," + guarded(5);
-function unwinds() { risky(9); }
-try { unwinds(); } catch (e) { log += "|" + e.name; }
-log;
+// Native error constructors, AggregateError, and the URI functions.
+var log = [];
+log.push(typeof EvalError, typeof URIError, typeof AggregateError);
+log.push(new EvalError("e").name, new URIError("u").message, EvalError.prototype instanceof Error);
+log.push(Object.getPrototypeOf(EvalError) === Error, Object.getPrototypeOf(URIError.prototype) === Error.prototype, String(new EvalError("x")));
+var a = new AggregateError([1, 2], "agg");
+log.push(a.name, a.message, a.errors.length, a.errors[1], Object.prototype.hasOwnProperty.call(a, "errors"), a instanceof Error, a instanceof AggregateError);
+try { new AggregateError(5); } catch (x) { log.push(x instanceof TypeError); }
+log.push(encodeURIComponent("a b&c/d?é"), encodeURI("http://x.y/a b?q=1&r=é#f"), decodeURIComponent("a%20b%26c%2Fd%C3%A9"));
+log.push(encodeURIComponent("\u{1F600}"), decodeURIComponent("%F0%9F%98%80") === "\u{1F600}");
+log.push(decodeURI.name, encodeURIComponent("-_.!~*'()"), encodeURI(";/?:@&=+$,#"), encodeURIComponent(";/?:@&=+$,#"));
+log.push(decodeURIComponent("%3B%2F%3F%3A%40%26%3D%2B%24%2C%23"), decodeURI("%41%61%2d"), encodeURIComponent(""), decodeURI(""));
+log.join("|");

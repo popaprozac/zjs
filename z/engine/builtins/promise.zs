@@ -4,7 +4,7 @@
 // functions; this module is the JavaScript-facing surface over it.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isTrue } from "../value.zs";
-import { Runtime, ERROR_KIND_ERROR } from "../runtime.zs";
+import { Runtime, ERROR_KIND_AGGREGATE } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, bytesOf } from "../heap.zs";
 import { defineSpecies } from "./collections.zs";
 
@@ -282,18 +282,12 @@ function aggregateFinish(inout runtime: Runtime, aggregate: u32): void {
   const result = runtime.heap.slot(aggregate, 2);
   const values = runtime.heap.slot(aggregate, 0);
   if (mode == AGG_ANY) {
-    // An Error carrying the rejections as `errors`; a distinct
-    // AggregateError constructor is not defined yet.
     const message: String = "All promises were rejected";
-    const error = runtime.makeError(ERROR_KIND_ERROR, bytesOf(in message));
+    const error = runtime.makeError(ERROR_KIND_AGGREGATE, bytesOf(in message));
     runtime.pushTempRoot(error);
     const errorsText: String = "errors";
     const errorsAtom = runtime.atomOf(in errorsText);
     runtime.heap.objectDefine(asCell(error), errorsAtom, values, PROP_METHOD);
-    const aggregateText: String = "AggregateError";
-    const aggregateName = runtime.internText(in aggregateText);
-    const atomName = runtime.atomName;
-    runtime.heap.objectDefine(asCell(error), atomName, aggregateName, PROP_METHOD);
     runtime.popTempRoot();
     runtime.rejectPromise(asCell(result), error);
     return;

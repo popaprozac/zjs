@@ -918,6 +918,53 @@ each. So the bounds checks alone are worth 2 to 9 percent on these paths;
 the earlier 7 to 13 included the overflow checks since removed by
 `wrappingAdd`.
 
+Re-measured at `684ce980` (inline caches and the code segment now in;
+same method, `-O2 -DNDEBUG`, five runs, min / median / max):
+
+| benchmark | checked | bounds unchecked | median gain |
+|---|---|---|---|
+| integer loop | 0.644 / 0.649 / 0.758 | 0.599 / 0.602 / 0.867 | 7% |
+| calls | 0.126 / 0.130 / 0.132 | 0.127 / 0.132 / 0.148 | -1% |
+| constructing | 0.213 / 0.226 / 0.246 | 0.194 / 0.198 / 0.211 | 12% |
+| array methods | 0.272 / 0.278 / 0.282 | 0.258 / 0.260 / 0.264 | 6% |
+
+The sites, with the invariant each relies on (all are in
+`engine/runtime.zs` and `engine/heap.zs`):
+
+1. Instruction fetch, `this.codeSegment[codeStart + ip]` in `runFrames`:
+   the loop condition is `ip < codeLength`, and `setFunction` appends the
+   function's code to the segment and records `codeStart` and
+   `codeLength` from that append, so `codeStart + codeLength <=
+   codeSegment.length` and the segment only grows.
+2. Register read and write, `this.regStack[base + index]` in `reg` /
+   `setReg` (two to three per instruction): `pushFrame` grows
+   `regStack` to `base + registerCount` before the frame runs; the
+   operand `index` is a byte the compiler allocated below
+   `registerCount` (its counter is capped, so `registerCount <= 253`);
+   `base` is a frame field set once. The call sequence copies arguments
+   with the same invariant on the callee's window.
+3. Function record, `this.functions[fi]`, read per instruction for
+   `codeLength`, `codeStart`, the constant table, and the cache table:
+   `fi` is the frame's `functionIndex`, which came from a `reserveFunction`
+   push, and `functions` only grows.
+4. Constant load, `functions[fi].constants[bcU16(inst)]`: the operand is
+   the index `addConst` returned when it pushed, and the table is not
+   shrunk after compilation.
+5. Inline-cache hit, `functions[fi].caches[nameSlot]` then
+   `heap.headers[handle]` and `heap.slots[header.slotStart + cache.slot]`:
+   `nameSlot` is the operand that indexes `propertyNames`, and
+   `setFunction` sized `caches` to `propertyNames.length`; `handle` is a
+   live cell (checked by tag before the lookup); `cache.slot` was the
+   slot found under `receiverClass`, the hit compares the receiver's
+   class against it, and a class fixes its slot count, so the slot is
+   below the object's slot span.
+
+Items 1, 2, and 5 are the ones on every instruction of the benchmarks
+above; 3 and 4 are per-instruction reads the C compiler already hoists
+where it can. A checked build keeps every one of these; the ask is a
+spelling under which a release build may skip them at these five sites
+only.
+
 The ask: an indexing form that skips the bounds check where the program
 asserts the invariant -- `array.at_unchecked(i)`, an `unsafe` index
 expression, or a release-mode elision behind a per-function attribute --

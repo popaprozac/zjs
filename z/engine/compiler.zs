@@ -174,9 +174,17 @@ export struct Compiler {
     return u16(this.constants.length - 1);
   }
 
+  // Operands are a byte; a function that needs more registers than fit
+  // fails to compile rather than wrapping (the counter stops short of
+  // the top so the fixed-width call layouts below never overflow it).
   function allocReg(inout this): u8 {
+    if (this.nextReg >= 252) {
+      this.hadError = true;
+      this.nextReg = 252;
+      return 252;
+    }
     const reg = this.nextReg;
-    this.nextReg = this.nextReg + 1;
+    this.nextReg = reg + 1;
     if (this.nextReg > this.maxReg) this.maxReg = this.nextReg;
     return reg;
   }

@@ -73,7 +73,10 @@ export const ERROR_KIND_TYPE: u32 = 1;
 export const ERROR_KIND_REFERENCE: u32 = 2;
 export const ERROR_KIND_RANGE: u32 = 3;
 export const ERROR_KIND_SYNTAX: u32 = 4;
-export const ERROR_KIND_COUNT: u32 = 5;
+export const ERROR_KIND_EVAL: u32 = 5;
+export const ERROR_KIND_URI: u32 = 6;
+export const ERROR_KIND_AGGREGATE: u32 = 7;
+export const ERROR_KIND_COUNT: u32 = 8;
 
 export const PROMISE_PENDING: i32 = 0;
 export const PROMISE_FULFILLED: i32 = 1;
@@ -104,7 +107,10 @@ export function errorKindName(kind: u32): String {
   if (kind == ERROR_KIND_TYPE) return "TypeError";
   if (kind == ERROR_KIND_REFERENCE) return "ReferenceError";
   if (kind == ERROR_KIND_RANGE) return "RangeError";
-  return "SyntaxError";
+  if (kind == ERROR_KIND_SYNTAX) return "SyntaxError";
+  if (kind == ERROR_KIND_EVAL) return "EvalError";
+  if (kind == ERROR_KIND_URI) return "URIError";
+  return "AggregateError";
 }
 
 // An own property as seen by [[GetOwnProperty]]: a data property holds
@@ -254,6 +260,7 @@ export struct Runtime {
   // and the job queue (each job a heap array) with its read cursor.
   promiseProto: u32;
   atomPromiseRecord: u32;
+  atomErrorData: u32;
   // %AsyncIteratorPrototype% and %AsyncGeneratorPrototype%.
   asyncIteratorProto: u32;
   asyncGeneratorProto: u32;
@@ -649,6 +656,7 @@ export struct Runtime {
   function makeError(inout this, kind: u32, message: Array<u8>): Value {
     const proto = this.errorPrototype(kind);
     const object = this.heap.allocateObject(proto);
+    this.markErrorData(object);
     const kindName = errorKindName(kind);
     const nameValue = this.internText(in kindName);
     const atomName = this.atomName;
@@ -659,12 +667,29 @@ export struct Runtime {
     return cellValue(object);
   }
 
+  // The error data slot: what makes an object an error instance to the
+  // `stack` accessor, whichever prototype it was given.
+  function markErrorData(inout this, object: u32): void {
+    const atomErrorData = this.atomErrorData;
+    if (this.heap.objectFindSlot(object, atomErrorData) >= 0) return;
+    this.heap.objectDefine(object, atomErrorData, booleanValue(true), PROP_NONE);
+  }
+
+  function hasErrorData(value: Value): boolean {
+    if (!this.isObjectLike(value)) return false;
+    return this.heap.objectFindSlot(asCell(value), this.atomErrorData) >= 0;
+  }
+
   function typeError(inout this, in message: String): Value {
     return this.makeError(ERROR_KIND_TYPE, bytesOf(in message));
   }
 
   function rangeError(inout this, in message: String): Value {
     return this.makeError(ERROR_KIND_RANGE, bytesOf(in message));
+  }
+
+  function uriError(inout this, in message: String): Value {
+    return this.makeError(ERROR_KIND_URI, bytesOf(in message));
   }
 
   function syntaxError(inout this, in message: String): Value {
@@ -1832,6 +1857,13 @@ export struct Runtime {
       }
       return cellValue(keys);
     }
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      // A function's own enumerable properties live in its bag; its
+      // builtin ones and Function.prototype's are all non-enumerable.
+      const bag = this.functionBag(handle);
+      if (bag != 0) this.appendObjectKeys(keys, bag, false);
+      return cellValue(keys);
+    }
     if (tag == TAG_OBJECT) {
       let current = handle;
       let seen = Array<u32>();
@@ -2693,6 +2725,7 @@ export struct Runtime {
     this.atomNewTarget = this.hiddenAtom(110, 116);
     this.atomFunctionProto = this.hiddenAtom(102, 112);
     this.atomPromiseRecord = this.hiddenAtom(112, 114);
+    this.atomErrorData = this.hiddenAtom(101, 100);
     this.atomSyncIterator = this.hiddenAtom(115, 105);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
@@ -2836,6 +2869,8 @@ export struct Runtime {
     this.heap.markHandle(atomFunctionProto);
     const atomPromiseRecord = this.atomPromiseRecord;
     this.heap.markHandle(atomPromiseRecord);
+    const atomErrorData = this.atomErrorData;
+    this.heap.markHandle(atomErrorData);
     const promiseProto = this.promiseProto;
     this.heap.markHandle(promiseProto);
     let job: usize = 0;
@@ -5095,7 +5130,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, atomErrorData: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

@@ -7,11 +7,14 @@
 // from it with their own `name`.
 import { Value, undefinedValue, booleanValue, cellValue, asCell, isCell, isUndefined, isInt32, asInt32, int32Value, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, ERROR_KIND_ERROR, ERROR_KIND_COUNT, errorKindName } from "../runtime.zs";
-import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
+import { Runtime, ERROR_KIND_ERROR, ERROR_KIND_AGGREGATE, ERROR_KIND_COUNT, errorKindName } from "../runtime.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE, PROP_DEFAULT, PROP_WRITABLE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
 
 // new Error(message) / Error(message): the object under construction
 // arrives as `this`; a plain call makes its own.
+// Error(message, options) and the native errors; AggregateError(errors,
+// message, options) takes its iterable first and keeps it as `errors`.
+// An `options` object with a `cause` gives the error a `cause`.
 function constructError(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const kind = u32(asInt32(runtime.heap.slot(callee, 0)));
   let object: u32 = 0;
@@ -20,13 +23,38 @@ function constructError(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   } else {
     object = runtime.heap.allocateObject(runtime.errorPrototype(kind));
   }
-  const first = runtime.argument(argsBase, argc, 0);
+  runtime.pushTempRoot(cellValue(object));
+  runtime.markErrorData(object);
+  const aggregate = kind == ERROR_KIND_AGGREGATE;
+  const messageIndex: u32 = aggregate ? 1 : 0;
+  const first = runtime.argument(argsBase, argc, messageIndex);
   if (!isUndefined(first)) {
     const message = runtime.toStringValue(first);
-    if (runtime.pendingThrow) return undefinedValue();
+    if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
     const atomMessage = runtime.atomMessage;
-    runtime.heap.objectSet(object, atomMessage, message);
+    runtime.heap.objectDefine(object, atomMessage, message, PROP_METHOD);
   }
+  const options = runtime.argument(argsBase, argc, messageIndex + 1);
+  if (runtime.isObjectLike(options)) {
+    const causeText: String = "cause";
+    const causeKey = runtime.internText(in causeText);
+    const hasCause = runtime.hasProperty(options, causeKey);
+    if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
+    if (hasCause) {
+      const cause = runtime.getProperty(options, causeKey);
+      if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
+      const causeAtom = runtime.atomOf(in causeText);
+      runtime.heap.objectDefine(object, causeAtom, cause, PROP_METHOD);
+    }
+  }
+  if (aggregate) {
+    const errors = runtime.iterateToArray(runtime.argument(argsBase, argc, 0));
+    if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
+    const errorsText: String = "errors";
+    const errorsAtom = runtime.atomOf(in errorsText);
+    runtime.heap.objectDefine(object, errorsAtom, errors, PROP_METHOD);
+  }
+  runtime.popTempRoot();
   return cellValue(object);
 }
 
@@ -177,6 +205,99 @@ function objectIsPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase:
   return booleanValue(false);
 }
 
+// --- Error.prototype.stack ---
+//
+// An accessor on Error.prototype. The getter renders an error instance
+// (any object carrying error data, whatever its prototype) and yields
+// undefined for other objects; the setter stores a plain own `stack` on
+// the receiver, or updates a writable one it already has.
+function errorStackGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  if (!runtime.isObjectLike(thisValue)) {
+    const message: String = "Error.prototype.stack getter called on a non-object";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  if (!runtime.hasErrorData(thisValue)) return undefinedValue();
+  const head = errorToString(inout runtime, thisValue, argsBase, argc, callee);
+  if (runtime.pendingThrow) return undefinedValue();
+  let text = runtime.heap.stringBytes(asCell(head));
+  const frame: String = "\n    at <anonymous>";
+  const frameBytes = bytesOf(in frame);
+  let k: usize = 0;
+  while (k < frameBytes.length) {
+    text.push(frameBytes[k]);
+    k = k + 1;
+  }
+  return runtime.newString(move text);
+}
+
+function errorStackSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  if (!runtime.isObjectLike(thisValue)) {
+    const message: String = "Error.prototype.stack setter called on a non-object";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  if (argc == 0) {
+    const message: String = "Error.prototype.stack setter requires a value";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const value = runtime.argument(argsBase, argc, 0);
+  if (!runtime.isStringValue(value)) {
+    const message: String = "Error.prototype.stack setter requires a string";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const stackText: String = "stack";
+  const atomStack = runtime.atomOf(in stackText);
+  const handle = asCell(thisValue);
+  const target = runtime.definitionTarget(handle, atomStack);
+  if (target == 0) {
+    const message: String = "Cannot set property stack";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const current = runtime.ownSlotDescriptor(target, atomStack);
+  if (!current.present) {
+    if (!runtime.isExtensible(thisValue)) {
+      const message: String = "Cannot define property stack, object is not extensible";
+      const error = runtime.typeError(in message);
+      runtime.raise(error);
+      return undefinedValue();
+    }
+    runtime.defineOwnAttr(target, atomStack, value, PROP_DEFAULT);
+    return undefinedValue();
+  }
+  if ((current.attr & PROP_ACCESSOR) != 0) {
+    // An own accessor takes the value through its own setter; the
+    // receiver holding this very accessor (Error.prototype) rejects.
+    const ownSetter = current.setter;
+    if (!runtime.isCallable(ownSetter) || asCell(ownSetter) == callee) {
+      const message: String = "Cannot set property stack, which has only a getter";
+      const error = runtime.typeError(in message);
+      runtime.raise(error);
+      return undefinedValue();
+    }
+    let args = Array<Value>();
+    args.push(value);
+    const ignored = runtime.callValue(ownSetter, thisValue, move args);
+    return undefinedValue();
+  }
+  if ((current.attr & PROP_WRITABLE) == 0) {
+    const message: String = "Cannot assign to read only property 'stack'";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  runtime.defineOwnAttr(target, atomStack, value, current.attr);
+  return undefinedValue();
+}
+
 export function installErrors(inout runtime: Runtime): void {
   // Object first: its prototype is the root every object inherits.
   const objectProto = runtime.objectProto;
@@ -199,11 +320,19 @@ export function installErrors(inout runtime: Runtime): void {
 
   // Error, then the subclasses whose prototypes inherit from its.
   let errorProto: u32 = 0;
+  let errorCtor: u32 = 0;
   let kind: u32 = 0;
   while (kind < ERROR_KIND_COUNT) {
     const kindName = errorKindName(kind);
-    const ctor = runtime.defineConstructor(constructError, int32Value(i32(kind)), 1, in kindName);
+    const ctor = runtime.defineConstructor(constructError, int32Value(i32(kind)), kind == ERROR_KIND_AGGREGATE ? 2 : 1, in kindName);
     const parent: u32 = kind == ERROR_KIND_ERROR ? objectProto : errorProto;
+    if (kind == ERROR_KIND_ERROR) {
+      errorCtor = ctor;
+    } else {
+      // A native error constructor inherits from Error itself.
+      const atomFunctionProto = runtime.atomFunctionProto;
+      runtime.setFunctionHidden(ctor, atomFunctionProto, cellValue(errorCtor));
+    }
     const proto = runtime.heap.allocateObject(parent);
     if (kind == ERROR_KIND_ERROR) errorProto = proto;
     const nameValue = runtime.internText(in kindName);
@@ -218,4 +347,13 @@ export function installErrors(inout runtime: Runtime): void {
     runtime.setGlobal(errorKindName(kind), cellValue(ctor));
     kind = kind + 1;
   }
+
+  const getText: String = "get stack";
+  const stackGetter = runtime.defineHostFunction(errorStackGet, undefinedValue(), 0, in getText);
+  const setText: String = "set stack";
+  const stackSetter = runtime.defineHostFunction(errorStackSet, undefinedValue(), 1, in setText);
+  const stackAccessor = runtime.heap.allocateAccessor(cellValue(stackGetter), cellValue(stackSetter));
+  const stackText: String = "stack";
+  const atomStack = runtime.atomOf(in stackText);
+  runtime.heap.objectDefine(errorProto, atomStack, cellValue(stackAccessor), PROP_CONFIGURABLE | PROP_ACCESSOR);
 }

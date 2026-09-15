@@ -219,7 +219,13 @@ constructor (the reference finds nothing); a derived class's field
 initializers run after `super()` returns and see what the base
 constructor set (the reference runs them first);
 `String.fromCodePoint(0x1F600)` is the four-byte encoding, equal to the
-literal (the reference produces something else).
+literal (the reference produces something else); the native error
+constructors have `length` 1 (AggregateError 2) and their prototypes
+carry `name` (the reference has 0 and nothing); `new AggregateError([])`
+has an empty message and a non-enumerable `errors` (the reference has
+`undefined` and enumerable); the URI functions have `length` 1 and throw
+URIError on malformed input, and `decodeURI` leaves reserved escapes
+as written (the reference has 0, never throws, and decodes them).
 
 Performance, measured after classes with four micro-benchmarks (best of
 three, release builds of both engines): the Z engine ran the integer loop
@@ -262,11 +268,12 @@ bytes.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
 sees one binding), `Date` / `RegExp`, a `return` or `throw` sent to a
-delegating `yield*`, `AggregateError` as a constructor, promise subclassing
-through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
+delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
-constructor, and the remaining builtins. A function declaration
+constructor, a function that needs more than 252 registers (operands
+are a byte; it fails to compile, where the reference compiles it), and
+the remaining builtins. A function declaration
 evaluated more than once yields the same function object each time
 (class members do not). The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.

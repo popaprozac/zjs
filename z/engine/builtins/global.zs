@@ -1,7 +1,7 @@
 // Global functions: eval and the number-parsing conveniences.
 import { Value, undefinedValue, booleanValue, doubleValue, int32Value, cellValue, asCell, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, ERROR_KIND_SYNTAX, stringToNumber, toNumber, toInt32, isIntegralDouble } from "../runtime.zs";
+import { Runtime, ERROR_KIND_SYNTAX, stringToNumber, toNumber, toInt32, isIntegralDouble, utf8SequenceLength } from "../runtime.zs";
 import { parseProgram } from "../parser.zs";
 import { compileProgram } from "../compiler.zs";
 
@@ -163,7 +163,166 @@ function numberResult(value: f64): Value {
   return doubleValue(value);
 }
 
+// --- URI encoding ---
+//
+// Strings are bytes, so the encoding is percent-escaping of bytes and
+// the decoding is the reverse; the multi-byte sequences must be
+// well-formed UTF-8 either way, else a URIError.
+
+function isUriUnreserved(byte: u8): boolean {
+  if (byte >= 65 && byte <= 90) return true;
+  if (byte >= 97 && byte <= 122) return true;
+  if (byte >= 48 && byte <= 57) return true;
+  return byte == 45 || byte == 95 || byte == 46 || byte == 33 || byte == 126 || byte == 42 || byte == 39 || byte == 40 || byte == 41;
+}
+
+function isUriReserved(byte: u8): boolean {
+  return byte == 59 || byte == 47 || byte == 63 || byte == 58 || byte == 64 || byte == 38 || byte == 61 || byte == 43 || byte == 36 || byte == 44 || byte == 35;
+}
+
+function hexDigit(value: u8): u8 {
+  return value < 10 ? 48 + value : 55 + value;
+}
+
+function hexValue(byte: u8): i32 {
+  if (byte >= 48 && byte <= 57) return i32(byte - 48);
+  if (byte >= 65 && byte <= 70) return i32(byte - 55);
+  if (byte >= 97 && byte <= 102) return i32(byte - 87);
+  return -1;
+}
+
+function uriEncode(inout runtime: Runtime, argsBase: u32, argc: u32, keepReserved: boolean): Value {
+  const text = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  const bytes = runtime.heap.stringBytes(asCell(text));
+  let encoded = Array<u8>();
+  let index: usize = 0;
+  while (index < bytes.length) {
+    const byte = bytes[index];
+    if (isUriUnreserved(byte) || (keepReserved && isUriReserved(byte))) {
+      encoded.push(byte);
+      index = index + 1;
+      continue;
+    }
+    let length: usize = 1;
+    if (byte >= 0x80) {
+      const sequence = utf8SequenceLength(in bytes, index);
+      if (sequence <= 0) {
+        const message: String = "URI malformed";
+        const error = runtime.uriError(in message);
+        runtime.raise(error);
+        return undefinedValue();
+      }
+      length = usize(sequence);
+    }
+    let k: usize = 0;
+    while (k < length) {
+      const escaped = bytes[index + k];
+      encoded.push(37);
+      encoded.push(hexDigit(escaped >> 4));
+      encoded.push(hexDigit(escaped & 15));
+      k = k + 1;
+    }
+    index = index + length;
+  }
+  return runtime.newString(move encoded);
+}
+
+function uriDecode(inout runtime: Runtime, argsBase: u32, argc: u32, keepReserved: boolean): Value {
+  const text = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  const bytes = runtime.heap.stringBytes(asCell(text));
+  let decoded = Array<u8>();
+  let index: usize = 0;
+  while (index < bytes.length) {
+    const byte = bytes[index];
+    if (byte != 37) {
+      decoded.push(byte);
+      index = index + 1;
+      continue;
+    }
+    // One escape, then the rest of its UTF-8 sequence, all escaped.
+    let sequence = Array<u8>();
+    let cursor = index;
+    let needed: usize = 1;
+    while (sequence.length < needed) {
+      if (cursor + 2 >= bytes.length || bytes[cursor] != 37) {
+        const message: String = "URI malformed";
+        const error = runtime.uriError(in message);
+        runtime.raise(error);
+        return undefinedValue();
+      }
+      const high = hexValue(bytes[cursor + 1]);
+      const low = hexValue(bytes[cursor + 2]);
+      if (high < 0 || low < 0) {
+        const message: String = "URI malformed";
+        const error = runtime.uriError(in message);
+        runtime.raise(error);
+        return undefinedValue();
+      }
+      const value = u8(high * 16 + low);
+      if (sequence.length == 0 && value >= 0x80) {
+        if (value >= 0xC2 && value <= 0xDF) { needed = 2; } else if (value >= 0xE0 && value <= 0xEF) { needed = 3; } else if (value >= 0xF0 && value <= 0xF4) { needed = 4; } else {
+          const message: String = "URI malformed";
+          const error = runtime.uriError(in message);
+          runtime.raise(error);
+          return undefinedValue();
+        }
+      }
+      sequence.push(value);
+      cursor = cursor + 3;
+    }
+    if (needed > 1 && utf8SequenceLength(in sequence, 0) != i32(needed)) {
+      const message: String = "URI malformed";
+      const error = runtime.uriError(in message);
+      runtime.raise(error);
+      return undefinedValue();
+    }
+    if (needed == 1 && keepReserved && (isUriReserved(sequence[0]) || sequence[0] == 35)) {
+      // decodeURI leaves a reserved character's escape as written.
+      let k: usize = 0;
+      while (k < 3) {
+        decoded.push(bytes[index + k]);
+        k = k + 1;
+      }
+    } else {
+      let k: usize = 0;
+      while (k < sequence.length) {
+        decoded.push(sequence[k]);
+        k = k + 1;
+      }
+    }
+    index = cursor;
+  }
+  return runtime.newString(move decoded);
+}
+
+function encodeURIFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return uriEncode(inout runtime, argsBase, argc, true);
+}
+function encodeURIComponentFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return uriEncode(inout runtime, argsBase, argc, false);
+}
+function decodeURIFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return uriDecode(inout runtime, argsBase, argc, true);
+}
+function decodeURIComponentFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return uriDecode(inout runtime, argsBase, argc, false);
+}
+
 export function installGlobals(inout runtime: Runtime): void {
+  const encodeText: String = "encodeURI";
+  const encodeFn = runtime.defineHostFunction(encodeURIFunction, undefinedValue(), 1, in encodeText);
+  runtime.setGlobal("encodeURI", cellValue(encodeFn));
+  const encodeComponentText: String = "encodeURIComponent";
+  const encodeComponentFn = runtime.defineHostFunction(encodeURIComponentFunction, undefinedValue(), 1, in encodeComponentText);
+  runtime.setGlobal("encodeURIComponent", cellValue(encodeComponentFn));
+  const decodeText: String = "decodeURI";
+  const decodeFn = runtime.defineHostFunction(decodeURIFunction, undefinedValue(), 1, in decodeText);
+  runtime.setGlobal("decodeURI", cellValue(decodeFn));
+  const decodeComponentText: String = "decodeURIComponent";
+  const decodeComponentFn = runtime.defineHostFunction(decodeURIComponentFunction, undefinedValue(), 1, in decodeComponentText);
+  runtime.setGlobal("decodeURIComponent", cellValue(decodeComponentFn));
   const globalObject = runtime.globalObject;
   const evalText: String = "eval";
   const evalFn = runtime.defineHostFunction(evalSource, undefinedValue(), 1, in evalText);
