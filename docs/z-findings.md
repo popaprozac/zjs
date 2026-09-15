@@ -633,9 +633,14 @@ when it traps would have found these in seconds; that half is G15.
 
 ## G29 — A shift that loses bits traps, and there is no wrapping shift
 
-**Status:** `proposed` · **Size:** small · **Priority:** high
+**Status:** `consumer-verified` — z-lang `ff4c68c2` (in pin `0d8cd8c4`), ZJS `4f97215`
 **Confirmed:** z-lang `3f96e759` · **Blocks:** no (worked around)
 **Found:** Phase 7, Math.random -- and, on inspection, the interpreter's `<<`.
+
+Landed as `wrappingShiftLeft(count)` on the receiver's exact type, with a
+checked bit count. Probe `wrapping-shift` `LANDED`. JavaScript's `<<` and
+the xorshift step of `Math.random` are in Z; both `raw c` shift helpers
+are gone.
 
 `state << 25` on a `u64` traps when the high bits leave the word, silently
 (G15). JavaScript's `<<` discards those bits by definition, so the
@@ -851,9 +856,15 @@ would remove the shim without opening the general pointer-ABI question.
 
 ## G30 — A C export cannot receive bytes without validating them as text
 
-**Status:** `proposed` · **Size:** small · **Priority:** medium
+**Status:** `consumer-verified` — z-lang `0d8cd8c4` (in pin `0d8cd8c4`), ZJS `4f97215`
 **Confirmed:** z-lang `6d1f72cd` · **Blocks:** no (worked around)
 **Found:** Phase 7, the engine's C API taking JavaScript source.
+
+Landed as borrowed read-only `Slice<u8>` inputs on C exports, expanding to
+a pointer and a length at the boundary with no copy or decoding. The
+engine's `zjs_z_eval` takes its source that way; the raw C byte reader
+and the address-as-integer parameter are gone. Still open from the same
+entry: `cstring` as an export parameter, not needed now.
 
 The C-export tier accepts scalars, owned `String`, and checked C-layout
 values. A `cstring` parameter is rejected (`Z0830`), and a `String`
