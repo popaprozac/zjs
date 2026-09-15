@@ -174,6 +174,7 @@ export enum Op {
   storeSuper,      // a = key, b = value: `super[key] = value`.
   initClass,       // a = constructor, b = prototype, c = parent: wire a class with a heritage.
   initClassBase,   // a = constructor, b = prototype: wire a class without one.
+  yieldRaw,        // a = dst, b = value: an async generator yields a delegate's value without awaiting it.
 }
 
 export struct Inst {
@@ -381,6 +382,7 @@ export function opCode(op: Op): i32 {
     storeSuper => 152;
     initClass => 153;
     initClassBase => 154;
+    yieldRaw => 155;
   };
 }
 

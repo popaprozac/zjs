@@ -148,7 +148,11 @@ species, `%AsyncIteratorPrototype%`, and `%AsyncGeneratorPrototype%`.
 The `zjsz` tool supplies `console`. Optional chains: a spine of member,
 element, and call links with a `?.` short-circuits as a whole through
 one exit. A private name read or written on a value that lacks it
-throws.
+throws. `yield*` in an async generator takes the operand's async
+iterator (a sync one wrapped through `%AsyncFromSyncIteratorPrototype%`),
+awaits each `next`, hands each value to the request as it is, forwards
+what `next` sends, and yields the delegate's final value as the
+expression's; `for await` iterates the same way.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -247,8 +251,8 @@ String's valid-UTF-8 invariant and is never mistaken for the original
 bytes.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `Date` / `RegExp`, `for await`, `yield*` inside
-async generators, `AggregateError` as a constructor, promise subclassing
+sees one binding), `Date` / `RegExp`, a `return` or `throw` sent to a
+delegating `yield*`, `AggregateError` as a constructor, promise subclassing
 through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a

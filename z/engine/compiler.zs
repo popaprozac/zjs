@@ -156,6 +156,8 @@ export struct Compiler {
   fieldCount: u32;
   // Compiling an async function's body: `await` suspends like yield.
   isAsyncBody: boolean;
+  // Compiling an async generator's body: `yield*` delegates asynchronously.
+  isAsyncGeneratorBody: boolean;
   // Interned names for LoadProp / StoreProp; the instruction carries an
   // index into this table.
   propertyNames: Array<u32>;
@@ -724,6 +726,26 @@ export struct Compiler {
       return base;
     }
     return this.compileExpr(in parser, inout runtime, node);
+  }
+
+  // One step of an async iterator: `result = await iterator.next(sent)`
+  // (no argument when `withArgument` is false).
+  function emitAsyncIteratorStep(inout this, inout runtime: Runtime, iterator: u8, sent: u8, withArgument: boolean, result: u8): void {
+    const base = this.allocReg();
+    this.allocReg();
+    this.allocReg();
+    this.emit(instAB(Op.mov, base + 1, iterator));
+    const nextText: String = "next";
+    const nextAtom = runtime.atomOf(in nextText);
+    this.emit(instABC(Op.loadProp, base, base + 1, this.nameSlot(nextAtom)));
+    if (withArgument) {
+      this.emit(instAB(Op.mov, base + 2, sent));
+      this.emit(instABC(Op.methodInvoke, base, base, 1));
+    } else {
+      this.emit(instABC(Op.methodInvoke, base, base, 0));
+    }
+    this.emit(instAB(Op.awaitOp, result, base));
+    this.nextReg = base;
   }
 
   // The instance fields of a derived constructor, defined once super()
@@ -1367,6 +1389,37 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.yieldExpr) {
+      if (n.boolValue && this.isAsyncGeneratorBody) {
+        // yield* in an async generator: the operand's async iterator
+        // (a sync one wrapped), each next() awaited, each value handed
+        // to the request as it is, what next() sends forwarded, and the
+        // delegate's final value the expression's. A return or throw
+        // sent while delegating is not forwarded (limitation).
+        const iterable = this.compileExpr(in parser, inout runtime, n.left);
+        const iterator = this.allocReg();
+        this.emit(instAB(Op.iterGetAsync, iterator, iterable));
+        const sent = this.allocReg();
+        const result = this.allocReg();
+        if (result + 1 > this.fixedRegs) this.fixedRegs = result + 1;
+        this.emit(instA(Op.loadUndefined, sent));
+        const loopTop = u32(this.code.length);
+        this.emitAsyncIteratorStep(inout runtime, iterator, sent, true, result);
+        const done = this.allocReg();
+        const doneText: String = "done";
+        const doneAtom = runtime.atomOf(in doneText);
+        this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
+        const exit = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+        const value = this.allocReg();
+        const valueText: String = "value";
+        const valueAtom = runtime.atomOf(in valueText);
+        this.emit(instABC(Op.loadProp, value, result, this.nameSlot(valueAtom)));
+        this.emit(instAB(Op.yieldRaw, sent, value));
+        this.emitJumpBack(loopTop);
+        this.patchJump(exit);
+        const dst = this.allocReg();
+        this.emit(instABC(Op.loadProp, dst, result, this.nameSlot(valueAtom)));
+        return dst;
+      }
       if (n.boolValue) {
         // yield*: yield everything the operand's iterator produces. What
         // next() sends is not forwarded, and the delegate's final value
@@ -2125,13 +2178,16 @@ export struct Compiler {
   // the iterator.
   function compileForOf(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
     const n = parser.ast.node(node);
+    // `for await`: the async iterator, each next() awaited.
+    const isAwait = n.boolValue;
     this.resetCompletion();
     const source = this.compileExpr(in parser, inout runtime, n.right);
     const iterator = this.allocReg();
-    this.emit(instAB(Op.iterGet, iterator, source));
+    this.emit(instAB(isAwait ? Op.iterGetAsync : Op.iterGet, iterator, source));
     const done = this.allocReg();
     const value = this.allocReg();
-    if (value + 1 > this.fixedRegs) this.fixedRegs = value + 1;
+    const result = this.allocReg();
+    if (result + 1 > this.fixedRegs) this.fixedRegs = result + 1;
     const binding = parser.ast.node(n.left);
     let lexical: i32 = -1;
     if (binding.kind == NodeKind.varDecl && binding.op != TokenKind.kwVar) {
@@ -2150,8 +2206,20 @@ export struct Compiler {
     this.pushRegion(REGION_ITERATOR, NO_NODE, iterator, done);
     this.loops[top].continueRegions = this.regionDepth;
     this.loopSetContinue(loopTop);
-    this.emit(instABC(Op.iterStep, value, iterator, done));
+    if (isAwait) {
+      this.emitAsyncIteratorStep(inout runtime, iterator, value, false, result);
+      const doneText: String = "done";
+      const doneAtom = runtime.atomOf(in doneText);
+      this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
+    } else {
+      this.emit(instABC(Op.iterStep, value, iterator, done));
+    }
     const exit = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+    if (isAwait) {
+      const valueText: String = "value";
+      const valueAtom = runtime.atomOf(in valueText);
+      this.emit(instABC(Op.loadProp, value, result, this.nameSlot(valueAtom)));
+    }
     // A throw from the binding or the body closes the iterator (quietly)
     // and continues unwinding.
     const thrownReg = this.allocReg();
@@ -2990,7 +3058,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
 
@@ -3141,6 +3209,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.fieldCount = fieldCount;
   }
   compiler.isAsyncBody = isAsync;
+  compiler.isAsyncGeneratorBody = isAsync && isGenerator;
   const forwards = role == 2 && n.num == 2.0;
   if (forwards) {
     const rest = compiler.allocReg();
@@ -3545,7 +3614,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));

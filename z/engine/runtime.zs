@@ -258,6 +258,10 @@ export struct Runtime {
   asyncIteratorProto: u32;
   asyncGeneratorProto: u32;
   symbolAsyncIterator: Value;
+  // %AsyncFromSyncIteratorPrototype%, and the hidden key under which such
+  // a wrapper keeps its sync iterator.
+  asyncFromSyncProto: u32;
+  atomSyncIterator: u32;
   jobs: Array<Value>;
   jobCursor: usize;
   atomIterSource: u32;
@@ -2012,6 +2016,49 @@ export struct Runtime {
     return iterator;
   }
 
+  // GetIterator(value, async): the @@asyncIterator method, else the sync
+  // iterator wrapped so its results arrive through promises.
+  function getAsyncIterator(inout this, value: Value): Value {
+    const symbolAsyncIterator = this.symbolAsyncIterator;
+    let method = undefinedValue();
+    if (!isUndefined(value) && !isNull(value)) method = this.getProperty(value, symbolAsyncIterator);
+    if (this.pendingThrow) return undefinedValue();
+    if (isUndefined(method) || isNull(method)) {
+      const sync = this.getIterator(value);
+      if (this.pendingThrow) return undefinedValue();
+      this.pushTempRoot(sync);
+      const asyncFromSyncProto = this.asyncFromSyncProto;
+      const wrapper = this.heap.allocateObject(asyncFromSyncProto);
+      const atomSyncIterator = this.atomSyncIterator;
+      this.heap.objectDefine(wrapper, atomSyncIterator, sync, PROP_NONE);
+      this.popTempRoot();
+      return cellValue(wrapper);
+    }
+    if (!this.isCallable(method)) {
+      const message: String = "value is not async iterable";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    const iterator = this.callValue(method, value, Array<Value>());
+    if (this.pendingThrow) return undefinedValue();
+    if (!this.isObjectLike(iterator)) {
+      const message: String = "Result of the Symbol.asyncIterator method is not an object";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    return iterator;
+  }
+
+  // The sync iterator inside an async-from-sync wrapper, or undefined.
+  function wrappedSyncIterator(value: Value): Value {
+    if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return undefinedValue();
+    const slot = this.heap.objectFindSlot(asCell(value), this.atomSyncIterator);
+    if (slot < 0) return undefinedValue();
+    return this.heap.slot(asCell(value), u32(slot));
+  }
+
   // IteratorStep: the next value, or the deleted marker when done. A
   // throw is left pending (and reads as done).
   function iteratorStep(inout this, iterator: Value): Value {
@@ -2646,6 +2693,7 @@ export struct Runtime {
     this.atomNewTarget = this.hiddenAtom(110, 116);
     this.atomFunctionProto = this.hiddenAtom(102, 112);
     this.atomPromiseRecord = this.hiddenAtom(112, 114);
+    this.atomSyncIterator = this.hiddenAtom(115, 105);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
@@ -2661,6 +2709,7 @@ export struct Runtime {
     this.asyncIteratorProto = this.heap.allocateObject(objectProto);
     const asyncIteratorProto = this.asyncIteratorProto;
     this.asyncGeneratorProto = this.heap.allocateObject(asyncIteratorProto);
+    this.asyncFromSyncProto = this.heap.allocateObject(asyncIteratorProto);
     this.globalObject = this.heap.allocateObject(objectProto);
     const iteratorText: String = "Symbol.iterator";
     this.symbolIterator = this.newSymbol(this.internText(in iteratorText));
@@ -2815,6 +2864,10 @@ export struct Runtime {
     this.heap.markHandle(asyncIteratorProto);
     const asyncGeneratorProto = this.asyncGeneratorProto;
     this.heap.markHandle(asyncGeneratorProto);
+    const asyncFromSyncProto = this.asyncFromSyncProto;
+    this.heap.markHandle(asyncFromSyncProto);
+    const atomSyncIterator = this.atomSyncIterator;
+    this.heap.markHandle(atomSyncIterator);
     index = 0;
     while (index < this.symbolRegistry.length) {
       const registered = this.symbolRegistry[index];
@@ -3682,6 +3735,20 @@ export struct Runtime {
       return;
     }
     const kind = asInt32(this.heap.slot(record, 9));
+    if (kind == 2) {
+      // A delegated value answers the request as it is.
+      const request = this.asyncGeneratorFront(record);
+      if (request != 0) {
+        const promise = this.heap.slot(request, 2);
+        this.pushTempRoot(value);
+        const produced = this.createIterResult(value, false);
+        this.popTempRoot();
+        this.resolvePromise(asCell(promise), produced);
+        this.asyncGeneratorPop(record);
+      }
+      this.asyncGeneratorResumeNext(gen);
+      return;
+    }
     // A yield awaits its value before answering; nothing else resumes
     // the body meanwhile.
     if (kind == 0) this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
@@ -4107,6 +4174,40 @@ export struct Runtime {
               const gen = this.frames[frameIndex].generator;
               const record = this.generatorRecord(gen);
               this.heap.setSlot(record, 9, int32Value(0));
+              const produced = this.createIterResult(yielded, false);
+              const frame = this.popFrame();
+              if (this.frameCount <= entryDepth) {
+                result = produced;
+              } else {
+                const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+                this.setReg(callerBase, frame.returnDst, produced);
+              }
+              returned = true;
+            }
+          }
+          iterGetAsync => {
+            const iterable = this.reg(base, inst.b);
+            const iterator = this.getAsyncIterator(iterable);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, iterator);
+            }
+          }
+          yieldRaw => {
+            // An async generator hands a delegate's value straight to its
+            // request, without awaiting it.
+            if (this.frames[frameIndex].generator == 0) {
+              const message: String = "yield outside a generator";
+              thrown = this.typeError(in message);
+              throwing = true;
+            } else {
+              const yielded = this.reg(base, inst.b);
+              this.suspendGenerator(frameIndex, ip, inst.a);
+              const gen = this.frames[frameIndex].generator;
+              const record = this.generatorRecord(gen);
+              this.heap.setSlot(record, 9, int32Value(2));
               const produced = this.createIterResult(yielded, false);
               const frame = this.popFrame();
               if (this.frameCount <= entryDepth) {
@@ -4961,7 +5062,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
@@ -5459,4 +5560,104 @@ function promiseRejectFunction(inout runtime: Runtime, thisValue: Value, argsBas
   const promise = runtime.heap.slot(shared, 0);
   runtime.rejectPromise(asCell(promise), runtime.argument(argsBase, argc, 0));
   return undefinedValue();
+}
+
+// %AsyncFromSyncIteratorPrototype%.next / return / throw: the sync
+// iterator's method runs at once and its result's value is awaited into
+// a promise for {value, done}. `callee`'s bound data is the mode.
+function asyncFromSyncRequest(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, mode: i32): Value {
+  const promise = runtime.newPromise();
+  runtime.pushTempRoot(promise);
+  const sync = runtime.wrappedSyncIterator(thisValue);
+  if (isUndefined(sync)) {
+    const message: String = "not an async-from-sync iterator";
+    const error = runtime.typeError(in message);
+    runtime.rejectPromise(asCell(promise), error);
+    runtime.popTempRoot();
+    return promise;
+  }
+  const nextText: String = "next";
+  const returnText: String = "return";
+  const throwText: String = "throw";
+  let method = undefinedValue();
+  if (mode == 0) {
+    const key = runtime.internText(in nextText);
+    method = runtime.getProperty(sync, key);
+  } else if (mode == 2) {
+    const key = runtime.internText(in returnText);
+    method = runtime.getProperty(sync, key);
+  } else {
+    const key = runtime.internText(in throwText);
+    method = runtime.getProperty(sync, key);
+  }
+  let result = undefinedValue();
+  if (!runtime.pendingThrow) {
+    if (isUndefined(method) || isNull(method)) {
+      // No such method on the sync iterator: return finishes, throw
+      // rejects with the argument.
+      if (mode == 2) {
+        result = runtime.createIterResult(runtime.argument(argsBase, argc, 0), true);
+      } else {
+        runtime.raise(runtime.argument(argsBase, argc, 0));
+      }
+    } else {
+      let args = Array<Value>();
+      if (argc > 0) args.push(runtime.argument(argsBase, argc, 0));
+      result = runtime.callValue(method, sync, move args);
+    }
+  }
+  if (!runtime.pendingThrow && !runtime.isObjectLike(result)) {
+    const message: String = "Iterator result is not an object";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+  }
+  if (runtime.pendingThrow) {
+    const thrown = runtime.takePending();
+    runtime.rejectPromise(asCell(promise), thrown);
+    runtime.popTempRoot();
+    return promise;
+  }
+  runtime.pushTempRoot(result);
+  const doneText: String = "done";
+  const doneKey = runtime.internText(in doneText);
+  const done = runtime.getProperty(result, doneKey);
+  const valueText: String = "value";
+  const valueKey = runtime.internText(in valueText);
+  const value = runtime.getProperty(result, valueKey);
+  runtime.popTempRoot();
+  if (runtime.pendingThrow) {
+    const thrown = runtime.takePending();
+    runtime.rejectPromise(asCell(promise), thrown);
+    runtime.popTempRoot();
+    return promise;
+  }
+  const isDone = runtime.toBooleanValue(done);
+  runtime.pushTempRoot(value);
+  const settled = runtime.promiseResolveValue(value);
+  runtime.popTempRoot();
+  runtime.pushTempRoot(settled);
+  const name: String = "";
+  const unwrap = runtime.defineHostFunction(asyncFromSyncUnwrap, booleanValue(isDone), 1, in name);
+  runtime.performThen(asCell(settled), cellValue(unwrap), undefinedValue(), promise);
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  return promise;
+}
+
+// The awaited value back into an iterator result; `callee` binds done.
+function asyncFromSyncUnwrap(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const done = isTrue(runtime.heap.slot(callee, 0));
+  return runtime.createIterResult(runtime.argument(argsBase, argc, 0), done);
+}
+
+export function asyncFromSyncNext(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return asyncFromSyncRequest(inout runtime, thisValue, argsBase, argc, 0);
+}
+
+export function asyncFromSyncReturn(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return asyncFromSyncRequest(inout runtime, thisValue, argsBase, argc, 2);
+}
+
+export function asyncFromSyncThrow(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return asyncFromSyncRequest(inout runtime, thisValue, argsBase, argc, 1);
 }

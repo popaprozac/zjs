@@ -1,7 +1,7 @@
 // %GeneratorPrototype%: next, return, throw.
 import { thread } from "std/thread";
 import { Value, undefinedValue, cellValue, asCell } from "../value.zs";
-import { Runtime } from "../runtime.zs";
+import { Runtime, asyncFromSyncNext, asyncFromSyncReturn, asyncFromSyncThrow } from "../runtime.zs";
 import { PROP_CONFIGURABLE, PROP_METHOD } from "../heap.zs";
 
 function requireGenerator(inout runtime: Runtime, thisValue: Value, in method: String): boolean {
@@ -86,6 +86,10 @@ export function installGenerator(inout runtime: Runtime): void {
   runtime.defineMethod(asyncGeneratorProto, in asyncThrowText, asyncGeneratorThrow, 1);
   const symbolToStringTagBound = runtime.symbolToStringTag;
   const asyncTagKey = runtime.propertyKey(symbolToStringTagBound);
+  const asyncFromSyncProto = runtime.asyncFromSyncProto;
+  runtime.defineMethod(asyncFromSyncProto, in asyncNextText, asyncFromSyncNext, 1);
+  runtime.defineMethod(asyncFromSyncProto, in asyncReturnText, asyncFromSyncReturn, 1);
+  runtime.defineMethod(asyncFromSyncProto, in asyncThrowText, asyncFromSyncThrow, 1);
   const asyncTagText: String = "AsyncGenerator";
   const asyncTagValue = runtime.internText(in asyncTagText);
   runtime.heap.objectDefine(asyncGeneratorProto, asyncTagKey, asyncTagValue, PROP_CONFIGURABLE);
