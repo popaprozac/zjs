@@ -100,12 +100,23 @@ function objectToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   } else if (thisValue.bits == 6 || thisValue.bits == 7) {
     tag = "Boolean";
   } else if (runtime.isObjectLike(thisValue)) {
-    // An error object announces itself through its inherited brand.
-    const errorProto = runtime.errorPrototype(ERROR_KIND_ERROR);
-    let current = runtime.heap.objectProto(asCell(thisValue));
-    while (current != 0) {
-      if (current == errorProto) tag = "Error";
-      current = runtime.heap.objectProto(current);
+    // A wrapper announces its primitive; an error object its inherited
+    // brand.
+    let wrapped = undefinedValue();
+    if (runtime.heap.isObject(asCell(thisValue))) wrapped = runtime.wrappedPrimitive(asCell(thisValue));
+    if (isNumber(wrapped)) {
+      tag = "Number";
+    } else if (runtime.isStringValue(wrapped)) {
+      tag = "String";
+    } else if (wrapped.bits == 6 || wrapped.bits == 7) {
+      tag = "Boolean";
+    } else {
+      const errorProto = runtime.errorPrototype(ERROR_KIND_ERROR);
+      let current = runtime.heap.objectProto(asCell(thisValue));
+      while (current != 0) {
+        if (current == errorProto) tag = "Error";
+        current = runtime.heap.objectProto(current);
+      }
     }
   }
   const head: String = "[object ";

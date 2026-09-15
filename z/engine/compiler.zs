@@ -532,7 +532,12 @@ export struct Compiler {
       const dst = this.allocReg();
       const value = n.num;
       const truncated = f64ToInt32Exact(value);
-      if (truncated.exact && truncated.value >= -32768 && truncated.value <= 32767) {
+      // -0 has no int32 form.
+      const negativeZero = value == 0.0 && 1.0 / value < 0.0;
+      if (negativeZero) {
+        const index = this.addConst(doubleValue(value));
+        this.emit(instAU16(Op.loadConst, dst, index));
+      } else if (truncated.exact && truncated.value >= -32768 && truncated.value <= 32767) {
         this.emit(instAI16(Op.loadInt, dst, truncated.value));
       } else if (truncated.exact) {
         const index = this.addConst(int32Value(truncated.value));

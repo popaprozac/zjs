@@ -602,6 +602,23 @@ when it traps would have found these in seconds; that half is G15.
 
 ---
 
+## G29 — A shift that loses bits traps, and there is no wrapping shift
+
+**Status:** `proposed` · **Size:** small · **Priority:** high
+**Confirmed:** z-lang `3f96e759` · **Blocks:** no (worked around)
+**Found:** Phase 7, Math.random -- and, on inspection, the interpreter's `<<`.
+
+`state << 25` on a `u64` traps when the high bits leave the word, silently
+(G15). JavaScript's `<<` discards those bits by definition, so the
+interpreter's shift handler was one `3 << 31` away from the same trap, and
+a xorshift generator cannot be written at all. The arithmetic operators
+have `wrappingAdd` / `wrappingSubtract` / `wrappingMultiply`; the shifts
+have no wrapping form. Both sites now go through `raw c`. Ask:
+`wrappingShiftLeft(count)` beside the other wrapping operations. Probe
+`wrapping-shift`.
+
+---
+
 # Wave 2 — substantive language design
 
 These need agreement on direction before implementation. Each has a real

@@ -56,16 +56,21 @@ prototype methods, `eval` (global scope), `parseInt` / `parseFloat` /
 `isNaN` / `isFinite`, and `globalThis` as a real object whose properties
 fall through to the globals table. ToPrimitive runs `valueOf` / `toString`,
 so `"" + obj` and `obj + 1` follow user code. Top-level and sloppy-call
-`this` are the global object.
+`this` are the global object. Then `Boolean`, `Number` (with `toString`
+in any radix, `toFixed`, the `is*` predicates and constants), `String`
+(the byte-string prototype: `charAt` through `split`, `replace` with a
+string pattern), wrapper objects keyed by an unforgeable hidden atom, and
+`Math` in full over the C library with a xorshift `random`.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
 subset, classification) against both engines through matching command
 lines, `z/build/zjs-ref` (public ABI) and `z/build/zjsz` (Z), and reports
 the gap with the tests the reference passes and Z does not. Needs
-`vendor/test262`. First measurements: `language/statements/if` 117 of the
-reference's 121; `language/expressions/addition` 23 of 89, the rest waiting
-on the `Number` / `String` / `Boolean` constructors.
+`vendor/test262`. Measurements so far: `language/statements/if` 117 of the
+reference's 121; `built-ins/Math` 292 of 618 -- the gap there is property
+attributes (`verifyProperty`), `Function.prototype.bind`, and host
+functions that must not be constructors, which the next slice brings.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -84,11 +89,16 @@ throws a TypeError (the reference drops it); `Error.prototype.message` is
 its indices (the reference visits nothing); a postfix `++` on a property
 holding a string yields its numeric value (the reference concatenates).
 
+Strings are byte strings, as in the reference: `length`, indexing, and
+the String methods count bytes. Whether the rewrite keeps that or moves to
+UTF-16 code units is an open design question; the oracle needs parity with
+the reference for now.
+
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), primitive wrappers and the `Number` / `String` /
-`Boolean` / `Math` / `JSON` builtins, direct `eval` seeing the caller's
-locals, property attributes (everything is writable and enumerable, except
-that an inherited `constructor` is skipped by `for`-`in`), accessors,
+sees one binding), `Function` / `bind` / `JSON` / `Date` / `RegExp`,
+direct `eval` seeing the caller's locals, property attributes (everything
+is writable and enumerable, except that an inherited `constructor` is
+skipped by `for`-`in`), accessors,
 `for`-`of` over anything but an array, `return` and `break` through a
 `finally`, and the remaining builtins. The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.

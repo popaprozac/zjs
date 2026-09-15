@@ -10,6 +10,8 @@ import { installErrors } from "./builtins/errors.zs";
 import { installGlobals } from "./builtins/global.zs";
 import { installFunction } from "./builtins/function.zs";
 import { installArray } from "./builtins/array.zs";
+import { installPrimitives } from "./builtins/primitives.zs";
+import { installMath } from "./builtins/math.zs";
 
 export function createEngine(): Runtime {
   let runtime = createRuntime();
@@ -17,5 +19,7 @@ export function createEngine(): Runtime {
   installFunction(inout runtime);
   installArray(inout runtime);
   installGlobals(inout runtime);
+  installPrimitives(inout runtime);
+  installMath(inout runtime);
   return runtime;
 }

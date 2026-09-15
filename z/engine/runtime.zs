@@ -113,6 +113,10 @@ export struct Runtime {
   functionProto: u32;
   arrayProto: u32;
   stringProto: u32;
+  numberProto: u32;
+  booleanProto: u32;
+  // Math.random's state.
+  randomState: u64;
   // The completion value of the last run, kept alive for the embedder.
   lastResult: Value;
   // Builtins, indexed by a host function cell's payload.
@@ -130,6 +134,10 @@ export struct Runtime {
   atomConstructor: u32;
   atomName: u32;
   atomMessage: u32;
+  // The hidden key under which a wrapper object keeps its primitive. Its
+  // bytes begin with 0xFF, which no JavaScript string can contain, so
+  // user code can neither read nor forge it.
+  atomPrimitive: u32;
 
   function addFunction(inout this, code: FunctionCode): u32 {
     this.functions.push(move code);
@@ -445,18 +453,54 @@ export struct Runtime {
     this.heap.objectSet(bag, atom, value);
   }
 
+  // The primitive a wrapper object holds, or the deleted marker for an
+  // ordinary object.
+  function wrappedPrimitive(handle: u32): Value {
+    const slot = this.heap.objectFindSlot(handle, this.atomPrimitive);
+    if (slot < 0) return deletedValue();
+    return this.heap.slot(handle, u32(slot));
+  }
+
+  // A wrapper object around `primitive`, inheriting from `proto`.
+  function wrapPrimitive(inout this, primitive: Value, proto: u32): Value {
+    const object = this.heap.allocateObject(proto);
+    const atomPrimitive = this.atomPrimitive;
+    this.heap.objectSet(object, atomPrimitive, primitive);
+    return cellValue(object);
+  }
+
+  // The intrinsic prototype a primitive reads through, 0 for none.
+  function primitiveProto(value: Value): u32 {
+    if (isNumber(value)) return this.numberProto;
+    if (isBoolean(value)) return this.booleanProto;
+    if (this.isStringValue(value)) return this.stringProto;
+    return 0;
+  }
+
   // [[Get]] for every value the engine has. Absent properties are
   // undefined; primitives read from their intrinsic prototype.
   function getProperty(inout this, object: Value, key: Value): Value {
-    if (!isCell(object) || asCell(object) == 0) return undefinedValue();
+    if (!isCell(object) || asCell(object) == 0) {
+      const proto = this.primitiveProto(object);
+      if (proto == 0) return undefinedValue();
+      const atom = this.propertyKey(key);
+      return this.objectGet(proto, atom);
+    }
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
       const found = this.objectGet(handle, atom);
-      if (handle == this.globalObject && isUndefined(found)) {
+      if (!isUndefined(found)) return found;
+      if (handle == this.globalObject) {
         const slot = this.findGlobalByAtom(atom);
         if (slot >= 0 && this.globals[usize(slot)].defined) return this.globals[usize(slot)].value;
+        return found;
+      }
+      // A String wrapper exposes its characters and length.
+      const primitive = this.wrappedPrimitive(handle);
+      if (!isDeleted(primitive) && this.isStringValue(primitive)) {
+        if (atom == this.atomLength || this.arrayIndexOf(key) >= 0) return this.getProperty(primitive, key);
       }
       return found;
     }
@@ -687,7 +731,13 @@ export struct Runtime {
     return true;
   }
 
-  // The names an object's own class holds, in slot order.
+  // Whether an atom is one of the engine's hidden keys.
+  function isHiddenAtom(atom: u32): boolean {
+    return this.heap.stringLength(atom) > 0 && this.heap.stringByte(atom, 0) == 255;
+  }
+
+  // The names an object's own class holds, in slot order, hidden keys
+  // left out.
   function ownNames(handle: u32): Array<u32> {
     const propCount = this.heap.classPropCount(this.heap.objectClass(handle));
     let names = Array<u32>();
@@ -699,7 +749,8 @@ export struct Runtime {
     let classId = this.heap.objectClass(handle);
     while (classId != 0) {
       const slot = this.heap.classes[usize(classId)].transitionSlot;
-      names[usize(slot)] = this.heap.classes[usize(classId)].transitionName;
+      const name = this.heap.classes[usize(classId)].transitionName;
+      if (!this.isHiddenAtom(name)) names[usize(slot)] = name;
       classId = this.heap.classes[usize(classId)].parent;
     }
     return names;
@@ -749,6 +800,10 @@ export struct Runtime {
         let i: usize = 0;
         while (i < names.length) {
           const name = names[i];
+          if (name == 0) {
+            i = i + 1;
+            continue;
+          }
           let already = false;
           let j: usize = 0;
           while (j < seen.length) {
@@ -780,6 +835,10 @@ export struct Runtime {
     let i: usize = 0;
     while (i < names.length) {
       const name = names[i];
+      if (name == 0) {
+        i = i + 1;
+        continue;
+      }
       const slot = this.heap.objectFindSlot(object, name);
       const live = slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot)));
       if (live && !(skipIndices && this.arrayIndexOf(cellValue(name)) >= 0)) {
@@ -971,11 +1030,20 @@ export struct Runtime {
     this.atomConstructor = this.atomOf(in constructorText);
     this.atomName = this.atomOf(in nameText);
     this.atomMessage = this.atomOf(in messageText);
+    let hidden = Array<u8>();
+    hidden.push(255);
+    hidden.push(112);
+    hidden.push(114);
+    hidden.push(105);
+    hidden.push(109);
+    this.atomPrimitive = this.internBytes(move hidden);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
     this.arrayProto = this.heap.allocateObject(objectProto);
     this.stringProto = this.heap.allocateObject(objectProto);
+    this.numberProto = this.heap.allocateObject(objectProto);
+    this.booleanProto = this.heap.allocateObject(objectProto);
     this.globalObject = this.heap.allocateObject(objectProto);
     // Value properties of the global object.
     this.setGlobal("NaN", doubleValue(nativeNan()));
@@ -1032,6 +1100,12 @@ export struct Runtime {
     this.heap.markHandle(stringProto);
     const globalObject = this.globalObject;
     this.heap.markHandle(globalObject);
+    const numberProto = this.numberProto;
+    this.heap.markHandle(numberProto);
+    const booleanProto = this.booleanProto;
+    this.heap.markHandle(booleanProto);
+    const atomPrimitive = this.atomPrimitive;
+    this.heap.markHandle(atomPrimitive);
     index = 0;
     while (index < this.tempRootCount) {
       const rooted = this.tempRoots[index];
@@ -1595,7 +1669,7 @@ export struct Runtime {
           const shift = u32(toUint32(numberC) & 31);
           const rawB = this.reg(base, inst.b);
           const numberB = this.numericOperand(rawB);
-          const operand16 = int32Value(i32.fromBits(toInt32(numberB).toBits() << shift));
+          const operand16 = int32Value(i32.fromBits(shiftLeft32(toInt32(numberB).toBits(), shift)));
           this.setReg(base, inst.a, operand16);
         } else if (op == Op.shr) {
           const rawC = this.reg(base, inst.c);
@@ -1963,9 +2037,10 @@ export function createRuntime(): Runtime {
     hadError: false, lastError: undefinedValue(),
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
-    objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, lastResult: undefinedValue(),
+    objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0,
+    randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(), tempRootCount: 0,
-    atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0,
+    atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
   });
   runtime.installIntrinsics();
   return runtime;
@@ -1983,6 +2058,11 @@ function nativePow(base: f64, exponent: f64): f64 = raw c {
 
 function nativeFmod(a: f64, b: f64): f64 = raw c {
   return __builtin_fmod(a, b);
+}
+
+// Z's shift traps when bits leave the word; JavaScript's discards them.
+export function shiftLeft32(bits: u32, count: u32): u32 = raw c {
+  return bits << count;
 }
 
 // Z's checked conversion from f64 traps on a fractional value, so every
@@ -2093,7 +2173,8 @@ export function numericNeg(a: Value): Value {
     const minimum: i32 = -2147483648;
     if (ai != 0 && ai != minimum) return int32Value(0 - ai);
   }
-  return doubleValue(0.0 - toNumber(a));
+  // Negation, not subtraction from zero: -(+0) is -0.
+  return doubleValue(-1.0 * toNumber(a));
 }
 
 test "int32 arithmetic promotes to double only when it must" {
