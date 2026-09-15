@@ -7,7 +7,29 @@ Each item is written to be picked up cold: what ZJS needs, a concrete spec,
 the exact files in both compilers, known traps, and an acceptance bar. Nothing
 here requires reading the ZJS codebase or this conversation.
 
-Status: `open` · `workaround` (shipping with a cost) · `upstreamed` · `wontfix`.
+## Status ladder
+
+Every item carries one of four statuses. The ladder exists so that a
+persuasive proposal never becomes an accidentally approved API, and so an
+upstream fix is not called done before the consumer exercises it.
+
+| Status | Meaning | Who advances it |
+|---|---|---|
+| `proposed` | ZJS hit a gap and suggested a shape. **Not a decision.** Any API spelling written here or in a probe is illustrative. | Claude records |
+| `approved` | Zach has agreed to the direction; spelling may still change. | Zach |
+| `implemented` | Landed in z-lang, with a commit and a stated supported surface. | Codex |
+| `consumer-verified` | ZJS exercised it in real code, dropped its workaround, and recorded the commit. **Only this closes the loop.** | Claude |
+
+Items also note whether they **block** progress, since most do not.
+
+Two operating rules, per the agreed handoff model:
+
+- **One writer per checkout.** ZJS never writes to z-lang. Probe runs keep
+  their build cache inside the ZJS tree, not z-lang's.
+- **Pin the compiler.** ZJS builds and probes against a recorded revision
+  ([`z/Z_LANG_REVISION`](../z/Z_LANG_REVISION)), not whatever is checked out,
+  so results are reproducible and a mid-edit tree cannot produce a misleading
+  probe result.
 
 ---
 
@@ -43,7 +65,14 @@ engine-shaped code in Z.
 
 ## G1 — Hex and binary integer literals
 
-**Status:** open · **Size:** small · **Priority:** highest
+**Status:** `consumer-verified`
+**Implemented:** z-lang `135b64c9` — radix literals and digit separators
+**Verified:** ZJS `b00f7b4` — engine NaN-box constants respelled in hex, the
+shift-from-small-value workaround removed. Probe `g01-numeric-literals`.
+**Note:** the `isIntegerLiteral` trap below was handled; the shipped example
+covers `0x1e5` explicitly. One limitation found on adoption: `0xFFFE << 48`
+still fails because the literal types as `i32` in a shift — see G13. Full-width
+constants sidestep it, which is what the engine uses.
 
 ### Why
 Every NaN-box constant, bit mask, opcode, and Unicode range in a JS engine is
@@ -86,9 +115,21 @@ built from hex; `docs/language-reference.md` numeric-literal text is updated.
 
 ---
 
-## G2 — `std/bits`
+## G2 — Exact float bit representation
 
-**Status:** workaround · **Size:** small · **Priority:** high
+**Status:** `consumer-verified`
+**Implemented:** z-lang `dee8ea80` — as methods on the primitives
+(`f64.fromBits(u64)` / `.toBits()`, `f32.fromBits(u32)` / `.toBits()`).
+**No `std/bits` module was added**; the proposed free-function shape below was
+not taken, and the shipped spelling is the better fit for Z.
+**Verified:** ZJS `0f5c94e` — the NaN-box encode/decode path is now ordinary Z
+and `value.zs` contains no `raw c` at all. Probe `g02-std-bits`.
+**Why it mattered beyond a round trip:** NaN *payloads* survive, which is the
+property NaN boxing depends on — boxing stores data in payload bits, so
+canonicalization would silently destroy values. Signed zeros and infinities
+are covered by an engine test.
+**Still open:** broader bit operations (popcount, clz, ctz, byteswap, rotates)
+and integer reinterpretation (G11) remain separate work.
 
 ### Why
 `f64`↔`u64` bit-reinterpretation is the foundation of NaN boxing — the single
@@ -132,7 +173,7 @@ in both compilers, with a runnable example and reference documentation.
 
 ## G3 — `std/math` breadth
 
-**Status:** open · **Size:** medium · **Priority:** high
+**Status:** `proposed` · **Size:** medium · **Priority:** high
 
 ### Why
 `std/math` currently exports **exactly one function: `trunc`**. ECMA-262
@@ -170,7 +211,9 @@ exercises the non-finite cases.
 
 ## G11 — Checked numeric conversion cannot reinterpret a bit pattern
 
-**Status:** workaround · **Size:** small · **Priority:** high
+**Status:** `proposed` — confirmed by Codex as separate work from `dee8ea80`
+**Blocks:** no. The engine folds the sign by hand today.
+**Priority:** high — it is the integer half of what already landed for floats
 **Found:** Phase 0 spike, while NaN-boxing an `i32`.
 
 ### Why
@@ -200,7 +243,7 @@ An `i32` round-trips through `u32` and back preserving its bit pattern, without
 
 ## G12 — No monotonic clock
 
-**Status:** workaround · **Size:** small · **Priority:** medium
+**Status:** `proposed` · **Size:** small · **Priority:** medium
 **Found:** Phase 0 spike, building the benchmark harness.
 
 `std/time` exposes only `sleep` and `delay`. There is no way to read a clock, so
@@ -216,7 +259,11 @@ such.
 
 ## G13 — Integer literals are not contextually typed against non-`i32` operands
 
-**Status:** workaround · **Size:** small · **Priority:** medium
+**Status:** `proposed`
+**Blocks:** no, but it is now the **highest-value open item**. G1 landing did
+not fully deliver hex literals in practice: a literal still cannot be used in a
+comparison, ternary, shift, or expectation position without a named binding,
+and every instance in the Phase 2 engine work needed one.
 **Found:** Phase 0 spike, twice within ten minutes.
 
 Both of these are errors:
@@ -252,7 +299,7 @@ standard-library expectation helpers should type-check in Z.
 
 ## G14 — `while (true)` is not recognized as diverging
 
-**Status:** workaround · **Size:** small · **Priority:** low
+**Status:** `proposed` · **Size:** small · **Priority:** low
 **Found:** Phase 0 spike, writing the dispatch loop.
 
 A `while (true)` whose only exits are `return` still reports *"function must end
@@ -265,7 +312,7 @@ Ask: treat a `while (true)` with no `break` as diverging in flow analysis.
 
 ## G15 — A runtime trap reports nothing
 
-**Status:** open · **Size:** small · **Priority:** medium (DX)
+**Status:** `proposed` · **Size:** small · **Priority:** medium (DX)
 **Found:** Phase 0 spike, debugging G11.
 
 When generated code calls `abort()` — a failed bounds check, a failed checked
@@ -281,7 +328,7 @@ at emission time.
 
 ## G16 — `inout` arguments must be plain bindings, not place expressions
 
-**Status:** workaround · **Size:** medium · **Priority:** medium
+**Status:** `proposed` · **Size:** medium · **Priority:** medium
 **Found:** Phase 2, wiring a per-context heap.
 
 ### Why
@@ -327,7 +374,7 @@ first two.
 
 ## G4 / G5 — Interpreter dispatch: no `goto`, and `match` is enum-only
 
-**Status:** open · **Size:** large · **Priority:** decide after the ZJS spike
+**Status:** `proposed` · **Size:** large · **Priority:** decide after the ZJS spike
 
 ### Why
 A bytecode interpreter's dispatch loop is the hottest code in the program. The
@@ -404,7 +451,7 @@ still lands near 1.05× there, neither is needed.
 
 ## G9 — No raw pointer types
 
-**Status:** open · **Size:** large · **Priority:** decide after the ZJS spike
+**Status:** `proposed` · **Size:** large · **Priority:** decide after the ZJS spike
 
 ### Why
 Z's unsafe pointers are scope-local: not storable in a field, not
@@ -438,7 +485,7 @@ worth preserving.
 
 ## G8 — No thread-local module state
 
-**Status:** open · **Size:** medium · **Priority:** medium
+**Status:** `proposed` · **Size:** medium · **Priority:** medium
 
 ### Why
 `Once<T>` publishes one application-lifetime root, not one per thread. The
@@ -476,7 +523,7 @@ budget here.
 
 ## G6 — Array indexing always bounds-checks
 
-**Status:** open · **Size:** medium · **Priority:** measure first
+**Status:** `proposed` · **Size:** medium · **Priority:** measure first
 
 ### Why
 `z_bounds_index` is `if (index >= length) abort();`
@@ -502,7 +549,7 @@ disabling the check. The ZJS spike will produce the number.
 
 ## G7 — `export c function` rejects pointer parameters
 
-**Status:** workaround · **Size:** medium · **Priority:** low (unblocked)
+**Status:** `proposed` · **Size:** medium · **Priority:** low (unblocked)
 
 The C export tier covers integers, floats, `boolean`, `void`, `String` inputs,
 `c struct`, and `c enum` — but not pointers. `zjs.h` is `ZjsContext*`
@@ -520,7 +567,7 @@ would remove the shim without opening the general pointer-ABI question.
 
 ## G10 — Z is macOS-only
 
-**Status:** open · **Size:** large · **Priority:** strategic
+**Status:** `proposed` · **Size:** large · **Priority:** strategic
 
 Cross-platform is one of ZJS's six stated goals, and Windows and Linux engine
 ports already exist in the Zen-c implementation — they will have nowhere to

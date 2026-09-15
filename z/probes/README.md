@@ -18,6 +18,23 @@ are executable by both sides:
 - **ZJS** learns automatically when a workaround can be removed, instead of
   asking or guessing.
 
+## Status, and what a probe is not
+
+Probes for unlanded findings are written against a **proposed** spelling. A
+probe is evidence and an acceptance case — it is **not an approved API**. The
+status ladder in the findings doc governs that:
+
+    proposed -> approved -> implemented -> consumer-verified
+
+A probe flipping to LANDED is the *evidence* for `consumer-verified`; the
+status only advances once ZJS actually drops the workaround and records the
+commit.
+
+`g02` is the worked example. It was proposed as a `std/bits` module with free
+functions; z-lang shipped methods on the primitives instead. The probe was
+rewritten to match, and nothing was lost — the asserted behaviour was the
+contract all along.
+
 ## Conventions
 
 - One file per finding, named `g<NN>-<slug>.zs`.

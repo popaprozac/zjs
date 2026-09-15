@@ -13,8 +13,18 @@ set -uo pipefail
 Z_LANG="${Z_LANG:-$HOME/code/z-lang}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-pinned="$(cd "$Z_LANG" && git rev-parse --short HEAD)"
-echo "z-lang @ $pinned"
+actual="$(cd "$Z_LANG" && git rev-parse --short HEAD)"
+expected="$(head -1 "$HERE/../Z_LANG_REVISION" 2>/dev/null || echo "$actual")"
+echo "z-lang @ $actual"
+if [ "$actual" != "$expected" ]; then
+  echo "  NOTE: pinned revision is $expected (z/Z_LANG_REVISION)."
+  echo "  Results below are against $actual, not the pin."
+fi
+dirty="$(cd "$Z_LANG" && git status --porcelain | head -1)"
+if [ -n "$dirty" ]; then
+  echo "  WARNING: z-lang working tree is dirty -- probe results may reflect"
+  echo "  an in-progress edit rather than a landed change."
+fi
 echo
 
 landed=0; pending=0
