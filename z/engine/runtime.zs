@@ -261,6 +261,7 @@ export struct Runtime {
   promiseProto: u32;
   atomPromiseRecord: u32;
   atomErrorData: u32;
+  atomDateValue: u32;
   // %AsyncIteratorPrototype% and %AsyncGeneratorPrototype%.
   asyncIteratorProto: u32;
   asyncGeneratorProto: u32;
@@ -675,6 +676,26 @@ export struct Runtime {
     this.heap.objectDefine(object, atomErrorData, booleanValue(true), PROP_NONE);
   }
 
+  // --- Date objects ---
+  //
+  // A Date is an object with a hidden time-value slot; the prototype has
+  // none, so it is not a Date itself.
+  function isDateObject(value: Value): boolean {
+    if (!this.isObjectLike(value)) return false;
+    return this.heap.objectFindSlot(asCell(value), this.atomDateValue) >= 0;
+  }
+
+  function dateTimeValue(handle: u32): f64 {
+    const slot = this.heap.objectFindSlot(handle, this.atomDateValue);
+    if (slot < 0) return nanValue();
+    return toNumber(this.heap.slot(handle, u32(slot)));
+  }
+
+  function setDateTimeValue(inout this, handle: u32, time: f64): void {
+    const atomDateValue = this.atomDateValue;
+    this.heap.objectDefine(handle, atomDateValue, doubleValue(time), PROP_NONE);
+  }
+
   function hasErrorData(value: Value): boolean {
     if (!this.isObjectLike(value)) return false;
     return this.heap.objectFindSlot(asCell(value), this.atomErrorData) >= 0;
@@ -781,6 +802,7 @@ export struct Runtime {
     const atomPrototype = this.atomPrototype;
     const defined = this.functionHidden(fn, atomPrototype);
     if (this.isObjectLike(defined)) return asCell(defined);
+    if (this.functionBagHas(fn, atomPrototype)) return this.objectProto;
     const closure = this.heap.isClosure(fn);
     if (closure) {
       const held = this.heap.slot(fn, 1);
@@ -1070,7 +1092,12 @@ export struct Runtime {
       const atom = this.propertyKey(key);
       if (atom == this.atomPrototype && this.functionBagHas(handle, atom) == false) {
         if (tag == TAG_HOST_FUNCTION) return false;
-        if (!this.isObjectLike(value)) return true;
+        if (!this.isObjectLike(value)) {
+          // Any value may be assigned; a non-object one lives in the
+          // bag and leaves construction to Object.prototype.
+          this.defineOwnAttr(handle, atom, value, PROP_WRITABLE);
+          return true;
+        }
         if (tag == TAG_CLOSURE) {
           this.heap.setSlot(handle, 1, value);
         } else {
@@ -2555,7 +2582,13 @@ export struct Runtime {
     }
     let outcome = undefinedValue();
     if (this.isHostFunctionValue(callee)) {
-      const proto = this.prototypeOf(asCell(newTarget));
+      // The new target's `prototype` if it is an object, else the
+      // builtin's own.
+      const atomPrototype = this.atomPrototype;
+      const held = this.getProperty(newTarget, cellValue(atomPrototype));
+      if (this.pendingThrow) return undefinedValue();
+      let proto = this.prototypeOf(asCell(callee));
+      if (this.isObjectLike(held)) proto = asCell(held);
       const created = cellValue(this.heap.allocateObject(proto));
       this.pushTempRoot(created);
       outcome = this.callValue(callee, created, move args);
@@ -2726,6 +2759,7 @@ export struct Runtime {
     this.atomFunctionProto = this.hiddenAtom(102, 112);
     this.atomPromiseRecord = this.hiddenAtom(112, 114);
     this.atomErrorData = this.hiddenAtom(101, 100);
+    this.atomDateValue = this.hiddenAtom(100, 116);
     this.atomSyncIterator = this.hiddenAtom(115, 105);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
@@ -2871,6 +2905,8 @@ export struct Runtime {
     this.heap.markHandle(atomPromiseRecord);
     const atomErrorData = this.atomErrorData;
     this.heap.markHandle(atomErrorData);
+    const atomDateValue = this.atomDateValue;
+    this.heap.markHandle(atomDateValue);
     const promiseProto = this.promiseProto;
     this.heap.markHandle(promiseProto);
     let job: usize = 0;
@@ -5130,7 +5166,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, atomErrorData: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
@@ -5170,6 +5206,10 @@ export function isIntegralDouble(value: f64): boolean {
 
 function nativeNan(): f64 = raw c {
   return __builtin_nan("");
+}
+
+export function nanValue(): f64 {
+  return nativeNan();
 }
 
 export function toNumber(value: Value): f64 {

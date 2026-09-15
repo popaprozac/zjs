@@ -129,6 +129,8 @@ function objectToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     tag = "Number";
   } else if (thisValue.bits == 6 || thisValue.bits == 7) {
     tag = "Boolean";
+  } else if (runtime.isDateObject(thisValue)) {
+    tag = "Date";
   } else if (runtime.isObjectLike(thisValue)) {
     // A wrapper announces its primitive; an error object its inherited
     // brand.

@@ -156,7 +156,18 @@ gains `codePointAt`, `replaceAll`, `normalize`, `isWellFormed` /
 `toWellFormed`, the locale case methods, `$`-pattern substitution in
 `replace` / `replaceAll`, Unicode whitespace in `trim`, and spec position
 clamping in `includes` / `startsWith` / `endsWith`; `String.raw` and
-`String.fromCodePoint`. `yield*` in an async generator takes the operand's async
+`String.fromCodePoint`. `Date`: the time value lives in a hidden slot,
+the arithmetic is the specification's over `f64`, the wall clock and the
+local zone's offset and abbreviation come from libc through a three-
+function C header the Z module imports directly, the Date Time String
+Format and the `toString` / `toUTCString` forms parse back, and the whole
+surface is there: the constructor's forms, `now` / `parse` / `UTC`, the
+local and UTC getters and setters, the string forms, `toJSON`,
+`@@toPrimitive`, and the Annex B `getYear` / `setYear` / `toGMTString`.
+`EvalError`, `URIError`, `AggregateError` (its iterable kept as
+`errors`), an options object's `cause` on every error constructor, the
+`Error.prototype.stack` accessor over an error-data slot, and the four
+URI functions over the byte strings. `yield*` in an async generator takes the operand's async
 iterator (a sync one wrapped through `%AsyncFromSyncIteratorPrototype%`),
 awaits each `next`, hands each value to the request as it is, forwards
 what `next` sends, and yields the delegate's final value as the
@@ -219,7 +230,16 @@ constructor (the reference finds nothing); a derived class's field
 initializers run after `super()` returns and see what the base
 constructor set (the reference runs them first);
 `String.fromCodePoint(0x1F600)` is the four-byte encoding, equal to the
-literal (the reference produces something else); the native error
+literal (the reference produces something else); `Date` keeps local
+time (the reference has none), `Date()` called as a function returns a
+string (the reference constructs), `getDay` / `getUTCDay`, `toJSON`,
+`@@toPrimitive`, and the locale methods exist (the reference lacks
+them), the string forms follow the specification and an invalid date
+prints `Invalid Date` (the reference prints ISO or `[object]`), a
+six-digit year carries its sign in `toISOString`, `2026-13-01` and
+`T24:00:01` do not parse, a `+02:00` offset and a negative six-digit
+year parse to the right instant, and the `toString` / `toUTCString`
+forms parse at all (the reference differs on each); the native error
 constructors have `length` 1 (AggregateError 2) and their prototypes
 carry `name` (the reference has 0 and nothing); `new AggregateError([])`
 has an empty message and a non-enumerable `errors` (the reference has
@@ -267,7 +287,7 @@ String's valid-UTF-8 invariant and is never mistaken for the original
 bytes.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `Date` / `RegExp`, a `return` or `throw` sent to a
+sees one binding), `RegExp`, a `return` or `throw` sent to a
 delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a

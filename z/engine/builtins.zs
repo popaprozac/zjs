@@ -20,6 +20,7 @@ import { installIteration } from "./builtins/iteration.zs";
 import { installGenerator } from "./builtins/generator.zs";
 import { installCollections } from "./builtins/collections.zs";
 import { installPromise } from "./builtins/promise.zs";
+import { installDate } from "./builtins/date.zs";
 
 export function createEngine(): Runtime {
   let runtime = createRuntime();
@@ -37,5 +38,6 @@ export function createEngine(): Runtime {
   installGenerator(inout runtime);
   installCollections(inout runtime);
   installPromise(inout runtime);
+  installDate(inout runtime);
   return runtime;
 }
