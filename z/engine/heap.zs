@@ -97,6 +97,21 @@ export struct Heap {
     return this.headers[usize(handle)].tag == TAG_STRING;
   }
 
+  // A function cell referring to compiled code by index.
+  function allocateFunction(inout this, functionIndex: u32): u32 {
+    const handle = this.allocate(TAG_FUNCTION, 0);
+    this.headers[usize(handle)].payload = functionIndex;
+    return handle;
+  }
+
+  function isFunction(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_FUNCTION;
+  }
+
+  function functionIndex(handle: u32): u32 {
+    return this.headers[usize(handle)].payload;
+  }
+
   function stringLength(handle: u32): usize {
     return this.strings[usize(this.headers[usize(handle)].payload)].length;
   }

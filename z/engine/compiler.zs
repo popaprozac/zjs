@@ -62,8 +62,15 @@ export struct Compiler {
   maxReg: u8;
   fixedRegs: u8;
   locals: Array<Local>;
+  // Names bound in enclosing functions. A reference to one of these is a
+  // closure capture, which the engine cannot express until environments
+  // exist, so it is reported as unsupported rather than resolved wrongly
+  // as a global.
+  outerNames: Array<Local>;
   // The program's reserved result register, or -1 inside a function.
   lastExprReg: i32;
+  // Compiling a function body (as opposed to the script top level).
+  isFunction: boolean;
   hadError: boolean;
   strict: boolean;
   // Loop stack: `loopDepth` marks the live extent of a reused array, since
@@ -185,6 +192,51 @@ export struct Compiler {
     return reg;
   }
 
+  function isOuterName(in parser: Parser, nameStart: u32, nameLength: u32): boolean {
+    let index: usize = 0;
+    while (index < this.outerNames.length) {
+      const outer = this.outerNames[index];
+      if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) {
+        return true;
+      }
+      index = index + 1;
+    }
+    return false;
+  }
+
+  // Function-scoped bindings of a body: var, let, const, and nested
+  // function declarations, all as registers. Nested functions are not
+  // entered; their bindings are their own.
+  function collectLocals(inout this, in parser: Parser, node: u32): void {
+    if (node == NO_NODE) return;
+    const n = parser.ast.node(node);
+    const k = n.kind;
+    if (k == NodeKind.functionDecl) {
+      if (this.findLocal(in parser, n.nameStart, n.nameLength) < 0) this.addLocal(n.nameStart, n.nameLength);
+      return;
+    }
+    if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classDecl || k == NodeKind.classExpr) return;
+    if (k == NodeKind.varDecl) {
+      let i: u32 = 0;
+      while (i < n.childrenCount) {
+        const decl = parser.ast.node(parser.ast.child(node, i));
+        if (decl.nameLength > 0 && this.findLocal(in parser, decl.nameStart, decl.nameLength) < 0) {
+          this.addLocal(decl.nameStart, decl.nameLength);
+        }
+        i = i + 1;
+      }
+      return;
+    }
+    if (n.left != NO_NODE) this.collectLocals(in parser, n.left);
+    if (n.right != NO_NODE) this.collectLocals(in parser, n.right);
+    if (n.third != NO_NODE) this.collectLocals(in parser, n.third);
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      this.collectLocals(in parser, parser.ast.child(node, i));
+      i = i + 1;
+    }
+  }
+
   // Store a register into the binding an identifier names.
   function storeIdent(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode, value: u8): void {
     const local = this.findLocal(in parser, target.nameStart, target.nameLength);
@@ -244,6 +296,22 @@ export struct Compiler {
       this.emit(instAU16(Op.loadConst, dst, index));
       return dst;
     }
+    if (k == NodeKind.conditional) {
+      const condition = this.compileExpr(in parser, inout runtime, n.left);
+      const jumpElse = this.emit(instAI16(Op.jmpIfFalse, condition, 0));
+      const dst = this.allocReg();
+      const savedNext = this.nextReg;
+      const consequent = this.compileExpr(in parser, inout runtime, n.right);
+      this.emit(instAB(Op.mov, dst, consequent));
+      const jumpEnd = this.emit(instI16(Op.jmp, 0));
+      this.patchJump(jumpElse);
+      this.nextReg = savedNext;
+      const alternate = this.compileExpr(in parser, inout runtime, n.third);
+      this.emit(instAB(Op.mov, dst, alternate));
+      this.nextReg = savedNext;
+      this.patchJump(jumpEnd);
+      return dst;
+    }
     if (k == NodeKind.logical) {
       // Short-circuit: evaluate the left into dst, skip the right when the
       // operator's outcome is already decided.
@@ -265,6 +333,11 @@ export struct Compiler {
       if (local >= 0) {
         const bound2 = instAB(Op.mov, dst, this.locals[usize(local)].reg);
         this.emit(bound2);
+        return dst;
+      }
+      if (this.isOuterName(in parser, n.nameStart, n.nameLength)) {
+        // A closure capture: not yet supported.
+        this.hadError = true;
         return dst;
       }
       const slot = runtime.globalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
@@ -351,6 +424,54 @@ export struct Compiler {
         return value;
       }
     }
+    if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc) {
+      const index = compileFunction(in parser, inout runtime, node, in this.locals, in this.outerNames, this.strict);
+      if (index < 0) {
+        this.hadError = true;
+        return 0;
+      }
+      const constant = this.addConst(runtime.functionValue(u32(index)));
+      const dst = this.allocReg();
+      this.emit(instAU16(Op.loadConst, dst, constant));
+      return dst;
+    }
+    if (k == NodeKind.call) {
+      const callee = parser.ast.node(n.left);
+      if (callee.kind == NodeKind.member || callee.kind == NodeKind.computed || callee.kind == NodeKind.superExpr) {
+        // Method calls need objects.
+        this.hadError = true;
+        return 0;
+      }
+      // Callee at base, arguments contiguous above it, result into base.
+      const argCount = n.childrenCount;
+      if (argCount > 255) {
+        this.hadError = true;
+        return 0;
+      }
+      const base = this.allocReg();
+      let slot: u32 = 0;
+      while (slot < argCount) {
+        this.allocReg();
+        slot = slot + 1;
+      }
+      const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
+      if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
+      let j: u32 = 0;
+      while (j < argCount) {
+        const argument = parser.ast.child(node, j);
+        if (parser.ast.node(argument).kind == NodeKind.spread) {
+          this.hadError = true;
+          return 0;
+        }
+        const target = base + u8(1 + j);
+        const argReg = this.compileExpr(in parser, inout runtime, argument);
+        if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
+        j = j + 1;
+      }
+      this.emit(instABC(Op.invoke, base, base, u8(argCount)));
+      this.nextReg = base + 1;
+      return base;
+    }
     if (k == NodeKind.sequence) {
       let last: u8 = 0;
       let i: u32 = 0;
@@ -392,7 +513,19 @@ export struct Compiler {
           this.hadError = true;
           return;
         }
-        if (n.op == TokenKind.kwVar) {
+        if (n.op == TokenKind.kwVar && this.isFunction) {
+          // A var inside a function is one of its locals.
+          const local = this.findLocal(in parser, decl.nameStart, decl.nameLength);
+          if (local < 0) {
+            this.hadError = true;
+            return;
+          }
+          const reg = this.locals[usize(local)].reg;
+          if (decl.left != NO_NODE) {
+            const value = this.compileExpr(in parser, inout runtime, decl.left);
+            this.emit(instAB(Op.mov, reg, value));
+          }
+        } else if (n.op == TokenKind.kwVar) {
           // Script-mode `var` is a global binding.
           const slot = runtime.globalSlot(parser.source.copyBytes(usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
           if (decl.left != NO_NODE) {
@@ -420,6 +553,42 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.emptyStmt) return;
+    if (k == NodeKind.functionDecl) {
+      const index = compileFunction(in parser, inout runtime, node, in this.locals, in this.outerNames, this.strict);
+      if (index < 0) {
+        this.hadError = true;
+        return;
+      }
+      const constant = this.addConst(runtime.functionValue(u32(index)));
+      const r = this.allocReg();
+      this.emit(instAU16(Op.loadConst, r, constant));
+      if (this.isFunction) {
+        const local = this.findLocal(in parser, n.nameStart, n.nameLength);
+        if (local < 0) {
+          this.hadError = true;
+          return;
+        }
+        const reg = this.locals[usize(local)].reg;
+        this.emit(instAB(Op.mov, reg, r));
+      } else {
+        const slot = runtime.defineGlobalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+        this.emit(instAU16(Op.defineGlobal, r, slot));
+      }
+      this.resetTemps();
+      return;
+    }
+    if (k == NodeKind.returnStmt) {
+      let r: u8 = 0;
+      if (n.left != NO_NODE) {
+        r = this.compileExpr(in parser, inout runtime, n.left);
+      } else {
+        r = this.allocReg();
+        this.emit(instA(Op.loadUndefined, r));
+      }
+      this.emit(instA(Op.returnOp, r));
+      this.resetTemps();
+      return;
+    }
     if (k == NodeKind.ifStmt) {
       this.resetCompletion();
       const condition = this.compileExpr(in parser, inout runtime, n.left);
@@ -540,9 +709,8 @@ export struct Compiler {
 // Kinds that are statements but not yet compiled.
 function isStatementKind(k: NodeKind): boolean {
   return k == NodeKind.forInStmt || k == NodeKind.forOfStmt
-    || k == NodeKind.returnStmt
     || k == NodeKind.throwStmt || k == NodeKind.tryStmt || k == NodeKind.switchStmt
-    || k == NodeKind.labeledStmt || k == NodeKind.withStmt || k == NodeKind.functionDecl
+    || k == NodeKind.labeledStmt || k == NodeKind.withStmt
     || k == NodeKind.classDecl || k == NodeKind.importDecl || k == NodeKind.exportDecl;
 }
 
@@ -723,6 +891,162 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
   return bytes;
 }
 
+// --- Functions ------------------------------------------------------------
+
+// Compile a function body into the runtime's function table; returns its
+// index or -1. Mirrors the reference: parameters first as locals, then the
+// body's own bindings, defaults evaluated at entry, function declarations
+// compiled before other statements, an implicit undefined return.
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingLocals: Array<Local>, in enclosingOuter: Array<Local>, enclosingStrict: boolean): i32 {
+  const n = parser.ast.node(node);
+  let outerNames = Array<Local>();
+  let i: usize = 0;
+  while (i < enclosingOuter.length) {
+    outerNames.push(enclosingOuter[i]);
+    i = i + 1;
+  }
+  i = 0;
+  while (i < enclosingLocals.length) {
+    outerNames.push(enclosingLocals[i]);
+    i = i + 1;
+  }
+  let compiler = Compiler({
+    code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0,
+    locals: Array<Local>(), outerNames: move outerNames, lastExprReg: -1, isFunction: true,
+    hadError: false, strict: enclosingStrict, loops: Array<LoopFrame>(), loopDepth: 0,
+  });
+  if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
+
+  // Parameters: plain identifiers only for now (patterns and rest need
+  // objects and arrays).
+  let paramCount: u32 = 0;
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    const param = parser.ast.node(parser.ast.child(node, p));
+    if (param.kind != NodeKind.identExpr || param.nameLength == 0) return -1;
+    compiler.addLocal(param.nameStart, param.nameLength);
+    paramCount = paramCount + 1;
+    p = p + 1;
+  }
+  // A named function expression binds its own name.
+  const index = runtime.reserveFunction();
+  let selfReg: i32 = -1;
+  if (n.kind == NodeKind.functionExpr && n.nameLength > 0) {
+    selfReg = i32(compiler.addLocal(n.nameStart, n.nameLength));
+  }
+  if (n.left != NO_NODE) compiler.collectLocals(in parser, n.left);
+  compiler.fixedRegs = compiler.nextReg;
+
+  if (selfReg >= 0) {
+    const selfConstant = compiler.addConst(runtime.functionValue(index));
+    compiler.emit(instAU16(Op.loadConst, u8(selfReg), selfConstant));
+  }
+  // Defaults: a parameter that arrived undefined takes its initializer.
+  p = 0;
+  while (p < n.childrenCount) {
+    const paramIndex = parser.ast.child(node, p);
+    const param = parser.ast.node(paramIndex);
+    if (param.right != NO_NODE) {
+      const paramReg = u8(p);
+      const undefinedReg = compiler.allocReg();
+      compiler.emit(instA(Op.loadUndefined, undefinedReg));
+      const test = compiler.allocReg();
+      compiler.emit(instABC(Op.cmpStrictEq, test, paramReg, undefinedReg));
+      const skip = compiler.emit(instAI16(Op.jmpIfFalse, test, 0));
+      const init = compiler.compileExpr(in parser, inout runtime, param.right);
+      if (init != paramReg) compiler.emit(instAB(Op.mov, paramReg, init));
+      compiler.resetTemps();
+      compiler.patchJump(skip);
+    }
+    p = p + 1;
+  }
+
+  if (n.left != NO_NODE) {
+    const body = parser.ast.node(n.left);
+    if (body.kind == NodeKind.blockStmt) {
+      // Function declarations first, then everything else.
+      let b: u32 = 0;
+      while (b < body.childrenCount && !compiler.hadError) {
+        const statement = parser.ast.child(n.left, b);
+        if (parser.ast.node(statement).kind == NodeKind.functionDecl) compiler.compileStmt(in parser, inout runtime, statement);
+        b = b + 1;
+      }
+      b = 0;
+      while (b < body.childrenCount && !compiler.hadError) {
+        const statement = parser.ast.child(n.left, b);
+        if (parser.ast.node(statement).kind != NodeKind.functionDecl) compiler.compileStmt(in parser, inout runtime, statement);
+        b = b + 1;
+      }
+    } else {
+      // Concise arrow body: the expression is the return value.
+      const r = compiler.compileExpr(in parser, inout runtime, n.left);
+      compiler.emit(instA(Op.returnOp, r));
+    }
+  }
+  let needReturn = true;
+  if (compiler.code.length > 0 && compiler.code[compiler.code.length - 1].op == Op.returnOp) needReturn = false;
+  if (needReturn) {
+    const r = compiler.allocReg();
+    compiler.emit(instA(Op.loadUndefined, r));
+    compiler.emit(instA(Op.returnOp, r));
+  }
+  if (compiler.hadError) return -1;
+
+  let compiled = createFunctionCode();
+  const code: Array<Inst> = replace(inout compiler.code, Array<Inst>());
+  const constants: Array<Value> = replace(inout compiler.constants, Array<Value>());
+  compiled.code = move code;
+  compiled.constants = move constants;
+  compiled.registerCount = u32(compiler.maxReg) + 1;
+  if (compiled.registerCount < paramCount) compiled.registerCount = paramCount;
+  compiled.fixedRegs = u32(compiler.fixedRegs);
+  compiled.paramCount = paramCount;
+  let expected: u32 = 0;
+  p = 0;
+  while (p < n.childrenCount) {
+    const param = parser.ast.node(parser.ast.child(node, p));
+    if (param.right != NO_NODE) break;
+    expected = expected + 1;
+    p = p + 1;
+  }
+  compiled.expectedArgCount = expected;
+  compiled.isArrow = n.kind == NodeKind.arrowFunc;
+  compiled.strict = compiler.strict;
+  runtime.setFunction(index, move compiled);
+  return i32(index);
+}
+
+// Script-level hoisting: var and function declarations are global bindings
+// that exist before the first statement runs.
+function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32): void {
+  if (node == NO_NODE) return;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.functionDecl || k == NodeKind.classDecl) {
+    runtime.defineGlobalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+    return;
+  }
+  if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classExpr) return;
+  if (k == NodeKind.varDecl) {
+    if (n.op != TokenKind.kwVar) return;
+    let j: u32 = 0;
+    while (j < n.childrenCount) {
+      const decl = parser.ast.node(parser.ast.child(node, j));
+      if (decl.nameLength > 0) runtime.defineGlobalSlot(parser.source.copyBytes(usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
+      j = j + 1;
+    }
+    return;
+  }
+  if (n.left != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.left);
+  if (n.right != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.right);
+  if (n.third != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.third);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    hoistProgramDecls(in parser, inout runtime, parser.ast.child(node, i));
+    i = i + 1;
+  }
+}
+
 // --- Entry ----------------------------------------------------------------
 
 // Compiles a parsed program into the runtime's function table; returns the
@@ -730,8 +1054,8 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 export function compileProgram(in parser: Parser, root: u32, inout runtime: Runtime): i32 {
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0,
-    locals: Array<Local>(), lastExprReg: -1, hadError: false, strict: parser.strictMode,
-    loops: Array<LoopFrame>(), loopDepth: 0,
+    locals: Array<Local>(), outerNames: Array<Local>(), lastExprReg: -1, isFunction: false,
+    hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(), loopDepth: 0,
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));
@@ -739,9 +1063,18 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   compiler.lastExprReg = i32(resultReg);
 
   const program = parser.ast.node(root);
+  hoistProgramDecls(in parser, inout runtime, root);
+  // Function declarations first, then everything else.
   let i: u32 = 0;
   while (i < program.childrenCount && !compiler.hadError) {
-    compiler.compileStmt(in parser, inout runtime, parser.ast.child(root, i));
+    const statement = parser.ast.child(root, i);
+    if (parser.ast.node(statement).kind == NodeKind.functionDecl) compiler.compileStmt(in parser, inout runtime, statement);
+    i = i + 1;
+  }
+  i = 0;
+  while (i < program.childrenCount && !compiler.hadError) {
+    const statement = parser.ast.child(root, i);
+    if (parser.ast.node(statement).kind != NodeKind.functionDecl) compiler.compileStmt(in parser, inout runtime, statement);
     i = i + 1;
   }
   compiler.emit(instA(Op.returnOp, resultReg));

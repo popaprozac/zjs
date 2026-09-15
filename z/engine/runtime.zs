@@ -9,8 +9,8 @@
 
 import { expect } from "std/test";
 import { Value, int32Value, doubleValue, undefinedValue, nullValue, booleanValue, isInt32, asInt32, isDouble, asDouble, isNumber, isUndefined, isNull, isBoolean, isTrue, isCell, cellValue, asCell, NUMBER_TAG } from "./value.zs";
-import { Heap, createHeap, bytesOf, TAG_STRING } from "./heap.zs";
-import { Op, Inst, FunctionCode, bcU16, bcI16 } from "./bytecode.zs";
+import { Heap, createHeap, bytesOf, TAG_STRING, TAG_FUNCTION } from "./heap.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -55,6 +55,32 @@ export struct Runtime {
   function addFunction(inout this, code: FunctionCode): u32 {
     this.functions.push(move code);
     return u32(this.functions.length - 1);
+  }
+
+  // Reserve a function index before its body is compiled, so a named
+  // function expression can refer to itself; fill it in afterwards.
+  function reserveFunction(inout this): u32 {
+    this.functions.push(createFunctionCode());
+    return u32(this.functions.length - 1);
+  }
+
+  function setFunction(inout this, index: u32, code: FunctionCode): void {
+    this.functions[usize(index)] = move code;
+  }
+
+  function functionValue(inout this, index: u32): Value {
+    return cellValue(this.heap.allocateFunction(index));
+  }
+
+  function isFunctionValue(value: Value): boolean {
+    return isCell(value) && asCell(value) != 0 && this.heap.isFunction(asCell(value));
+  }
+
+  // A global that a hoisted declaration defines before any statement runs.
+  function defineGlobalSlot(inout this, name: String): u16 {
+    const slot = this.globalSlot(move name);
+    this.globals[usize(slot)].defined = true;
+    return slot;
   }
 
   // Global slot for a name, allocating one on first sight. Linear for now.
@@ -248,7 +274,9 @@ export struct Runtime {
   // --- Frames ---
 
   function pushFrame(inout this, functionIndex: u32, returnDst: u8): void {
-    const regCount = this.functions[usize(functionIndex)].registerCount;
+    let regCount = this.functions[usize(functionIndex)].registerCount;
+    const paramCount = this.functions[usize(functionIndex)].paramCount;
+    if (regCount < paramCount) regCount = paramCount;
     const base = this.regTop;
     const needed = usize(base + regCount);
     while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
@@ -422,6 +450,31 @@ export struct Runtime {
           const shift = u32(toUint32(this.reg(base, inst.c)) & 31);
           const shifted = toUint32(this.reg(base, inst.b)) >> shift;
           this.setReg(base, inst.a, uint32ToValue(shifted));
+        } else if (op == Op.invoke) {
+          const callee = this.reg(base, inst.b);
+          if (!this.isFunctionValue(callee)) {
+            // TypeError: not a function. Error objects do not exist yet.
+            this.frames[frameIndex].ip = ip;
+            this.popFrame();
+            return RunResult({ isThrow: true, value: undefinedValue() });
+          }
+          const target = this.heap.functionIndex(asCell(callee));
+          const argc = u32(inst.c);
+          // Save the caller's position, push the callee's frame, copy the
+          // arguments that fit its parameters, then re-enter the outer loop
+          // on the new frame.
+          this.frames[frameIndex].ip = ip;
+          this.pushFrame(target, inst.a);
+          const calleeBase = this.frames[usize(this.frameCount - 1)].regsBase;
+          const paramCount = this.functions[usize(target)].paramCount;
+          const copied = argc < paramCount ? argc : paramCount;
+          let arg: u32 = 0;
+          while (arg < copied) {
+            const passed = this.regStack[usize(base + u32(inst.b) + 1 + arg)];
+            this.regStack[usize(calleeBase + arg)] = passed;
+            arg = arg + 1;
+          }
+          returned = true;
         } else if (op == Op.returnOp) {
           const value = this.reg(base, inst.a);
           const frame = this.popFrame();
