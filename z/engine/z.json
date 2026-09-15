@@ -1,0 +1,10 @@
+{
+  "target": {
+    "kind": "static-library",
+    "name": "zjsz",
+    "entry": "lib.zs",
+    "runtime": {
+      "initialize": "initializeRuntime"
+    }
+  }
+}
