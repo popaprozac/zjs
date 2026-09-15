@@ -16,13 +16,26 @@
 
 import { Mutex, Once, OnceLifetime } from "std/sync";
 import { thread } from "std/thread";
-import { Heap, createHeap, TAG_OBJECT } from "./heap.zs";
+import { Runtime, RunResult, createRuntime } from "./runtime.zs";
+import { parseProgram } from "./parser.zs";
+import { compileProgram } from "./compiler.zs";
+import { Value, undefinedValue } from "./value.zs";
 
 struct ContextSlot {
   live: boolean;
   hadError: boolean;
   evalCount: u64;
-  heap: Heap;
+  runtime: Runtime;
+  lastResult: Value;
+
+  // A method, because the registry reaches a slot through an index and Z
+  // accepts a method call on that projection where it rejects `inout`.
+  function evaluate(inout this, source: String): void {
+    this.evalCount = this.evalCount + 1;
+    const outcome = evaluate(inout this.runtime, move source);
+    this.hadError = outcome.isThrow;
+    this.lastResult = outcome.value;
+  }
 }
 
 struct Registry {
@@ -60,7 +73,8 @@ export c function zjs_z_new_context(): usize {
       live: true,
       hadError: false,
       evalCount: 0,
-      heap: createHeap(),
+      runtime: createRuntime(),
+      lastResult: undefinedValue(),
     }));
     return registry.slots.length;
   });
@@ -80,12 +94,9 @@ export c function zjs_z_eval(handle: usize, source: String): void {
   const current = engine.get();
   current.registry.withLock((inout registry): void => {
     if (handle > registry.slots.length) return;
-    const index = handle - 1;
-    registry.slots[index].evalCount = registry.slots[index].evalCount + 1;
-    // Phase 2: still no evaluation, but the context's heap is real. Allocate
-    // one object cell per eval so the ABI can prove per-context heap state.
-    const unused = registry.slots[index].heap.allocate(TAG_OBJECT, 4);
-    registry.slots[index].hadError = source.byteLength >= 0;
+    // The lock callback captures `source` as a borrow and cannot take it
+    // over, so the slot receives an owned copy.
+    registry.slots[handle - 1].evaluate(source.copyBytes(0, source.byteLength));
   });
 }
 
@@ -98,14 +109,23 @@ export c function zjs_z_had_error(handle: usize): i32 {
   });
 }
 
-// Scaffold visibility: lets the harness prove per-context heap state really
-// crossed the ABI and stayed independent between contexts.
+// The completion value (or thrown value) of the last eval, as NaN-box bits.
+export c function zjs_z_last_result_bits(handle: usize): u64 {
+  if (handle == 0) return 0;
+  const current = engine.get();
+  return current.registry.withLock((in registry): u64 => {
+    if (handle > registry.slots.length) return 0;
+    return registry.slots[handle - 1].lastResult.bits;
+  });
+}
+
+// Live heap cells in a context, for the harness.
 export c function zjs_z_heap_cells(handle: usize): u32 {
   if (handle == 0) return 0;
   const current = engine.get();
   return current.registry.withLock((in registry): u32 => {
     if (handle > registry.slots.length) return 0;
-    return registry.slots[handle - 1].heap.liveCells();
+    return registry.slots[handle - 1].runtime.heap.liveCells();
   });
 }
 
@@ -117,4 +137,16 @@ export c function zjs_z_eval_count(handle: usize): u64 {
     if (handle > registry.slots.length) return 0;
     return registry.slots[handle - 1].evalCount;
   });
+}
+
+// Parse, compile, and run one program against a runtime.
+export function evaluate(inout runtime: Runtime, source: String): RunResult {
+  const parsed = parseProgram(move source, false);
+  if (parsed.hadError) {
+    // SyntaxError; Error objects do not exist yet.
+    return RunResult({ isThrow: true, value: undefinedValue() });
+  }
+  const functionIndex = compileProgram(in parsed.parser, parsed.root, inout runtime);
+  if (functionIndex < 0) return RunResult({ isThrow: true, value: undefinedValue() });
+  return runtime.run(u32(functionIndex));
 }

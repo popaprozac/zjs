@@ -490,6 +490,50 @@ substitution's tokens and parses within a window — so nothing waits on this.
 
 ---
 
+## G23 — `Array` cannot remove its last element
+
+**Status:** `proposed` · **Size:** small · **Priority:** medium
+**Confirmed:** z-lang `4bef7756` · **Blocks:** no (worked around)
+**Found:** Phase 4, the interpreter's register and frame stacks.
+
+The documented `Array` surface is `push` / `remove` / `clear`. There is no
+`pop`, `truncate`, or `resize`. A stack — the most common growable-array use
+in an engine — keeps its own live-extent counter over a monotonically grown
+array instead. Probe `array-pop` proposes `pop(): Option<T>`; a
+`truncate(length)` alongside would serve the stack case directly.
+
+---
+
+## G24 — A value read of `this` inside a call that borrows `this` mutably is rejected
+
+**Status:** `proposed` · **Size:** small · **Priority:** low
+**Confirmed:** z-lang `4bef7756` · **Blocks:** no (worked around)
+**Found:** Phase 4, every register write in the interpreter.
+
+`this.setReg(a, this.reg(b))` fails with *"overlapping inout and value uses
+of this in one call"*, so each operand is bound to a local first — 17 sites
+in the interpreter loop alone. The receiver-side twin of G19; both uses are
+reads, and argument evaluation precedes the call. If intentional, the
+diagnostic should name the bind-first workaround. Probe
+`inout-receiver-operand`.
+
+---
+
+## G25 — A `Mutex` lock callback cannot take ownership of an outer value
+
+**Status:** `proposed` · **Size:** small · **Priority:** low
+**Confirmed:** z-lang `4bef7756` · **Blocks:** no (worked around)
+**Found:** Phase 4, the eval entry point.
+
+The C ABI receives an owned `String`; the context registry lives behind a
+`Mutex`; the `withLock` callback captures the String as a borrow and so
+cannot pass it on by move. The engine copies the source per call. The
+reference mentions placed `using (move owner)` capture contracts — if that
+applies to lock callbacks, the ask is documentation and an example, not a
+feature. Probe `lock-callback-ownership`.
+
+---
+
 # Wave 2 — substantive language design
 
 These need agreement on direction before implementation. Each has a real

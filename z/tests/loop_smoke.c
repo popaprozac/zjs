@@ -18,26 +18,29 @@ int main(void) {
     zjs_eval(a, "2 + 2");
     zjs_eval(b, "3 + 3");
 
-    /* Phase 1 evaluates nothing, so every program must report an error. */
-    if (zjs_had_error(a) != 1)   { printf("FAIL: eval did not record error\n"); failures++; }
+    /* Programs evaluate now: no error, and the completion value is the
+     * NaN-boxed int32 result (NUMBER_TAG | value). */
+    if (zjs_had_error(a) != 0)   { printf("FAIL: eval reported an error\n"); failures++; }
+    if (zjs_z_last_result_bits((uintptr_t)a) != (0xFFFE000000000000ULL | 4)) {
+        printf("FAIL: context a result bits %llx\n", (unsigned long long)zjs_z_last_result_bits((uintptr_t)a)); failures++;
+    }
+    if (zjs_z_last_result_bits((uintptr_t)b) != (0xFFFE000000000000ULL | 6)) {
+        printf("FAIL: context b result bits %llx\n", (unsigned long long)zjs_z_last_result_bits((uintptr_t)b)); failures++;
+    }
+    /* An undeclared name is an uncaught throw. */
+    zjs_eval(b, "nope");
+    if (zjs_had_error(b) != 1)   { printf("FAIL: reference error not reported\n"); failures++; }
+    zjs_eval(b, "3 + 3");
 
     /* Per-context state must be independent, and must have survived the
      * round trip through the Z-owned registry. */
     uint64_t ca = zjs_z_eval_count((uintptr_t)a);
     uint64_t cb = zjs_z_eval_count((uintptr_t)b);
     if (ca != 2) { printf("FAIL: context a eval count %llu, want 2\n", (unsigned long long)ca); failures++; }
-    if (cb != 1) { printf("FAIL: context b eval count %llu, want 1\n", (unsigned long long)cb); failures++; }
+    if (cb != 3) { printf("FAIL: context b eval count %llu, want 3\n", (unsigned long long)cb); failures++; }
 
-    /* Phase 2: each context owns a heap, and one object cell is allocated
-     * per eval. Cell counts must track evals and stay independent. */
-    uint32_t ha = zjs_z_heap_cells((uintptr_t)a);
-    uint32_t hb = zjs_z_heap_cells((uintptr_t)b);
-    if (ha != 2) { printf("FAIL: context a heap cells %u, want 2\n", ha); failures++; }
-    if (hb != 1) { printf("FAIL: context b heap cells %u, want 1\n", hb); failures++; }
-
-    zjs_eval(b, "4 + 4");
-    if (zjs_z_heap_cells((uintptr_t)b) != 2) { printf("FAIL: b heap did not grow\n"); failures++; }
-    if (zjs_z_heap_cells((uintptr_t)a) != 2) { printf("FAIL: a heap disturbed by b\n"); failures++; }
+    /* Each context owns a heap; numeric programs allocate no cells. */
+    if (zjs_z_heap_cells((uintptr_t)a) != 0) { printf("FAIL: numeric eval allocated cells\n"); failures++; }
 
     zjs_free_context(a);
     zjs_free_context(b);
