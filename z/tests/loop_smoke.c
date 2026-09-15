@@ -28,6 +28,17 @@ int main(void) {
     if (ca != 2) { printf("FAIL: context a eval count %llu, want 2\n", (unsigned long long)ca); failures++; }
     if (cb != 1) { printf("FAIL: context b eval count %llu, want 1\n", (unsigned long long)cb); failures++; }
 
+    /* Phase 2: each context owns a heap, and one object cell is allocated
+     * per eval. Cell counts must track evals and stay independent. */
+    uint32_t ha = zjs_z_heap_cells((uintptr_t)a);
+    uint32_t hb = zjs_z_heap_cells((uintptr_t)b);
+    if (ha != 2) { printf("FAIL: context a heap cells %u, want 2\n", ha); failures++; }
+    if (hb != 1) { printf("FAIL: context b heap cells %u, want 1\n", hb); failures++; }
+
+    zjs_eval(b, "4 + 4");
+    if (zjs_z_heap_cells((uintptr_t)b) != 2) { printf("FAIL: b heap did not grow\n"); failures++; }
+    if (zjs_z_heap_cells((uintptr_t)a) != 2) { printf("FAIL: a heap disturbed by b\n"); failures++; }
+
     zjs_free_context(a);
     zjs_free_context(b);
 

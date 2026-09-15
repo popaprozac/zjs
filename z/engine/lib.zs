@@ -16,11 +16,13 @@
 
 import { Mutex, Once, OnceLifetime } from "std/sync";
 import { thread } from "std/thread";
+import { Heap, createHeap, TAG_OBJECT } from "./heap.zs";
 
 struct ContextSlot {
   live: boolean;
   hadError: boolean;
   evalCount: u64;
+  heap: Heap;
 }
 
 struct Registry {
@@ -53,7 +55,12 @@ function initializeRuntime(): OnceLifetime<Engine> on thread.main {
 export c function zjs_z_new_context(): usize {
   const current = engine.get();
   return current.registry.withLock((inout registry): usize => {
-    registry.slots.push(ContextSlot({ live: true, hadError: false, evalCount: 0 }));
+    registry.slots.push(ContextSlot({
+      live: true,
+      hadError: false,
+      evalCount: 0,
+      heap: createHeap(),
+    }));
     return registry.slots.length;
   });
 }
@@ -74,7 +81,9 @@ export c function zjs_z_eval(handle: usize, source: String): void {
     if (handle > registry.slots.length) return;
     const index = handle - 1;
     registry.slots[index].evalCount = registry.slots[index].evalCount + 1;
-    // Phase 1: nothing is evaluated yet, so every program is an error.
+    // Phase 2: still no evaluation, but the context's heap is real. Allocate
+    // one object cell per eval so the ABI can prove per-context heap state.
+    const unused = registry.slots[index].heap.allocate(TAG_OBJECT, 4);
     registry.slots[index].hadError = source.byteLength >= 0;
   });
 }
@@ -85,6 +94,17 @@ export c function zjs_z_had_error(handle: usize): i32 {
   return current.registry.withLock((in registry): i32 => {
     if (handle > registry.slots.length) return 1;
     return registry.slots[handle - 1].hadError ? 1 : 0;
+  });
+}
+
+// Scaffold visibility: lets the harness prove per-context heap state really
+// crossed the ABI and stayed independent between contexts.
+export c function zjs_z_heap_cells(handle: usize): u32 {
+  if (handle == 0) return 0;
+  const current = engine.get();
+  return current.registry.withLock((in registry): u32 => {
+    if (handle > registry.slots.length) return 0;
+    return registry.slots[handle - 1].heap.liveCells();
   });
 }
 

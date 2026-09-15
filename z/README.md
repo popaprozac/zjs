@@ -6,12 +6,16 @@ The Z rewrite of the ZJS engine. Design:
 `src/` (Zen-c) remains the shipping engine and the behavioral oracle. This tree
 is built beside it, never on top of it.
 
-## Status — Phase 1 complete
+## Status — Phase 2 complete
 
-The loop works end to end. The **unmodified** `tests/test262_runner.c` links
-against a Z-implemented `libzjs.a` and runs. It reports 0 passed, which is the
-Phase 1 goal: no JavaScript is evaluated yet. Every phase after this one is
-about making that number climb.
+The loop works end to end: the **unmodified** `tests/test262_runner.c` links
+against a Z-implemented `libzjs.a` and runs. It reports 0 passed, because no
+JavaScript is evaluated yet. Every phase after this is about making that
+number climb.
+
+Phase 2 added the foundation the interpreter will sit on — NaN-boxed values
+and a handle-based cell heap, with each context owning its own heap. 12 unit
+tests via `z test`.
 
 ```
 $ ./z/oracle.sh
@@ -22,7 +26,9 @@ reference passed: 5   z passed: 0   gap: 5
 
 | Path | What |
 |---|---|
-| `engine/` | the Z engine — `z.json` builds `libzjsz.a` plus a generated header |
+| `engine/value.zs` | NaN-boxed value, JSC layout, handle-carrying cells |
+| `engine/heap.zs` | handle-based cell heap: headers, slots, mark bits |
+| `engine/lib.zs` | context registry and the C ABI exports |
 | `shim/zjs_shim.c` | frozen-ABI shim: exact `zjs.h` signatures over the Z exports |
 | `spike/` | Phase 0 measurements — see [`spike/RESULTS.md`](spike/RESULTS.md) |
 | `tests/` | `loop_smoke.c` and a synthetic corpus for the oracle |
@@ -37,6 +43,8 @@ reference passed: 5   z passed: 0   gap: 5
 ./z/oracle.sh                     # differential oracle, synthetic corpus
 ./z/oracle.sh vendor/test262/test/language/expressions   # real corpus
 ./z/spike/run.sh                  # Phase 0 measurements
+
+cd ~/code/z-lang && bun run z test ~/code/zjs/z/engine/heap.zs   # unit tests
 ```
 
 The real corpus is not vendored:

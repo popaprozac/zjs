@@ -234,6 +234,20 @@ opposite of what review wants.
 
 Ask: extend contextual typing to ternary branches and comparison operands.
 
+### Sharpened by Phase 2 — the failure can escape into generated C
+
+`expect(someU32Value).toEqual(1)` does not contextually type the literal
+against a `u32` actual, and the mismatch is **not reported as a Z diagnostic**.
+It escapes into generated C and surfaces as:
+
+```
+<z-generated>:379:26: error: comparison of integers of different signs
+```
+
+with no Z source location. A type error reaching the C compiler is worse than
+the ergonomic gap itself -- whatever happens with contextual typing, the
+standard-library expectation helpers should type-check in Z.
+
 ---
 
 ## G14 — `while (true)` is not recognized as diverging
@@ -262,6 +276,46 @@ Diagnosing G11 meant reading the emitted C to find which `abort()` had fired.
 Ask: trap sites should identify themselves — which check, at which Z source
 position. These are compiler-generated aborts, so the information is available
 at emission time.
+
+---
+
+## G16 — `inout` arguments must be plain bindings, not place expressions
+
+**Status:** workaround · **Size:** medium · **Priority:** medium
+**Found:** Phase 2, wiring a per-context heap.
+
+### Why
+This is rejected:
+
+```z
+allocate(inout registry.slots[index].heap, TAG_OBJECT, 4);
+//        ^ requires inout <mutable binding> for parameter 1
+```
+
+An `inout` argument must be a simple mutable binding. A field of an array
+element -- or any projection -- cannot be passed `inout`, and there is no way
+to bind one to a local without moving it out of its owner.
+
+A **method call on the same projection is accepted**
+(`registry.slots[index].heap.allocate(...)`), so the workaround is to make
+every mutating operation a method on the receiver rather than a free function.
+
+### Why it matters for ZJS
+An engine mutates nested state constantly -- a context's heap, a frame's
+register file, a shape's transition table, all reached through an index or a
+field. This rule means that entire API surface is forced into methods. That is
+often the nicer design and the engine has adopted it, but it is a constraint
+rather than a choice, and it bites at the exact moment you reach through a
+collection.
+
+### Question for z-lang rather than a demand
+This may be deliberate: proving exclusivity for an arbitrary place expression
+is harder than for a binding or a receiver. If so it should be **documented as
+a rule with the method workaround named**, because the current diagnostic
+("requires inout <mutable binding>") describes the symptom without pointing at
+the fix. If it is incidental, accepting projections whose base is a uniquely
+owned local would remove a persistent papercut.
+
 
 # Wave 2 — substantive language design
 
