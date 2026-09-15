@@ -580,6 +580,11 @@ export struct Runtime {
   // A function's `prototype` object, created on first use with a
   // `constructor` back-reference.
   function prototypeOf(inout this, fn: u32): u32 {
+    // A `prototype` the program defined (a class, or an assignment)
+    // lives in the bag and wins over the lazily created one.
+    const atomPrototype = this.atomPrototype;
+    const defined = this.functionHidden(fn, atomPrototype);
+    if (this.isObjectLike(defined)) return asCell(defined);
     const closure = this.heap.isClosure(fn);
     if (closure) {
       const held = this.heap.slot(fn, 1);
@@ -772,7 +777,10 @@ export struct Runtime {
           if (atom == this.atomName) return this.functionName(code);
         }
       }
+      // A class constructor's [[Prototype]] is its parent constructor,
+      // itself a function cell with virtual properties.
       const functionProto = this.functionProtoOf(handle);
+      if (!this.heap.isObject(functionProto)) return this.getProperty(cellValue(functionProto), key);
       return this.lookupProperty(functionProto, atom, object);
     }
     return undefinedValue();
@@ -3570,12 +3578,17 @@ export struct Runtime {
             }
           }
         } else if (op == Op.initObjData) {
-          // Object literal property: define on the literal's own class.
+          // Object literal property: define on the literal's own class. A
+          // function value remembers the literal as its home, for `super`.
           const object = this.reg(base, inst.a);
           const key = this.reg(base, inst.b);
           const value = this.reg(base, inst.c);
           const atom = this.propertyKey(key);
           this.heap.objectSet(asCell(object), atom, value);
+          if (this.isCompiledCallable(value)) {
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(asCell(value), atomHome, object);
+          }
         } else if (op == Op.loadThis) {
           const current = this.hostThis;
           if (isDeleted(current)) {
@@ -3652,6 +3665,10 @@ export struct Runtime {
           const key = this.reg(base, inst.b);
           const fn = this.reg(base, inst.c);
           this.defineAccessor(object, key, fn, fn, op == Op.defineGetter);
+          if (this.isCompiledCallable(fn)) {
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(asCell(fn), atomHome, object);
+          }
         } else if (op == Op.iterPrepare) {
           const source = this.reg(base, inst.b);
           const keys = this.enumerateKeys(source);

@@ -1023,6 +1023,11 @@ export struct Compiler {
       this.hadError = true;
       return 0;
     }
+    // A numeric literal names the property by its canonical string.
+    if ((first >= 48 && first <= 57) || first == 46) {
+      const number = parser.parseNumberLiteral(nameStart, nameLength);
+      return runtime.propertyKey(doubleValue(number));
+    }
     return this.atomOfSlice(in parser, inout runtime, nameStart, nameLength);
   }
 
@@ -1322,7 +1327,14 @@ export struct Compiler {
       while (i < n.childrenCount) {
         const propertyIndex = parser.ast.child(node, i);
         const property = parser.ast.node(propertyIndex);
-        // Spread arrives with iteration.
+        if (property.kind == NodeKind.spread) {
+          // { ...source }: the source's own enumerable properties copied in.
+          const source = this.compileExpr(in parser, inout runtime, property.left);
+          this.emit(instAB(Op.objectSpread, dst, source));
+          this.nextReg = dst + 1;
+          i = i + 1;
+          continue;
+        }
         if (property.kind != NodeKind.objectProp) {
           this.hadError = true;
           return 0;
