@@ -167,6 +167,13 @@ export enum Op {
   loadEnvSlot,     // a = dst, b = hops outward, c = slot.
   storeEnvSlot,    // a = src, b = hops outward, c = slot.
   objectRest,      // a = dst, b = source, c = array of keys to leave out.
+  // Classes.
+  newPrivateName,  // a = dst, bc = constant index of the description: a fresh private key.
+  defineField,     // a = object, b = key, c = value: CreateDataPropertyOrThrow.
+  loadSuper,       // a = dst, b = key: `super[key]` with the frame's `this` as receiver.
+  storeSuper,      // a = key, b = value: `super[key] = value`.
+  initClass,       // a = constructor, b = prototype, c = parent: wire a class with a heritage.
+  initClassBase,   // a = constructor, b = prototype: wire a class without one.
 }
 
 export struct Inst {
@@ -368,6 +375,12 @@ export function opCode(op: Op): i32 {
     loadEnvSlot => 146;
     storeEnvSlot => 147;
     objectRest => 148;
+    newPrivateName => 149;
+    defineField => 150;
+    loadSuper => 151;
+    storeSuper => 152;
+    initClass => 153;
+    initClassBase => 154;
   };
 }
 
@@ -392,6 +405,11 @@ export struct FunctionCode {
   isAsync: boolean;
   isGenerator: boolean;
   strict: boolean;
+  // Class code: a constructor (derived when it has a heritage, so `this`
+  // waits for super()), or a method, which is not a constructor.
+  isClassConstructor: boolean;
+  isDerived: boolean;
+  isMethod: boolean;
 }
 
 export function createFunctionCode(): FunctionCode {
@@ -399,6 +417,7 @@ export function createFunctionCode(): FunctionCode {
     code: Array<Inst>(), constants: Array<Value>(), propertyNames: Array<u32>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
+    isClassConstructor: false, isDerived: false, isMethod: false,
   });
 }
 

@@ -11,7 +11,7 @@ import { expect } from "std/test";
 import { thread } from "std/thread";
 import math from "std/math";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME } from "./heap.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
@@ -29,6 +29,8 @@ struct Global {
 }
 
 struct Frame {
+  // The `new.target` of a construct call; undefined for a plain call.
+  newTarget: Value;
   functionIndex: u32;
   ip: usize;
   regsBase: u32;
@@ -224,6 +226,14 @@ export struct Runtime {
   setIteratorProto: u32;
   atomMapRecord: u32;
   atomMapIter: u32;
+  // Class bookkeeping on function cells, under hidden keys: the parent
+  // constructor, the home object of a method (for `super`), an arrow's
+  // captured `new.target`, and a constructor's own [[Prototype]] when it
+  // is not Function.prototype.
+  atomClassParent: u32;
+  atomHome: u32;
+  atomNewTarget: u32;
+  atomFunctionProto: u32;
   atomIterSource: u32;
   atomIterIndex: u32;
   atomIterKind: u32;
@@ -287,6 +297,48 @@ export struct Runtime {
     if (found >= 0) return u16(found);
     this.globals.push(Global({ value: undefinedValue(), defined: false, atom: atom, attr: PROP_WRITABLE | PROP_ENUMERABLE }));
     return u16(this.globals.length - 1);
+  }
+
+  // A hidden two-letter key: 0xFF then the letters, unforgeable from
+  // JavaScript.
+  function hiddenAtom(inout this, first: u8, second: u8): u32 {
+    let bytes = Array<u8>();
+    bytes.push(255);
+    bytes.push(first);
+    bytes.push(second);
+    return this.internBytes(move bytes);
+  }
+
+  // A hidden value kept on a function-like cell's bag; undefined if none.
+  function functionHidden(handle: u32, atom: u32): Value {
+    const bag = this.functionBag(handle);
+    if (bag == 0) return undefinedValue();
+    const slot = this.heap.objectFindSlot(bag, atom);
+    if (slot < 0) return undefinedValue();
+    const held = this.heap.slot(bag, u32(slot));
+    if (isDeleted(held)) return undefinedValue();
+    return held;
+  }
+
+  function setFunctionHidden(inout this, handle: u32, atom: u32, value: Value): void {
+    const bag = this.ensureFunctionBag(handle);
+    this.heap.objectDefine(bag, atom, value, PROP_NONE);
+  }
+
+  // A function's [[Prototype]]: Function.prototype unless a class set
+  // its parent constructor.
+  function functionProtoOf(handle: u32): u32 {
+    const atomFunctionProto = this.atomFunctionProto;
+    const override = this.functionHidden(handle, atomFunctionProto);
+    if (isCell(override) && asCell(override) != 0) return asCell(override);
+    return this.functionProto;
+  }
+
+  // Whether a symbol key atom names a class private name.
+  function isPrivateKeyAtom(atom: u32): boolean {
+    if (!this.isSymbolKeyAtom(atom)) return false;
+    const symbol = this.heap.linkOf(atom);
+    return symbol != 0 && (this.heap.flagsOf(symbol) & FLAG_PRIVATE_NAME) != 0;
   }
 
   // --- Strings ---
@@ -720,7 +772,7 @@ export struct Runtime {
           if (atom == this.atomName) return this.functionName(code);
         }
       }
-      const functionProto = this.functionProto;
+      const functionProto = this.functionProtoOf(handle);
       return this.lookupProperty(functionProto, atom, object);
     }
     return undefinedValue();
@@ -1157,6 +1209,10 @@ export struct Runtime {
   // Define an accessor from an object literal: `get x() {}` / `set x(v) {}`,
   // merging with an accessor already there.
   function defineAccessor(inout this, object: Value, key: Value, getter: Value, setter: Value, isGetter: boolean): void {
+    this.defineAccessorAttr(object, key, getter, setter, isGetter, PROP_ENUMERABLE | PROP_CONFIGURABLE | PROP_ACCESSOR);
+  }
+
+  function defineAccessorAttr(inout this, object: Value, key: Value, getter: Value, setter: Value, isGetter: boolean, attr: u8): void {
     if (!this.isObjectLike(object)) return;
     const handle = asCell(object);
     const atom = this.propertyKey(key);
@@ -1170,7 +1226,7 @@ export struct Runtime {
       currentSetter = current.setter;
     }
     const accessor = this.heap.allocateAccessor(isGetter ? getter : currentGetter, isGetter ? currentSetter : setter);
-    this.heap.objectDefine(target, atom, cellValue(accessor), PROP_ENUMERABLE | PROP_CONFIGURABLE | PROP_ACCESSOR);
+    this.heap.objectDefine(target, atom, cellValue(accessor), attr);
   }
 
   // Own property keys in the specification's order: array indices
@@ -1284,7 +1340,7 @@ export struct Runtime {
     let symbolNames = Array<u32>();
     while (classId != 0) {
       const name = this.heap.classes[usize(classId)].transitionName;
-      if (this.isSymbolKeyAtom(name)) {
+      if (this.isSymbolKeyAtom(name) && !this.isPrivateKeyAtom(name)) {
         const slot = this.heap.classes[usize(classId)].transitionSlot;
         if (!isDeleted(this.heap.slot(object, slot))) symbolNames.push(name);
       }
@@ -1342,8 +1398,8 @@ export struct Runtime {
     if ((atom == this.atomLength || atom == this.atomName) && !this.functionVirtualDeleted(handle, atom)) return true;
     const bag = this.functionBag(handle);
     if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
-    const functionProto = this.functionProto;
-    return !isUndefined(this.objectGet(functionProto, atom));
+    const functionProto = this.functionProtoOf(handle);
+    return this.hasProperty(cellValue(functionProto), key);
   }
 
   // Whether a value has `key` as an own property: an object's live slot,
@@ -1409,7 +1465,7 @@ export struct Runtime {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) return this.heap.objectProto(handle);
     if (tag == TAG_ARRAY) return this.arrayProto;
-    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.functionProto;
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.functionProtoOf(handle);
     if (this.heap.isString(handle)) return this.stringProto;
     return 0;
   }
@@ -2094,7 +2150,7 @@ export struct Runtime {
     if (tag == TAG_HOST_FUNCTION) return isTrue(this.heap.slot(handle, 4));
     if (tag == TAG_FUNCTION || tag == TAG_CLOSURE) {
       const code = this.heap.functionIndex(handle);
-      return !this.functions[usize(code)].isArrow && !this.functions[usize(code)].isGenerator;
+      return !this.functions[usize(code)].isArrow && !this.functions[usize(code)].isGenerator && !this.functions[usize(code)].isMethod;
     }
     return false;
   }
@@ -2201,12 +2257,13 @@ export struct Runtime {
       outcome = this.callHost(builtin, thisValue, argsBase, argc, handle);
     } else if (this.isCompiledCallable(callee)) {
       const entryDepth = this.frameCount;
-      this.enterCallable(callee, 0, thisValue, argsBase, argc, undefinedValue());
-      const result = this.runFrames(entryDepth);
-      if (result.isThrow) {
-        this.raise(result.value);
-      } else {
-        outcome = result.value;
+      if (this.enterCallable(callee, 0, thisValue, argsBase, argc, undefinedValue())) {
+        const result = this.runFrames(entryDepth);
+        if (result.isThrow) {
+          this.raise(result.value);
+        } else {
+          outcome = result.value;
+        }
       }
     } else {
       const message: String = "value is not a function";
@@ -2226,37 +2283,42 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    const proto = this.prototypeOf(asCell(newTarget));
-    const created = cellValue(this.heap.allocateObject(proto));
-    this.pushTempRoot(created);
     let outcome = undefinedValue();
     if (this.isHostFunctionValue(callee)) {
+      const proto = this.prototypeOf(asCell(newTarget));
+      const created = cellValue(this.heap.allocateObject(proto));
+      this.pushTempRoot(created);
       outcome = this.callValue(callee, created, move args);
-    } else {
-      const argsBase = this.regTop;
-      const argc = u32(args.length);
-      const needed = usize(argsBase + argc);
-      while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
-      let index: u32 = 0;
-      while (index < argc) {
-        const passed = args[usize(index)];
-        this.regStack[usize(argsBase + index)] = passed;
-        index = index + 1;
-      }
-      this.regTop = argsBase + argc;
-      const entryDepth = this.frameCount;
-      this.enterCallable(callee, 0, created, argsBase, argc, created);
+      this.popTempRoot();
+      if (this.pendingThrow) return undefinedValue();
+      return this.isObjectLike(outcome) ? outcome : created;
+    }
+    const argsBase = this.regTop;
+    const argc = u32(args.length);
+    const needed = usize(argsBase + argc);
+    while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    let index: u32 = 0;
+    while (index < argc) {
+      const passed = args[usize(index)];
+      this.regStack[usize(argsBase + index)] = passed;
+      index = index + 1;
+    }
+    this.regTop = argsBase + argc;
+    const entryDepth = this.frameCount;
+    // The return handler substitutes the constructed object for a
+    // non-object return value, and checks a derived constructor did
+    // call super(), so the result is the object or a throw.
+    if (this.enterConstruct(callee, 0, argsBase, argc, newTarget)) {
       const result = this.runFrames(entryDepth);
-      this.regTop = argsBase;
       if (result.isThrow) {
         this.raise(result.value);
       } else {
         outcome = result.value;
       }
     }
-    this.popTempRoot();
+    this.regTop = argsBase;
     if (this.pendingThrow) return undefinedValue();
-    return this.isObjectLike(outcome) ? outcome : created;
+    return outcome;
   }
 
   // ToPrimitive with the string or number hint.
@@ -2388,6 +2450,10 @@ export struct Runtime {
     mapIter.push(109);
     mapIter.push(105);
     this.atomMapIter = this.internBytes(move mapIter);
+    this.atomClassParent = this.hiddenAtom(99, 112);
+    this.atomHome = this.hiddenAtom(104, 111);
+    this.atomNewTarget = this.hiddenAtom(110, 116);
+    this.atomFunctionProto = this.hiddenAtom(102, 112);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
@@ -2446,10 +2512,12 @@ export struct Runtime {
       const constructThis = this.frames[index].constructThis;
       const callee = this.frames[index].callee;
       const env = this.frames[index].env;
+      const newTarget = this.frames[index].newTarget;
       this.heap.markValue(savedThis);
       this.heap.markValue(constructThis);
       this.heap.markValue(callee);
       this.heap.markHandle(env);
+      this.heap.markValue(newTarget);
       index = index + 1;
     }
     const hostThis = this.hostThis;
@@ -2512,6 +2580,14 @@ export struct Runtime {
     this.heap.markHandle(atomMapRecord);
     const atomMapIter = this.atomMapIter;
     this.heap.markHandle(atomMapIter);
+    const atomClassParent = this.atomClassParent;
+    this.heap.markHandle(atomClassParent);
+    const atomHome = this.atomHome;
+    this.heap.markHandle(atomHome);
+    const atomNewTarget = this.atomNewTarget;
+    this.heap.markHandle(atomNewTarget);
+    const atomFunctionProto = this.atomFunctionProto;
+    this.heap.markHandle(atomFunctionProto);
     const symbolIterator = this.symbolIterator;
     this.heap.markValue(symbolIterator);
     const symbolToPrimitive = this.symbolToPrimitive;
@@ -2799,7 +2875,7 @@ export struct Runtime {
     const frame = Frame({
       functionIndex: functionIndex, ip: 0, regsBase: base, regCount: regCount, returnDst: returnDst,
       savedThis: this.hostThis, tryDepthAtEntry: this.tryDepth, constructThis: undefinedValue(),
-      env: 0, callee: undefinedValue(), argsBase: 0, argc: 0, generator: 0,
+      env: 0, callee: undefinedValue(), argsBase: 0, argc: 0, generator: 0, newTarget: undefinedValue(),
     });
     if (usize(this.frameCount) < this.frames.length) {
       this.frames[usize(this.frameCount)] = frame;
@@ -2822,9 +2898,15 @@ export struct Runtime {
   // caller's registers, `this` bound (an arrow's is the one it captured),
   // the closure's environment installed, the constructed object (if any)
   // recorded.
-  function enterCallable(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): void {
+  function enterCallable(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): boolean {
     const handle = asCell(callee);
     const target = this.heap.functionIndex(handle);
+    if (this.functions[usize(target)].isClassConstructor && isUndefined(constructThis)) {
+      const message: String = "Class constructor cannot be invoked without 'new'";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return false;
+    }
     let env: u32 = 0;
     let boundThis = thisValue;
     if (this.heap.isClosure(handle)) {
@@ -2842,6 +2924,95 @@ export struct Runtime {
     this.frames[top].env = env;
     this.frames[top].callee = callee;
     this.frames[top].generator = generator;
+    return true;
+  }
+
+  // Push a construct call to a compiled function: an ordinary or base
+  // class constructor gets a fresh object whose prototype comes from
+  // `newTarget`; a derived constructor starts with `this` uninitialized
+  // and receives its object from super().
+  function enterConstruct(inout this, callee: Value, returnDst: u8, argsBase: u32, argc: u32, newTarget: Value): boolean {
+    const code = this.heap.functionIndex(asCell(callee));
+    let created = deletedValue();
+    if (!this.functions[usize(code)].isDerived) {
+      const proto = this.prototypeOf(asCell(newTarget));
+      created = cellValue(this.heap.allocateObject(proto));
+    }
+    if (!this.enterCallable(callee, returnDst, created, argsBase, argc, created)) return false;
+    this.frames[usize(this.frameCount - 1)].newTarget = newTarget;
+    return true;
+  }
+
+  // super(...args) from a derived constructor's frame: construct the
+  // parent with the frame's new.target and bind the result as `this`;
+  // the compiler places the instance field initializers after the call.
+  function superConstruct(inout this, frameIndex: usize, args: Array<Value>): Value {
+    const callee = this.frames[frameIndex].callee;
+    if (!isCell(callee) || asCell(callee) == 0) {
+      const message: String = "'super' keyword unexpected here";
+      const error = this.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
+      this.raise(error);
+      return undefinedValue();
+    }
+    const code = this.heap.functionIndex(asCell(callee));
+    if (!this.functions[usize(code)].isDerived) {
+      const message: String = "'super' keyword unexpected here";
+      const error = this.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
+      this.raise(error);
+      return undefinedValue();
+    }
+    const atomClassParent = this.atomClassParent;
+    const parent = this.functionHidden(asCell(callee), atomClassParent);
+    if (!this.isConstructorValue(parent)) {
+      const message: String = "Super constructor is not a constructor";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    if (!isDeleted(this.frames[frameIndex].constructThis)) {
+      const message: String = "Super constructor may only be called once";
+      const error = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
+      this.raise(error);
+      return undefinedValue();
+    }
+    const newTarget = this.frames[frameIndex].newTarget;
+    const result = this.constructValue(parent, move args, newTarget);
+    if (this.pendingThrow) return undefinedValue();
+    this.frames[frameIndex].constructThis = result;
+    this.hostThis = result;
+    const thisReg = this.functions[usize(code)].thisReg;
+    const regsBase = this.frames[frameIndex].regsBase;
+    if (thisReg >= 0) this.setReg(regsBase, u8(thisReg), result);
+    return result;
+  }
+
+  // The name a method gets from its property key: a symbol's description
+  // in brackets, otherwise the key's string form; accessors prefixed.
+  function setFunctionNameFromKey(inout this, fn: Value, key: Value, prefix: u32): void {
+    if (!isCell(fn) || asCell(fn) == 0) return;
+    let name = Array<u8>();
+    if (prefix == 1) {
+      const getPrefix: String = "get ";
+      name = bytesOf(in getPrefix);
+    } else if (prefix == 2) {
+      const setPrefix: String = "set ";
+      name = bytesOf(in setPrefix);
+    }
+    if (this.isSymbolValue(key)) {
+      const description = this.heap.slot(asCell(key), 0);
+      const isPrivate = (this.heap.flagsOf(asCell(key)) & FLAG_PRIVATE_NAME) != 0;
+      if (this.isStringValue(description)) {
+        if (!isPrivate) name.push(91);
+        appendBytes(inout name, this.heap.stringBytes(asCell(description)));
+        if (!isPrivate) name.push(93);
+      }
+    } else {
+      const text = this.toStringValue(key);
+      if (this.pendingThrow) return;
+      appendBytes(inout name, this.heap.stringBytes(asCell(text)));
+    }
+    const atomName = this.atomName;
+    this.defineOwnAttr(asCell(fn), atomName, this.newString(move name), PROP_CONFIGURABLE);
   }
 
   // Push a call to a compiled function: arguments from the caller's
@@ -3153,8 +3324,12 @@ export struct Runtime {
           const argsBase = base + u32(inst.b) + 1;
           if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
-            this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue());
-            returned = true;
+            if (this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue())) {
+              returned = true;
+            } else {
+              thrown = this.takePending();
+              throwing = true;
+            }
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
             const outcome = this.callHost(builtin, undefinedValue(), argsBase, argc, asCell(callee));
@@ -3177,8 +3352,12 @@ export struct Runtime {
           const argsBase = base + u32(inst.b) + 2;
           if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
-            this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
-            returned = true;
+            if (this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue())) {
+              returned = true;
+            } else {
+              thrown = this.takePending();
+              throwing = true;
+            }
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
             const outcome = this.callHost(builtin, receiver, argsBase, argc, asCell(callee));
@@ -3204,11 +3383,13 @@ export struct Runtime {
             thrown = this.notConstructorError(callee);
             throwing = true;
           } else if (this.isCompiledCallable(callee)) {
-            const proto = this.prototypeOf(asCell(callee));
-            const created = cellValue(this.heap.allocateObject(proto));
             this.frames[frameIndex].ip = ip;
-            this.enterCallable(callee, inst.a, created, argsBase, argc, created);
-            returned = true;
+            if (this.enterConstruct(callee, inst.a, argsBase, argc, callee)) {
+              returned = true;
+            } else {
+              thrown = this.takePending();
+              throwing = true;
+            }
           } else if (this.isHostFunctionValue(callee)) {
             const proto = this.prototypeOf(asCell(callee));
             const created = cellValue(this.heap.allocateObject(proto));
@@ -3265,8 +3446,26 @@ export struct Runtime {
             this.completeGenerator(frame.generator);
             value = this.createIterResult(value, true);
           }
-          // A constructor call yields its object unless it returned one.
-          if (this.isObjectLike(frame.constructThis) && !this.isObjectLike(value)) value = frame.constructThis;
+          // A constructor call yields its object unless it returned one; a
+          // derived constructor must have called super() by now, and may
+          // return only an object or undefined.
+          if (isDeleted(frame.constructThis) && !this.isObjectLike(value)) {
+            if (isUndefined(value)) {
+              const message: String = "Must call super constructor in derived class before accessing 'this' or returning from derived constructor";
+              thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
+            } else {
+              const message: String = "Derived constructors may only return object or undefined";
+              thrown = this.typeError(in message);
+            }
+            throwing = true;
+          } else if (this.isObjectLike(frame.constructThis) && !this.isObjectLike(value)) {
+            if (!isUndefined(value) && this.functions[usize(frame.functionIndex)].isDerived) {
+              const message: String = "Derived constructors may only return object or undefined";
+              thrown = this.typeError(in message);
+              throwing = true;
+            }
+            value = frame.constructThis;
+          }
           // A safe point: the frame is gone, so the value it hands back is
           // parked in the caller's next register through the collection.
           if (this.heap.shouldCollect()) {
@@ -3379,7 +3578,13 @@ export struct Runtime {
           this.heap.objectSet(asCell(object), atom, value);
         } else if (op == Op.loadThis) {
           const current = this.hostThis;
-          this.setReg(base, inst.a, current);
+          if (isDeleted(current)) {
+            const message: String = "Must call super constructor before accessing 'this'";
+            thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
+            throwing = true;
+          } else {
+            this.setReg(base, inst.a, current);
+          }
         } else if (op == Op.typeofOp) {
           const operand = this.reg(base, inst.b);
           const label = this.typeofValue(operand);
@@ -3486,6 +3691,19 @@ export struct Runtime {
           const capturedThis = this.hostThis;
           const wrapped = this.heap.functionIndex(asCell(fn));
           const closure = this.heap.allocateClosure(wrapped, env, capturedThis);
+          if (this.functions[usize(wrapped)].isArrow) {
+            const creator = this.frames[frameIndex].callee;
+            if (isCell(creator) && asCell(creator) != 0) {
+              const atomHome = this.atomHome;
+              const atomNewTarget = this.atomNewTarget;
+              const home = this.functionHidden(asCell(creator), atomHome);
+              if (!isUndefined(home)) this.setFunctionHidden(closure, atomHome, home);
+              let newTarget = this.frames[frameIndex].newTarget;
+              const creatorIndex = this.frames[frameIndex].functionIndex;
+              if (this.functions[usize(creatorIndex)].isArrow) newTarget = this.functionHidden(asCell(creator), atomNewTarget);
+              if (!isUndefined(newTarget)) this.setFunctionHidden(closure, atomNewTarget, newTarget);
+            }
+          }
           this.setReg(base, inst.a, cellValue(closure));
         } else if (op == Op.iterGet) {
           const iterable = this.reg(base, inst.b);
@@ -3583,11 +3801,13 @@ export struct Runtime {
               thrown = this.notConstructorError(callee);
               throwing = true;
             } else if (this.isCompiledCallable(callee)) {
-              const proto = this.prototypeOf(asCell(callee));
-              const created = cellValue(this.heap.allocateObject(proto));
               this.frames[frameIndex].ip = ip;
-              this.enterCallable(callee, inst.a, created, argsBase, argc, created);
-              returned = true;
+              if (this.enterConstruct(callee, inst.a, argsBase, argc, callee)) {
+                returned = true;
+              } else {
+                thrown = this.takePending();
+                throwing = true;
+              }
             } else {
               const proto = this.prototypeOf(asCell(callee));
               const created = cellValue(this.heap.allocateObject(proto));
@@ -3601,8 +3821,12 @@ export struct Runtime {
             }
           } else if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
-            this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
-            returned = true;
+            if (this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue())) {
+              returned = true;
+            } else {
+              thrown = this.takePending();
+              throwing = true;
+            }
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
             const outcome = this.callHost(builtin, receiver, argsBase, argc, asCell(callee));
@@ -3647,6 +3871,190 @@ export struct Runtime {
         } else if (op == Op.loadCallee) {
           const callee = this.frames[frameIndex].callee;
           this.setReg(base, inst.a, callee);
+        } else if (op == Op.loadNewTarget) {
+          let target = this.frames[frameIndex].newTarget;
+          if (this.functions[usize(this.frames[frameIndex].functionIndex)].isArrow) {
+            const callee = this.frames[frameIndex].callee;
+            const atomNewTarget = this.atomNewTarget;
+            target = isCell(callee) && asCell(callee) != 0 ? this.functionHidden(asCell(callee), atomNewTarget) : undefinedValue();
+          }
+          this.setReg(base, inst.a, target);
+        } else if (op == Op.newPrivateName) {
+          const functionIndex = this.frames[frameIndex].functionIndex;
+          const description = this.functions[usize(functionIndex)].constants[usize(bcU16(inst))];
+          const symbol = this.newSymbol(description);
+          this.heap.setFlags(asCell(symbol), FLAG_PRIVATE_NAME);
+          this.setReg(base, inst.a, symbol);
+        } else if (op == Op.defineField) {
+          const object = this.reg(base, inst.a);
+          const key = this.reg(base, inst.b);
+          const value = this.reg(base, inst.c);
+          let desc = emptyDescriptorInput();
+          desc.hasValue = true;
+          desc.value = value;
+          desc.hasWritable = true;
+          desc.writable = true;
+          desc.hasEnumerable = true;
+          desc.enumerable = true;
+          desc.hasConfigurable = true;
+          desc.configurable = true;
+          const defined = this.defineOwnProperty(object, key, desc);
+          if (this.pendingThrow) {
+            thrown = this.takePending();
+            throwing = true;
+          } else if (!defined) {
+            const message: String = "Cannot define class field";
+            thrown = this.typeError(in message);
+            throwing = true;
+          }
+        } else if (op == Op.loadSuper) {
+          const callee = this.frames[frameIndex].callee;
+          const atomHome = this.atomHome;
+          const home = isCell(callee) && asCell(callee) != 0 ? this.functionHidden(asCell(callee), atomHome) : undefinedValue();
+          if (!this.isObjectLike(home)) {
+            const message: String = "'super' keyword unexpected here";
+            thrown = this.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
+            throwing = true;
+          } else {
+            const key = this.reg(base, inst.b);
+            const proto = this.protoOfValue(home);
+            let found = undefinedValue();
+            if (proto != 0) {
+              if (this.heap.isObject(proto)) {
+                const atom = this.propertyKey(key);
+                const receiver = this.hostThis;
+                found = this.lookupProperty(proto, atom, receiver);
+              } else {
+                found = this.getProperty(cellValue(proto), key);
+              }
+            }
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, found);
+            }
+          }
+        } else if (op == Op.storeSuper) {
+          const key = this.reg(base, inst.a);
+          const value = this.reg(base, inst.b);
+          const receiver = this.hostThis;
+          const stored = this.setProperty(receiver, key, value);
+          if (this.pendingThrow) {
+            thrown = this.takePending();
+            throwing = true;
+          } else if (!stored) {
+            const message: String = "Cannot assign to read only property";
+            thrown = this.typeError(in message);
+            throwing = true;
+          }
+        } else if (op == Op.initClass || op == Op.initClassBase) {
+          const ctor = this.reg(base, inst.a);
+          const proto = this.reg(base, inst.b);
+          const ctorHandle = asCell(ctor);
+          const protoHandle = asCell(proto);
+          let failed = false;
+          if (op == Op.initClass) {
+            const parent = this.reg(base, inst.c);
+            if (isNull(parent)) {
+              this.heap.setObjectProto(protoHandle, 0);
+              const atomClassParent = this.atomClassParent;
+              this.setFunctionHidden(ctorHandle, atomClassParent, nullValue());
+            } else if (!this.isConstructorValue(parent)) {
+              const message: String = "Class extends value is not a constructor or null";
+              thrown = this.typeError(in message);
+              throwing = true;
+              failed = true;
+            } else {
+              const atomPrototype = this.atomPrototype;
+              const parentProto = this.getProperty(parent, cellValue(atomPrototype));
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+                failed = true;
+              } else if (!this.isObjectLike(parentProto) && !isNull(parentProto)) {
+                const message: String = "Class extends value does not have valid prototype property";
+                thrown = this.typeError(in message);
+                throwing = true;
+                failed = true;
+              } else {
+                this.heap.setObjectProto(protoHandle, isNull(parentProto) ? 0 : asCell(parentProto));
+                const atomClassParent = this.atomClassParent;
+                const atomFunctionProto = this.atomFunctionProto;
+                this.setFunctionHidden(ctorHandle, atomClassParent, parent);
+                this.setFunctionHidden(ctorHandle, atomFunctionProto, parent);
+              }
+            }
+          }
+          if (!failed) {
+            const atomPrototype = this.atomPrototype;
+            this.defineOwnAttr(ctorHandle, atomPrototype, proto, PROP_NONE);
+            const atomConstructor = this.atomConstructor;
+            this.heap.objectDefine(protoHandle, atomConstructor, ctor, PROP_METHOD);
+          }
+        } else if (op == Op.defineMethod || op == Op.defineMethodComputed) {
+          // Methods are writable and configurable but not enumerable, and
+          // remember the object they were defined on for `super`.
+          const target = this.reg(base, inst.a);
+          const fn = this.reg(base, inst.c);
+          let atom: u32 = 0;
+          if (op == Op.defineMethod) {
+            const functionIndex = this.frames[frameIndex].functionIndex;
+            atom = this.functions[usize(functionIndex)].propertyNames[usize(inst.b)];
+          } else {
+            const key = this.reg(base, inst.b);
+            atom = this.propertyKey(key);
+            this.setFunctionNameFromKey(fn, key, 0);
+          }
+          if (this.pendingThrow) {
+            thrown = this.takePending();
+            throwing = true;
+          } else {
+            this.defineOwnAttr(asCell(target), atom, fn, PROP_METHOD);
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(asCell(fn), atomHome, target);
+          }
+        } else if (op == Op.defineMethodGetter || op == Op.defineMethodSetter) {
+          const target = this.reg(base, inst.a);
+          const key = this.reg(base, inst.b);
+          const fn = this.reg(base, inst.c);
+          const isGetter = op == Op.defineMethodGetter;
+          this.setFunctionNameFromKey(fn, key, isGetter ? 1 : 2);
+          if (this.pendingThrow) {
+            thrown = this.takePending();
+            throwing = true;
+          } else {
+            this.defineAccessorAttr(target, key, fn, fn, isGetter, PROP_CONFIGURABLE | PROP_ACCESSOR);
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(asCell(fn), atomHome, target);
+          }
+        } else if (op == Op.superCall || op == Op.spreadSuperCall) {
+          let args = Array<Value>();
+          if (op == Op.superCall) {
+            let index: u32 = 0;
+            while (index < u32(inst.c)) {
+              const passed = this.reg(base, inst.b + u8(index));
+              args.push(passed);
+              index = index + 1;
+            }
+          } else {
+            const spread = this.reg(base, inst.b);
+            const count = this.heap.arrayLength(asCell(spread));
+            let index: u32 = 0;
+            while (index < count) {
+              const passed = this.heap.arrayGet(asCell(spread), index);
+              args.push(passed);
+              index = index + 1;
+            }
+          }
+          this.frames[frameIndex].ip = ip;
+          const constructed = this.superConstruct(frameIndex, move args);
+          if (this.pendingThrow) {
+            thrown = this.takePending();
+            throwing = true;
+          } else {
+            this.setReg(base, inst.a, constructed);
+          }
         } else {
           // Not yet implemented: an internal error, surfaced as a throw.
           const message: String = "unsupported operation";
@@ -3756,7 +4164,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

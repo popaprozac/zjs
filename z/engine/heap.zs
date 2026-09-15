@@ -61,6 +61,8 @@ export const PROP_NONE: u8 = 0;
 // Per-cell flags.
 export const FLAG_NON_EXTENSIBLE: u8 = 1;
 export const FLAG_LENGTH_READONLY: u8 = 2;
+// A symbol cell minted as a class private name: never an own key.
+export const FLAG_PRIVATE_NAME: u8 = 4;
 
 struct CellHeader {
   tag: u8;
