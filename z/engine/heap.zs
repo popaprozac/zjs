@@ -231,8 +231,7 @@ function int32Slot(value: i32): Value {
 
 test "a fresh heap has no live cells and reserves handle 0" {
   const heap = createHeap();
-  const none: u32 = 0;
-  expect(heap.liveCells()).toEqual(none);
+  expect(heap.liveCells()).toEqual(0);
   expect(heap.tagOf(0)).toEqual(TAG_RESERVED);
 }
 
@@ -240,23 +239,19 @@ test "allocation yields handles starting at one" {
   let heap = createHeap();
   const first = heap.allocate(TAG_OBJECT, 4);
   const second = heap.allocate(TAG_ARRAY, 2);
-  const one: u32 = 1;
-  const two: u32 = 2;
-  expect(first).toEqual(one);
-  expect(second).toEqual(two);
-  expect(heap.liveCells()).toEqual(two);
+  expect(first).toEqual(1);
+  expect(second).toEqual(2);
+  expect(heap.liveCells()).toEqual(2);
 }
 
 test "tags and slot counts survive allocation" {
   let heap = createHeap();
   const object = heap.allocate(TAG_OBJECT, 4);
   const text = heap.allocate(TAG_STRING, 1);
-  const four: u32 = 4;
-  const one: u32 = 1;
   expect(heap.tagOf(object)).toEqual(TAG_OBJECT);
   expect(heap.tagOf(text)).toEqual(TAG_STRING);
-  expect(heap.slotCountOf(object)).toEqual(four);
-  expect(heap.slotCountOf(text)).toEqual(one);
+  expect(heap.slotCountOf(object)).toEqual(4);
+  expect(heap.slotCountOf(text)).toEqual(1);
 }
 
 test "slots initialize to undefined" {

@@ -258,12 +258,10 @@ export function nodeKindCode(kind: NodeKind): i32 {
 
 test "node zero is reserved and new nodes index from one" {
   let ast = createAst();
-  const none: u32 = 0;
-  const one: u32 = 1;
-  expect(ast.count()).toEqual(none);
+  expect(ast.count()).toEqual(0);
   const first = ast.newNode(NodeKind.numberExpr, 3, 4);
-  expect(first).toEqual(one);
-  expect(ast.count()).toEqual(one);
+  expect(first).toEqual(1);
+  expect(ast.count()).toEqual(1);
 }
 
 test "child lists attach as contiguous ranges" {
@@ -275,8 +273,7 @@ test "child lists attach as contiguous ranges" {
   list.push(a);
   list.push(b);
   ast.setChildren(program, in list);
-  const two: u32 = 2;
-  expect(ast.node(program).childrenCount).toEqual(two);
+  expect(ast.node(program).childrenCount).toEqual(2);
   expect(ast.child(program, 0)).toEqual(a);
   expect(ast.child(program, 1)).toEqual(b);
 }

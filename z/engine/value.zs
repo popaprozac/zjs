@@ -177,16 +177,9 @@ test "singletons are distinct and none is a cell" {
 }
 
 test "cell handles round-trip and never alias a sentinel" {
-  // `toEqual` does not contextually type its literal against a u32 actual,
-  // and the mismatch is not reported as a Z diagnostic -- it escapes into
-  // generated C and surfaces as a clang -Wsign-compare error with no Z
-  // source location. Hence the typed bindings.
-  const one: u32 = 1;
-  const two: u32 = 2;
-  const many: u32 = 1000000;
-  expect(asCell(cellValue(1))).toEqual(one);
-  expect(asCell(cellValue(2))).toEqual(two);
-  expect(asCell(cellValue(1000000))).toEqual(many);
+  expect(asCell(cellValue(1))).toEqual(1);
+  expect(asCell(cellValue(2))).toEqual(2);
+  expect(asCell(cellValue(1000000))).toEqual(1000000);
   expect(isCell(cellValue(1))).toEqual(true);
   expect(isCell(cellValue(1000000))).toEqual(true);
 

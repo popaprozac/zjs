@@ -7,18 +7,13 @@ import { parseProgram } from "../../engine/parser.zs";
 import { Ast, NO_NODE, nodeKindCode } from "../../engine/ast.zs";
 import { kindCode } from "../../engine/token.zs";
 
-// A literal in ternary position does not take the declared u8 type, so the
-// flags are spelled through typed bindings.
-const ONE: u8 = 1;
-const ZERO: u8 = 0;
-
 function dumpNode(in ast: Ast, index: u32, depth: u32): void {
   if (index == NO_NODE) {
     console.log(`${depth} -`);
     return;
   }
   const n = ast.node(index);
-  const flag: u8 = n.boolValue ? ONE : ZERO;
+  const flag: u8 = n.boolValue ? 1 : 0;
   console.log(`${depth} ${nodeKindCode(n.kind)} ${n.start} ${n.end} ${kindCode(n.op)} ${n.num.toBits()} ${flag} ${n.nameStart} ${n.nameLength} ${n.childrenCount}`);
   dumpNode(in ast, n.left, depth + 1);
   dumpNode(in ast, n.right, depth + 1);
@@ -33,7 +28,7 @@ function dumpNode(in ast: Ast, index: u32, depth: u32): void {
 function dump(in path: String, isModule: boolean): i32 throws String {
   const source = try fs.readText(path);
   const result = parseProgram(move source, isModule);
-  const flag: u8 = result.hadError ? ONE : ZERO;
+  const flag: u8 = result.hadError ? 1 : 0;
   console.log(`error ${flag}`);
   if (!result.hadError) dumpNode(in result.parser.ast, result.root, 0);
   return 0;

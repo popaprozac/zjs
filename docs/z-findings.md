@@ -214,10 +214,14 @@ exercises the non-finite cases.
 
 ## G11 — Checked numeric conversion cannot reinterpret a bit pattern
 
-**Status:** `proposed` — API pending deliberation
+**Status:** `consumer-verified` — z-lang `7d5e557e` (in pin `4bef7756`), ZJS `8037e98`
 **Confirmed:** z-lang `00864194`, Stage 0 reproduction
-**Blocks:** no. The engine folds the sign by hand today.
+**Blocks:** no
 **Priority:** high — it is the integer half of what `dee8ea80` landed for floats
+
+Shipped as `negative.toBits(): u32` and `i32.fromBits(bits): i32`, the
+recommended spelling below. `value.zs` now boxes and unboxes int32 payloads
+through them and the manual sign folding is gone. Probe `integer-bits` LANDED.
 
 ### Why
 `u32(-42)` **traps**. Z's numeric construction is value-preserving by design,
@@ -266,10 +270,13 @@ such.
 
 ## G13 — Integer literals are not contextually typed in some positions
 
-**Status:** `proposed` — Codex recommends this as the next upstream slice
+**Status:** `consumer-verified` — expectation case z-lang `4bef7756`;
+ternary and shift cases z-lang `3f96e759`; ZJS adoption recorded with the
+pin advance to `3f96e759`
 **Confirmed:** z-lang `00864194`, Stage 0 reproductions
-**Blocks:** no, but it is the highest-value open item. G1 made hex spellings
-legal; this is what stops them being usable where the engine needs them.
+**Blocks:** no. All three probes LANDED; the engine's typed-binding
+workarounds for `toEqual` literals and the AST dump's ternary flags are
+removed. The NaN-box constants stay spelled full-width by choice.
 
 ### Intended principle
 Contextual typing of **literals** — never implicit conversion of an
@@ -277,7 +284,7 @@ already-typed variable.
 
 ### Confirmed gaps, each with its own probe
 
-| Case | Behaviour at `00864194` | Probe |
+| Case | Behaviour at `00864194` (all fixed by `3f96e759`) | Probe |
 |---|---|---|
 | `return flag ? 7 : 6` from a `u64` function | fails: expected u64, found i32 | `literal-in-ternary` |
 | `const mask: u64 = 0xFFFE << 48` | fails: the shift is checked as `i32` before destination context reaches the literal | `literal-in-shift` |
@@ -415,9 +422,10 @@ Probe `in-borrow-with-field-read`.
 
 ## G20 — Method call on a module-level `const String` mis-lowers
 
-**Status:** `proposed` — **compiler bug** · **Size:** small · **Priority:** high
-**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no (worked around)
-**Found:** Phase 3, the escape-decoded keyword path.
+**Status:** `consumer-verified` — fixed in z-lang pin `4bef7756`, ZJS `bf7c95e`
+**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no
+**Found:** Phase 3, the escape-decoded keyword path. The lexer's keyword
+table is a module constant again. Probe `module-const-string-method` LANDED.
 
 ```z
 const TABLE: String = "abc";
