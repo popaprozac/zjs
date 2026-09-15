@@ -195,19 +195,13 @@ function lookupKeyword(in source: String, start: usize, length: usize): TokenKin
 // so the same in-place keyword lookup can classify it. Z has no way to
 // append a single byte to a TextBuffer or build a String from bytes, so the
 // decoded bytes are looked up in this table and copied out of it.
-//
-// This is a function, not a module `const String`: a method call on a
-// module-level String constant (`ID_BYTES.byteAt(i)`) passes `z check` and
-// then lowers to C with the receiver dropped (`byteAt(i)`), failing in clang.
-function idByteTable(): String {
-  return "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$";
-}
+const ID_BYTES: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$";
 
-function idByteIndex(in table: String, c: u8): i32 {
+function idByteIndex(c: u8): i32 {
   let index: usize = 0;
-  const count = table.byteLength;
+  const count = ID_BYTES.byteLength;
   while (index < count) {
-    if (table.byteAt(index) == c) return i32(index);
+    if (ID_BYTES.byteAt(index) == c) return i32(index);
     index = index + 1;
   }
   return -1;
@@ -412,13 +406,12 @@ export struct Lexer {
     }
     // Rebuild as a String through the identifier-byte table so the in-place
     // keyword lookup can be reused unchanged.
-    const table = idByteTable();
     let rebuilt = TextBuffer();
     let index: usize = 0;
     while (index < decoded.length) {
-      const at = idByteIndex(in table, decoded[index]);
+      const at = idByteIndex(decoded[index]);
       if (at < 0) return TokenKind.identifier;
-      rebuilt.appendBytes(table, usize(at), usize(at) + 1);
+      rebuilt.appendBytes(ID_BYTES, usize(at), usize(at) + 1);
       index = index + 1;
     }
     const text = rebuilt.finish();
