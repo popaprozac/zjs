@@ -872,6 +872,55 @@ G21 (bytes out to native) and G26 (bytes to String, now landed).
 
 ---
 
+## G31 — Checked indexing and arithmetic cost the interpreter loop about a tenth
+
+**Status:** `proposed` · **Size:** medium · **Priority:** high
+**Confirmed:** z-lang `93611fe5`, measured · **Blocks:** no
+**Found:** the performance spike after classes.
+
+Every array index lowers to `z_bounds_index` (compare and abort) and every
+`+` on an index to `__builtin_add_overflow` (compare and abort). The
+interpreter's inner loop does two to four of each per bytecode
+instruction: the instruction fetch, the register reads and write, the
+constant table. Measured by rebuilding the generated C with both helpers
+made unchecked (no other change): integer loop 0.92 to 0.90 s, calls
+0.19 to 0.17 s, constructing 0.56 to 0.52 s, array methods 0.34 to 0.29 s
+-- 7 to 13 percent. Combined with switch dispatch (now landed as `match`)
+the loop went 0.92 to 0.63 s. `wrappingAdd` already removes the overflow
+half where the program can prove the sum fits; the bounds half has no
+spelling.
+
+The ask: an indexing form that skips the bounds check where the program
+asserts the invariant -- `array.at_unchecked(i)`, an `unsafe` index
+expression, or a release-mode elision behind a per-function attribute --
+with the check kept in debug builds. The register file (`regStack[base +
+index]`, base and window both validated at frame push) and the code
+segment fetch are the two sites that want it.
+
+---
+
+## G32 — A borrowed view of an array field cannot be held across a loop that mutates the owner
+
+**Status:** `proposed` · **Size:** medium · **Priority:** medium
+**Confirmed:** z-lang `93611fe5` · **Blocks:** no (worked around)
+**Found:** the performance spike after classes.
+
+The interpreter fetches `this.functions[fi].code[ip]` every instruction:
+two array indexings, a struct stride multiply, and the checks of G31,
+re-derived each time because the loop body mutates `this` and nothing
+lets it keep a borrowed view of one field while doing so. In C this is a
+local pointer taken once per frame. The engine now keeps all functions'
+instructions in one runtime array (`codeSegment`) and fetches
+`codeSegment[codeStart + ip]`, which drops one level; the borrow itself is
+still not expressible.
+
+The ask: a way to hold an `in` view of a field (or an element) of `this`
+for the extent of a loop that only mutates *other* fields -- a
+field-disjointness borrow -- so an interpreter's code pointer, register
+window, and constant table can each be a local view.
+
+---
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

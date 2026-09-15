@@ -151,6 +151,9 @@ export struct RunResult {
 export struct Runtime {
   heap: Heap;
   functions: Array<FunctionCode>;
+  // Every installed function's instructions, end to end; a function
+  // locates its own by codeStart and codeLength.
+  codeSegment: Array<Inst>;
   globals: Array<Global>;
   // Interned strings: open-addressed table of string cell handles, keyed by
   // the bytes' hash. 0 marks an empty bucket (handle 0 is never a cell).
@@ -251,8 +254,9 @@ export struct Runtime {
   symbolUnscopables: Value;
 
   function addFunction(inout this, code: FunctionCode): u32 {
-    this.functions.push(move code);
-    return u32(this.functions.length - 1);
+    const index = this.reserveFunction();
+    this.setFunction(index, move code);
+    return index;
   }
 
   // Reserve a function index before its body is compiled, so a named
@@ -263,7 +267,18 @@ export struct Runtime {
   }
 
   function setFunction(inout this, index: u32, code: FunctionCode): void {
-    this.functions[usize(index)] = move code;
+    let installed = move code;
+    installed.codeStart = u32(this.codeSegment.length);
+    installed.codeLength = u32(installed.code.length);
+    let at: usize = 0;
+    const count = installed.code.length;
+    while (at < count) {
+      const inst = installed.code[at];
+      this.codeSegment.push(inst);
+      at = at + 1;
+    }
+    installed.code = Array<Inst>();
+    this.functions[usize(index)] = move installed;
   }
 
   function functionValue(inout this, index: u32): Value {
@@ -3085,7 +3100,8 @@ export struct Runtime {
       const fi = this.frames[frameIndex].functionIndex;
       const base = this.frames[frameIndex].regsBase;
       let ip = this.frames[frameIndex].ip;
-      const codeLength = this.functions[usize(fi)].code.length;
+      const codeLength = usize(this.functions[usize(fi)].codeLength);
+      const codeStart = usize(this.functions[usize(fi)].codeStart);
       let returned = false;
       let throwing = false;
       let thrown = undefinedValue();
@@ -3094,7 +3110,7 @@ export struct Runtime {
         throwing = true;
       }
       while (ip < codeLength && !returned && !throwing) {
-        const inst = this.functions[usize(fi)].code[ip];
+        const inst = this.codeSegment[codeStart.wrappingAdd(ip)];
         ip = ip.wrappingAdd(1);
         const op = inst.op;
 
@@ -4256,7 +4272,7 @@ function appendBytes(inout target: Array<u8>, source: Array<u8>): void {
 
 export function createRuntime(): Runtime {
   let runtime = Runtime({
-    heap: createHeap(), functions: Array<FunctionCode>(), globals: Array<Global>(),
+    heap: createHeap(), functions: Array<FunctionCode>(), codeSegment: Array<Inst>(), globals: Array<Global>(),
     atoms: Array<u32>(), atomCount: 0,
     regStack: Array<Value>(), regTop: 0, frames: Array<Frame>(), frameCount: 0,
     hadError: false, lastError: undefinedValue(),

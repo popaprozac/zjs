@@ -388,7 +388,13 @@ export function opCode(op: Op): i32 {
 // as the interpreter grows to need them (inline caches, template sites,
 // closure environment, class flags).
 export struct FunctionCode {
+  // The instructions, as compiled. Once the function is installed in a
+  // runtime they move into its code segment and `codeStart` /
+  // `codeLength` locate them there, so the interpreter fetches from one
+  // array rather than through the function table.
   code: Array<Inst>;
+  codeStart: u32;
+  codeLength: u32;
   constants: Array<Value>;
   // Interned names for LoadProp / StoreProp, indexed by the instruction's
   // name operand. This is the reference's inline-cache slot table; the
@@ -414,7 +420,7 @@ export struct FunctionCode {
 
 export function createFunctionCode(): FunctionCode {
   return FunctionCode({
-    code: Array<Inst>(), constants: Array<Value>(), propertyNames: Array<u32>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
+    code: Array<Inst>(), codeStart: 0, codeLength: 0, constants: Array<Value>(), propertyNames: Array<u32>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
     isClassConstructor: false, isDerived: false, isMethod: false,

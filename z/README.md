@@ -180,6 +180,24 @@ byte yields the three-byte string (the reference throws a SyntaxError);
 reference returns an array); `new Array(3)` has no elements (the
 reference fills them with undefined).
 
+Performance, measured after classes with four micro-benchmarks (best of
+three, release builds of both engines): the Z engine ran the integer loop
+in 0.92 s against the reference's 0.41, calls 0.17 against 0.09,
+constructing 0.52 against 0.25, and array methods 0.32 against 0.13. A
+one-day spike then rebuilt the generated C by hand to find the costs
+before changing the design: switch dispatch was worth 14 to 18 percent,
+the bounds and overflow checks on every index 7 to 13 percent, and the
+two-level instruction fetch a further few. The first and third landed in
+Z (the opcode chain is a `match`, which lowers to a switch; register
+arithmetic wraps; all installed code lives in one segment): the loop is
+now 0.67 s, calls 0.15, constructing 0.46, array methods 0.28. The
+remaining gap is per-instruction overhead -- about thirty instructions
+of loop, fetch, checks, and dispatch around each opcode's own work --
+and the absence of inline caches for property access. Neither is a
+representation problem: the handle heap and the NaN-boxed values stay.
+The checked-index cost and the field-borrow limitation are recorded as
+compiler findings with the measurements.
+
 Strings are byte strings, as in the reference: `length`, indexing, and
 the String methods count bytes. Whether the rewrite keeps that or moves to
 UTF-16 code units is an open design question; the oracle needs parity with
