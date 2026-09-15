@@ -197,6 +197,15 @@ export struct Runtime {
   atomPrimitive: u32;
   // The hidden key marking an arguments object's bag.
   atomArgumentsMarker: u32;
+  // Iteration: %IteratorPrototype%, %ArrayIteratorPrototype%, the hidden
+  // keys an array iterator keeps its state under, and the builtin `next`
+  // whose presence allows the allocation-free fast path.
+  iteratorProto: u32;
+  arrayIteratorProto: u32;
+  atomIterSource: u32;
+  atomIterIndex: u32;
+  atomIterKind: u32;
+  arrayIteratorNext: u32;
   // Symbols: each takes a fresh number for its key atom; the registry
   // backs Symbol.for; the well-known ones the runtime consults.
   symbolCounter: u32;
@@ -1554,6 +1563,211 @@ export struct Runtime {
     return this.internText(in label);
   }
 
+  // --- Iteration ---
+
+  // { value, done }
+  function createIterResult(inout this, value: Value, done: boolean): Value {
+    const objectProto = this.objectProto;
+    const result = this.heap.allocateObject(objectProto);
+    const valueText: String = "value";
+    const valueAtom = this.atomOf(in valueText);
+    this.heap.objectSet(result, valueAtom, value);
+    const doneText: String = "done";
+    const doneAtom = this.atomOf(in doneText);
+    this.heap.objectSet(result, doneAtom, booleanValue(done));
+    return cellValue(result);
+  }
+
+  // An array iterator over `source` (an array, a string, or any
+  // array-like), yielding values (0), keys (1), or entries (2).
+  function createArrayIterator(inout this, source: Value, kind: u32): Value {
+    const arrayIteratorProto = this.arrayIteratorProto;
+    const iterator = this.heap.allocateObject(arrayIteratorProto);
+    const atomIterSource = this.atomIterSource;
+    this.heap.objectDefine(iterator, atomIterSource, source, PROP_WRITABLE);
+    const atomIterIndex = this.atomIterIndex;
+    this.heap.objectDefine(iterator, atomIterIndex, int32Value(0), PROP_WRITABLE);
+    const atomIterKind = this.atomIterKind;
+    this.heap.objectDefine(iterator, atomIterKind, int32Value(i32(kind)), PROP_WRITABLE);
+    return cellValue(iterator);
+  }
+
+  // One step of an array iterator: the next value, or the deleted
+  // marker once the source is exhausted (which also drops the source).
+  function arrayIteratorStep(inout this, iterator: u32): Value {
+    const sourceSlot = this.heap.objectFindSlot(iterator, this.atomIterSource);
+    const source = this.heap.slot(iterator, u32(sourceSlot));
+    if (isUndefined(source)) return deletedValue();
+    const indexSlot = this.heap.objectFindSlot(iterator, this.atomIterIndex);
+    const index = u32(asInt32(this.heap.slot(iterator, u32(indexSlot))));
+    const kindSlot = this.heap.objectFindSlot(iterator, this.atomIterKind);
+    const kind = u32(asInt32(this.heap.slot(iterator, u32(kindSlot))));
+    let length: u32 = 0;
+    if (isCell(source) && asCell(source) != 0 && this.heap.isArray(asCell(source))) {
+      length = this.heap.arrayLength(asCell(source));
+    } else if (this.isStringValue(source)) {
+      length = u32(this.heap.stringLength(asCell(source)));
+    } else {
+      const lengthKey = cellValue(this.atomLength);
+      const lengthValue = this.getProperty(source, lengthKey);
+      if (this.pendingThrow) return deletedValue();
+      length = this.toLength(lengthValue);
+      if (this.pendingThrow) return deletedValue();
+    }
+    if (index >= length) {
+      this.heap.setSlot(iterator, u32(sourceSlot), undefinedValue());
+      return deletedValue();
+    }
+    this.heap.setSlot(iterator, u32(indexSlot), int32Value(i32(index + 1)));
+    if (kind == 1) return int32Value(i32(index));
+    const element = this.getProperty(source, int32Value(i32(index)));
+    if (this.pendingThrow) return deletedValue();
+    if (kind == 0) return element;
+    const pair = this.heap.allocateArray(2);
+    this.heap.setSlot(pair, 0, int32Value(i32(index)));
+    this.heap.setSlot(pair, 1, element);
+    return cellValue(pair);
+  }
+
+  // Whether an iterator is a pristine array iterator: its own state, and
+  // `next` still the builtin, found through its prototype.
+  function isPristineArrayIterator(inout this, iterator: Value): boolean {
+    if (!isCell(iterator) || asCell(iterator) == 0 || !this.heap.isObject(asCell(iterator))) return false;
+    const handle = asCell(iterator);
+    if (this.heap.objectFindSlot(handle, this.atomIterSource) < 0) return false;
+    const nextText: String = "next";
+    const nextAtom = this.atomOf(in nextText);
+    if (this.heap.objectFindSlot(handle, nextAtom) >= 0) return false;
+    const arrayIteratorProto = this.arrayIteratorProto;
+    if (this.heap.objectProto(handle) != arrayIteratorProto) return false;
+    const slot = this.heap.objectFindSlot(arrayIteratorProto, nextAtom);
+    if (slot < 0) return false;
+    const held = this.heap.slot(arrayIteratorProto, u32(slot));
+    return isCell(held) && asCell(held) == this.arrayIteratorNext;
+  }
+
+  // GetIterator: the value's @@iterator method, called; its result must
+  // be an object. A throw is left pending.
+  function getIterator(inout this, value: Value): Value {
+    const symbolIterator = this.symbolIterator;
+    let method = undefinedValue();
+    if (!isUndefined(value) && !isNull(value)) method = this.getProperty(value, symbolIterator);
+    if (this.pendingThrow) return undefinedValue();
+    if (!this.isCallable(method)) {
+      const message: String = "value is not iterable";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    const iterator = this.callValue(method, value, Array<Value>());
+    if (this.pendingThrow) return undefinedValue();
+    if (!this.isObjectLike(iterator)) {
+      const message: String = "Result of the Symbol.iterator method is not an object";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    return iterator;
+  }
+
+  // IteratorStep: the next value, or the deleted marker when done. A
+  // throw is left pending (and reads as done).
+  function iteratorStep(inout this, iterator: Value): Value {
+    if (this.isPristineArrayIterator(iterator)) return this.arrayIteratorStep(asCell(iterator));
+    const nextText: String = "next";
+    const nextKey = this.internText(in nextText);
+    const next = this.getProperty(iterator, nextKey);
+    if (this.pendingThrow) return deletedValue();
+    if (!this.isCallable(next)) {
+      const message: String = "iterator.next is not a function";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return deletedValue();
+    }
+    const result = this.callValue(next, iterator, Array<Value>());
+    if (this.pendingThrow) return deletedValue();
+    if (!this.isObjectLike(result)) {
+      const message: String = "Iterator result is not an object";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return deletedValue();
+    }
+    const doneText: String = "done";
+    const doneKey = this.internText(in doneText);
+    const done = this.getProperty(result, doneKey);
+    if (this.pendingThrow) return deletedValue();
+    if (this.toBooleanValue(done)) return deletedValue();
+    const valueText: String = "value";
+    const valueKey = this.internText(in valueText);
+    const value = this.getProperty(result, valueKey);
+    if (this.pendingThrow) return deletedValue();
+    return value;
+  }
+
+  // IteratorClose: the iterator's `return`, if any; its result must be an
+  // object.
+  function iteratorClose(inout this, iterator: Value): void {
+    if (!this.isObjectLike(iterator)) return;
+    if (this.isPristineArrayIterator(iterator)) return;
+    const returnText: String = "return";
+    const returnKey = this.internText(in returnText);
+    const method = this.getProperty(iterator, returnKey);
+    if (this.pendingThrow) return;
+    if (isUndefined(method) || isNull(method)) return;
+    if (!this.isCallable(method)) {
+      const message: String = "iterator.return is not a function";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return;
+    }
+    const result = this.callValue(method, iterator, Array<Value>());
+    if (this.pendingThrow) return;
+    if (!this.isObjectLike(result)) {
+      const message: String = "iterator.return result is not an object";
+      const error = this.typeError(in message);
+      this.raise(error);
+    }
+  }
+
+  // Every value an iterable yields, as an array. A throw is left pending.
+  function iterateToArray(inout this, iterable: Value): Value {
+    const array = this.heap.allocateArray(0);
+    this.pushTempRoot(cellValue(array));
+    const iterator = this.getIterator(iterable);
+    if (this.pendingThrow) {
+      this.popTempRoot();
+      return undefinedValue();
+    }
+    this.pushTempRoot(iterator);
+    while (true) {
+      const next = this.iteratorStep(iterator);
+      if (this.pendingThrow || isDeleted(next)) break;
+      const count = this.heap.arrayLength(array);
+      this.heap.arraySet(array, count, next);
+    }
+    this.popTempRoot();
+    this.popTempRoot();
+    if (this.pendingThrow) return undefinedValue();
+    return cellValue(array);
+  }
+
+  // Place an array's elements on the register stack for a spread call and
+  // return where they start; the caller restores regTop afterwards.
+  function spreadArguments(inout this, array: u32): u32 {
+    const argsBase = this.regTop;
+    const argc = this.heap.arrayLength(array);
+    const needed = usize(argsBase + argc);
+    while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    let index: u32 = 0;
+    while (index < argc) {
+      const element = this.heap.arrayGet(array, index);
+      this.regStack[usize(argsBase + index)] = element;
+      index = index + 1;
+    }
+    this.regTop = argsBase + argc;
+    return argsBase;
+  }
+
   // --- Builtins ---
 
   // Register a builtin that is not a constructor: a host function cell
@@ -1851,6 +2065,21 @@ export struct Runtime {
     marker.push(114);
     marker.push(103);
     this.atomArgumentsMarker = this.internBytes(move marker);
+    let iterSource = Array<u8>();
+    iterSource.push(255);
+    iterSource.push(105);
+    iterSource.push(115);
+    this.atomIterSource = this.internBytes(move iterSource);
+    let iterIndex = Array<u8>();
+    iterIndex.push(255);
+    iterIndex.push(105);
+    iterIndex.push(120);
+    this.atomIterIndex = this.internBytes(move iterIndex);
+    let iterKind = Array<u8>();
+    iterKind.push(255);
+    iterKind.push(105);
+    iterKind.push(107);
+    this.atomIterKind = this.internBytes(move iterKind);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
@@ -1859,6 +2088,9 @@ export struct Runtime {
     this.numberProto = this.heap.allocateObject(objectProto);
     this.booleanProto = this.heap.allocateObject(objectProto);
     this.symbolProto = this.heap.allocateObject(objectProto);
+    this.iteratorProto = this.heap.allocateObject(objectProto);
+    const iteratorProto = this.iteratorProto;
+    this.arrayIteratorProto = this.heap.allocateObject(iteratorProto);
     this.globalObject = this.heap.allocateObject(objectProto);
     const iteratorText: String = "Symbol.iterator";
     this.symbolIterator = this.newSymbol(this.internText(in iteratorText));
@@ -1933,6 +2165,18 @@ export struct Runtime {
     this.heap.markHandle(atomPrimitive);
     const atomArgumentsMarker = this.atomArgumentsMarker;
     this.heap.markHandle(atomArgumentsMarker);
+    const iteratorProto = this.iteratorProto;
+    this.heap.markHandle(iteratorProto);
+    const arrayIteratorProto = this.arrayIteratorProto;
+    this.heap.markHandle(arrayIteratorProto);
+    const atomIterSource = this.atomIterSource;
+    this.heap.markHandle(atomIterSource);
+    const atomIterIndex = this.atomIterIndex;
+    this.heap.markHandle(atomIterIndex);
+    const atomIterKind = this.atomIterKind;
+    this.heap.markHandle(atomIterKind);
+    const arrayIteratorNext = this.arrayIteratorNext;
+    this.heap.markHandle(arrayIteratorNext);
     const symbolIterator = this.symbolIterator;
     this.heap.markValue(symbolIterator);
     const symbolToPrimitive = this.symbolToPrimitive;
@@ -2856,6 +3100,90 @@ export struct Runtime {
           const wrapped = this.heap.functionIndex(asCell(fn));
           const closure = this.heap.allocateClosure(wrapped, env, capturedThis);
           this.setReg(base, inst.a, cellValue(closure));
+        } else if (op == Op.iterGet) {
+          const iterable = this.reg(base, inst.b);
+          const iterator = this.getIterator(iterable);
+          if (!this.pendingThrow) this.setReg(base, inst.a, iterator);
+        } else if (op == Op.iterStep) {
+          // a = the value, c = done; a throw reads as done.
+          const iterator = this.reg(base, inst.b);
+          const next = this.iteratorStep(iterator);
+          if (this.pendingThrow || isDeleted(next)) {
+            this.setReg(base, inst.c, booleanValue(true));
+          } else {
+            this.setReg(base, inst.a, next);
+            this.setReg(base, inst.c, booleanValue(false));
+          }
+        } else if (op == Op.iterClose) {
+          const done = this.reg(base, inst.b);
+          if (!(isBoolean(done) && isTrue(done))) {
+            const iterator = this.reg(base, inst.a);
+            this.iteratorClose(iterator);
+          }
+        } else if (op == Op.arraySpread) {
+          // Append everything the iterable in b yields to the array in a.
+          const array = this.reg(base, inst.a);
+          const iterable = this.reg(base, inst.b);
+          const items = this.iterateToArray(iterable);
+          if (!this.pendingThrow) {
+            const target = asCell(array);
+            const source = asCell(items);
+            const count = this.heap.arrayLength(source);
+            let index: u32 = 0;
+            while (index < count) {
+              const element = this.heap.arrayGet(source, index);
+              const length = this.heap.arrayLength(target);
+              this.heap.arraySet(target, length, element);
+              index = index + 1;
+            }
+          }
+        } else if (op == Op.spreadInvoke || op == Op.spreadMethodInvoke || op == Op.spreadNewInvoke) {
+          // Callee at b; for a method call the receiver at b + 1; the
+          // arguments array in the next register. The elements are placed
+          // on the register stack and the ordinary call paths take over.
+          const callee = this.reg(base, inst.b);
+          const isMethod = op == Op.spreadMethodInvoke;
+          const receiver = isMethod ? this.reg(base, inst.b + 1) : undefinedValue();
+          const arrayReg: u8 = isMethod ? inst.b + 2 : inst.b + 1;
+          const argsArray = this.reg(base, arrayReg);
+          const argsBase = this.spreadArguments(asCell(argsArray));
+          const argc = this.regTop - argsBase;
+          if (op == Op.spreadNewInvoke) {
+            if (!this.isConstructorValue(callee)) {
+              thrown = this.notConstructorError(callee);
+              throwing = true;
+            } else if (this.isCompiledCallable(callee)) {
+              const proto = this.prototypeOf(asCell(callee));
+              const created = cellValue(this.heap.allocateObject(proto));
+              this.frames[frameIndex].ip = ip;
+              this.enterCallable(callee, inst.a, created, argsBase, argc, created);
+              returned = true;
+            } else {
+              const proto = this.prototypeOf(asCell(callee));
+              const created = cellValue(this.heap.allocateObject(proto));
+              const builtin = this.heap.hostFunctionId(asCell(callee));
+              const outcome = this.callHost(builtin, created, argsBase, argc, asCell(callee));
+              this.regTop = argsBase;
+              if (!this.pendingThrow) {
+                const produced = this.isObjectLike(outcome) ? outcome : created;
+                this.setReg(base, inst.a, produced);
+              }
+            }
+          } else if (this.isCompiledCallable(callee)) {
+            this.frames[frameIndex].ip = ip;
+            this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
+            returned = true;
+          } else if (this.isHostFunctionValue(callee)) {
+            const builtin = this.heap.hostFunctionId(asCell(callee));
+            const outcome = this.callHost(builtin, receiver, argsBase, argc, asCell(callee));
+            this.regTop = argsBase;
+            if (!this.pendingThrow) this.setReg(base, inst.a, outcome);
+          } else {
+            this.regTop = argsBase;
+            const message: String = isMethod ? "property is not a function" : "value is not a function";
+            thrown = this.typeError(in message);
+            throwing = true;
+          }
         } else if (op == Op.buildArguments) {
           // The frame's actual arguments as an array, marked so that
           // Object.prototype.toString reports Arguments.
@@ -2994,7 +3322,8 @@ export function createRuntime(): Runtime {
     randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(), tempRootCount: 0,
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
-    atomArgumentsMarker: 0, symbolCounter: 0, symbolRegistry: Array<Value>(),
+    atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
+    symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(),
   });
   runtime.installIntrinsics();

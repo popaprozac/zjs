@@ -53,6 +53,10 @@ struct LoopFrame {
   labelStart: u32;
   labelLength: u32;
   isIter: boolean;
+  // A for-of loop's iterator and done registers, so a jump out of it can
+  // close the iterator; -1 otherwise.
+  iterReg: i32;
+  doneReg: i32;
 }
 
 // A binding of the function being compiled. It lives in a register, or --
@@ -179,6 +183,7 @@ export struct Compiler {
       continueTarget: 0, haveContinue: false,
       breakPatches: Array<u32>(), continuePatches: Array<u32>(),
       labelStart: this.pendingLabelStart, labelLength: this.pendingLabelLength, isIter: isIter,
+      iterReg: -1, doneReg: -1,
     });
     this.pendingLabelStart = 0;
     this.pendingLabelLength = 0;
@@ -201,6 +206,20 @@ export struct Compiler {
       const inst = this.code[usize(at)];
       this.code[usize(at)] = instAI16(inst.op, inst.a, i32(target) - (i32(at) + 1));
       i = i + 1;
+    }
+  }
+
+  // Close the iterators of every for-of loop above `target` (exclusive
+  // of the target's own when `includeTarget` is false) before control
+  // leaves them.
+  function emitIteratorCloses(inout this, target: i32, includeTarget: boolean): void {
+    let index = i32(this.loopDepth) - 1;
+    while (index > target || (index == target && includeTarget)) {
+      if (index < 0) break;
+      const iterReg = this.loops[usize(index)].iterReg;
+      const doneReg = this.loops[usize(index)].doneReg;
+      if (iterReg >= 0) this.emit(instAB(Op.iterClose, u8(iterReg), u8(doneReg)));
+      index = index - 1;
     }
   }
 
@@ -499,6 +518,38 @@ export struct Compiler {
     return this.atomOfSlice(in parser, inout runtime, nameStart, nameLength);
   }
 
+  function hasSpreadArgument(in parser: Parser, node: u32): boolean {
+    const n = parser.ast.node(node);
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (parser.ast.node(parser.ast.child(node, i)).kind == NodeKind.spread) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // The arguments of a call with a spread, gathered into the array in
+  // `argsReg`: plain arguments pushed, spreads appended.
+  function compileArgumentsArray(inout this, in parser: Parser, inout runtime: Runtime, node: u32, argsReg: u8): void {
+    const n = parser.ast.node(node);
+    this.emit(instABC(Op.newArray, argsReg, 0, 0));
+    const watermark = this.nextReg;
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      const argumentNode = parser.ast.child(node, i);
+      const argument = parser.ast.node(argumentNode);
+      if (argument.kind == NodeKind.spread) {
+        const iterable = this.compileExpr(in parser, inout runtime, argument.left);
+        this.emit(instAB(Op.arraySpread, argsReg, iterable));
+      } else {
+        const value = this.compileExpr(in parser, inout runtime, argumentNode);
+        this.emit(instAB(Op.arrayPush, argsReg, value));
+      }
+      this.nextReg = watermark;
+      i = i + 1;
+    }
+  }
+
   // Compile a nested function and load its value into `dst`. The value
   // is a closure when the function refers to enclosing bindings or is an
   // arrow (which keeps the `this` of its creation); reaching past this
@@ -722,22 +773,28 @@ export struct Compiler {
     }
     if (k == NodeKind.array) {
       const count = n.childrenCount;
+      let hasSpread = false;
       let i: u32 = 0;
       while (i < count) {
-        if (parser.ast.node(parser.ast.child(node, i)).kind == NodeKind.spread) {
-          this.hadError = true;
-          return 0;
-        }
+        if (parser.ast.node(parser.ast.child(node, i)).kind == NodeKind.spread) hasSpread = true;
         i = i + 1;
       }
-      if (count == 0 || count > 32) {
-        // Element by element into an empty array.
+      if (count == 0 || count > 32 || hasSpread) {
+        // Element by element into an empty array; a spread appends
+        // everything its iterable yields.
         const dst = this.allocReg();
         this.emit(instABC(Op.newArray, dst, 0, 0));
         i = 0;
         while (i < count) {
-          const element = this.compileExpr(in parser, inout runtime, parser.ast.child(node, i));
-          this.emit(instAB(Op.arrayPush, dst, element));
+          const elementNode = parser.ast.child(node, i);
+          const elementInfo = parser.ast.node(elementNode);
+          if (elementInfo.kind == NodeKind.spread) {
+            const iterable = this.compileExpr(in parser, inout runtime, elementInfo.left);
+            this.emit(instAB(Op.arraySpread, dst, iterable));
+          } else {
+            const element = this.compileExpr(in parser, inout runtime, elementNode);
+            this.emit(instAB(Op.arrayPush, dst, element));
+          }
           this.nextReg = dst + 1;
           i = i + 1;
         }
@@ -759,6 +816,18 @@ export struct Compiler {
         i = i + 1;
       }
       this.emit(instABC(Op.newArray, base, base, u8(count)));
+      this.nextReg = base + 1;
+      return base;
+    }
+    if (k == NodeKind.newExpr && this.hasSpreadArgument(in parser, node)) {
+      // new f(...args): callee at base, the arguments array above it.
+      const base = this.allocReg();
+      const argsReg = this.allocReg();
+      const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
+      if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
+      this.nextReg = base + 2;
+      this.compileArgumentsArray(in parser, inout runtime, node, argsReg);
+      this.emit(instABC(Op.spreadNewInvoke, base, base, 0));
       this.nextReg = base + 1;
       return base;
     }
@@ -1042,6 +1111,43 @@ export struct Compiler {
       this.emitFunctionValue(in parser, inout runtime, node, dst);
       return dst;
     }
+    if (k == NodeKind.call && this.hasSpreadArgument(in parser, node)) {
+      // f(...args) / o.m(...args): the arguments gathered into an array.
+      const callee = parser.ast.node(n.left);
+      if (callee.kind == NodeKind.superExpr) {
+        this.hadError = true;
+        return 0;
+      }
+      const base = this.allocReg();
+      if (callee.kind == NodeKind.member || callee.kind == NodeKind.computed) {
+        this.allocReg();
+        const argsReg = this.allocReg();
+        const receiver = this.compileExpr(in parser, inout runtime, callee.left);
+        if (receiver != base + 1) this.emit(instAB(Op.mov, base + 1, receiver));
+        this.nextReg = base + 3;
+        if (callee.kind == NodeKind.member) {
+          const atom = this.propertyNameAtom(in parser, inout runtime, callee.nameStart, callee.nameLength);
+          const nameIndex = this.nameSlot(atom);
+          this.emit(instABC(Op.loadProp, base, base + 1, nameIndex));
+        } else {
+          const key = this.compileExpr(in parser, inout runtime, callee.right);
+          this.emit(instABC(Op.loadElem, base, base + 1, key));
+          this.nextReg = base + 3;
+        }
+        this.compileArgumentsArray(in parser, inout runtime, node, argsReg);
+        this.emit(instABC(Op.spreadMethodInvoke, base, base, 0));
+        this.nextReg = base + 1;
+        return base;
+      }
+      const argsReg = this.allocReg();
+      const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
+      if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
+      this.nextReg = base + 2;
+      this.compileArgumentsArray(in parser, inout runtime, node, argsReg);
+      this.emit(instABC(Op.spreadInvoke, base, base, 0));
+      this.nextReg = base + 1;
+      return base;
+    }
     if (k == NodeKind.call) {
       const callee = parser.ast.node(n.left);
       const argCount = n.childrenCount;
@@ -1185,21 +1291,19 @@ export struct Compiler {
 
   // --- for-in / for-of ---
   //
-  // for-in walks an array of keys prepared up front; for-of walks an
-  // array's elements by index (other iterables wait for the iterator
-  // protocol). The loop's bookkeeping registers sit below the temporaries
-  // watermark so statement resets leave them alone.
+  // for-in walks an array of keys prepared up front; for-of drives the
+  // iterator protocol. The loop's bookkeeping registers sit below the
+  // temporaries watermark so statement resets leave them alone.
   function compileForEach(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
     const n = parser.ast.node(node);
-    const isKeys = n.kind == NodeKind.forInStmt;
+    if (n.kind == NodeKind.forOfStmt) {
+      this.compileForOf(in parser, inout runtime, node);
+      return;
+    }
     this.resetCompletion();
     const source = this.compileExpr(in parser, inout runtime, n.right);
     const sequence = this.allocReg();
-    if (isKeys) {
-      this.emit(instABC(Op.iterPrepare, sequence, source, 0));
-    } else {
-      this.emit(instAB(Op.mov, sequence, source));
-    }
+    this.emit(instABC(Op.iterPrepare, sequence, source, 0));
     const length = this.allocReg();
     const index = this.allocReg();
     this.emit(instAI16(Op.loadInt, index, 0));
@@ -1229,6 +1333,42 @@ export struct Compiler {
     this.emit(instAI16(Op.loadInt, one, 1));
     this.emit(instABC(Op.add, index, index, one));
     this.resetTemps();
+    this.emitJumpBack(loopTop);
+    this.patchJump(exit);
+    this.loopPop();
+  }
+
+  // for-of: GetIterator once, then IteratorStep each round; the head
+  // binding takes each value; break, continue past it, and return close
+  // the iterator.
+  function compileForOf(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
+    const n = parser.ast.node(node);
+    this.resetCompletion();
+    const source = this.compileExpr(in parser, inout runtime, n.right);
+    const iterator = this.allocReg();
+    this.emit(instAB(Op.iterGet, iterator, source));
+    const done = this.allocReg();
+    const value = this.allocReg();
+    if (value + 1 > this.fixedRegs) this.fixedRegs = value + 1;
+    const binding = parser.ast.node(n.left);
+    let lexical: i32 = -1;
+    if (binding.kind == NodeKind.varDecl && binding.op != TokenKind.kwVar) {
+      const decl = parser.ast.node(parser.ast.child(n.left, 0));
+      this.addLocal(decl.nameStart, decl.nameLength);
+      lexical = i32(this.locals.length - 1);
+      this.fixedRegs = this.nextReg;
+    }
+    const loopTop = u32(this.code.length);
+    this.loopPush(true);
+    const top = this.loopDepth - 1;
+    this.loops[top].iterReg = i32(iterator);
+    this.loops[top].doneReg = i32(done);
+    this.loopSetContinue(loopTop);
+    this.emit(instABC(Op.iterStep, value, iterator, done));
+    const exit = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+    this.assignLoopBinding(in parser, inout runtime, n.left, lexical, value);
+    this.resetTemps();
+    this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
     this.emitJumpBack(loopTop);
     this.patchJump(exit);
     this.loopPop();
@@ -1434,6 +1574,7 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.returnStmt) {
+      this.emitIteratorCloses(-1, true);
       let r: u8 = 0;
       if (n.left != NO_NODE) {
         r = this.compileExpr(in parser, inout runtime, n.left);
@@ -1522,6 +1663,7 @@ export struct Compiler {
         this.hadError = true;
         return;
       }
+      this.emitIteratorCloses(target, true);
       const at = this.emit(instI16(Op.jmp, 0));
       this.loops[usize(target)].breakPatches.push(at);
       return;
@@ -1544,6 +1686,7 @@ export struct Compiler {
         return;
       }
       const frame = usize(target);
+      this.emitIteratorCloses(target, false);
       if (this.loops[frame].haveContinue) {
         const continueTarget = this.loops[frame].continueTarget;
         this.emitJumpBack(continueTarget);
