@@ -81,6 +81,14 @@ IteratorStep and closes the iterator on `break`, `continue` past it, and
 `return`; spread in array literals, calls, and `new`; array iterators
 (values / keys / entries, with an allocation-free step while `next` is
 pristine), `String.prototype[@@iterator]`, `Array.from` / `of`.
+Destructuring in every position -- declarations, parameters (with
+defaults), catch parameters, loop heads, and assignment -- with nested
+patterns, defaults, holes, rest elements, object rest, and computed keys,
+through the iterator protocol for arrays. Control flow that leaves a
+region undoes it on the way out: a `break`, `continue`, or `return`
+pops the try handlers it crosses, runs the `finally` blocks it crosses
+inline, and closes the `for`-`of` iterators it leaves; a throw inside a
+`for`-`of` body closes the iterator too.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -92,8 +100,8 @@ reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5714 of
 6244; `built-ins/Number` 578 of 582; `built-ins/Symbol` 130 against the
 reference's 90; `built-ins/JSON` 220 of 224 -- with Z passing 18, 230,
 64, 50, and 14 tests respectively that the reference fails. The largest
-remaining gaps are destructuring, iterator close on a throw inside
-`for`-`of`, and the missing `Date` and `RegExp`.
+remaining gaps are the missing `Date` and `RegExp`, classes, generators,
+and the rest of `Array.prototype` / `String.prototype`.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -118,10 +126,9 @@ UTF-16 code units is an open design question; the oracle needs parity with
 the reference for now.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `Date` / `RegExp`, destructuring, iterator close on a
-throw inside `for`-`of`, direct `eval` seeing the caller's locals,
-`for`-`of` over anything but an array, `return` and `break` through a
-`finally`, and the remaining builtins. The collector is stop-the-world and
+sees one binding), `Date` / `RegExp`, direct `eval` seeing the caller's
+locals,
+and the remaining builtins. The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.
 
 ```

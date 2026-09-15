@@ -53,10 +53,23 @@ struct LoopFrame {
   labelStart: u32;
   labelLength: u32;
   isIter: boolean;
-  // A for-of loop's iterator and done registers, so a jump out of it can
-  // close the iterator; -1 otherwise.
-  iterReg: i32;
-  doneReg: i32;
+  // The region depth when the frame was pushed (what a break unwinds to)
+  // and after the loop's own iterator region (what a continue unwinds to).
+  regionsAtEntry: usize;
+  continueRegions: usize;
+}
+
+// Something control must undo on its way out: a try handler to pop, a
+// finally block to run, a for-of iterator to close.
+const REGION_TRY: u32 = 0;
+const REGION_FINALLY: u32 = 1;
+const REGION_ITERATOR: u32 = 2;
+
+struct Region {
+  kind: u32;
+  finallyNode: u32;
+  iterReg: u8;
+  doneReg: u8;
 }
 
 // A binding of the function being compiled. It lives in a register, or --
@@ -126,6 +139,9 @@ export struct Compiler {
   // A label waiting for the loop statement it names.
   pendingLabelStart: u32;
   pendingLabelLength: u32;
+  // Open regions, innermost last; `regionDepth` is the live extent.
+  regions: Array<Region>;
+  regionDepth: usize;
   // The register holding `this` in a function that reads it, or -1.
   thisReg: i32;
   // Interned names for LoadProp / StoreProp; the instruction carries an
@@ -183,7 +199,7 @@ export struct Compiler {
       continueTarget: 0, haveContinue: false,
       breakPatches: Array<u32>(), continuePatches: Array<u32>(),
       labelStart: this.pendingLabelStart, labelLength: this.pendingLabelLength, isIter: isIter,
-      iterReg: -1, doneReg: -1,
+      regionsAtEntry: this.regionDepth, continueRegions: this.regionDepth,
     });
     this.pendingLabelStart = 0;
     this.pendingLabelLength = 0;
@@ -209,18 +225,58 @@ export struct Compiler {
     }
   }
 
-  // Close the iterators of every for-of loop above `target` (exclusive
-  // of the target's own when `includeTarget` is false) before control
-  // leaves them.
-  function emitIteratorCloses(inout this, target: i32, includeTarget: boolean): void {
-    let index = i32(this.loopDepth) - 1;
-    while (index > target || (index == target && includeTarget)) {
-      if (index < 0) break;
-      const iterReg = this.loops[usize(index)].iterReg;
-      const doneReg = this.loops[usize(index)].doneReg;
-      if (iterReg >= 0) this.emit(instAB(Op.iterClose, u8(iterReg), u8(doneReg)));
-      index = index - 1;
+  // --- Regions ---
+
+  function pushRegion(inout this, kind: u32, finallyNode: u32, iterReg: u8, doneReg: u8): void {
+    const region = Region({ kind: kind, finallyNode: finallyNode, iterReg: iterReg, doneReg: doneReg });
+    if (this.regionDepth < this.regions.length) {
+      this.regions[this.regionDepth] = region;
+    } else {
+      this.regions.push(region);
     }
+    this.regionDepth = this.regionDepth + 1;
+  }
+
+  function popRegion(inout this): void {
+    this.regionDepth = this.regionDepth - 1;
+  }
+
+  // Open a try handler as a region.
+  function emitEnterTry(inout this, catchReg: u8): u32 {
+    this.pushRegion(REGION_TRY, NO_NODE, 0, 0);
+    return this.emit(instAI16(Op.enterTry, catchReg, 0));
+  }
+
+  function emitLeaveTry(inout this): void {
+    this.popRegion();
+    this.emit(instA(Op.leaveTry, 0));
+  }
+
+  // Undo every region above `depth` before control jumps out of them,
+  // innermost first: pop a handler, run a finally block inline, close an
+  // iterator. A finally block runs with the regions above it already
+  // gone, so its own jumps unwind from there. The regions stay recorded:
+  // the code after the jump is still inside them.
+  function emitUnwind(inout this, in parser: Parser, inout runtime: Runtime, depth: usize): void {
+    const saved = this.regionDepth;
+    let index = this.regionDepth;
+    while (index > depth) {
+      index = index - 1;
+      const kind = this.regions[index].kind;
+      if (kind == REGION_TRY) {
+        this.emit(instA(Op.leaveTry, 0));
+      } else if (kind == REGION_FINALLY) {
+        this.emit(instA(Op.leaveTry, 0));
+        const finallyNode = this.regions[index].finallyNode;
+        this.regionDepth = index;
+        this.compileStmt(in parser, inout runtime, finallyNode);
+      } else {
+        const iterReg = this.regions[index].iterReg;
+        const doneReg = this.regions[index].doneReg;
+        this.emit(instAB(Op.iterClose, iterReg, doneReg));
+      }
+    }
+    this.regionDepth = saved;
   }
 
   // The open frame carrying `label`, or -1.
@@ -362,6 +418,31 @@ export struct Compiler {
     this.hasEnv = this.envSize > 0;
   }
 
+  // The identifiers of a lexical pattern that nested functions capture.
+  function scanPatternCaptures(inout this, in parser: Parser, pattern: u32, body: u32): void {
+    if (pattern == NO_NODE) return;
+    const n = parser.ast.node(pattern);
+    if (n.kind == NodeKind.identExpr) {
+      if (n.nameLength > 0 && capturedBy(in parser, body, n.nameStart, n.nameLength, false)) {
+        this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize) }));
+        this.envSize = this.envSize + 1;
+      }
+      return;
+    }
+    if (n.kind == NodeKind.patternEntry) {
+      this.scanPatternCaptures(in parser, n.left, body);
+      if (n.right != NO_NODE) this.scanLateBindings(in parser, n.right, body);
+      return;
+    }
+    if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+      let i: u32 = 0;
+      while (i < n.childrenCount) {
+        this.scanPatternCaptures(in parser, parser.ast.child(pattern, i), body);
+        i = i + 1;
+      }
+    }
+  }
+
   // let / const declarations and catch parameters of this function's
   // body, not entering nested functions.
   function scanLateBindings(inout this, in parser: Parser, node: u32, body: u32): void {
@@ -378,6 +459,7 @@ export struct Compiler {
           this.capturedNames.push(Local({ nameStart: decl.nameStart, nameLength: decl.nameLength, reg: 0, envSlot: i32(this.envSize) }));
           this.envSize = this.envSize + 1;
         }
+        if (decl.nameLength == 0 && decl.third != NO_NODE) this.scanPatternCaptures(in parser, decl.third, body);
         if (decl.left != NO_NODE) this.scanLateBindings(in parser, decl.left, body);
         i = i + 1;
       }
@@ -416,6 +498,8 @@ export struct Compiler {
         if (decl.nameLength > 0 && this.findLocal(in parser, decl.nameStart, decl.nameLength) < 0) {
           this.addLocal(decl.nameStart, decl.nameLength);
         }
+        if (decl.nameLength == 0 && decl.third != NO_NODE) this.collectPatternLocals(in parser, decl.third);
+        if (decl.left != NO_NODE) this.collectLocals(in parser, decl.left);
         i = i + 1;
       }
       return;
@@ -427,6 +511,27 @@ export struct Compiler {
     while (i < n.childrenCount) {
       this.collectLocals(in parser, parser.ast.child(node, i));
       i = i + 1;
+    }
+  }
+
+  // Every identifier a pattern declares becomes a local.
+  function collectPatternLocals(inout this, in parser: Parser, pattern: u32): void {
+    if (pattern == NO_NODE) return;
+    const n = parser.ast.node(pattern);
+    if (n.kind == NodeKind.identExpr) {
+      if (n.nameLength > 0 && this.findLocal(in parser, n.nameStart, n.nameLength) < 0) this.addLocal(n.nameStart, n.nameLength);
+      return;
+    }
+    if (n.kind == NodeKind.patternEntry) {
+      this.collectPatternLocals(in parser, n.left);
+      return;
+    }
+    if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+      let i: u32 = 0;
+      while (i < n.childrenCount) {
+        this.collectPatternLocals(in parser, parser.ast.child(pattern, i));
+        i = i + 1;
+      }
     }
   }
 
@@ -1048,6 +1153,12 @@ export struct Compiler {
       this.hadError = true;
       return 0;
     }
+    if (k == NodeKind.assignment && n.op == TokenKind.eq
+        && (parser.ast.node(n.left).kind == NodeKind.arrayPattern || parser.ast.node(n.left).kind == NodeKind.objectPattern)) {
+      const value = this.compileExpr(in parser, inout runtime, n.right);
+      this.destructure(in parser, inout runtime, n.left, value);
+      return value;
+    }
     if (k == NodeKind.assignment) {
       const target = parser.ast.node(n.left);
       if (target.kind == NodeKind.identExpr) {
@@ -1313,8 +1424,12 @@ export struct Compiler {
     let lexical: i32 = -1;
     if (binding.kind == NodeKind.varDecl && binding.op != TokenKind.kwVar) {
       const decl = parser.ast.node(parser.ast.child(n.left, 0));
-      this.addLocal(decl.nameStart, decl.nameLength);
-      lexical = i32(this.locals.length - 1);
+      if (decl.nameLength > 0) {
+        this.addLocal(decl.nameStart, decl.nameLength);
+        lexical = i32(this.locals.length - 1);
+      } else {
+        this.collectPatternLocals(in parser, decl.third);
+      }
       this.fixedRegs = this.nextReg;
     }
     const loopTop = u32(this.code.length);
@@ -1354,23 +1469,37 @@ export struct Compiler {
     let lexical: i32 = -1;
     if (binding.kind == NodeKind.varDecl && binding.op != TokenKind.kwVar) {
       const decl = parser.ast.node(parser.ast.child(n.left, 0));
-      this.addLocal(decl.nameStart, decl.nameLength);
-      lexical = i32(this.locals.length - 1);
+      if (decl.nameLength > 0) {
+        this.addLocal(decl.nameStart, decl.nameLength);
+        lexical = i32(this.locals.length - 1);
+      } else {
+        this.collectPatternLocals(in parser, decl.third);
+      }
       this.fixedRegs = this.nextReg;
     }
     const loopTop = u32(this.code.length);
     this.loopPush(true);
     const top = this.loopDepth - 1;
-    this.loops[top].iterReg = i32(iterator);
-    this.loops[top].doneReg = i32(done);
+    this.pushRegion(REGION_ITERATOR, NO_NODE, iterator, done);
+    this.loops[top].continueRegions = this.regionDepth;
     this.loopSetContinue(loopTop);
     this.emit(instABC(Op.iterStep, value, iterator, done));
     const exit = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+    // A throw from the binding or the body closes the iterator (quietly)
+    // and continues unwinding.
+    const thrownReg = this.allocReg();
+    if (thrownReg + 1 > this.fixedRegs) this.fixedRegs = thrownReg + 1;
+    const enter = this.emitEnterTry(thrownReg);
     this.assignLoopBinding(in parser, inout runtime, n.left, lexical, value);
     this.resetTemps();
     this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
+    this.emitLeaveTry();
     this.emitJumpBack(loopTop);
+    this.patchJump(enter);
+    this.emit(instAB(Op.iterCloseQuiet, iterator, done));
+    this.emit(instA(Op.throwOp, thrownReg));
     this.patchJump(exit);
+    this.popRegion();
     this.loopPop();
   }
 
@@ -1384,11 +1513,19 @@ export struct Compiler {
         return;
       }
       const decl = parser.ast.node(parser.ast.child(target, 0));
+      if (decl.nameLength == 0) {
+        this.destructure(in parser, inout runtime, decl.third, value);
+        return;
+      }
       this.storeIdent(in parser, inout runtime, decl, value);
       return;
     }
     if (binding.kind == NodeKind.identExpr) {
       this.storeIdent(in parser, inout runtime, binding, value);
+      return;
+    }
+    if (binding.kind == NodeKind.arrayPattern || binding.kind == NodeKind.objectPattern) {
+      this.destructure(in parser, inout runtime, target, value);
       return;
     }
     if (binding.kind == NodeKind.member || binding.kind == NodeKind.computed) {
@@ -1406,6 +1543,148 @@ export struct Compiler {
     this.hadError = true;
   }
 
+  // --- Destructuring ---
+  //
+  // A pattern binds each of its targets from a source register. In
+  // declaration form every target is an identifier (or a nested pattern);
+  // in assignment form a target may also be a property.
+
+  // Bind one target -- identifier, property, or nested pattern -- to the
+  // value in `value`.
+  function bindTarget(inout this, in parser: Parser, inout runtime: Runtime, target: u32, value: u8): void {
+    const n = parser.ast.node(target);
+    if (n.kind == NodeKind.identExpr) {
+      this.storeIdent(in parser, inout runtime, n, value);
+      return;
+    }
+    if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+      this.destructure(in parser, inout runtime, target, value);
+      return;
+    }
+    if (n.kind == NodeKind.member) {
+      const object = this.compileExpr(in parser, inout runtime, n.left);
+      const atom = this.propertyNameAtom(in parser, inout runtime, n.nameStart, n.nameLength);
+      const slot = this.nameSlot(atom);
+      this.emit(instABC(Op.storeProp, object, slot, value));
+      return;
+    }
+    if (n.kind == NodeKind.computed) {
+      const object = this.compileExpr(in parser, inout runtime, n.left);
+      const key = this.compileExpr(in parser, inout runtime, n.right);
+      this.emit(instABC(Op.storeElem, object, key, value));
+      return;
+    }
+    this.hadError = true;
+  }
+
+  // Apply a default: when the value is undefined, evaluate the initializer
+  // into the same register.
+  function applyDefault(inout this, in parser: Parser, inout runtime: Runtime, initializer: u32, value: u8): void {
+    if (initializer == NO_NODE) return;
+    const undefinedReg = this.allocReg();
+    this.emit(instA(Op.loadUndefined, undefinedReg));
+    const test = this.allocReg();
+    this.emit(instABC(Op.cmpStrictEq, test, value, undefinedReg));
+    const skip = this.emit(instAI16(Op.jmpIfFalse, test, 0));
+    const init = this.compileExpr(in parser, inout runtime, initializer);
+    if (init != value) this.emit(instAB(Op.mov, value, init));
+    this.patchJump(skip);
+  }
+
+  function destructure(inout this, in parser: Parser, inout runtime: Runtime, pattern: u32, source: u8): void {
+    const n = parser.ast.node(pattern);
+    if (n.kind == NodeKind.objectPattern) {
+      this.destructureObject(in parser, inout runtime, pattern, source);
+    } else {
+      this.destructureArray(in parser, inout runtime, pattern, source);
+    }
+  }
+
+  function destructureObject(inout this, in parser: Parser, inout runtime: Runtime, pattern: u32, source: u8): void {
+    const n = parser.ast.node(pattern);
+    this.emit(instA(Op.assertCoercible, source));
+    // With a rest entry, every key taken before it is collected in an
+    // array for the rest to leave out -- computed keys included.
+    let hasRest = false;
+    let scan: u32 = 0;
+    while (scan < n.childrenCount) {
+      if (parser.ast.node(parser.ast.child(pattern, scan)).boolValue) hasRest = true;
+      scan = scan + 1;
+    }
+    let keys: u8 = 0;
+    if (hasRest) {
+      keys = this.allocReg();
+      this.emit(instABC(Op.newArray, keys, 0, 0));
+    }
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      const entryIndex = parser.ast.child(pattern, i);
+      const entry = parser.ast.node(entryIndex);
+      const watermark = this.nextReg;
+      if (entry.boolValue) {
+        // { ...rest }
+        const rest = this.allocReg();
+        this.emit(instABC(Op.objectRest, rest, source, keys));
+        this.bindTarget(in parser, inout runtime, entry.left, rest);
+        this.nextReg = watermark;
+        i = i + 1;
+        continue;
+      }
+      const value = this.allocReg();
+      if (entry.third != NO_NODE) {
+        const key = this.compileExpr(in parser, inout runtime, entry.third);
+        this.emit(instABC(Op.loadElem, value, source, key));
+        if (hasRest) this.emit(instAB(Op.arrayPush, keys, key));
+      } else {
+        const atom = this.propertyNameAtom(in parser, inout runtime, entry.nameStart, entry.nameLength);
+        const slot = this.nameSlot(atom);
+        this.emit(instABC(Op.loadProp, value, source, slot));
+        if (hasRest) {
+          const keyReg = this.emitKey(atom);
+          this.emit(instAB(Op.arrayPush, keys, keyReg));
+        }
+      }
+      this.applyDefault(in parser, inout runtime, entry.right, value);
+      this.bindTarget(in parser, inout runtime, entry.left, value);
+      this.nextReg = watermark;
+      i = i + 1;
+    }
+  }
+
+  function destructureArray(inout this, in parser: Parser, inout runtime: Runtime, pattern: u32, source: u8): void {
+    const n = parser.ast.node(pattern);
+    const iterator = this.allocReg();
+    this.emit(instAB(Op.iterGet, iterator, source));
+    const done = this.allocReg();
+    this.emit(instA(Op.loadFalse, done));
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      const entryIndex = parser.ast.child(pattern, i);
+      const entry = parser.ast.node(entryIndex);
+      const watermark = this.nextReg;
+      const value = this.allocReg();
+      if (entry.boolValue) {
+        this.emit(instABC(Op.iterRestCollect, value, iterator, done));
+        this.bindTarget(in parser, inout runtime, entry.left, value);
+        this.nextReg = watermark;
+        i = i + 1;
+        continue;
+      }
+      // A step past the end leaves the value undefined and done true.
+      this.emit(instA(Op.loadUndefined, value));
+      const stepped = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+      this.emit(instABC(Op.iterStep, value, iterator, done));
+      this.patchJump(stepped);
+      if (entry.left != NO_NODE) {
+        this.applyDefault(in parser, inout runtime, entry.right, value);
+        this.bindTarget(in parser, inout runtime, entry.left, value);
+      }
+      this.nextReg = watermark;
+      i = i + 1;
+    }
+    this.emit(instAB(Op.iterClose, iterator, done));
+  }
+
   // --- try / catch / finally ---
   //
   // EnterTry records a handler for the current frame: on a throw, control
@@ -1417,11 +1696,6 @@ export struct Compiler {
   function compileTry(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
     const n = parser.ast.node(node);
     this.resetCompletion();
-    if (n.childrenCount > 0) {
-      // A destructuring catch parameter.
-      this.hadError = true;
-      return;
-    }
     const hasCatch = n.right != NO_NODE;
     const hasFinally = n.third != NO_NODE;
     let catchReg: u8 = 0;
@@ -1430,13 +1704,13 @@ export struct Compiler {
       if (catchReg + 1 > this.fixedRegs) this.fixedRegs = catchReg + 1;
     }
     if (!hasFinally) {
-      const enter = this.emit(instAI16(Op.enterTry, catchReg, 0));
+      const enter = this.emitEnterTry(catchReg);
       this.compileStmt(in parser, inout runtime, n.left);
-      this.emit(instA(Op.leaveTry, 0));
+      this.emitLeaveTry();
       const skip = this.emit(instI16(Op.jmp, 0));
       this.patchJump(enter);
       this.resetCompletion();
-      this.compileCatch(in parser, inout runtime, n, catchReg);
+      this.compileCatch(in parser, inout runtime, n, catchReg, node);
       this.patchJump(skip);
       return;
     }
@@ -1444,20 +1718,21 @@ export struct Compiler {
     const flagReg = this.allocReg();
     if (flagReg + 1 > this.fixedRegs) this.fixedRegs = flagReg + 1;
     this.emit(instA(Op.loadFalse, flagReg));
+    this.pushRegion(REGION_FINALLY, n.third, 0, 0);
     const outerEnter = this.emit(instAI16(Op.enterTry, pendingReg, 0));
     if (hasCatch) {
-      const innerEnter = this.emit(instAI16(Op.enterTry, catchReg, 0));
+      const innerEnter = this.emitEnterTry(catchReg);
       this.compileStmt(in parser, inout runtime, n.left);
-      this.emit(instA(Op.leaveTry, 0));
+      this.emitLeaveTry();
       const skipCatch = this.emit(instI16(Op.jmp, 0));
       this.patchJump(innerEnter);
       this.resetCompletion();
-      this.compileCatch(in parser, inout runtime, n, catchReg);
+      this.compileCatch(in parser, inout runtime, n, catchReg, node);
       this.patchJump(skipCatch);
     } else {
       this.compileStmt(in parser, inout runtime, n.left);
     }
-    this.emit(instA(Op.leaveTry, 0));
+    this.emitLeaveTry();
     const skipOuter = this.emit(instI16(Op.jmp, 0));
     this.patchJump(outerEnter);
     this.emit(instA(Op.loadTrue, flagReg));
@@ -1478,10 +1753,26 @@ export struct Compiler {
     this.patchJump(skipRethrow);
   }
 
-  // The catch block, with its parameter bound to the catch register.
-  function compileCatch(inout this, in parser: Parser, inout runtime: Runtime, n: AstNode, catchReg: u8): void {
+  // The catch block, with its parameter -- an identifier or a pattern --
+  // bound from the catch register.
+  function compileCatch(inout this, in parser: Parser, inout runtime: Runtime, n: AstNode, catchReg: u8, node: u32): void {
     let bound: i32 = -1;
     if (n.nameLength > 0) bound = i32(this.bindLocal(n.nameStart, n.nameLength, catchReg));
+    if (n.childrenCount > 0) {
+      const pattern = parser.ast.child(node, 0);
+      const before = this.locals.length;
+      this.collectPatternLocals(in parser, pattern);
+      this.fixedRegs = this.nextReg;
+      this.destructure(in parser, inout runtime, pattern, catchReg);
+      this.resetTemps();
+      this.compileStmt(in parser, inout runtime, n.right);
+      let index = before;
+      while (index < this.locals.length) {
+        this.unbindLocal(index);
+        index = index + 1;
+      }
+      return;
+    }
     this.compileStmt(in parser, inout runtime, n.right);
     if (bound >= 0) this.unbindLocal(usize(bound));
   }
@@ -1509,8 +1800,21 @@ export struct Compiler {
         const declIndex = parser.ast.child(node, i);
         const decl = parser.ast.node(declIndex);
         if (decl.nameLength == 0) {
-          this.hadError = true;
-          return;
+          // A pattern: its names are already bound (hoisted var, or
+          // lexical locals declared here); the initializer is required.
+          if (decl.third == NO_NODE || decl.left == NO_NODE) {
+            this.hadError = true;
+            return;
+          }
+          if (n.op != TokenKind.kwVar) {
+            this.collectPatternLocals(in parser, decl.third);
+            this.fixedRegs = this.nextReg;
+          }
+          const value = this.compileExpr(in parser, inout runtime, decl.left);
+          this.destructure(in parser, inout runtime, decl.third, value);
+          this.resetTemps();
+          i = i + 1;
+          continue;
         }
         if (n.op == TokenKind.kwVar && this.isFunction) {
           // A var inside a function is one of its locals.
@@ -1574,13 +1878,20 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.returnStmt) {
-      this.emitIteratorCloses(-1, true);
       let r: u8 = 0;
       if (n.left != NO_NODE) {
         r = this.compileExpr(in parser, inout runtime, n.left);
       } else {
         r = this.allocReg();
         this.emit(instA(Op.loadUndefined, r));
+      }
+      if (this.regionDepth > 0) {
+        // Leave every region first, with the value kept safe from the
+        // temporaries a finally block uses.
+        const savedFixed = this.fixedRegs;
+        if (r + 1 > this.fixedRegs) this.fixedRegs = r + 1;
+        this.emitUnwind(in parser, inout runtime, 0);
+        this.fixedRegs = savedFixed;
       }
       this.emit(instA(Op.returnOp, r));
       this.resetTemps();
@@ -1663,7 +1974,8 @@ export struct Compiler {
         this.hadError = true;
         return;
       }
-      this.emitIteratorCloses(target, true);
+      const regionsAtEntry = this.loops[usize(target)].regionsAtEntry;
+      this.emitUnwind(in parser, inout runtime, regionsAtEntry);
       const at = this.emit(instI16(Op.jmp, 0));
       this.loops[usize(target)].breakPatches.push(at);
       return;
@@ -1686,7 +1998,8 @@ export struct Compiler {
         return;
       }
       const frame = usize(target);
-      this.emitIteratorCloses(target, false);
+      const continueRegions = this.loops[frame].continueRegions;
+      this.emitUnwind(in parser, inout runtime, continueRegions);
       if (this.loops[frame].haveContinue) {
         const continueTarget = this.loops[frame].continueTarget;
         this.emitJumpBack(continueTarget);
@@ -1977,7 +2290,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict, loops: Array<LoopFrame>(), loopDepth: 0,
-    pendingLabelStart: 0, pendingLabelLength: 0, thisReg: -1, propertyNames: Array<u32>(),
+    pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
 
@@ -1998,12 +2311,28 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       p = p + 1;
       continue;
     }
+    if (parameterPattern(in parser, parser.ast.child(node, p)) != NO_NODE) {
+      // A pattern parameter: the argument lands in a register with no
+      // name; the pattern's own names are locals bound at entry.
+      const reg = compiler.allocReg();
+      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1 }));
+      paramCount = paramCount + 1;
+      p = p + 1;
+      continue;
+    }
     if (param.kind != NodeKind.identExpr || param.nameLength == 0) return failed;
     // Parameters arrive in the first registers; a captured one is copied
     // into the environment once it exists.
     const reg = compiler.allocReg();
     compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1 }));
     paramCount = paramCount + 1;
+    p = p + 1;
+  }
+  // The names inside pattern parameters.
+  p = 0;
+  while (p < n.childrenCount) {
+    const pattern = parameterPattern(in parser, parser.ast.child(node, p));
+    if (pattern != NO_NODE) compiler.collectPatternLocals(in parser, pattern);
     p = p + 1;
   }
   // A named function expression binds its own name.
@@ -2061,12 +2390,17 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.resetTemps();
   }
   // Defaults: a parameter that arrived undefined takes its initializer.
+  // A pattern parameter then destructures into its names.
   p = 0;
   while (p < n.childrenCount) {
     const paramIndex = parser.ast.child(node, p);
     const param = parser.ast.node(paramIndex);
+    if (param.kind == NodeKind.restParam) {
+      p = p + 1;
+      continue;
+    }
+    const paramReg = u8(p);
     if (param.right != NO_NODE) {
-      const paramReg = u8(p);
       const undefinedReg = compiler.allocReg();
       compiler.emit(instA(Op.loadUndefined, undefinedReg));
       const test = compiler.allocReg();
@@ -2076,6 +2410,11 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       if (init != paramReg) compiler.emit(instAB(Op.mov, paramReg, init));
       compiler.resetTemps();
       compiler.patchJump(skip);
+    }
+    const pattern = parameterPattern(in parser, paramIndex);
+    if (pattern != NO_NODE) {
+      compiler.destructure(in parser, inout runtime, pattern, paramReg);
+      compiler.resetTemps();
     }
     p = p + 1;
   }
@@ -2183,14 +2522,45 @@ function functionBinds(in parser: Parser, fn: u32, nameStart: u32, nameLength: u
   }
   let p: u32 = 0;
   while (p < n.childrenCount) {
-    const param = parser.ast.node(parser.ast.child(fn, p));
+    const paramIndex = parser.ast.child(fn, p);
+    const param = parser.ast.node(paramIndex);
     if (param.kind == NodeKind.identExpr && param.nameLength == nameLength
         && parser.slicesEqual(param.nameStart, param.nameLength, nameStart, nameLength)) {
       return true;
     }
+    if (param.kind == NodeKind.restParam && patternBinds(in parser, param.left, nameStart, nameLength)) return true;
+    if (patternBinds(in parser, parameterPattern(in parser, paramIndex), nameStart, nameLength)) return true;
     p = p + 1;
   }
   return bodyBinds(in parser, n.left, nameStart, nameLength);
+}
+
+// The pattern a parameter node carries: the parser wraps `[a]` / `{a}`
+// parameters in a nameless identifier node whose `third` is the pattern.
+function parameterPattern(in parser: Parser, param: u32): u32 {
+  if (param == NO_NODE) return NO_NODE;
+  const n = parser.ast.node(param);
+  if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) return param;
+  if (n.kind == NodeKind.identExpr && n.nameLength == 0 && n.third != NO_NODE) return n.third;
+  return NO_NODE;
+}
+
+// Whether a pattern (or identifier) binds `name`.
+function patternBinds(in parser: Parser, pattern: u32, nameStart: u32, nameLength: u32): boolean {
+  if (pattern == NO_NODE) return false;
+  const n = parser.ast.node(pattern);
+  if (n.kind == NodeKind.identExpr) {
+    return n.nameLength == nameLength && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength);
+  }
+  if (n.kind == NodeKind.patternEntry) return patternBinds(in parser, n.left, nameStart, nameLength);
+  if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (patternBinds(in parser, parser.ast.child(pattern, i), nameStart, nameLength)) return true;
+      i = i + 1;
+    }
+  }
+  return false;
 }
 
 // var, let, const, and function declarations of a body, not entering
@@ -2206,8 +2576,10 @@ function bodyBinds(in parser: Parser, node: u32, nameStart: u32, nameLength: u32
   if (k == NodeKind.varDecl) {
     let i: u32 = 0;
     while (i < n.childrenCount) {
-      const decl = parser.ast.node(parser.ast.child(node, i));
+      const declIndex = parser.ast.child(node, i);
+      const decl = parser.ast.node(declIndex);
       if (decl.nameLength == nameLength && parser.slicesEqual(decl.nameStart, decl.nameLength, nameStart, nameLength)) return true;
+      if (decl.nameLength == 0 && patternBinds(in parser, decl.third, nameStart, nameLength)) return true;
       i = i + 1;
     }
     return false;
@@ -2279,6 +2651,7 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32)
     while (j < n.childrenCount) {
       const decl = parser.ast.node(parser.ast.child(node, j));
       if (decl.nameLength > 0) runtime.defineGlobalSlot(parser.source.copyBytes(usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
+      if (decl.nameLength == 0) hoistPatternGlobals(in parser, inout runtime, decl.third);
       j = j + 1;
     }
     return;
@@ -2293,6 +2666,27 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32)
   }
 }
 
+// Every identifier a script-level var pattern declares is a global.
+function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, pattern: u32): void {
+  if (pattern == NO_NODE) return;
+  const n = parser.ast.node(pattern);
+  if (n.kind == NodeKind.identExpr) {
+    if (n.nameLength > 0) runtime.defineGlobalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+    return;
+  }
+  if (n.kind == NodeKind.patternEntry) {
+    hoistPatternGlobals(in parser, inout runtime, n.left);
+    return;
+  }
+  if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      hoistPatternGlobals(in parser, inout runtime, parser.ast.child(pattern, i));
+      i = i + 1;
+    }
+  }
+}
+
 // --- Entry ----------------------------------------------------------------
 
 // Compiles a parsed program into the runtime's function table; returns the
@@ -2303,7 +2697,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(), loopDepth: 0,
-    pendingLabelStart: 0, pendingLabelLength: 0, thisReg: -1, propertyNames: Array<u32>(),
+    pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));

@@ -1729,6 +1729,38 @@ export struct Runtime {
     }
   }
 
+  // CopyDataProperties: every own enumerable property of `source`,
+  // string or symbol keyed, onto `target`, except the keys in `excluded`
+  // (an array of key values, or 0). Null and undefined sources copy nothing.
+  function copyDataProperties(inout this, target: u32, source: Value, excluded: u32): void {
+    if (isUndefined(source) || isNull(source)) return;
+    const keys = this.ownKeys(source);
+    let index: usize = 0;
+    while (index < keys.length) {
+      const key = keys[index];
+      let skip = false;
+      if (excluded != 0) {
+        const count = this.heap.arrayLength(excluded);
+        let e: u32 = 0;
+        while (e < count) {
+          const candidate = this.heap.arrayGet(excluded, e);
+          if (this.propertyKey(candidate) == this.propertyKey(key)) skip = true;
+          e = e + 1;
+        }
+      }
+      if (!skip) {
+        const desc = this.getOwnDescriptor(source, key);
+        if (desc.present && (desc.attr & PROP_ENUMERABLE) != 0) {
+          const value = this.getProperty(source, key);
+          if (this.pendingThrow) return;
+          const atom = this.propertyKey(key);
+          this.heap.objectDefine(target, atom, value, PROP_DEFAULT);
+        }
+      }
+      index = index + 1;
+    }
+  }
+
   // Every value an iterable yields, as an array. A throw is left pending.
   function iterateToArray(inout this, iterable: Value): Value {
     const array = this.heap.allocateArray(0);
@@ -3120,6 +3152,15 @@ export struct Runtime {
             const iterator = this.reg(base, inst.a);
             this.iteratorClose(iterator);
           }
+        } else if (op == Op.iterCloseQuiet) {
+          // Closing on the way out of a throw: the original throw wins
+          // over anything `return` raises.
+          const done = this.reg(base, inst.b);
+          if (!(isBoolean(done) && isTrue(done))) {
+            const iterator = this.reg(base, inst.a);
+            this.iteratorClose(iterator);
+            if (this.pendingThrow) this.takePending();
+          }
         } else if (op == Op.arraySpread) {
           // Append everything the iterable in b yields to the array in a.
           const array = this.reg(base, inst.a);
@@ -3137,6 +3178,40 @@ export struct Runtime {
               index = index + 1;
             }
           }
+        } else if (op == Op.objectSpread) {
+          // { ...source } into the object in a.
+          const target = this.reg(base, inst.a);
+          const source = this.reg(base, inst.b);
+          this.copyDataProperties(asCell(target), source, 0);
+        } else if (op == Op.objectRest) {
+          // { ...rest } of a pattern: a fresh object with what the other
+          // entries did not take.
+          const source = this.reg(base, inst.b);
+          const excluded = this.reg(base, inst.c);
+          const objectProto = this.objectProto;
+          const created = this.heap.allocateObject(objectProto);
+          this.setReg(base, inst.a, cellValue(created));
+          this.copyDataProperties(created, source, asCell(excluded));
+        } else if (op == Op.assertCoercible) {
+          const value = this.reg(base, inst.a);
+          if (isUndefined(value) || isNull(value)) {
+            const message: String = "Cannot destructure null or undefined";
+            thrown = this.typeError(in message);
+            throwing = true;
+          }
+        } else if (op == Op.iterRestCollect) {
+          // The iterator's remaining values as an array; the iterator is
+          // then done.
+          const iterator = this.reg(base, inst.b);
+          const array = this.heap.allocateArray(0);
+          this.setReg(base, inst.a, cellValue(array));
+          while (!this.pendingThrow) {
+            const next = this.iteratorStep(iterator);
+            if (this.pendingThrow || isDeleted(next)) break;
+            const count = this.heap.arrayLength(array);
+            this.heap.arraySet(array, count, next);
+          }
+          this.setReg(base, inst.c, booleanValue(true));
         } else if (op == Op.spreadInvoke || op == Op.spreadMethodInvoke || op == Op.spreadNewInvoke) {
           // Callee at b; for a method call the receiver at b + 1; the
           // arguments array in the next register. The elements are placed

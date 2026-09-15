@@ -166,6 +166,7 @@ export enum Op {
   newEnv,          // bc = slot count: the frame's environment becomes a new one chained to the old.
   loadEnvSlot,     // a = dst, b = hops outward, c = slot.
   storeEnvSlot,    // a = src, b = hops outward, c = slot.
+  objectRest,      // a = dst, b = source, c = array of keys to leave out.
 }
 
 export struct Inst {
@@ -366,6 +367,7 @@ export function opCode(op: Op): i32 {
     newEnv => 145;
     loadEnvSlot => 146;
     storeEnvSlot => 147;
+    objectRest => 148;
   };
 }
 
