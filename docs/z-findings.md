@@ -438,6 +438,58 @@ reserved capability word and cannot name a binding.
 
 ---
 
+## G21 — A String's bytes cannot reach native code without a copy
+
+**Status:** `proposed` · **Size:** medium · **Priority:** medium
+**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no (worked around)
+**Found:** Phase 3, parsing numeric literals.
+
+Decimal literals need C's `strtod` — Z has no string-to-float, and the
+reference engine uses `strtod` too. But:
+
+```
+function parseDouble(text: String): f64 = raw c { return strtod(text, NULL); }
+// error[Z0821]: type "String" cannot cross a raw native boundary in the first tier
+```
+
+and there is no way to view a `String` as a `cstring` either. The engine's
+workaround copies each byte into a `calloc`'d buffer through a `usize`
+handle, calls `strtod` on that, and frees it — exact, but every string-heavy
+native call pays an allocation and a loop.
+
+Ask: a non-escaping borrowed view of a String's NUL-terminated bytes usable
+as a `raw c` operand or native argument. Probe `string-to-native` proposes
+`text.asCString()`; any equivalent that avoids the copy is fine. Separately,
+a Z-level `parseFloat` in `std/math` (see G3) would remove this particular
+need entirely.
+
+---
+
+## G22 — `std/memory.replace` on an `Array` field mis-infers its result type in codegen
+
+**Status:** `proposed` — **compiler bug** · **Size:** small · **Priority:** high
+**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no (worked around)
+**Found:** Phase 3, swapping the parser's token stream for a template substitution.
+
+```z
+function swap(inout this, fresh: Array<Item>): usize {
+  let previous = replace(inout this.items, move fresh);   // z check: ok
+  return previous.length;
+}
+```
+
+The generated C declares `previous` as `int32_t` and clang rejects the
+initialization from the Array struct. **Writing the annotation out —
+`let previous: Array<Item> = replace(...)` — compiles and runs**, so the
+inferred type is wrong only in the emitter. Same diagnostic-escape class as
+G13c and G20: Z accepts, the backend rejects.
+
+Minimal reproduction: probe `replace-array-field-inference`
+(`BACKEND-REJECTED`). The engine no longer needs the swap — it appends the
+substitution's tokens and parses within a window — so nothing waits on this.
+
+---
+
 # Wave 2 — substantive language design
 
 These need agreement on direction before implementation. Each has a real

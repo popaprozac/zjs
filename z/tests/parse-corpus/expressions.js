@@ -1,0 +1,17 @@
+1 + 2 * 3 - 4 / 5 % 6 ** 2 ** 3;
+a < b, c <= d, e > f, g >= h, i == j, k != l, m === n, o !== p;
+x << 1 | y >> 2 & z >>> 3 ^ w;
+!a && ~b || +c ?? -d;
+typeof a, void 0, delete b.c;
+++i; --j; i++; j--;
+cond ? yes : no ? deeper : deepest;
+a = b += c -= d *= e /= f %= g **= h <<= i >>= j >>>= k &= l |= m ^= n &&= o ||= p ??= q;
+obj.prop.deep[expr][0]("call", 1, ...rest)(x)(y,);
+obj?.prop?.[key]?.(arg);
+new Foo; new Foo.bar(1, 2); new (Foo)(); new.target;
+[1, , 2, ...spread, [nested, [deeper]], , ];
+/re+gex/gi.test(s) / 2;
+"str"; 'str'; 0xFF; 0b1010; 0o17; 1_000.5e-3; .5; 5.; 123n; 0xFFn;
+this; null; undefined; true; false; super.x;
+(a, b, (c)), (d);
+a in b; a instanceof B;
