@@ -408,7 +408,12 @@ export struct Compiler {
     while (index < this.locals.length) {
       const local = this.locals[index];
       if (local.nameLength > 0 && capturedBy(in parser, body, local.nameStart, local.nameLength, false)) {
-        this.locals[index].envSlot = i32(this.envSize);
+        const envSlot = i32(this.envSize);
+        this.locals[index].envSlot = envSlot;
+        // The slot is on record for the binding's own statement too, so
+        // a let / const bound later lands in the same slot the function
+        // declarations compiled before it were resolved against.
+        this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot }));
         this.envSize = this.envSize + 1;
       }
       index = index + 1;
@@ -417,12 +422,62 @@ export struct Compiler {
     this.hasEnv = this.envSize > 0;
   }
 
+  // Bind the captured let / const declared directly in `body` ahead of
+  // their statements, so the function declarations hoisted above them
+  // resolve to their environment slots. Their statements rebind the
+  // same slots when reached.
+  function prebindCapturedLexicals(inout this, in parser: Parser, body: u32): void {
+    const n = parser.ast.node(body);
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      const statement = parser.ast.child(body, i);
+      const st = parser.ast.node(statement);
+      if (st.kind == NodeKind.varDecl && st.op != TokenKind.kwVar) {
+        let d: u32 = 0;
+        while (d < st.childrenCount) {
+          const declIndex = parser.ast.child(statement, d);
+          const decl = parser.ast.node(declIndex);
+          if (decl.nameLength > 0) this.prebindCaptured(decl.nameStart, decl.nameLength);
+          if (decl.nameLength == 0 && decl.third != NO_NODE) this.prebindPattern(in parser, decl.third);
+          d = d + 1;
+        }
+      }
+      i = i + 1;
+    }
+  }
+
+  function prebindCaptured(inout this, nameStart: u32, nameLength: u32): void {
+    const envSlot = this.capturedSlot(nameStart);
+    if (envSlot < 0) return;
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: envSlot }));
+  }
+
+  function prebindPattern(inout this, in parser: Parser, pattern: u32): void {
+    if (pattern == NO_NODE) return;
+    const n = parser.ast.node(pattern);
+    if (n.kind == NodeKind.identExpr) {
+      if (n.nameLength > 0) this.prebindCaptured(n.nameStart, n.nameLength);
+      return;
+    }
+    if (n.kind == NodeKind.patternEntry) {
+      this.prebindPattern(in parser, n.left);
+      return;
+    }
+    if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+      let i: u32 = 0;
+      while (i < n.childrenCount) {
+        this.prebindPattern(in parser, parser.ast.child(pattern, i));
+        i = i + 1;
+      }
+    }
+  }
+
   // The identifiers of a lexical pattern that nested functions capture.
   function scanPatternCaptures(inout this, in parser: Parser, pattern: u32, body: u32): void {
     if (pattern == NO_NODE) return;
     const n = parser.ast.node(pattern);
     if (n.kind == NodeKind.identExpr) {
-      if (n.nameLength > 0 && capturedBy(in parser, body, n.nameStart, n.nameLength, false)) {
+      if (n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, body, n.nameStart, n.nameLength, false)) {
         this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize) }));
         this.envSize = this.envSize + 1;
       }
@@ -454,7 +509,7 @@ export struct Compiler {
       while (i < n.childrenCount) {
         const declIndex = parser.ast.child(node, i);
         const decl = parser.ast.node(declIndex);
-        if (decl.nameLength > 0 && capturedBy(in parser, body, decl.nameStart, decl.nameLength, false)) {
+        if (decl.nameLength > 0 && this.capturedSlot(decl.nameStart) < 0 && capturedBy(in parser, body, decl.nameStart, decl.nameLength, false)) {
           this.capturedNames.push(Local({ nameStart: decl.nameStart, nameLength: decl.nameLength, reg: 0, envSlot: i32(this.envSize) }));
           this.envSize = this.envSize + 1;
         }
@@ -464,7 +519,7 @@ export struct Compiler {
       }
       return;
     }
-    if (k == NodeKind.tryStmt && n.nameLength > 0 && capturedBy(in parser, n.right, n.nameStart, n.nameLength, false)) {
+    if (k == NodeKind.tryStmt && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, n.right, n.nameStart, n.nameLength, false)) {
       this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize) }));
       this.envSize = this.envSize + 1;
     }
@@ -2816,6 +2871,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   // var and function declarations are globals and need none.
   compiler.scanCaptures(in parser, root);
   if (compiler.hasEnv) compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
+  compiler.prebindCapturedLexicals(in parser, root);
   // Function declarations first, then everything else.
   let i: u32 = 0;
   while (i < program.childrenCount && !compiler.hadError) {

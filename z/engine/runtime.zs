@@ -2703,10 +2703,15 @@ export struct Runtime {
     }
     // A sloppy function called with no receiver sees the global object.
     if (!this.functions[usize(target)].strict && (isUndefined(boundThis) || isNull(boundThis))) boundThis = cellValue(this.globalObject);
+    // A generator's parameters initialize now; GeneratorStart then
+    // suspends and hands the caller the generator object.
+    let generator: u32 = 0;
+    if (this.functions[usize(target)].isGenerator) generator = asCell(this.createGenerator(callee, thisValue));
     this.enterFunction(target, returnDst, boundThis, argsBase, argc, constructThis);
     const top = usize(this.frameCount - 1);
     this.frames[top].env = env;
     this.frames[top].callee = callee;
+    this.frames[top].generator = generator;
   }
 
   // Push a call to a compiled function: arguments from the caller's
@@ -3016,15 +3021,7 @@ export struct Runtime {
           const callee = this.reg(base, inst.b);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 1;
-          if (this.isCompiledCallable(callee) && this.functions[usize(this.heap.functionIndex(asCell(callee)))].isGenerator) {
-            // The parameters initialize now; GeneratorStart then suspends
-            // and hands the caller the generator object.
-            const created = this.createGenerator(callee, undefinedValue());
-            this.frames[frameIndex].ip = ip;
-            this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue());
-            this.frames[usize(this.frameCount - 1)].generator = asCell(created);
-            returned = true;
-          } else if (this.isCompiledCallable(callee)) {
+          if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
             this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue());
             returned = true;
@@ -3048,13 +3045,7 @@ export struct Runtime {
           const receiver = this.reg(base, inst.b + 1);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 2;
-          if (this.isCompiledCallable(callee) && this.functions[usize(this.heap.functionIndex(asCell(callee)))].isGenerator) {
-            const created = this.createGenerator(callee, receiver);
-            this.frames[frameIndex].ip = ip;
-            this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
-            this.frames[usize(this.frameCount - 1)].generator = asCell(created);
-            returned = true;
-          } else if (this.isCompiledCallable(callee)) {
+          if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
             this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
             returned = true;

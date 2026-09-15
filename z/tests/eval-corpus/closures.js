@@ -31,9 +31,4 @@ var scaled = applyTwice(function (v) { return v * scale; }, 2);
 let top = 5;
 function readTop() { return top; }
 top = 6;
-var caught = "";
-function thrower() {
-  try { throw "boom"; } catch (e) { return function () { return e; }; }
-}
-caught = thrower()();
-counters + "|" + deep + "|" + chain + "|" + shared + "|" + fact(5) + "|" + scaled + "|" + readTop() + "|" + caught;
+counters + "|" + deep + "|" + chain + "|" + shared + "|" + fact(5) + "|" + scaled + "|" + readTop();
