@@ -360,6 +360,92 @@ Probe `g16-inout-indexed-storage` exercises both the working field case and the
 failing indexed case.
 ---
 
+## G17 — No outward integer conversion for enums
+
+**Status:** `proposed` · **Size:** small · **Priority:** medium
+**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no
+**Found:** Phase 3, writing the token dump for the lexer oracle.
+
+Neither a plain `enum` nor a `c enum` with a declared representation can be
+read as an integer: `u8(kind)` is rejected with *"numeric construction
+requires a numeric value"*. A `c enum` already fixes its representation; the
+ask is to read that representation outward. Inward (integer → enum)
+construction is deliberately **not** requested here — that is G5's territory.
+
+ZJS use: serializing token kinds and cell tags, and any table indexed by an
+enum. The engine generates a 110-arm `match` (`kindCode` in
+`z/engine/token.zs`) to reproduce the reference numbering instead.
+Probe `g17-enum-integer-code` (spelling is a proposal).
+
+---
+
+## G18 — No byte or character literal
+
+**Status:** `proposed` · **Size:** small · **Priority:** medium (reviewability)
+**Confirmed:** z-lang `00864194` · **Blocks:** no
+**Found:** Phase 3, writing the lexer.
+
+Z has no `char` type and no way to spell a byte as a character, so a scanner
+tests named numeric constants: `z/engine/lexer.zs` opens with ~70 lines of
+`const B_SLASH: u8 = 47;` before any logic. A lexer review *is* a review of
+those comparisons, and `47` is not reviewable where `'/'` is.
+
+Ask: a reviewable spelling for a `u8` naming an ASCII character. Probe
+`g18-byte-literal` proposes `b'/'`; any equivalent is fine.
+
+---
+
+## G19 — `in` borrow conflicts with a field read of the same value in one call
+
+**Status:** `proposed` · **Size:** small · **Priority:** low
+**Confirmed:** z-lang `00864194` · **Blocks:** no
+**Found:** Phase 3, keyword lookup.
+
+```z
+lookupKeyword(in text, 0, text.byteLength)
+// error: overlapping in and value uses of "text" and "text.byteLength"
+```
+
+Both uses are reads. The workaround (bind the length first) is harmless but
+moves a value away from its use for no safety gain. If the rule is intentional
+simplicity, the diagnostic should say so and name the bind-first workaround.
+Probe `g19-in-borrow-with-field-read`.
+
+---
+
+## G20 — Method call on a module-level `const String` mis-lowers
+
+**Status:** `proposed` — **compiler bug** · **Size:** small · **Priority:** high
+**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no (worked around)
+**Found:** Phase 3, the escape-decoded keyword path.
+
+```z
+const TABLE: String = "abc";
+function main(): i32 { return TABLE.byteAt(0) == 97 ? 0 : 1; }
+```
+
+`z check` accepts this. The generated C contains `byteAt(0)` with the
+receiver dropped, and clang fails: *"call to undeclared function 'byteAt'"*.
+The same call on a local `String` binding lowers correctly. This is a
+diagnostic escape of the same class as G13c — Z accepts, the backend rejects.
+Minimal reproduction: probe `g20-module-const-string-method`
+(`BACKEND-REJECTED`). Engine workaround: the table is a function returning
+the literal.
+
+Also seen and not filed as findings, for the record: `while` bodies must be
+braced (unlike `if`); Z string literals have no `\u` escape; `out` is a
+reserved capability word and cannot name a binding.
+
+---
+
+# Wave 2 — substantive language design
+
+These need agreement on direction before implementation. Each has a real
+decision inside it; the Phase 0 spike produced evidence for the first two,
+recorded in each item's verdict.
+
+---
+
 ## G4 / G5 — Interpreter dispatch: no `goto`, and `match` is enum-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** decide after the ZJS spike

@@ -6,7 +6,7 @@ The Z rewrite of the ZJS engine. Design:
 `src/` (Zen-c) remains the shipping engine and the behavioral oracle. This tree
 is built beside it, never on top of it.
 
-## Status — Phase 2 complete
+## Status — Phase 3 in progress: lexer complete
 
 The loop works end to end: the **unmodified** `tests/test262_runner.c` links
 against a Z-implemented `libzjs.a` and runs. It reports 0 passed, because no
@@ -16,6 +16,12 @@ number climb.
 Phase 2 added the foundation the interpreter will sit on — NaN-boxed values
 and a handle-based cell heap, with each context owning its own heap. 12 unit
 tests via `z test`.
+
+Phase 3 lexer: **byte-identical token streams to the Zen-c reference over the
+whole local corpus** — 24 files, 33,168 tokens, 79 of 110 token kinds
+(`./z/oracle-tokens.sh`) — plus 10 unit tests. The reference dump links
+`build/libzjs.a` directly, so the oracle needs no Zen-c toolchain. Parser and
+AST next.
 
 ```
 $ ./z/oracle.sh
@@ -29,6 +35,10 @@ reference passed: 5   z passed: 0   gap: 5
 | `engine/value.zs` | NaN-boxed value, JSC layout, handle-carrying cells |
 | `engine/heap.zs` | handle-based cell heap: headers, slots, mark bits |
 | `engine/lib.zs` | context registry and the C ABI exports |
+| `engine/token.zs` | token kinds (order mirrors `src/token.zc`; numbering generated) |
+| `engine/lexer.zs` | the lexer, idiomatic register, no `raw c` |
+| `tools/tokdump-ref.c`, `tools/tokdump-z/` | token dumps from each engine |
+| `probes/` | executable acceptance cases for `docs/z-findings.md` |
 | `shim/zjs_shim.c` | frozen-ABI shim: exact `zjs.h` signatures over the Z exports |
 | `spike/` | Phase 0 measurements — see [`spike/RESULTS.md`](spike/RESULTS.md) |
 | `tests/` | `loop_smoke.c` and a synthetic corpus for the oracle |
@@ -42,6 +52,8 @@ reference passed: 5   z passed: 0   gap: 5
 ./z/build/loop_smoke              # ABI round-trip assertions
 ./z/oracle.sh                     # differential oracle, synthetic corpus
 ./z/oracle.sh vendor/test262/test/language/expressions   # real corpus
+./z/oracle-tokens.sh              # lexer oracle: diff token dumps, both engines
+./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 ./z/spike/run.sh                  # Phase 0 measurements
 
 cd ~/code/z-lang && bun run z test ~/code/zjs/z/engine/heap.zs   # unit tests
