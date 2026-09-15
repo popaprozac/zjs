@@ -3055,12 +3055,14 @@ export struct Runtime {
     this.tryDepth = this.tryDepth + 1;
   }
 
+  // Register access: a window lies within the stack and is at most 256
+  // wide, so the sum cannot overflow and wraps rather than checks.
   function reg(base: u32, index: u8): Value {
-    return this.regStack[usize(base + u32(index))];
+    return this.regStack[usize(base.wrappingAdd(u32(index)))];
   }
 
   function setReg(inout this, base: u32, index: u8, value: Value): void {
-    this.regStack[usize(base + u32(index))] = value;
+    this.regStack[usize(base.wrappingAdd(u32(index)))] = value;
   }
 
   // --- Interpreter ---
@@ -3093,7 +3095,7 @@ export struct Runtime {
       }
       while (ip < codeLength && !returned && !throwing) {
         const inst = this.functions[usize(fi)].code[ip];
-        ip = ip + 1;
+        ip = ip.wrappingAdd(1);
         const op = inst.op;
 
         match (op) {
