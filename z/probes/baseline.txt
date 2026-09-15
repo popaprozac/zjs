@@ -1,9 +1,15 @@
-# probe status at z-lang 00864194 (clean). Written by run.sh --record.
-numeric-literals LANDED
+# probe status at z-lang 4bef7756 (clean). Written by run.sh --record.
+byte-literal COMPILER-REJECTED
+enum-integer-code COMPILER-REJECTED
 float-bits LANDED
-integer-bits COMPILER-REJECTED
-literal-in-ternary COMPILER-REJECTED
-literal-in-shift COMPILER-REJECTED
-literal-in-expectation BACKEND-REJECTED
-while-true-diverges COMPILER-REJECTED
+in-borrow-with-field-read COMPILER-REJECTED
 inout-indexed-storage COMPILER-REJECTED
+integer-bits LANDED
+literal-in-expectation LANDED
+literal-in-shift COMPILER-REJECTED
+literal-in-ternary COMPILER-REJECTED
+module-const-string-method LANDED
+numeric-literals LANDED
+replace-array-field-inference BACKEND-REJECTED
+string-to-native COMPILER-REJECTED
+while-true-diverges COMPILER-REJECTED

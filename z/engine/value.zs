@@ -4,12 +4,9 @@
 // divergence: a cell payload is a *handle* into the Z-owned heap, not a
 // machine address. See `cellValue` below for why that changes the encoding.
 //
-// Constants are spelled in the base that reads best, and the NaN-box encode
-// path is ordinary Z through f64.toBits/fromBits -- no raw c.
-//
-// Z's numeric construction is checked and traps rather than reinterpreting a
-// sign bit, so int32 boxing folds the sign by hand below until Z offers a
-// bit-preserving integer conversion.
+// Constants are spelled in the base that reads best, and both encode paths
+// are ordinary Z: f64.toBits/fromBits for doubles, i32.toBits/fromBits for
+// the int32 payload -- no raw c, no hand-folded sign bits.
 
 import { expect } from "std/test";
 
@@ -45,17 +42,13 @@ export function notCellMask(): u64 { return NOT_CELL_MASK; }
 
 // --- Numbers --------------------------------------------------------------
 
-// `u32(value)` traps on a negative input, so the sign bit is folded
-// explicitly. This is what C spells `(uint32_t)i`.
+// The payload is the int32's bit pattern, what C spells `(uint32_t)i`.
 export function int32Value(value: i32): Value {
-  const widened: i64 = i64(value) & 0xFFFF_FFFF;
-  return Value({ bits: numberTag() | u64(widened) });
+  return Value({ bits: NUMBER_TAG | u64(value.toBits()) });
 }
 
 export function asInt32(value: Value): i32 {
-  const payload: u64 = value.bits & INT32_PAYLOAD_MASK;
-  if (payload >= 0x8000_0000) return i32(i64(payload) - 0x1_0000_0000);
-  return i32(payload);
+  return i32.fromBits(u32(value.bits & INT32_PAYLOAD_MASK));
 }
 
 export function doubleValue(value: f64): Value {
