@@ -4,11 +4,11 @@
 // divergence: a cell payload is a *handle* into the Z-owned heap, not a
 // machine address. See `cellValue` below for why that changes the encoding.
 //
-// Z has no hex literals yet (finding G1), so wide constants are built by
-// shifting from small values. Z has no bitcast (G2), so f64<->u64 punning
-// goes through raw c. Z's numeric construction is checked and traps rather
-// than reinterpreting a sign bit (G11), so int32 boxing folds the sign by
-// hand. All three are Wave 1 items; this file gets shorter when they land.
+// G1 (radix literals + digit separators) landed in z-lang 135b64c9, so the
+// constants below are spelled in the base that makes them reviewable.
+// Still outstanding: Z has no bitcast (G2, in progress), so f64<->u64 punning
+// goes through raw c; and Z's numeric construction is checked and traps rather
+// than reinterpreting a sign bit (G11), so int32 boxing folds the sign by hand.
 
 import string from "string.h";
 import { expect } from "std/test";
@@ -28,15 +28,20 @@ export struct Value {
 //   undefined  10  (OTHER_TAG | UNDEFINED_TAG)
 //   deleted    65538
 
-export function numberTag(): u64 { return u64(65534) << 48; }        // 0xfffe << 48
-export function doubleEncodeOffset(): u64 { return u64(1) << 49; }
-export function notCellMask(): u64 { return numberTag() | 2; }
+export const NUMBER_TAG: u64 = 0xFFFE_0000_0000_0000;
+export const DOUBLE_ENCODE_OFFSET: u64 = 0x0002_0000_0000_0000;  // 1 << 49
+export const NOT_CELL_MASK: u64 = 0xFFFE_0000_0000_0002;         // NUMBER_TAG | OTHER_TAG
+export const INT32_PAYLOAD_MASK: u64 = 0x0000_0000_FFFF_FFFF;
 
-export const VALUE_NULL: u64 = 2;
-export const VALUE_FALSE: u64 = 6;
-export const VALUE_TRUE: u64 = 7;
-export const VALUE_UNDEFINED: u64 = 10;
-export const VALUE_DELETED: u64 = 65538;
+export const VALUE_NULL: u64 = 0x2;
+export const VALUE_FALSE: u64 = 0x6;
+export const VALUE_TRUE: u64 = 0x7;
+export const VALUE_UNDEFINED: u64 = 0xA;
+export const VALUE_DELETED: u64 = 0x1_0002;
+
+export function numberTag(): u64 { return NUMBER_TAG; }
+export function doubleEncodeOffset(): u64 { return DOUBLE_ENCODE_OFFSET; }
+export function notCellMask(): u64 { return NOT_CELL_MASK; }
 
 // --- Bit reinterpretation (G2) -------------------------------------------
 
@@ -57,13 +62,13 @@ export function bitsToDouble(bits: u64): f64 = raw c {
 // G11: `u32(value)` traps on a negative input, so the sign bit is folded
 // explicitly. This is what C spells `(uint32_t)i`.
 export function int32Value(value: i32): Value {
-  const widened: i64 = i64(value) & 4294967295;
+  const widened: i64 = i64(value) & 0xFFFF_FFFF;
   return Value({ bits: numberTag() | u64(widened) });
 }
 
 export function asInt32(value: Value): i32 {
-  const payload: u64 = value.bits & 4294967295;
-  if (payload >= 2147483648) return i32(i64(payload) - 4294967296);
+  const payload: u64 = value.bits & INT32_PAYLOAD_MASK;
+  if (payload >= 0x8000_0000) return i32(i64(payload) - 0x1_0000_0000);
   return i32(payload);
 }
 
