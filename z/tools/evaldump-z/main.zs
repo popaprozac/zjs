@@ -52,7 +52,7 @@ function render(in runtime: Runtime, value: Value): String {
   if (isCell(value) && asCell(value) != 0) {
     const handle = asCell(value);
     if (runtime.heap.isArray(handle)) return "array";
-    if (runtime.heap.isFunction(handle) || runtime.heap.isHostFunction(handle)) return "function";
+    if (runtime.heap.isFunction(handle) || runtime.heap.isHostFunction(handle) || runtime.heap.isClosure(handle)) return "function";
     if (runtime.heap.isObject(handle)) return "object";
   }
   return "cell";

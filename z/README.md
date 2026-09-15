@@ -36,17 +36,19 @@ defaults, hoisting, the conditional operator; objects on hidden classes with
 prototype chains, arrays with holes, property access in every form, method
 calls with `this`, `new` with `prototype`/`constructor`, `typeof`; the Error
 family as Z builtins, `throw`, `try`/`catch`/`finally` with unwinding across
-frames. **27 of 27** corpus files identical.
+frames; closures -- captured bindings live in environment cells addressed by
+slot, resolved at compile time through the scope chain, with arrows keeping
+the `this` of their creation. **29 of 29** corpus files identical.
 
 Two places the corpus deliberately steps around, where the reference is
 wrong and the Z engine follows the specification: a property write to
 `undefined` throws a TypeError (the reference drops it), and
 `Error.prototype.message` is `""` (the reference has no such property).
 
-Not yet: closures (a reference to an enclosing function's binding is
-reported as unsupported rather than mis-resolved as a global), a global
-object (top-level and sloppy-call `this` are undefined), accessors, `return`
-and `break` through a `finally`, the remaining builtins, and a collector.
+Not yet: per-iteration `let` bindings in loops (a closure made in a loop
+sees one binding), a global object (top-level and sloppy-call `this` are
+undefined), accessors, `return` and `break` through a `finally`, the
+remaining builtins, and a collector.
 
 ```
 $ ./z/oracle.sh

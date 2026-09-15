@@ -160,6 +160,12 @@ export enum Op {
   storeGlobalStrict,
   iterCloseQuiet,
   jmpIfNotGenReturn,
+  // Beyond the reference's table. Captured bindings live in environment
+  // cells addressed by slot, where the reference stores them in property
+  // bags by name.
+  newEnv,          // bc = slot count: the frame's environment becomes a new one chained to the old.
+  loadEnvSlot,     // a = dst, b = hops outward, c = slot.
+  storeEnvSlot,    // a = src, b = hops outward, c = slot.
 }
 
 export struct Inst {
@@ -357,6 +363,9 @@ export function opCode(op: Op): i32 {
     storeGlobalStrict => 142;
     iterCloseQuiet => 143;
     jmpIfNotGenReturn => 144;
+    newEnv => 145;
+    loadEnvSlot => 146;
+    storeEnvSlot => 147;
   };
 }
 

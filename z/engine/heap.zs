@@ -34,6 +34,9 @@ export const TAG_ACCESSOR: u8 = 7;
 export const TAG_PROMISE: u8 = 8;
 export const TAG_REGEXP: u8 = 9;
 
+// Beyond the reference's tags: an environment is its own cell here, where
+// the reference keeps captured bindings in a property bag.
+export const TAG_ENV: u8 = 200;
 // Reserved for the unallocatable handle 0.
 export const TAG_RESERVED: u8 = 255;
 
@@ -277,6 +280,35 @@ export struct Heap {
       index = index + 1;
     }
     this.headers[usize(handle)].payload = length;
+  }
+
+  // --- Closures and environments ---
+
+  // An environment: one slot per captured binding, `link` the enclosing
+  // environment (0 at the outermost).
+  function allocateEnv(inout this, parent: u32, slotCount: u32): u32 {
+    const handle = this.allocate(TAG_ENV, slotCount);
+    this.headers[usize(handle)].link = parent;
+    return handle;
+  }
+
+  function isEnv(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_ENV;
+  }
+
+  // A closure: a function index (`payload`, as for a plain function cell)
+  // with the environment it was created in (`link`). Slot 0 holds the
+  // `this` an arrow captured; slot 1 its `prototype` object once created.
+  function allocateClosure(inout this, functionIndex: u32, env: u32, capturedThis: Value): u32 {
+    const handle = this.allocate(TAG_CLOSURE, 2);
+    this.headers[usize(handle)].payload = functionIndex;
+    this.headers[usize(handle)].link = env;
+    this.setSlot(handle, 0, capturedThis);
+    return handle;
+  }
+
+  function isClosure(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_CLOSURE;
   }
 
   // --- Host functions ---

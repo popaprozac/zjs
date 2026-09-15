@@ -9,7 +9,7 @@
 
 import { expect } from "std/test";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV } from "./heap.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
@@ -34,6 +34,12 @@ struct Frame {
   // For a constructor call, the object under construction: it is the
   // result unless the body returns an object of its own.
   constructThis: Value;
+  // The environment the frame's captured bindings resolve against: the
+  // closure's at entry, then a fresh one chained to it if the function
+  // has captured bindings of its own. 0 for none.
+  env: u32;
+  // The function or closure value the frame was called through.
+  callee: Value;
 }
 
 // A live try handler: the frame it belongs to, where its catch block
@@ -233,15 +239,24 @@ export struct Runtime {
   function isObjectLike(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0) return false;
     const tag = this.heap.tagOf(asCell(value));
-    return tag == TAG_OBJECT || tag == TAG_ARRAY || tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION;
+    return tag == TAG_OBJECT || tag == TAG_ARRAY || tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
   }
 
   function isHostFunctionValue(value: Value): boolean {
     return isCell(value) && asCell(value) != 0 && this.heap.isHostFunction(asCell(value));
   }
 
+  function isClosureValue(value: Value): boolean {
+    return isCell(value) && asCell(value) != 0 && this.heap.isClosure(asCell(value));
+  }
+
+  // A value with compiled code behind it: a plain function or a closure.
+  function isCompiledCallable(value: Value): boolean {
+    return this.isFunctionValue(value) || this.isClosureValue(value);
+  }
+
   function isCallable(value: Value): boolean {
-    return this.isFunctionValue(value) || this.isHostFunctionValue(value);
+    return this.isCompiledCallable(value) || this.isHostFunctionValue(value);
   }
 
   function atomOf(inout this, in text: String): u32 {
@@ -340,13 +355,23 @@ export struct Runtime {
   // A function's `prototype` object, created on first use with a
   // `constructor` back-reference.
   function prototypeOf(inout this, fn: u32): u32 {
-    const existing = this.heap.linkOf(fn);
-    if (existing != 0) return existing;
+    const closure = this.heap.isClosure(fn);
+    if (closure) {
+      const held = this.heap.slot(fn, 1);
+      if (isCell(held) && asCell(held) != 0) return asCell(held);
+    } else {
+      const existing = this.heap.linkOf(fn);
+      if (existing != 0) return existing;
+    }
     const objectProto = this.objectProto;
     const created = this.heap.allocateObject(objectProto);
     const atomConstructor = this.atomConstructor;
     this.heap.objectSet(created, atomConstructor, cellValue(fn));
-    this.heap.setLink(fn, created);
+    if (closure) {
+      this.heap.setSlot(fn, 1, cellValue(created));
+    } else {
+      this.heap.setLink(fn, created);
+    }
     return created;
   }
 
@@ -400,7 +425,7 @@ export struct Runtime {
       const stringProto = this.stringProto;
       return this.objectGet(stringProto, atom);
     }
-    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION) {
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
       if (atom == this.atomPrototype) return cellValue(this.prototypeOf(handle));
       const functionProto = this.functionProto;
@@ -438,6 +463,11 @@ export struct Runtime {
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION) {
       const atom = this.propertyKey(key);
       if (atom == this.atomPrototype && this.isObjectLike(value)) this.heap.setLink(handle, asCell(value));
+      return;
+    }
+    if (tag == TAG_CLOSURE) {
+      const atom = this.propertyKey(key);
+      if (atom == this.atomPrototype && this.isObjectLike(value)) this.heap.setSlot(handle, 1, value);
       return;
     }
   }
@@ -702,6 +732,7 @@ export struct Runtime {
     const frame = Frame({
       functionIndex: functionIndex, ip: 0, regsBase: base, regCount: regCount, returnDst: returnDst,
       savedThis: this.hostThis, tryDepthAtEntry: this.tryDepth, constructThis: undefinedValue(),
+      env: 0, callee: undefinedValue(),
     });
     if (usize(this.frameCount) < this.frames.length) {
       this.frames[usize(this.frameCount)] = frame;
@@ -718,6 +749,25 @@ export struct Runtime {
     this.hostThis = frame.savedThis;
     if (this.tryDepth > frame.tryDepthAtEntry) this.tryDepth = frame.tryDepthAtEntry;
     return frame;
+  }
+
+  // Push a call through a function or closure value: arguments from the
+  // caller's registers, `this` bound (an arrow's is the one it captured),
+  // the closure's environment installed, the constructed object (if any)
+  // recorded.
+  function enterCallable(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): void {
+    const handle = asCell(callee);
+    const target = this.heap.functionIndex(handle);
+    let env: u32 = 0;
+    let boundThis = thisValue;
+    if (this.heap.isClosure(handle)) {
+      env = this.heap.linkOf(handle);
+      if (this.functions[usize(target)].isArrow) boundThis = this.heap.slot(handle, 0);
+    }
+    this.enterFunction(target, returnDst, boundThis, argsBase, argc, constructThis);
+    const top = usize(this.frameCount - 1);
+    this.frames[top].env = env;
+    this.frames[top].callee = callee;
   }
 
   // Push a call to a compiled function: arguments from the caller's
@@ -972,10 +1022,9 @@ export struct Runtime {
           const callee = this.reg(base, inst.b);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 1;
-          if (this.isFunctionValue(callee)) {
+          if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
-            const target = this.heap.functionIndex(asCell(callee));
-            this.enterFunction(target, inst.a, undefinedValue(), argsBase, argc, undefinedValue());
+            this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue());
             returned = true;
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
@@ -997,10 +1046,9 @@ export struct Runtime {
           const receiver = this.reg(base, inst.b + 1);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 2;
-          if (this.isFunctionValue(callee)) {
+          if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
-            const target = this.heap.functionIndex(asCell(callee));
-            this.enterFunction(target, inst.a, receiver, argsBase, argc, undefinedValue());
+            this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
             returned = true;
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
@@ -1023,12 +1071,11 @@ export struct Runtime {
           const callee = this.reg(base, inst.b);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 1;
-          if (this.isFunctionValue(callee)) {
+          if (this.isCompiledCallable(callee)) {
             const proto = this.prototypeOf(asCell(callee));
             const created = cellValue(this.heap.allocateObject(proto));
             this.frames[frameIndex].ip = ip;
-            const target = this.heap.functionIndex(asCell(callee));
-            this.enterFunction(target, inst.a, created, argsBase, argc, created);
+            this.enterCallable(callee, inst.a, created, argsBase, argc, created);
             returned = true;
           } else if (this.isHostFunctionValue(callee)) {
             const proto = this.prototypeOf(asCell(callee));
@@ -1164,6 +1211,40 @@ export struct Runtime {
           this.pushTry(target, inst.a);
         } else if (op == Op.leaveTry) {
           this.tryDepth = this.tryDepth - 1;
+        } else if (op == Op.newEnv) {
+          const parent = this.frames[frameIndex].env;
+          const created = this.heap.allocateEnv(parent, u32(bcU16(inst)));
+          this.frames[frameIndex].env = created;
+        } else if (op == Op.loadEnvSlot) {
+          let env = this.frames[frameIndex].env;
+          let hops = u32(inst.b);
+          while (hops > 0) {
+            env = this.heap.linkOf(env);
+            hops = hops - 1;
+          }
+          const value = this.heap.slot(env, u32(inst.c));
+          this.setReg(base, inst.a, value);
+        } else if (op == Op.storeEnvSlot) {
+          let env = this.frames[frameIndex].env;
+          let hops = u32(inst.b);
+          while (hops > 0) {
+            env = this.heap.linkOf(env);
+            hops = hops - 1;
+          }
+          const value = this.reg(base, inst.a);
+          this.heap.setSlot(env, u32(inst.c), value);
+        } else if (op == Op.makeClosure) {
+          // The function in b becomes a closure over the frame's current
+          // environment; an arrow also keeps the frame's `this`.
+          const fn = this.reg(base, inst.b);
+          const env = this.frames[frameIndex].env;
+          const capturedThis = this.hostThis;
+          const wrapped = this.heap.functionIndex(asCell(fn));
+          const closure = this.heap.allocateClosure(wrapped, env, capturedThis);
+          this.setReg(base, inst.a, cellValue(closure));
+        } else if (op == Op.loadCallee) {
+          const callee = this.frames[frameIndex].callee;
+          this.setReg(base, inst.a, callee);
         } else {
           // Not yet implemented: an internal error, surfaced as a throw.
           const message: String = "unsupported operation";
