@@ -591,7 +591,8 @@ without a native detour.
 
 ## G27 — A parameter named `self` collides with the lowered receiver
 
-**Status:** `proposed` — **compiler bug** · **Size:** small · **Priority:** medium
+**Status:** `implemented` — z-lang `93611fe5` (pin `93611fe5`); probe `self-parameter-name` `LANDED`. Not consumer-verified: the engine's one such parameter was renamed to `callee`, which is the better name, and no engine site wants `self`. The probe is the evidence; a real use will close it.
+**Size:** small · **Priority:** medium
 **Confirmed:** z-lang `3f96e759` · **Blocks:** no (renamed)
 **Found:** Phase 7, the builtins' host-function type.
 

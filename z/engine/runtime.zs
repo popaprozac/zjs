@@ -3233,15 +3233,16 @@ export struct Runtime {
             this.completeGenerator(frame.generator);
             value = this.createIterResult(value, true);
           }
-          // A safe point: the return value is in the caller's register
-          // once written below; keep it rooted through the collection.
+          // A constructor call yields its object unless it returned one.
+          if (this.isObjectLike(frame.constructThis) && !this.isObjectLike(value)) value = frame.constructThis;
+          // A safe point: the frame is gone, so the value it hands back is
+          // parked in the caller's next register through the collection.
           if (this.heap.shouldCollect()) {
             this.setReg(frame.regsBase, 0, value);
             this.regTop = frame.regsBase + 1;
             this.collectGarbage();
             this.regTop = frame.regsBase;
           }
-          if (this.isObjectLike(frame.constructThis) && !this.isObjectLike(value)) value = frame.constructThis;
           if (this.frameCount <= entryDepth) {
             result = value;
           } else {
