@@ -7,7 +7,7 @@ import { tokenize } from "../../engine/lexer.zs";
 import { kindCode } from "../../engine/token.zs";
 
 function dump(in path: String): i32 throws String {
-  const source = try fs.readText(path);
+  const source = try fs.readBytes(path);
   const tokens = tokenize(move source);
   let index: usize = 0;
   while (index < tokens.length) {

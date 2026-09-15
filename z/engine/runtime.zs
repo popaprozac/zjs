@@ -9,6 +9,7 @@
 
 import { expect } from "std/test";
 import { thread } from "std/thread";
+import math from "std/math";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY } from "./heap.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
@@ -17,7 +18,6 @@ import stdio from "stdio.h";
 import string from "string.h";
 
 struct Global {
-  name: String;
   value: Value;
   defined: boolean;
   // The name interned, for lookups through the global object.
@@ -264,20 +264,26 @@ export struct Runtime {
 
   // A global that a hoisted declaration defines before any statement runs.
   function defineGlobalSlot(inout this, name: String): u16 {
-    const slot = this.globalSlot(move name);
+    return this.defineGlobalSlotBytes(bytesOf(in name));
+  }
+
+  function defineGlobalSlotBytes(inout this, bytes: Array<u8>): u16 {
+    const slot = this.globalSlotBytes(move bytes);
     this.globals[usize(slot)].defined = true;
     return slot;
   }
 
-  // Global slot for a name, allocating one on first sight. Linear for now.
   function globalSlot(inout this, name: String): u16 {
-    let index: usize = 0;
-    while (index < this.globals.length) {
-      if (this.globals[index].name == name) return u16(index);
-      index = index + 1;
-    }
-    const atom = this.internBytes(bytesOf(in name));
-    this.globals.push(Global({ name: move name, value: undefinedValue(), defined: false, atom: atom, attr: PROP_WRITABLE | PROP_ENUMERABLE }));
+    return this.globalSlotBytes(bytesOf(in name));
+  }
+
+  // Global slot for a name, allocating one on first sight. Names are
+  // interned; the slot is found by atom. Linear for now.
+  function globalSlotBytes(inout this, bytes: Array<u8>): u16 {
+    const atom = this.internBytes(move bytes);
+    const found = this.findGlobalByAtom(atom);
+    if (found >= 0) return u16(found);
+    this.globals.push(Global({ value: undefinedValue(), defined: false, atom: atom, attr: PROP_WRITABLE | PROP_ENUMERABLE }));
     return u16(this.globals.length - 1);
   }
 
@@ -2034,12 +2040,17 @@ export struct Runtime {
   // `length`, slot 2 `name`, slot 3 the property bag, slot 4 whether `new`
   // may be applied.
   function defineHostFunction(inout this, fn: HostFunction, bound: Value, length: u32, in name: String): u32 {
+    return this.defineHostFunctionBytes(fn, bound, length, bytesOf(in name));
+  }
+
+  // The name as engine bytes, for names assembled from JavaScript strings.
+  function defineHostFunctionBytes(inout this, fn: HostFunction, bound: Value, length: u32, nameBytes: Array<u8>): u32 {
     this.hostTable.push(fn);
     const id = u32(this.hostTable.length - 1);
     const handle = this.heap.allocateHostFunction(id);
     this.heap.setSlot(handle, 0, bound);
     this.heap.setSlot(handle, 1, int32Value(i32(length)));
-    const nameValue = this.internText(in name);
+    const nameValue = this.internValue(move nameBytes);
     this.heap.setSlot(handle, 2, nameValue);
     this.heap.setSlot(handle, 4, booleanValue(false));
     return handle;
@@ -2909,10 +2920,10 @@ export struct Runtime {
               const operand3 = this.heap.slot(globalObject, u32(own));
               this.setReg(base, inst.a, operand3);
             } else {
-              const nameLength = this.globals[slot].name.byteLength;
-              const name = this.globals[slot].name.copyBytes(0, nameLength);
-              const text: String = `${name} is not defined`;
-              thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in text));
+              let message = this.heap.stringBytes(atom);
+              const notDefined: String = " is not defined";
+              appendBytes(inout message, bytesOf(in notDefined));
+              thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
               throwing = true;
             }
           } else {
@@ -3741,8 +3752,8 @@ export function shiftLeft32(bits: u32, count: u32): u32 = raw c {
 
 // Z's checked conversion from f64 traps on a fractional value, so every
 // place that narrows a double to an integer truncates first and compares.
-export function truncateDouble(value: f64): f64 = raw c {
-  return __builtin_trunc(value);
+export function truncateDouble(value: f64): f64 {
+  return math.trunc(value);
 }
 
 export function isIntegralDouble(value: f64): boolean {
@@ -3971,27 +3982,88 @@ function nativeReadInt(buffer: usize): i32 = raw c {
 // A Z String from a JavaScript string's bytes, by way of a NUL-terminated
 // native buffer: Z has no direct construction from bytes, and the copy
 // stops at an embedded NUL.
-// The bytes as a String. Engine text is bytes, not necessarily UTF-8; a
-// malformed sequence is kept as-is through a native buffer rather than
-// rejected, since this only feeds diagnostics and source text.
-export function bytesToString(in bytes: Array<u8>): String {
-  const decoded = attempt String.fromBytes(bytes);
-  return match (decoded) {
-    success(text) => text;
-    failure(error) => bytesToStringLossy(in bytes);
-  };
+// --- Text for diagnostics ---
+//
+// Engine strings are bytes, and not necessarily UTF-8: JavaScript source
+// and string values may hold any byte sequence. They never become Z
+// Strings on the way into the engine (source is parsed as bytes) or
+// inside it (values are byte arrays). The one direction that needs a Z
+// String is display -- a message for the host, a log line -- and that
+// decoding replaces each maximal invalid subpart with U+FFFD, as the
+// WHATWG decoder does, so the result always satisfies String's
+// valid-UTF-8 invariant and never stands in for the original bytes.
+
+const REPLACEMENT_LEAD: u8 = 0xEF;
+const REPLACEMENT_MID: u8 = 0xBF;
+const REPLACEMENT_TAIL: u8 = 0xBD;
+
+// The length of the well-formed UTF-8 sequence starting at `index`, or
+// the length of the maximal invalid subpart there, negated (-1 to -3).
+function utf8SequenceLength(in bytes: Array<u8>, index: usize): i32 {
+  const count = bytes.length;
+  const lead = bytes[index];
+  if (lead < 0x80) return 1;
+  let needed: usize = 0;
+  let low: u8 = 0x80;
+  let high: u8 = 0xBF;
+  if (lead >= 0xC2 && lead <= 0xDF) {
+    needed = 1;
+  } else if (lead >= 0xE0 && lead <= 0xEF) {
+    needed = 2;
+    if (lead == 0xE0) low = 0xA0;
+    if (lead == 0xED) high = 0x9F;
+  } else if (lead >= 0xF0 && lead <= 0xF4) {
+    needed = 3;
+    if (lead == 0xF0) low = 0x90;
+    if (lead == 0xF4) high = 0x8F;
+  } else {
+    return -1;
+  }
+  let seen: usize = 0;
+  while (seen < needed) {
+    const at = index + 1 + seen;
+    if (at >= count) return -i32(seen + 1);
+    const byte = bytes[at];
+    if (byte < low || byte > high) return -i32(seen + 1);
+    low = 0x80;
+    high = 0xBF;
+    seen = seen + 1;
+  }
+  return i32(needed + 1);
 }
 
-function bytesToStringLossy(in bytes: Array<u8>): String {
-  const buffer = nativeAlloc(bytes.length + 1);
+// The bytes as text for display: well-formed sequences copied, each
+// maximal invalid subpart replaced with U+FFFD. Embedded NULs and
+// characters outside the BMP pass through; a lone surrogate encoded as
+// bytes is invalid and replaced.
+export function bytesToDisplayString(in bytes: Array<u8>): String {
+  let cleaned = Array<u8>();
+  const count = bytes.length;
   let index: usize = 0;
-  while (index < bytes.length) {
-    nativeStoreByte(buffer, index, bytes[index]);
-    index = index + 1;
+  while (index < count) {
+    const length = utf8SequenceLength(in bytes, index);
+    if (length > 0) {
+      let copied: usize = 0;
+      while (copied < usize(length)) {
+        cleaned.push(bytes[index + copied]);
+        copied = copied + 1;
+      }
+      index = index + usize(length);
+    } else {
+      cleaned.push(REPLACEMENT_LEAD);
+      cleaned.push(REPLACEMENT_MID);
+      cleaned.push(REPLACEMENT_TAIL);
+      index = index + usize(0 - length);
+    }
   }
-  const text = bufferToString(buffer);
-  nativeFree(buffer);
-  return text;
+  const decoded = attempt String.fromBytes(cleaned);
+  const marker: String = "�";
+  return match (decoded) {
+    success(text) => text;
+    // Unreachable once the validator above agrees with the library's;
+    // kept so a disagreement shows up as marked text, never as an abort.
+    failure(error) => marker;
+  };
 }
 
 function bufferToString(buffer: usize): String {
@@ -4067,4 +4139,65 @@ test "string to number follows the reference" {
   expect(infinite > 1e308).toEqual(true);
   const lowercase = numberOf("inf");
   expect(lowercase != lowercase).toEqual(true);
+}
+
+function displayOf(bytes: Array<u8>): String {
+  return bytesToDisplayString(in bytes);
+}
+
+test "display decoding keeps well-formed text, NULs, and non-BMP characters" {
+  let plain = Array<u8>();
+  plain.push(0x61);
+  plain.push(0);
+  plain.push(0x62);
+  const withNul = displayOf(move plain);
+  expect(withNul.byteLength).toEqual(3);
+  expect(withNul.byteAt(1)).toEqual(0);
+  let emoji = Array<u8>();
+  emoji.push(0xF0);
+  emoji.push(0x9F);
+  emoji.push(0x98);
+  emoji.push(0x80);
+  const grin = displayOf(move emoji);
+  expect(grin.byteLength).toEqual(4);
+  expect(grin.byteAt(0)).toEqual(0xF0);
+  let accented = Array<u8>();
+  accented.push(0xC3);
+  accented.push(0xA9);
+  const acute = displayOf(move accented);
+  expect(acute.byteLength).toEqual(2);
+}
+
+test "display decoding replaces each maximal invalid subpart with U+FFFD" {
+  let stray = Array<u8>();
+  stray.push(0x61);
+  stray.push(0xFF);
+  stray.push(0x62);
+  const replaced = displayOf(move stray);
+  expect(replaced.byteLength).toEqual(5);
+  expect(replaced.byteAt(1)).toEqual(0xEF);
+  expect(replaced.byteAt(4)).toEqual(0x62);
+  let truncated = Array<u8>();
+  truncated.push(0xE2);
+  truncated.push(0x82);
+  truncated.push(0x41);
+  const cut = displayOf(move truncated);
+  expect(cut.byteLength).toEqual(4);
+  expect(cut.byteAt(3)).toEqual(0x41);
+  let surrogate = Array<u8>();
+  surrogate.push(0xED);
+  surrogate.push(0xA0);
+  surrogate.push(0x80);
+  const lone = displayOf(move surrogate);
+  expect(lone.byteLength).toEqual(9);
+  let overlong = Array<u8>();
+  overlong.push(0xC0);
+  overlong.push(0x80);
+  const doubled = displayOf(move overlong);
+  expect(doubled.byteLength).toEqual(6);
+  let unfinished = Array<u8>();
+  unfinished.push(0xF0);
+  unfinished.push(0x9F);
+  const short = displayOf(move unfinished);
+  expect(short.byteLength).toEqual(3);
 }

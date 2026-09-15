@@ -52,7 +52,7 @@ void zjs_free_context(ZjsContext *ctx) {
 }
 
 ZjsValue zjs_eval(ZjsContext *ctx, const char *source) {
-  zjs_z_eval((uintptr_t)ctx, source);
+  zjs_z_eval((uintptr_t)ctx, (uintptr_t)source);
   ZjsValue undefined;
   undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
   return undefined;

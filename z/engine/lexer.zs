@@ -18,6 +18,7 @@
 import { expect } from "std/test";
 import { TextBuffer } from "std/text";
 import { TokenKind, Token, tokenEof, tokenInvalid, expectRegexAfter } from "./token.zs";
+import { bytesOf, sliceBytes } from "./heap.zs";
 
 // --- Bytes ------------------------------------------------------------------
 
@@ -135,17 +136,17 @@ function isIdPart(c: u8): boolean {
 //
 // Compared in place against the source bytes: no allocation per identifier.
 
-function matchesKeyword(in source: String, start: usize, length: usize, keyword: String): boolean {
+function matchesKeyword(in source: Array<u8>, start: usize, length: usize, keyword: String): boolean {
   if (length != keyword.byteLength) return false;
   let index: usize = 0;
   while (index < length) {
-    if (source.byteAt(start + index) != keyword.byteAt(index)) return false;
+    if (source[start + index] != keyword.byteAt(index)) return false;
     index = index + 1;
   }
   return true;
 }
 
-function lookupKeyword(in source: String, start: usize, length: usize): TokenKind {
+function lookupKeyword(in source: Array<u8>, start: usize, length: usize): TokenKind {
   if (matchesKeyword(in source, start, length, "var")) return TokenKind.kwVar;
   if (matchesKeyword(in source, start, length, "let")) return TokenKind.kwLet;
   if (matchesKeyword(in source, start, length, "const")) return TokenKind.kwConst;
@@ -210,7 +211,7 @@ function idByteIndex(c: u8): i32 {
 // --- Lexer ------------------------------------------------------------------
 
 export struct Lexer {
-  source: String;
+  source: Array<u8>;
   pos: usize;
   length: usize;
   line: u32;
@@ -227,13 +228,13 @@ export struct Lexer {
 
   function peek(): u8 {
     if (this.pos >= this.length) return B_NUL;
-    return this.source.byteAt(this.pos);
+    return this.source[this.pos];
   }
 
   function peekAt(offset: usize): u8 {
     const at = this.pos + offset;
     if (at >= this.length) return B_NUL;
-    return this.source.byteAt(at);
+    return this.source[at];
   }
 
   function advance(inout this): u8 {
@@ -249,9 +250,9 @@ export struct Lexer {
     return true;
   }
 
-  // The bytes of one token, as an owned String.
-  function text(token: Token): String {
-    return this.source.copyBytes(usize(token.start), usize(token.start + token.length));
+  // The bytes of one token.
+  function text(token: Token): Array<u8> {
+    return sliceBytes(in this.source, usize(token.start), usize(token.start + token.length));
   }
 
   // --- Whitespace and comments ---
@@ -374,14 +375,14 @@ export struct Lexer {
     let j: u32 = 0;
     while (j < length) {
       if (decoded.length >= 16) return TokenKind.identifier;
-      const c = this.source.byteAt(usize(start + j));
-      if (c == B_BACKSLASH && j + 1 < length && this.source.byteAt(usize(start + j + 1)) == B_u) {
+      const c = this.source[usize(start + j)];
+      if (c == B_BACKSLASH && j + 1 < length && this.source[usize(start + j + 1)] == B_u) {
         j = j + 2;
         let cp: u32 = 0;
-        if (j < length && this.source.byteAt(usize(start + j)) == B_LBRACE) {
+        if (j < length && this.source[usize(start + j)] == B_LBRACE) {
           j = j + 1;
-          while (j < length && this.source.byteAt(usize(start + j)) != B_RBRACE) {
-            const d = hexDigitValue(this.source.byteAt(usize(start + j)));
+          while (j < length && this.source[usize(start + j)] != B_RBRACE) {
+            const d = hexDigitValue(this.source[usize(start + j)]);
             if (d < 0) return TokenKind.identifier;
             cp = cp.wrappingMultiply(16) | u32(d);
             j = j + 1;
@@ -390,7 +391,7 @@ export struct Lexer {
         } else {
           let n: u32 = 0;
           while (n < 4 && j < length) {
-            const d = hexDigitValue(this.source.byteAt(usize(start + j)));
+            const d = hexDigitValue(this.source[usize(start + j)]);
             if (d < 0) return TokenKind.identifier;
             cp = cp.wrappingMultiply(16) | u32(d);
             j = j + 1;
@@ -418,7 +419,9 @@ export struct Lexer {
     // Z rejects an `in` borrow of `text` alongside a read of `text.byteLength`
     // in the same call ("overlapping in and value uses"), so bind the length.
     const textLength = text.byteLength;
-    return lookupKeyword(in text, 0, textLength);
+    const textBytes = bytesOf(in text);
+    const byteCount = textBytes.length;
+    return lookupKeyword(in textBytes, 0, byteCount);
   }
 
   // Consume `\uXXXX` or `\u{...}` after checking the code point is a valid
@@ -877,8 +880,8 @@ export struct Lexer {
   }
 }
 
-export function createLexer(source: String): Lexer {
-  const length = source.byteLength;
+export function createLexer(source: Array<u8>): Lexer {
+  const length = source.length;
   return Lexer({
     source: move source,
     pos: 0,
@@ -892,7 +895,7 @@ export function createLexer(source: String): Lexer {
 }
 
 // Eager form: every token including the trailing Eof.
-export function tokenize(source: String): Array<Token> {
+export function tokenize(source: Array<u8>): Array<Token> {
   let lexer = createLexer(move source);
   let tokens = Array<Token>();
   while (true) {
@@ -904,10 +907,15 @@ export function tokenize(source: String): Array<Token> {
   return tokens;
 }
 
+// Source given as text, for tests and tools that hold a String.
+export function tokenizeText(source: String): Array<Token> {
+  return tokenize(bytesOf(in source));
+}
+
 // --- Tests ----------------------------------------------------------------
 
 function kinds(source: String): Array<TokenKind> {
-  const tokens = tokenize(move source);
+  const tokens = tokenizeText(move source);
   let result = Array<TokenKind>();
   let index: usize = 0;
   while (index < tokens.length) {
@@ -932,15 +940,16 @@ test "keywords, identifiers, numbers, and punctuators" {
 }
 
 test "token spans slice the source" {
-  let lexer = createLexer("let  answer = 42");
+  const sample: String = "let  answer = 42";
+  let lexer = createLexer(bytesOf(in sample));
   const first = lexer.nextToken();
   const second = lexer.nextToken();
-  // Expectation operands are borrowed for the statement, so an owned String
-  // temporary must be bound first (Z0901).
   const firstText = lexer.text(first);
   const secondText = lexer.text(second);
-  expect(firstText).toEqual("let");
-  expect(secondText).toEqual("answer");
+  expect(firstText.length).toEqual(3);
+  expect(firstText[0]).toEqual(0x6C);
+  expect(secondText.length).toEqual(6);
+  expect(secondText[5]).toEqual(0x72);
   const five: u32 = 5;
   expect(second.start).toEqual(five);
 }
@@ -1002,7 +1011,7 @@ test "comments and unusual whitespace are trivia" {
   expect(between[2] == TokenKind.identifier).toEqual(true);
   expect(between[3] == TokenKind.eof).toEqual(true);
 
-  const glued = tokenize("b c");
+  const glued = tokenizeText("b c");
   const four: u32 = 4;
   expect(glued[0].kind == TokenKind.identifier).toEqual(true);
   expect(glued[0].length).toEqual(four);

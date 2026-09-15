@@ -1,7 +1,7 @@
 // Global functions: eval and the number-parsing conveniences.
 import { Value, undefinedValue, booleanValue, doubleValue, int32Value, cellValue, asCell, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, ERROR_KIND_SYNTAX, bytesToString, stringToNumber, toNumber, toInt32, isIntegralDouble } from "../runtime.zs";
+import { Runtime, ERROR_KIND_SYNTAX, stringToNumber, toNumber, toInt32, isIntegralDouble } from "../runtime.zs";
 import { parseProgram } from "../parser.zs";
 import { compileProgram } from "../compiler.zs";
 
@@ -11,8 +11,7 @@ import { compileProgram } from "../compiler.zs";
 function evalSource(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const first = runtime.argument(argsBase, argc, 0);
   if (!runtime.isStringValue(first)) return first;
-  const bytes = runtime.heap.stringBytes(asCell(first));
-  const source = bytesToString(in bytes);
+  const source = runtime.heap.stringBytes(asCell(first));
   const parsed = parseProgram(move source, false);
   if (parsed.hadError) {
     const message: String = "parse error";

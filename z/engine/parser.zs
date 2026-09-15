@@ -15,6 +15,7 @@ import { TextBuffer } from "std/text";
 import stdlib from "stdlib.h";
 import { TokenKind, Token, tokenEof } from "./token.zs";
 import { tokenize } from "./lexer.zs";
+import { bytesOf, sliceBytes } from "./heap.zs";
 import { NodeKind, AstNode, Ast, NO_NODE, createAst } from "./ast.zs";
 
 // --- Bytes and text -------------------------------------------------------
@@ -100,7 +101,7 @@ export struct ParseResult {
 // --- Parser ---------------------------------------------------------------
 
 export struct Parser {
-  source: String;
+  source: Array<u8>;
   // The token stream, plus the window of it currently being parsed. A
   // template substitution is re-tokenized and appended, and the window
   // moved over it, rather than swapping the array, so the stream is
@@ -125,7 +126,7 @@ export struct Parser {
   // --- Cursor ---
 
   function peek(): Token {
-    if (this.pos >= this.tokenLimit) return tokenEof(u32(this.source.byteLength));
+    if (this.pos >= this.tokenLimit) return tokenEof(u32(this.source.length));
     return this.tokens[this.pos];
   }
 
@@ -140,7 +141,7 @@ export struct Parser {
 
   function peekAt(offset: usize): Token {
     const at = this.pos + offset;
-    if (at >= this.tokenLimit) return tokenEof(u32(this.source.byteLength));
+    if (at >= this.tokenLimit) return tokenEof(u32(this.source.length));
     return this.tokens[at];
   }
 
@@ -174,7 +175,7 @@ export struct Parser {
   function hasNewlineBetween(a: u32, b: u32): boolean {
     let index = usize(a);
     while (index < usize(b)) {
-      const c = this.source.byteAt(index);
+      const c = this.source[index];
       if (c == B_LF || c == B_CR) return true;
       index = index + 1;
     }
@@ -186,7 +187,7 @@ export struct Parser {
     if (usize(length) != text.byteLength) return false;
     let index: usize = 0;
     while (index < usize(length)) {
-      if (this.source.byteAt(usize(start) + index) != text.byteAt(index)) return false;
+      if (this.source[usize(start) + index] != text.byteAt(index)) return false;
       index = index + 1;
     }
     return true;
@@ -196,25 +197,30 @@ export struct Parser {
   // `\uXXXX` and `\u{...}` decode on the fly, so an escaped reserved word
   // still matches.
   function identMatches(start: u32, length: u32, target: String): boolean {
+    const bytes = bytesOf(in target);
+    return this.identMatchesBytes(start, length, in bytes);
+  }
+
+  function identMatchesBytes(start: u32, length: u32, in target: Array<u8>): boolean {
     let i: u32 = 0;
     let ti: usize = 0;
-    const targetLength = target.byteLength;
+    const targetLength = target.length;
     while (i < length && ti < targetLength) {
-      const c = this.source.byteAt(usize(start + i));
+      const c = this.source[usize(start + i)];
       if (c == B_BACKSLASH) {
         if (i + 1 >= length) return false;
-        if (this.source.byteAt(usize(start + i + 1)) != B_u) return false;
+        if (this.source[usize(start + i + 1)] != B_u) return false;
         let cp: u32 = 0;
-        if (i + 2 < length && this.source.byteAt(usize(start + i + 2)) == B_LBRACE) {
+        if (i + 2 < length && this.source[usize(start + i + 2)] == B_LBRACE) {
           let j: u32 = i + 3;
           let acc: u32 = 0;
-          while (j < length && this.source.byteAt(usize(start + j)) != B_RBRACE) {
-            const dv = hexValue(this.source.byteAt(usize(start + j)));
+          while (j < length && this.source[usize(start + j)] != B_RBRACE) {
+            const dv = hexValue(this.source[usize(start + j)]);
             if (dv < 0) return false;
             acc = acc.wrappingMultiply(16) | u32(dv);
             j = j + 1;
           }
-          if (j >= length || this.source.byteAt(usize(start + j)) != B_RBRACE) return false;
+          if (j >= length || this.source[usize(start + j)] != B_RBRACE) return false;
           cp = acc;
           i = j + 1;
         } else {
@@ -222,7 +228,7 @@ export struct Parser {
           let acc: u32 = 0;
           let k: u32 = 0;
           while (k < 4) {
-            const dv = hexValue(this.source.byteAt(usize(start + i + 2 + k)));
+            const dv = hexValue(this.source[usize(start + i + 2 + k)]);
             if (dv < 0) return false;
             acc = acc.wrappingMultiply(16) | u32(dv);
             k = k + 1;
@@ -231,10 +237,10 @@ export struct Parser {
           i = i + 6;
         }
         if (cp > 127) return false;
-        if (u8(cp) != target.byteAt(ti)) return false;
+        if (u8(cp) != target[ti]) return false;
         ti = ti + 1;
       } else {
-        if (c != target.byteAt(ti)) return false;
+        if (c != target[ti]) return false;
         i = i + 1;
         ti = ti + 1;
       }
@@ -404,8 +410,8 @@ export struct Parser {
   // The reference compares a label against an enclosing label's source
   // slice with ident_source_matches, decoding escapes on the left only.
   function labelsEqual(aStart: u32, aLength: u32, bStart: u32, bLength: u32): boolean {
-    const target = this.source.copyBytes(usize(bStart), usize(bStart + bLength));
-    return this.identMatches(aStart, aLength, target);
+    const target = sliceBytes(in this.source, usize(bStart), usize(bStart + bLength));
+    return this.identMatchesBytes(aStart, aLength, in target);
   }
 
   function parseBlock(inout this): u32 {
@@ -1328,7 +1334,7 @@ export struct Parser {
     if (aLength != bLength) return false;
     let index: u32 = 0;
     while (index < aLength) {
-      if (this.source.byteAt(usize(aStart + index)) != this.source.byteAt(usize(bStart + index))) return false;
+      if (this.source[usize(aStart + index)] != this.source[usize(bStart + index)]) return false;
       index = index + 1;
     }
     return true;
@@ -1822,9 +1828,9 @@ export struct Parser {
   // A 12-byte string token spelling "use strict" in either quote.
   function isUseStrictSlice(start: u32, length: u32): boolean {
     if (length != 12) return false;
-    const quote = this.source.byteAt(usize(start));
+    const quote = this.source[usize(start)];
     if (quote != B_DQUOTE && quote != B_SQUOTE) return false;
-    if (this.source.byteAt(usize(start + 11)) != quote) return false;
+    if (this.source[usize(start + 11)] != quote) return false;
     return this.sliceEquals(start + 1, 10, "use strict");
   }
 
@@ -1868,7 +1874,7 @@ export struct Parser {
   }
 
   function peekAtIndex(index: usize): Token {
-    if (index >= this.tokenLimit) return tokenEof(u32(this.source.byteLength));
+    if (index >= this.tokenLimit) return tokenEof(u32(this.source.length));
     return this.tokens[index];
   }
 
@@ -2615,19 +2621,19 @@ export struct Parser {
     let cur: u32 = bodyStart;
     let segStart: u32 = cur;
     while (cur < bodyEnd) {
-      const c = this.source.byteAt(usize(cur));
+      const c = this.source[usize(cur)];
       if (c == B_BACKSLASH) {
         cur = cur + 1;
         if (cur < bodyEnd) cur = cur + 1;
         continue;
       }
-      if (c == B_DOLLAR && cur + 1 < bodyEnd && this.source.byteAt(usize(cur + 1)) == B_LBRACE) {
+      if (c == B_DOLLAR && cur + 1 < bodyEnd && this.source[usize(cur + 1)] == B_LBRACE) {
         children.push(this.ast.newNode(NodeKind.templatePartExpr, segStart, cur));
         cur = cur + 2;
         const exprStart: u32 = cur;
         let depth: u32 = 1;
         while (cur < bodyEnd) {
-          const ec = this.source.byteAt(usize(cur));
+          const ec = this.source[usize(cur)];
           if (ec == B_BACKSLASH) {
             cur = cur + 1;
             if (cur < bodyEnd) cur = cur + 1;
@@ -2647,8 +2653,8 @@ export struct Parser {
           if (ec == B_DQUOTE || ec == B_SQUOTE) {
             const quote = ec;
             cur = cur + 1;
-            while (cur < bodyEnd && this.source.byteAt(usize(cur)) != quote) {
-              if (this.source.byteAt(usize(cur)) == B_BACKSLASH) {
+            while (cur < bodyEnd && this.source[usize(cur)] != quote) {
+              if (this.source[usize(cur)] == B_BACKSLASH) {
                 cur = cur + 1;
                 if (cur < bodyEnd) cur = cur + 1;
               } else {
@@ -2660,18 +2666,18 @@ export struct Parser {
           }
           if (ec == B_BACKTICK) {
             cur = cur + 1;
-            while (cur < bodyEnd && this.source.byteAt(usize(cur)) != B_BACKTICK) {
-              const tc = this.source.byteAt(usize(cur));
+            while (cur < bodyEnd && this.source[usize(cur)] != B_BACKTICK) {
+              const tc = this.source[usize(cur)];
               if (tc == B_BACKSLASH) {
                 cur = cur + 1;
                 if (cur < bodyEnd) cur = cur + 1;
                 continue;
               }
-              if (tc == B_DOLLAR && cur + 1 < bodyEnd && this.source.byteAt(usize(cur + 1)) == B_LBRACE) {
+              if (tc == B_DOLLAR && cur + 1 < bodyEnd && this.source[usize(cur + 1)] == B_LBRACE) {
                 cur = cur + 2;
                 let nested: u32 = 1;
                 while (cur < bodyEnd && nested > 0) {
-                  const nc = this.source.byteAt(usize(cur));
+                  const nc = this.source[usize(cur)];
                   if (nc == B_BACKSLASH) {
                     cur = cur + 1;
                     if (cur < bodyEnd) cur = cur + 1;
@@ -2718,7 +2724,7 @@ export struct Parser {
   // Re-tokenize [start, end) and parse it as an assignment expression with
   // absolute offsets, swapping the token stream in and back out.
   function parseTemplateExprSlice(inout this, start: u32, end: u32): u32 {
-    const sliceTokens = tokenize(this.source.copyBytes(usize(start), usize(end)));
+    const sliceTokens = tokenize(sliceBytes(in this.source, usize(start), usize(end)));
     const savedPos = this.pos;
     const savedLimit = this.tokenLimit;
     const savedNoIn = this.noIn;
@@ -2747,13 +2753,13 @@ export struct Parser {
 
   function pnIsPrivateName(nameStart: u32, nameLength: u32): boolean {
     if (nameLength == 0) return false;
-    return this.source.byteAt(usize(nameStart)) == B_HASH;
+    return this.source[usize(nameStart)] == B_HASH;
   }
 
   function pnSliceHasEscape(start: u32, length: u32): boolean {
     let i: u32 = 0;
     while (i < length) {
-      if (this.source.byteAt(usize(start + i)) == B_BACKSLASH) return true;
+      if (this.source[usize(start + i)] == B_BACKSLASH) return true;
       i = i + 1;
     }
     return false;
@@ -3570,7 +3576,7 @@ export struct Parser {
     let index: u32 = 0;
     while (index < length) {
       const at = usize(start + index);
-      if (this.source.byteAt(at) != B_UNDERSCORE) stripped.appendBytes(this.source, at, at + 1);
+      if (this.source[at] != B_UNDERSCORE) stripped.appendAscii(this.source[at]);
       index = index + 1;
     }
     const text = stripped.finish();
@@ -3608,9 +3614,15 @@ function parseIntPrefix(in text: String, begin: usize, limit: usize, base: u32):
 
 // --- Entry ----------------------------------------------------------------
 
-export function parseProgram(source: String, isModule: boolean): ParseResult {
-  const sourceLength = u32(source.byteLength);
-  const tokens = tokenize(source.copyBytes(0, source.byteLength));
+// Source given as text, for tests and tools that hold a String.
+export function parseText(source: String, isModule: boolean): ParseResult {
+  return parseProgram(bytesOf(in source), isModule);
+}
+
+export function parseProgram(source: Array<u8>, isModule: boolean): ParseResult {
+  const sourceLength = u32(source.length);
+  const byteCount = source.length;
+  const tokens = tokenize(sliceBytes(in source, 0, byteCount));
   const tokenCount = tokens.length;
   let parser = Parser({
     source: move source,
@@ -3657,7 +3669,7 @@ export function parseProgram(source: String, isModule: boolean): ParseResult {
 // --- Tests ----------------------------------------------------------------
 
 test "precedence builds the expected tree" {
-  const result = parseProgram("1 + 2 * 3;", false);
+  const result = parseText("1 + 2 * 3;", false);
   expect(result.hadError).toEqual(false);
   const program = result.parser.ast.node(result.root);
   const one: u32 = 1;
@@ -3671,7 +3683,7 @@ test "precedence builds the expected tree" {
 }
 
 test "number literals decode radix and separators" {
-  const result = parseProgram("0xFF; 0b1_0; 0o17; 1_000.5e1;", false);
+  const result = parseText("0xFF; 0b1_0; 0o17; 1_000.5e1;", false);
   expect(result.hadError).toEqual(false);
   expect(result.parser.ast.node(result.parser.ast.child(result.root, 0)).num).toEqual(255.0);
   expect(result.parser.ast.node(result.parser.ast.child(result.root, 1)).num).toEqual(2.0);
@@ -3680,7 +3692,7 @@ test "number literals decode radix and separators" {
 }
 
 test "a class with fields gains a synthesized constructor" {
-  const result = parseProgram("class C { x = 1; static y = 2; m() {} }", false);
+  const result = parseText("class C { x = 1; static y = 2; m() {} }", false);
   expect(result.hadError).toEqual(false);
   const classNode = result.parser.ast.node(result.parser.ast.child(result.root, 0));
   expect(classNode.kind == NodeKind.classDecl).toEqual(true);
@@ -3693,6 +3705,6 @@ test "a class with fields gains a synthesized constructor" {
 }
 
 test "a private name outside any class is rejected" {
-  const result = parseProgram("#x in obj;", false);
+  const result = parseText("#x in obj;", false);
   expect(result.hadError).toEqual(true);
 }

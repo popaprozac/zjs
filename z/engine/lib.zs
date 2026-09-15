@@ -21,6 +21,7 @@ import { createEngine } from "./builtins.zs";
 import { parseProgram } from "./parser.zs";
 import { compileProgram } from "./compiler.zs";
 import { Value, undefinedValue } from "./value.zs";
+import { sliceBytes } from "./heap.zs";
 
 struct ContextSlot {
   live: boolean;
@@ -31,7 +32,7 @@ struct ContextSlot {
 
   // A method, because the registry reaches a slot through an index and Z
   // accepts a method call on that projection where it rejects `inout`.
-  function evaluate(inout this, source: String): void {
+  function evaluate(inout this, source: Array<u8>): void {
     this.evalCount = this.evalCount + 1;
     const outcome = evaluate(inout this.runtime, move source);
     this.hadError = outcome.isThrow;
@@ -90,15 +91,41 @@ export c function zjs_z_free_context(handle: usize): void {
   });
 }
 
-export c function zjs_z_eval(handle: usize, source: String): void {
-  if (handle == 0) return;
+// Source arrives as the address of a NUL-terminated C string (the shim
+// casts the pointer; the C-export tier has no borrowed byte-buffer type
+// and a String parameter would validate and abort on malformed input)
+// and is copied byte for byte: JavaScript source is bytes to the engine
+// and is never validated as UTF-8, so a script that is not text cannot
+// abort the host.
+export c function zjs_z_eval(handle: usize, source: usize): void {
+  if (handle == 0 || source == 0) return;
+  const bytes = cstringBytes(source);
   const current = engine.get();
   current.registry.withLock((inout registry): void => {
     if (handle > registry.slots.length) return;
-    // The lock callback captures `source` as a borrow and cannot take it
+    // The lock callback captures `bytes` as a borrow and cannot take it
     // over, so the slot receives an owned copy.
-    registry.slots[handle - 1].evaluate(source.copyBytes(0, source.byteLength));
+    const byteCount = bytes.length;
+    registry.slots[handle - 1].evaluate(sliceBytes(in bytes, 0, byteCount));
   });
+}
+
+function cstringByte(address: usize, index: usize): u8 = raw c {
+  return ((const uint8_t *)address)[index];
+}
+
+// The bytes of a NUL-terminated C string at `address`, without the
+// terminator.
+function cstringBytes(address: usize): Array<u8> {
+  let bytes = Array<u8>();
+  let index: usize = 0;
+  while (true) {
+    const byte = cstringByte(address, index);
+    if (byte == 0) return bytes;
+    bytes.push(byte);
+    index = index + 1;
+  }
+  return bytes;
 }
 
 export c function zjs_z_had_error(handle: usize): i32 {
@@ -141,7 +168,7 @@ export c function zjs_z_eval_count(handle: usize): u64 {
 }
 
 // Parse, compile, and run one program against a runtime.
-export function evaluate(inout runtime: Runtime, source: String): RunResult {
+export function evaluate(inout runtime: Runtime, source: Array<u8>): RunResult {
   const parsed = parseProgram(move source, false);
   if (parsed.hadError) {
     // The reference reports both phases as a SyntaxError whose message

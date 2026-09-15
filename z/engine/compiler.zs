@@ -16,7 +16,7 @@ import { NodeKind, AstNode, NO_NODE } from "./ast.zs";
 import { Parser, ParseResult, parseProgram } from "./parser.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instAU16, instAI16, instI16, instU16 } from "./bytecode.zs";
 import { Runtime } from "./runtime.zs";
-import { bytesOf } from "./heap.zs";
+import { bytesOf, sliceBytes } from "./heap.zs";
 import { cellValue, deletedValue } from "./value.zs";
 import { replace } from "std/memory";
 
@@ -605,7 +605,7 @@ export struct Compiler {
       this.emit(instABC(Op.storeEnvSlot, value, outer.hops, u8(outer.slot)));
       return;
     }
-    const slot = runtime.globalSlot(parser.source.copyBytes(usize(target.nameStart), usize(target.nameStart + target.nameLength)));
+    const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(target.nameStart), usize(target.nameStart + target.nameLength)));
     this.emit(instAU16(Op.storeGlobal, value, slot));
   }
 
@@ -627,8 +627,7 @@ export struct Compiler {
   // --- Property names ---
 
   function atomOfSlice(in parser: Parser, inout runtime: Runtime, start: u32, length: u32): u32 {
-    const text = parser.source.copyBytes(usize(start), usize(start + length));
-    return runtime.internBytes(bytesOf(in text));
+    return runtime.internBytes(sliceBytes(in parser.source, usize(start), usize(start + length)));
   }
 
   // The name operand of LoadProp / StoreProp: an index into the
@@ -662,7 +661,7 @@ export struct Compiler {
       this.hadError = true;
       return 0;
     }
-    const first = parser.source.byteAt(usize(nameStart));
+    const first = parser.source[usize(nameStart)];
     if (first == 34 || first == 39) {
       if (nameLength < 2) {
         this.hadError = true;
@@ -844,7 +843,7 @@ export struct Compiler {
         this.emit(instABC(Op.loadEnvSlot, dst, outer.hops, u8(outer.slot)));
         return dst;
       }
-      const slot = runtime.globalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+      const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
       this.emit(instAU16(Op.loadGlobal, dst, slot));
       return dst;
     }
@@ -962,7 +961,7 @@ export struct Compiler {
           if (property.op == TokenKind.kwGet) prefix = 1;
           if (property.op == TokenKind.kwSet) prefix = 2;
           // A quoted key names the function without its quotes.
-          const firstByte = parser.source.byteAt(usize(property.nameStart));
+          const firstByte = parser.source[usize(property.nameStart)];
           if ((firstByte == 34 || firstByte == 39) && property.nameLength >= 2) {
             this.nameNext(property.nameStart + 1, property.nameLength - 2, prefix);
           } else {
@@ -1185,7 +1184,7 @@ export struct Compiler {
           if (target.kind == NodeKind.identExpr
               && this.findLocal(in parser, target.nameStart, target.nameLength) < 0
               && !this.findOuter(in parser, target.nameStart, target.nameLength).found) {
-            const slot = runtime.globalSlot(parser.source.copyBytes(usize(target.nameStart), usize(target.nameStart + target.nameLength)));
+            const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(target.nameStart), usize(target.nameStart + target.nameLength)));
             const src = this.allocReg();
             this.emit(instAU16(Op.loadGlobalOrUndefined, src, slot));
             const dst = this.allocReg();
@@ -1948,7 +1947,7 @@ export struct Compiler {
           }
         } else if (n.op == TokenKind.kwVar) {
           // Script-mode `var` is a global binding.
-          const slot = runtime.globalSlot(parser.source.copyBytes(usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
+          const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
           if (decl.left != NO_NODE) {
             this.nameNext(decl.nameStart, decl.nameLength, 0);
             const value = this.compileExpr(in parser, inout runtime, decl.left);
@@ -1992,7 +1991,7 @@ export struct Compiler {
         }
         this.storeLocal(usize(local), r);
       } else {
-        const slot = runtime.defineGlobalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+        const slot = runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
         this.emit(instAU16(Op.defineGlobal, r, slot));
       }
       this.resetTemps();
@@ -2290,15 +2289,15 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
   let bytes = Array<u8>();
   let i: u32 = 0;
   while (i < rawLength) {
-    const ch = parser.source.byteAt(usize(rawStart + i));
+    const ch = parser.source[usize(rawStart + i)];
     if (ch == B_BACKSLASH && i + 1 < rawLength) {
-      const next = parser.source.byteAt(usize(rawStart + i + 1));
+      const next = parser.source[usize(rawStart + i + 1)];
       if (next == B_LF) {
         i = i + 2;
         continue;
       }
       if (next == B_CR) {
-        if (i + 2 < rawLength && parser.source.byteAt(usize(rawStart + i + 2)) == B_LF) {
+        if (i + 2 < rawLength && parser.source[usize(rawStart + i + 2)] == B_LF) {
           i = i + 3;
         } else {
           i = i + 2;
@@ -2306,8 +2305,8 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
         continue;
       }
       if (next == B_x && i + 3 < rawLength) {
-        const h1 = hexValue(parser.source.byteAt(usize(rawStart + i + 2)));
-        const h2 = hexValue(parser.source.byteAt(usize(rawStart + i + 3)));
+        const h1 = hexValue(parser.source[usize(rawStart + i + 2)]);
+        const h2 = hexValue(parser.source[usize(rawStart + i + 3)]);
         if (h1 >= 0 && h2 >= 0) {
           bytes.push(u8((h1 << 4) | h2));
           i = i + 4;
@@ -2317,11 +2316,11 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
       if (next == B_u) {
         let codePoint: u32 = 0;
         let consumed: u32 = 0;
-        if (i + 2 < rawLength && parser.source.byteAt(usize(rawStart + i + 2)) == B_LBRACE) {
+        if (i + 2 < rawLength && parser.source[usize(rawStart + i + 2)] == B_LBRACE) {
           let p: u32 = i + 3;
           let valid = true;
           while (p < rawLength) {
-            const cc = parser.source.byteAt(usize(rawStart + p));
+            const cc = parser.source[usize(rawStart + p)];
             if (cc == B_RBRACE) break;
             const d = hexValue(cc);
             if (d < 0) {
@@ -2331,14 +2330,14 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
             codePoint = codePoint.wrappingMultiply(16) + u32(d);
             p = p + 1;
           }
-          if (valid && p < rawLength && parser.source.byteAt(usize(rawStart + p)) == B_RBRACE) {
+          if (valid && p < rawLength && parser.source[usize(rawStart + p)] == B_RBRACE) {
             consumed = p - i + 1;
           }
         } else if (i + 5 < rawLength) {
-          const h1 = hexValue(parser.source.byteAt(usize(rawStart + i + 2)));
-          const h2 = hexValue(parser.source.byteAt(usize(rawStart + i + 3)));
-          const h3 = hexValue(parser.source.byteAt(usize(rawStart + i + 4)));
-          const h4 = hexValue(parser.source.byteAt(usize(rawStart + i + 5)));
+          const h1 = hexValue(parser.source[usize(rawStart + i + 2)]);
+          const h2 = hexValue(parser.source[usize(rawStart + i + 3)]);
+          const h3 = hexValue(parser.source[usize(rawStart + i + 4)]);
+          const h4 = hexValue(parser.source[usize(rawStart + i + 5)]);
           if (h1 >= 0 && h2 >= 0 && h3 >= 0 && h4 >= 0) {
             codePoint = u32((h1 << 12) | (h2 << 8) | (h3 << 4) | h4);
             consumed = 6;
@@ -2623,8 +2622,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       const setPrefix: String = "set ";
       nameBytes = bytesOf(in setPrefix);
     }
-    const text = parser.source.copyBytes(usize(nameStart), usize(nameStart + nameLength));
-    const textBytes = bytesOf(in text);
+    const textBytes = sliceBytes(in parser.source, usize(nameStart), usize(nameStart + nameLength));
     let b: usize = 0;
     while (b < textBytes.length) {
       nameBytes.push(textBytes[b]);
@@ -2801,7 +2799,7 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32)
   const n = parser.ast.node(node);
   const k = n.kind;
   if (k == NodeKind.functionDecl || k == NodeKind.classDecl) {
-    runtime.defineGlobalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+    runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
     return;
   }
   if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classExpr) return;
@@ -2810,7 +2808,7 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32)
     let j: u32 = 0;
     while (j < n.childrenCount) {
       const decl = parser.ast.node(parser.ast.child(node, j));
-      if (decl.nameLength > 0) runtime.defineGlobalSlot(parser.source.copyBytes(usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
+      if (decl.nameLength > 0) runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
       if (decl.nameLength == 0) hoistPatternGlobals(in parser, inout runtime, decl.third);
       j = j + 1;
     }
@@ -2831,7 +2829,7 @@ function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, pattern:
   if (pattern == NO_NODE) return;
   const n = parser.ast.node(pattern);
   if (n.kind == NodeKind.identExpr) {
-    if (n.nameLength > 0) runtime.defineGlobalSlot(parser.source.copyBytes(usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+    if (n.nameLength > 0) runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
     return;
   }
   if (n.kind == NodeKind.patternEntry) {

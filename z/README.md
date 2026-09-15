@@ -148,12 +148,22 @@ undefined); `Map.prototype[@@iterator]` is `entries` and
 distinct functions); `Object.prototype.toString` on a collection iterator
 reads its `@@toStringTag` (the reference says `[object Object]`); a
 closure created inside `catch` sees the catch parameter (the reference
-throws a ReferenceError).
+throws a ReferenceError); `eval` of a string literal holding a raw NUL
+byte yields the three-byte string (the reference throws a SyntaxError).
 
 Strings are byte strings, as in the reference: `length`, indexing, and
 the String methods count bytes. Whether the rewrite keeps that or moves to
 UTF-16 code units is an open design question; the oracle needs parity with
-the reference for now.
+the reference for now. Text has three distinct roles and never crosses
+between them by accident: source text is bytes end to end (the lexer,
+parser, and compiler read `Array<u8>`, `eval` and `Function` hand their
+bytes straight to the parser, and the C API copies the caller's bytes
+without validating them, so a script that is not UTF-8 cannot abort the
+host); string values are bytes; and only diagnostics for the host --
+`zjsz`'s throw line, log output -- decode to a Z `String`, replacing each
+maximal invalid subsequence with U+FFFD so the result always satisfies
+String's valid-UTF-8 invariant and is never mistaken for the original
+bytes.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
 sees one binding), classes, `Date` / `RegExp`, direct `eval` seeing the

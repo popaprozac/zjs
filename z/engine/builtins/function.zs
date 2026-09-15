@@ -1,7 +1,7 @@
 // Function.prototype: call and apply.
 import { Value, undefinedValue, cellValue, int32Value, booleanValue, asCell, isCell, isUndefined, isNull } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, bytesToString } from "../runtime.zs";
+import { Runtime } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 import { parseProgram } from "../parser.zs";
 import { compileProgram } from "../compiler.zs";
@@ -95,8 +95,7 @@ function functionBind(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
       k = k + 1;
     }
   }
-  const nameText = bytesToString(in nameBytes);
-  const bound = runtime.defineHostFunction(boundTrampoline, cellValue(record), remaining, in nameText);
+  const bound = runtime.defineHostFunctionBytes(boundTrampoline, cellValue(record), remaining, move nameBytes);
   if (runtime.isConstructorValue(thisValue)) runtime.heap.setSlot(bound, 4, booleanValue(true));
   return cellValue(bound);
 }
@@ -166,8 +165,7 @@ function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u
     source.push(tailBytes[t]);
     t = t + 1;
   }
-  const text = bytesToString(in source);
-  const parsed = parseProgram(move text, false);
+  const parsed = parseProgram(move source, false);
   if (parsed.hadError) {
     const message: String = "parse error";
     const error = runtime.syntaxError(in message);

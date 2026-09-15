@@ -726,6 +726,17 @@ export function createHeap(): Heap {
 const COLLECT_FLOOR: u32 = 4096;
 
 // The bytes of a Z String as an owned byte array.
+// An owned copy of the byte range [start, end).
+export function sliceBytes(in bytes: Array<u8>, start: usize, end: usize): Array<u8> {
+  let copied = Array<u8>();
+  let index = start;
+  while (index < end) {
+    copied.push(bytes[index]);
+    index = index + 1;
+  }
+  return copied;
+}
+
 export function bytesOf(in text: String): Array<u8> {
   let bytes = Array<u8>();
   let index: usize = 0;

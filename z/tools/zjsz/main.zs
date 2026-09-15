@@ -79,7 +79,7 @@ function reportThrow(inout runtime: Runtime, thrown: Value): void {
 }
 
 function runFile(in path: String): i32 throws String {
-  const source = try fs.readText(path);
+  const source = try fs.readBytes(path);
   let runtime = createEngine();
   const outcome = evaluate(inout runtime, move source);
   if (!outcome.isThrow) return 0;
