@@ -379,6 +379,8 @@ export struct FunctionCode {
   // name operand. This is the reference's inline-cache slot table; the
   // cache itself is a performance-phase addition.
   propertyNames: Array<u32>;
+  // The declared name as an atom, 0 for none.
+  nameAtom: u32;
   registerCount: u32;
   fixedRegs: u32;
   paramCount: u32;
@@ -392,7 +394,7 @@ export struct FunctionCode {
 
 export function createFunctionCode(): FunctionCode {
   return FunctionCode({
-    code: Array<Inst>(), constants: Array<Value>(), propertyNames: Array<u32>(), registerCount: 0, fixedRegs: 0,
+    code: Array<Inst>(), constants: Array<Value>(), propertyNames: Array<u32>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
   });

@@ -2,6 +2,7 @@
 // xorshift random source seeded per runtime.
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, isNumber, isInt32, asInt32 } from "../value.zs";
+import { PROP_METHOD, PROP_NONE } from "../heap.zs";
 import { Runtime, toNumber, toInt32, toUint32, isIntegralDouble, truncateDouble } from "../runtime.zs";
 
 function nativeMath1(op: i32, x: f64): f64 = raw c {
@@ -216,12 +217,12 @@ function mathRandom(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
 function defineUnary(inout runtime: Runtime, target: u32, in name: String, op: i32): void {
   const handle = runtime.defineHostFunction(mathUnary, int32Value(op), 1, in name);
   const atom = runtime.atomOf(in name);
-  runtime.defineOwn(target, atom, cellValue(handle));
+  runtime.defineOwnAttr(target, atom, cellValue(handle), PROP_METHOD);
 }
 
 function defineConstant(inout runtime: Runtime, target: u32, in name: String, value: f64): void {
   const atom = runtime.atomOf(in name);
-  runtime.defineOwn(target, atom, doubleValue(value));
+  runtime.defineOwnAttr(target, atom, doubleValue(value), PROP_NONE);
 }
 
 export function installMath(inout runtime: Runtime): void {

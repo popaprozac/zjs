@@ -60,7 +60,13 @@ so `"" + obj` and `obj + 1` follow user code. Top-level and sloppy-call
 in any radix, `toFixed`, the `is*` predicates and constants), `String`
 (the byte-string prototype: `charAt` through `split`, `replace` with a
 string pattern), wrapper objects keyed by an unforgeable hidden atom, and
-`Math` in full over the C library with a xorshift `random`.
+`Math` in full over the C library with a xorshift `random`. Then property
+attributes: one attribute byte beside every slot, accessor cells for
+getters and setters (object literals included), `[[DefineOwnProperty]]`
+with its validation, own keys in specification order, extensibility flags,
+strict-mode rejection of read-only writes; `Object`'s statics and `Reflect`;
+`Function` compiled from source, `bind`, and host functions that are not
+constructors.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -68,9 +74,8 @@ subset, classification) against both engines through matching command
 lines, `z/build/zjs-ref` (public ABI) and `z/build/zjsz` (Z), and reports
 the gap with the tests the reference passes and Z does not. Needs
 `vendor/test262`. Measurements so far: `language/statements/if` 117 of the
-reference's 121; `built-ins/Math` 292 of 618 -- the gap there is property
-attributes (`verifyProperty`), `Function.prototype.bind`, and host
-functions that must not be constructors, which the next slice brings.
+reference's 121; `built-ins/Math` 388 of 618 -- the gap there is now the
+`arguments` object, which `verifyProperty` reads.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -95,10 +100,8 @@ UTF-16 code units is an open design question; the oracle needs parity with
 the reference for now.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `Function` / `bind` / `JSON` / `Date` / `RegExp`,
-direct `eval` seeing the caller's locals, property attributes (everything
-is writable and enumerable, except that an inherited `constructor` is
-skipped by `for`-`in`), accessors,
+sees one binding), `arguments`, `JSON` / `Date` / `RegExp`, direct `eval`
+seeing the caller's locals,
 `for`-`of` over anything but an array, `return` and `break` through a
 `finally`, and the remaining builtins. The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.

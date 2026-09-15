@@ -46,9 +46,26 @@ export const TAG_FREE: u8 = 201;
 // Reserved for the unallocatable handle 0.
 export const TAG_RESERVED: u8 = 255;
 
+// Property attributes, one byte per slot beside the value. A slot with
+// PROP_ACCESSOR holds an accessor cell rather than a value.
+export const PROP_WRITABLE: u8 = 1;
+export const PROP_ENUMERABLE: u8 = 2;
+export const PROP_CONFIGURABLE: u8 = 4;
+export const PROP_ACCESSOR: u8 = 8;
+export const PROP_DEFAULT: u8 = 7;
+// A builtin method: writable and configurable, not enumerable.
+export const PROP_METHOD: u8 = 5;
+export const PROP_NONE: u8 = 0;
+
+// Per-cell flags.
+export const FLAG_NON_EXTENSIBLE: u8 = 1;
+export const FLAG_LENGTH_READONLY: u8 = 2;
+
 struct CellHeader {
   tag: u8;
   marked: boolean;
+  // FLAG_* bits: extensibility, an array's read-only length.
+  flags: u8;
   slotStart: u32;
   slotCount: u32;
   // Tag-specific words. `payload`: a string's index into `strings`, a
@@ -82,6 +99,8 @@ struct HiddenClass {
 export struct Heap {
   headers: Array<CellHeader>;
   slots: Array<Value>;
+  // One attribute byte per slot, in step with `slots`.
+  attrs: Array<u8>;
   strings: Array<Array<u8>>;
   classes: Array<HiddenClass>;
   // Handles and string-table indices released by a sweep, reused before
@@ -111,12 +130,14 @@ export struct Heap {
     let index: u32 = 0;
     while (index < slotCount) {
       this.slots.push(undefinedValue());
+      this.attrs.push(PROP_DEFAULT);
       index = index + 1;
     }
     this.allocatedSinceCollect = this.allocatedSinceCollect + 1;
     const header = CellHeader({
       tag: tag,
       marked: false,
+      flags: 0,
       slotStart: start,
       slotCount: slotCount,
       payload: 0,
@@ -201,6 +222,7 @@ export struct Heap {
   // and clear the marks.
   function sweep(inout this): void {
     let compacted = Array<Value>();
+    let compactedAttrs = Array<u8>();
     let survivors: u32 = 0;
     let handle: u32 = 1;
     const count = u32(this.headers.length);
@@ -221,7 +243,7 @@ export struct Heap {
           }
           this.freeStringCount = this.freeStringCount + 1;
         }
-        this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
+        this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
         if (this.freeHandleCount < this.freeHandles.length) {
           this.freeHandles[this.freeHandleCount] = handle;
         } else {
@@ -239,12 +261,15 @@ export struct Heap {
       let index: u32 = 0;
       while (index < slotCount) {
         const kept = this.slots[usize(start + index)];
+        const keptAttr = this.attrs[usize(start + index)];
         compacted.push(kept);
+        compactedAttrs.push(keptAttr);
         index = index + 1;
       }
       handle = handle + 1;
     }
     this.slots = move compacted;
+    this.attrs = move compactedAttrs;
     this.allocatedSinceCollect = 0;
     const proportional = survivors * 2;
     this.collectThreshold = proportional > COLLECT_FLOOR ? proportional : COLLECT_FLOOR;
@@ -260,11 +285,14 @@ export struct Heap {
     let index: u32 = 0;
     while (index < oldCount) {
       const kept = this.slots[usize(oldStart + index)];
+      const keptAttr = this.attrs[usize(oldStart + index)];
       this.slots.push(kept);
+      this.attrs.push(keptAttr);
       index = index + 1;
     }
     while (index < newCount) {
       this.slots.push(undefinedValue());
+      this.attrs.push(PROP_DEFAULT);
       index = index + 1;
     }
     this.headers[usize(handle)].slotStart = start;
@@ -465,9 +493,10 @@ export struct Heap {
   // A builtin implemented in Z; `payload` indexes the runtime's host
   // table, `link` is its `prototype` object once created. Slot 0 is
   // per-instance data, slot 1 `length`, slot 2 `name`, slot 3 the bag of
-  // named properties once one is needed.
+  // named properties once one is needed, slot 4 whether it is a
+  // constructor.
   function allocateHostFunction(inout this, builtinId: u32): u32 {
-    const handle = this.allocate(TAG_HOST_FUNCTION, 4);
+    const handle = this.allocate(TAG_HOST_FUNCTION, 5);
     this.headers[usize(handle)].payload = builtinId;
     return handle;
   }
@@ -597,6 +626,41 @@ export struct Heap {
     this.slots[usize(start + index)] = value;
   }
 
+  function attrOf(handle: u32, index: u32): u8 {
+    return this.attrs[usize(this.headers[usize(handle)].slotStart + index)];
+  }
+
+  function setAttr(inout this, handle: u32, index: u32, attr: u8): void {
+    this.attrs[usize(this.headers[usize(handle)].slotStart + index)] = attr;
+  }
+
+  function flagsOf(handle: u32): u8 {
+    return this.headers[usize(handle)].flags;
+  }
+
+  function setFlags(inout this, handle: u32, flags: u8): void {
+    this.headers[usize(handle)].flags = flags;
+  }
+
+  // Define an own property with attributes, adding it if absent.
+  function objectDefine(inout this, handle: u32, atom: u32, value: Value, attr: u8): void {
+    this.objectSet(handle, atom, value);
+    const slot = this.objectFindSlot(handle, atom);
+    this.setAttr(handle, u32(slot), attr);
+  }
+
+  // An accessor pair, held in a slot flagged PROP_ACCESSOR.
+  function allocateAccessor(inout this, getter: Value, setter: Value): u32 {
+    const handle = this.allocate(TAG_ACCESSOR, 2);
+    this.setSlot(handle, 0, getter);
+    this.setSlot(handle, 1, setter);
+    return handle;
+  }
+
+  function isAccessor(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_ACCESSOR;
+  }
+
   function marked(handle: u32): boolean {
     return this.headers[usize(handle)].marked;
   }
@@ -618,7 +682,7 @@ export struct Heap {
 export function createHeap(): Heap {
   let headers = Array<CellHeader>();
   // Handle 0 is reserved; push a sentinel so live handles start at 1.
-  headers.push(CellHeader({ tag: TAG_RESERVED, marked: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 }));
+  headers.push(CellHeader({ tag: TAG_RESERVED, marked: false, flags: 0, slotStart: 0, slotCount: 0, payload: 0, link: 0 }));
   let classes = Array<HiddenClass>();
   // Class 0 is the empty root every object starts from.
   classes.push(HiddenClass({
@@ -626,7 +690,7 @@ export function createHeap(): Heap {
     transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), strings: Array<Array<u8>>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), strings: Array<Array<u8>>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0,

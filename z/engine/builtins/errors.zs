@@ -8,7 +8,7 @@
 import { Value, undefinedValue, booleanValue, cellValue, asCell, isCell, isUndefined, isInt32, asInt32, int32Value, isNumber } from "../value.zs";
 import { thread } from "std/thread";
 import { Runtime, ERROR_KIND_ERROR, ERROR_KIND_COUNT, errorKindName } from "../runtime.zs";
-import { bytesOf } from "../heap.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 
 // new Error(message) / Error(message): the object under construction
 // arrives as `this`; a plain call makes its own.
@@ -157,10 +157,10 @@ export function installErrors(inout runtime: Runtime): void {
   // Object first: its prototype is the root every object inherits.
   const objectProto = runtime.objectProto;
   const objectText: String = "Object";
-  const objectCtor = runtime.defineHostFunction(constructObject, undefinedValue(), 1, in objectText);
+  const objectCtor = runtime.defineConstructor(constructObject, undefinedValue(), 1, in objectText);
   runtime.heap.setLink(objectCtor, objectProto);
   const atomConstructor = runtime.atomConstructor;
-  runtime.heap.objectSet(objectProto, atomConstructor, cellValue(objectCtor));
+  runtime.defineOwnAttr(objectProto, atomConstructor, cellValue(objectCtor), PROP_METHOD);
   runtime.setGlobal("Object", cellValue(objectCtor));
   const toStringText: String = "toString";
   runtime.defineMethod(objectProto, in toStringText, objectToString, 0);
@@ -176,17 +176,17 @@ export function installErrors(inout runtime: Runtime): void {
   let kind: u32 = 0;
   while (kind < ERROR_KIND_COUNT) {
     const kindName = errorKindName(kind);
-    const ctor = runtime.defineHostFunction(constructError, int32Value(i32(kind)), 1, in kindName);
+    const ctor = runtime.defineConstructor(constructError, int32Value(i32(kind)), 1, in kindName);
     const parent: u32 = kind == ERROR_KIND_ERROR ? objectProto : errorProto;
     const proto = runtime.heap.allocateObject(parent);
     if (kind == ERROR_KIND_ERROR) errorProto = proto;
     const nameValue = runtime.internText(in kindName);
     const atomName = runtime.atomName;
-    runtime.heap.objectSet(proto, atomName, nameValue);
+    runtime.defineOwnAttr(proto, atomName, nameValue, PROP_METHOD);
     const emptyMessage = runtime.internValue(Array<u8>());
     const atomMessage = runtime.atomMessage;
-    runtime.heap.objectSet(proto, atomMessage, emptyMessage);
-    runtime.heap.objectSet(proto, atomConstructor, cellValue(ctor));
+    runtime.defineOwnAttr(proto, atomMessage, emptyMessage, PROP_METHOD);
+    runtime.defineOwnAttr(proto, atomConstructor, cellValue(ctor), PROP_METHOD);
     if (kind == ERROR_KIND_ERROR) runtime.defineMethod(proto, in toStringText, errorToString, 0);
     runtime.heap.setLink(ctor, proto);
     runtime.setGlobal(errorKindName(kind), cellValue(ctor));

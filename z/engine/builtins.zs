@@ -12,6 +12,8 @@ import { installFunction } from "./builtins/function.zs";
 import { installArray } from "./builtins/array.zs";
 import { installPrimitives } from "./builtins/primitives.zs";
 import { installMath } from "./builtins/math.zs";
+import { installObject } from "./builtins/object.zs";
+import { installReflect } from "./builtins/reflect.zs";
 
 export function createEngine(): Runtime {
   let runtime = createRuntime();
@@ -21,5 +23,7 @@ export function createEngine(): Runtime {
   installGlobals(inout runtime);
   installPrimitives(inout runtime);
   installMath(inout runtime);
+  installObject(inout runtime);
+  installReflect(inout runtime);
   return runtime;
 }

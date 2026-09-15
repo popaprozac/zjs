@@ -688,9 +688,8 @@ export struct Compiler {
       while (i < n.childrenCount) {
         const propertyIndex = parser.ast.child(node, i);
         const property = parser.ast.node(propertyIndex);
-        // Accessors and spread arrive with property descriptors and
-        // iteration.
-        if (property.kind != NodeKind.objectProp || property.op == TokenKind.kwGet || property.op == TokenKind.kwSet) {
+        // Spread arrives with iteration.
+        if (property.kind != NodeKind.objectProp) {
           this.hadError = true;
           return 0;
         }
@@ -702,7 +701,13 @@ export struct Compiler {
           key = this.emitKey(atom);
         }
         const value = this.compileExpr(in parser, inout runtime, property.left);
-        this.emit(instABC(Op.initObjData, dst, key, value));
+        if (property.op == TokenKind.kwGet) {
+          this.emit(instABC(Op.defineGetter, dst, key, value));
+        } else if (property.op == TokenKind.kwSet) {
+          this.emit(instABC(Op.defineSetter, dst, key, value));
+        } else {
+          this.emit(instABC(Op.initObjData, dst, key, value));
+        }
         this.nextReg = dst + 1;
         i = i + 1;
       }
@@ -1942,6 +1947,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   compiled.isArrow = n.kind == NodeKind.arrowFunc;
   compiled.strict = compiler.strict;
   compiled.thisReg = compiler.thisReg;
+  if (n.nameLength > 0) compiled.nameAtom = compiler.atomOfSlice(in parser, inout runtime, n.nameStart, n.nameLength);
   const propertyNames: Array<u32> = replace(inout compiler.propertyNames, Array<u32>());
   compiled.propertyNames = move propertyNames;
   runtime.setFunction(index, move compiled);

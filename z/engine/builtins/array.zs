@@ -4,6 +4,7 @@
 // callback runs, since a collection may happen inside it.
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isInt32, isNumber } from "../value.zs";
 import { thread } from "std/thread";
+import { PROP_METHOD, PROP_NONE } from "../heap.zs";
 import { Runtime, ERROR_KIND_RANGE, toNumber, isIntegralDouble, truncateDouble } from "../runtime.zs";
 
 function thisArray(inout runtime: Runtime, thisValue: Value, in method: String): u32 {
@@ -292,10 +293,10 @@ function arrayEvery(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
 export function installArray(inout runtime: Runtime): void {
   const arrayProto = runtime.arrayProto;
   const arrayText: String = "Array";
-  const ctor = runtime.defineHostFunction(constructArray, undefinedValue(), 1, in arrayText);
+  const ctor = runtime.defineConstructor(constructArray, undefinedValue(), 1, in arrayText);
   runtime.heap.setLink(ctor, arrayProto);
   const atomConstructor = runtime.atomConstructor;
-  runtime.heap.objectSet(arrayProto, atomConstructor, cellValue(ctor));
+  runtime.defineOwnAttr(arrayProto, atomConstructor, cellValue(ctor), PROP_METHOD);
   runtime.setGlobal("Array", cellValue(ctor));
   const isArrayText: String = "isArray";
   runtime.defineMethod(ctor, in isArrayText, arrayIsArray, 1);

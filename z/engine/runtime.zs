@@ -10,7 +10,7 @@
 import { expect } from "std/test";
 import { thread } from "std/thread";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY } from "./heap.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
@@ -69,6 +69,49 @@ export function errorKindName(kind: u32): String {
   if (kind == ERROR_KIND_REFERENCE) return "ReferenceError";
   if (kind == ERROR_KIND_RANGE) return "RangeError";
   return "SyntaxError";
+}
+
+// An own property as seen by [[GetOwnProperty]]: a data property holds
+// `value`, an accessor holds `getter` / `setter`; `attr` carries the
+// PROP_* bits. `present` is false for no such property.
+export struct PropertyDescriptor {
+  present: boolean;
+  value: Value;
+  getter: Value;
+  setter: Value;
+  attr: u8;
+}
+
+export function absentProperty(): PropertyDescriptor {
+  return PropertyDescriptor({ present: false, value: undefinedValue(), getter: undefinedValue(), setter: undefinedValue(), attr: 0 });
+}
+
+export function dataProperty(value: Value, attr: u8): PropertyDescriptor {
+  return PropertyDescriptor({ present: true, value: value, getter: undefinedValue(), setter: undefinedValue(), attr: attr });
+}
+
+// A descriptor as [[DefineOwnProperty]] receives it: every field optional.
+export struct DescriptorInput {
+  hasValue: boolean;
+  value: Value;
+  hasGetter: boolean;
+  getter: Value;
+  hasSetter: boolean;
+  setter: Value;
+  hasWritable: boolean;
+  writable: boolean;
+  hasEnumerable: boolean;
+  enumerable: boolean;
+  hasConfigurable: boolean;
+  configurable: boolean;
+}
+
+export function emptyDescriptorInput(): DescriptorInput {
+  return DescriptorInput({
+    hasValue: false, value: undefinedValue(), hasGetter: false, getter: undefinedValue(),
+    hasSetter: false, setter: undefinedValue(), hasWritable: false, writable: false,
+    hasEnumerable: false, enumerable: false, hasConfigurable: false, configurable: false,
+  });
 }
 
 // A builtin implemented in Z. The runtime keeps these in a table; a host
@@ -372,18 +415,45 @@ export struct Runtime {
     return i32(value);
   }
 
-  // Own-or-inherited data property of an object cell.
-  function objectGet(handle: u32, atom: u32): Value {
+  // Own-or-inherited property of an object cell, an accessor's getter
+  // called with `receiver` as this.
+  function lookupProperty(inout this, handle: u32, atom: u32, receiver: Value): Value {
     let current = handle;
     while (current != 0) {
       const slot = this.heap.objectFindSlot(current, atom);
       if (slot >= 0) {
         const value = this.heap.slot(current, u32(slot));
-        if (!isDeleted(value)) return value;
+        if (!isDeleted(value)) {
+          if ((this.heap.attrOf(current, u32(slot)) & PROP_ACCESSOR) != 0) {
+            const getter = this.heap.slot(asCell(value), 0);
+            if (!this.isCallable(getter)) return undefinedValue();
+            return this.callValue(getter, receiver, Array<Value>());
+          }
+          return value;
+        }
       }
       current = this.heap.objectProto(current);
     }
     return undefinedValue();
+  }
+
+  function objectGet(inout this, handle: u32, atom: u32): Value {
+    return this.lookupProperty(handle, atom, cellValue(handle));
+  }
+
+  // The own property `atom` of an object cell, as a descriptor.
+  function ownSlotDescriptor(handle: u32, atom: u32): PropertyDescriptor {
+    const slot = this.heap.objectFindSlot(handle, atom);
+    if (slot < 0) return absentProperty();
+    const value = this.heap.slot(handle, u32(slot));
+    if (isDeleted(value)) return absentProperty();
+    const attr = this.heap.attrOf(handle, u32(slot));
+    if ((attr & PROP_ACCESSOR) != 0) {
+      const getter = this.heap.slot(asCell(value), 0);
+      const setter = this.heap.slot(asCell(value), 1);
+      return PropertyDescriptor({ present: true, value: undefinedValue(), getter: getter, setter: setter, attr: attr });
+    }
+    return dataProperty(value, attr);
   }
 
   // A function's `prototype` object, created on first use with a
@@ -400,7 +470,7 @@ export struct Runtime {
     const objectProto = this.objectProto;
     const created = this.heap.allocateObject(objectProto);
     const atomConstructor = this.atomConstructor;
-    this.heap.objectSet(created, atomConstructor, cellValue(fn));
+    this.heap.objectDefine(created, atomConstructor, cellValue(fn), PROP_METHOD);
     if (closure) {
       this.heap.setSlot(fn, 1, cellValue(created));
     } else {
@@ -484,13 +554,13 @@ export struct Runtime {
       const proto = this.primitiveProto(object);
       if (proto == 0) return undefinedValue();
       const atom = this.propertyKey(key);
-      return this.objectGet(proto, atom);
+      return this.lookupProperty(proto, atom, object);
     }
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
-      const found = this.objectGet(handle, atom);
+      const found = this.lookupProperty(handle, atom, object);
       if (!isUndefined(found)) return found;
       if (handle == this.globalObject) {
         const slot = this.findGlobalByAtom(atom);
@@ -510,17 +580,17 @@ export struct Runtime {
         if (this.heap.arrayHasIndex(handle, u32(index))) return this.heap.arrayGet(handle, u32(index));
         const arrayProto = this.arrayProto;
         const atom = this.propertyKey(key);
-        return this.objectGet(arrayProto, atom);
+        return this.lookupProperty(arrayProto, atom, object);
       }
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) return int32Value(i32(this.heap.arrayLength(handle)));
       const bag = this.heap.linkOf(handle);
       if (bag != 0) {
-        const slot = this.heap.objectFindSlot(bag, atom);
-        if (slot >= 0) return this.heap.slot(bag, u32(slot));
+        const own = this.lookupProperty(bag, atom, object);
+        if (!isUndefined(own)) return own;
       }
       const arrayProto = this.arrayProto;
-      return this.objectGet(arrayProto, atom);
+      return this.lookupProperty(arrayProto, atom, object);
     }
     if (this.heap.isString(handle)) {
       const index = this.arrayIndexOf(key);
@@ -533,33 +603,38 @@ export struct Runtime {
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) return int32Value(i32(this.heap.stringLength(handle)));
       const stringProto = this.stringProto;
-      return this.objectGet(stringProto, atom);
+      return this.lookupProperty(stringProto, atom, object);
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
       if (atom == this.atomPrototype) return cellValue(this.prototypeOf(handle));
+      const bag = this.functionBag(handle);
+      if (bag != 0) {
+        const own = this.lookupProperty(bag, atom, object);
+        if (!isUndefined(own)) return own;
+      }
       if (tag == TAG_HOST_FUNCTION) {
         if (atom == this.atomLength) return this.heap.slot(handle, 1);
         if (atom == this.atomName) return this.heap.slot(handle, 2);
       } else {
         const code = this.heap.functionIndex(handle);
         if (atom == this.atomLength) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
-      }
-      const bag = this.functionBag(handle);
-      if (bag != 0) {
-        const slot = this.heap.objectFindSlot(bag, atom);
-        if (slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)))) return this.heap.slot(bag, u32(slot));
+        if (atom == this.atomName) return this.functionName(code);
       }
       const functionProto = this.functionProto;
-      return this.objectGet(functionProto, atom);
+      return this.lookupProperty(functionProto, atom, object);
     }
     return undefinedValue();
   }
 
   // [[Set]]. Writes to primitives are silently dropped, as in sloppy
   // mode; attribute and setter checks arrive with property descriptors.
-  function setProperty(inout this, object: Value, key: Value, value: Value): void {
-    if (!isCell(object) || asCell(object) == 0) return;
+  // [[Set]]: an own or inherited setter runs; a non-writable property or
+  // an unextensible target rejects the write, and the caller decides
+  // whether that is a TypeError (strict code) or silence. Writes to
+  // primitives are dropped.
+  function setProperty(inout this, object: Value, key: Value, value: Value): boolean {
+    if (!isCell(object) || asCell(object) == 0) return true;
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
@@ -569,41 +644,446 @@ export struct Runtime {
         if (slot >= 0) {
           this.globals[usize(slot)].value = value;
           this.globals[usize(slot)].defined = true;
-          return;
+          return true;
         }
       }
-      this.heap.objectSet(handle, atom, value);
-      return;
+      return this.setOnObject(handle, atom, value, object);
     }
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
+        const present = this.heap.arrayHasIndex(handle, u32(index));
+        if (present && (this.heap.attrOf(handle, u32(index)) & PROP_WRITABLE) == 0) return false;
+        if (!present && (this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0) return false;
+        if (!present && u32(index) >= this.heap.arrayLength(handle) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
         this.heap.arraySet(handle, u32(index), value);
-        return;
+        return true;
       }
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) {
-        this.heap.setArrayLength(handle, toUint32(value));
-        return;
+        if ((this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
+        const length = this.toLength(value);
+        this.heap.setArrayLength(handle, length);
+        return true;
       }
       const bag = this.arrayBag(handle);
-      this.heap.objectSet(bag, atom, value);
-      return;
+      if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0 && this.heap.objectFindSlot(bag, atom) < 0) return false;
+      return this.setOnObject(bag, atom, value, object);
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
-      if (atom == this.atomPrototype) {
-        if (!this.isObjectLike(value)) return;
+      if (atom == this.atomPrototype && this.functionBagHas(handle, atom) == false) {
+        if (tag == TAG_HOST_FUNCTION) return false;
+        if (!this.isObjectLike(value)) return true;
         if (tag == TAG_CLOSURE) {
           this.heap.setSlot(handle, 1, value);
         } else {
           this.heap.setLink(handle, asCell(value));
         }
-        return;
+        return true;
+      }
+      if (atom == this.atomLength || atom == this.atomName) {
+        if (this.functionBagHas(handle, atom) == false) return false;
       }
       const bag = this.ensureFunctionBag(handle);
-      this.heap.objectSet(bag, atom, value);
-      return;
+      if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0 && this.heap.objectFindSlot(bag, atom) < 0) return false;
+      return this.setOnObject(bag, atom, value, object);
+    }
+    return true;
+  }
+
+  // Whether a function-like cell's bag holds `atom` as a live property.
+  function functionBagHas(handle: u32, atom: u32): boolean {
+    const bag = this.functionBag(handle);
+    if (bag == 0) return false;
+    const slot = this.heap.objectFindSlot(bag, atom);
+    return slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)));
+  }
+
+  // [[Set]] on an object cell: the chain decides -- a setter runs with
+  // `receiver`, a read-only data property rejects, and otherwise the
+  // property is created or updated on the object itself.
+  function setOnObject(inout this, handle: u32, atom: u32, value: Value, receiver: Value): boolean {
+    let current = handle;
+    while (current != 0) {
+      const slot = this.heap.objectFindSlot(current, atom);
+      if (slot >= 0) {
+        const held = this.heap.slot(current, u32(slot));
+        if (!isDeleted(held)) {
+          const attr = this.heap.attrOf(current, u32(slot));
+          if ((attr & PROP_ACCESSOR) != 0) {
+            const setter = this.heap.slot(asCell(held), 1);
+            if (!this.isCallable(setter)) return false;
+            let args = Array<Value>();
+            args.push(value);
+            this.callValue(setter, receiver, move args);
+            return true;
+          }
+          if ((attr & PROP_WRITABLE) == 0) return false;
+          if (current == handle) {
+            this.heap.setSlot(handle, u32(slot), value);
+            return true;
+          }
+          break;
+        }
+      }
+      current = this.heap.objectProto(current);
+    }
+    // Not own: create it, if the object allows new properties.
+    const ownSlot = this.heap.objectFindSlot(handle, atom);
+    if (ownSlot < 0 || isDeleted(this.heap.slot(handle, u32(ownSlot)))) {
+      if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0) return false;
+    }
+    this.heap.objectDefine(handle, atom, value, PROP_DEFAULT);
+    return true;
+  }
+
+  // --- Descriptors ---
+
+  // [[GetOwnProperty]] for every value: objects (with the global object's
+  // bindings and a String wrapper's characters), arrays, strings, and
+  // the virtual properties of functions.
+  function getOwnDescriptor(inout this, object: Value, key: Value): PropertyDescriptor {
+    if (!isCell(object) || asCell(object) == 0) {
+      if (this.isStringValue(object)) return this.stringOwnDescriptor(asCell(object), key);
+      return absentProperty();
+    }
+    const handle = asCell(object);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_OBJECT) {
+      const atom = this.propertyKey(key);
+      const own = this.ownSlotDescriptor(handle, atom);
+      if (own.present) return own;
+      if (handle == this.globalObject) {
+        const slot = this.findGlobalByAtom(atom);
+        if (slot >= 0 && this.globals[usize(slot)].defined) return dataProperty(this.globals[usize(slot)].value, PROP_WRITABLE | PROP_ENUMERABLE);
+      }
+      const primitive = this.wrappedPrimitive(handle);
+      if (!isDeleted(primitive) && this.isStringValue(primitive)) return this.stringOwnDescriptor(asCell(primitive), key);
+      return absentProperty();
+    }
+    if (tag == TAG_ARRAY) {
+      const index = this.arrayIndexOf(key);
+      if (index >= 0) {
+        if (!this.heap.arrayHasIndex(handle, u32(index))) return absentProperty();
+        return dataProperty(this.heap.arrayGet(handle, u32(index)), this.heap.attrOf(handle, u32(index)));
+      }
+      const atom = this.propertyKey(key);
+      if (atom == this.atomLength) {
+        const attr: u8 = (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0 ? PROP_NONE : PROP_WRITABLE;
+        return dataProperty(int32Value(i32(this.heap.arrayLength(handle))), attr);
+      }
+      const bag = this.heap.linkOf(handle);
+      if (bag == 0) return absentProperty();
+      return this.ownSlotDescriptor(bag, atom);
+    }
+    if (this.heap.isString(handle)) return this.stringOwnDescriptor(handle, key);
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      const atom = this.propertyKey(key);
+      const bag = this.functionBag(handle);
+      if (bag != 0) {
+        const own = this.ownSlotDescriptor(bag, atom);
+        if (own.present) return own;
+      }
+      if (atom == this.atomPrototype) {
+        if (!this.isConstructorValue(object)) return absentProperty();
+        const attr: u8 = tag == TAG_HOST_FUNCTION ? PROP_NONE : PROP_WRITABLE;
+        return dataProperty(cellValue(this.prototypeOf(handle)), attr);
+      }
+      if (atom == this.atomLength) {
+        if (tag == TAG_HOST_FUNCTION) return dataProperty(this.heap.slot(handle, 1), PROP_CONFIGURABLE);
+        const code = this.heap.functionIndex(handle);
+        return dataProperty(int32Value(i32(this.functions[usize(code)].expectedArgCount)), PROP_CONFIGURABLE);
+      }
+      if (atom == this.atomName) {
+        if (tag == TAG_HOST_FUNCTION) return dataProperty(this.heap.slot(handle, 2), PROP_CONFIGURABLE);
+        return dataProperty(this.functionName(this.heap.functionIndex(handle)), PROP_CONFIGURABLE);
+      }
+      return absentProperty();
+    }
+    return absentProperty();
+  }
+
+  // A compiled function's name: the declared one, or the empty string.
+  function functionName(inout this, code: u32): Value {
+    const atom = this.functions[usize(code)].nameAtom;
+    if (atom == 0) return this.internValue(Array<u8>());
+    return cellValue(atom);
+  }
+
+  function stringOwnDescriptor(inout this, handle: u32, key: Value): PropertyDescriptor {
+    const index = this.arrayIndexOf(key);
+    if (index >= 0) {
+      if (usize(index) >= this.heap.stringLength(handle)) return absentProperty();
+      let one = Array<u8>();
+      one.push(this.heap.stringByte(handle, usize(index)));
+      return dataProperty(this.internValue(move one), PROP_ENUMERABLE);
+    }
+    const atom = this.propertyKey(key);
+    if (atom == this.atomLength) return dataProperty(int32Value(i32(this.heap.stringLength(handle))), PROP_NONE);
+    return absentProperty();
+  }
+
+  // The object cell that holds a value's named properties for definition:
+  // the object itself, an array's or function's bag. 0 for none.
+  function definitionTarget(inout this, handle: u32, atom: u32): u32 {
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_OBJECT) return handle;
+    if (tag == TAG_ARRAY) return this.arrayBag(handle);
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.ensureFunctionBag(handle);
+    return 0;
+  }
+
+  function isExtensible(value: Value): boolean {
+    if (!this.isObjectLike(value)) return false;
+    return (this.heap.flagsOf(asCell(value)) & FLAG_NON_EXTENSIBLE) == 0;
+  }
+
+  function preventExtensions(inout this, value: Value): void {
+    if (!this.isObjectLike(value)) return;
+    const handle = asCell(value);
+    const flags = this.heap.flagsOf(handle);
+    this.heap.setFlags(handle, flags | FLAG_NON_EXTENSIBLE);
+  }
+
+  // [[DefineOwnProperty]] with the validation of a non-configurable
+  // current property. Returns false where the spec rejects.
+  function defineOwnProperty(inout this, object: Value, key: Value, desc: DescriptorInput): boolean {
+    if (!this.isObjectLike(object)) return false;
+    const handle = asCell(object);
+    const tag = this.heap.tagOf(handle);
+    const atom = this.propertyKey(key);
+    const isAccessorInput = desc.hasGetter || desc.hasSetter;
+    const current = this.getOwnDescriptor(object, key);
+    // Arrays: elements and length are not slots of a bag.
+    if (tag == TAG_ARRAY) {
+      const index = this.arrayIndexOf(key);
+      if (index >= 0) {
+        if (isAccessorInput) return false;
+        if (current.present) {
+          if ((current.attr & PROP_CONFIGURABLE) == 0) {
+            if (desc.hasConfigurable && desc.configurable) return false;
+            if (desc.hasEnumerable && desc.enumerable != ((current.attr & PROP_ENUMERABLE) != 0)) return false;
+            if ((current.attr & PROP_WRITABLE) == 0) {
+              if (desc.hasWritable && desc.writable) return false;
+              if (desc.hasValue && !this.sameValue(desc.value, current.value)) return false;
+            }
+          }
+        } else if (!this.isExtensible(object)) {
+          return false;
+        } else if (u32(index) >= this.heap.arrayLength(handle) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) {
+          return false;
+        }
+        const attr = this.mergedAttr(current, desc);
+        if (desc.hasValue || !current.present) {
+          const value = desc.hasValue ? desc.value : undefinedValue();
+          this.heap.arraySet(handle, u32(index), value);
+        }
+        this.heap.setAttr(handle, u32(index), attr);
+        return true;
+      }
+      if (atom == this.atomLength) {
+        if (isAccessorInput) return false;
+        const lengthLocked = (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0;
+        if (desc.hasConfigurable && desc.configurable) return false;
+        if (desc.hasEnumerable && desc.enumerable) return false;
+        if (lengthLocked && desc.hasWritable && desc.writable) return false;
+        if (desc.hasValue) {
+          const length = this.toLength(desc.value);
+          if (lengthLocked && length != this.heap.arrayLength(handle)) return false;
+          this.heap.setArrayLength(handle, length);
+        }
+        if (desc.hasWritable && !desc.writable) {
+          const flags = this.heap.flagsOf(handle);
+          this.heap.setFlags(handle, flags | FLAG_LENGTH_READONLY);
+        }
+        return true;
+      }
+    }
+    // A function's prototype / length / name move into its bag once
+    // redefined; the bag is consulted first from then on.
+    const target = this.definitionTarget(handle, atom);
+    if (target == 0) return false;
+    if (current.present) {
+      if ((current.attr & PROP_CONFIGURABLE) == 0) {
+        if (desc.hasConfigurable && desc.configurable) return false;
+        if (desc.hasEnumerable && desc.enumerable != ((current.attr & PROP_ENUMERABLE) != 0)) return false;
+        const currentIsAccessor = (current.attr & PROP_ACCESSOR) != 0;
+        if (isAccessorInput != currentIsAccessor && (isAccessorInput || desc.hasValue || desc.hasWritable)) return false;
+        if (currentIsAccessor) {
+          if (desc.hasGetter && !this.sameValue(desc.getter, current.getter)) return false;
+          if (desc.hasSetter && !this.sameValue(desc.setter, current.setter)) return false;
+        } else if ((current.attr & PROP_WRITABLE) == 0) {
+          if (desc.hasWritable && desc.writable) return false;
+          if (desc.hasValue && !this.sameValue(desc.value, current.value)) return false;
+        }
+      }
+    } else if (!this.isExtensible(object)) {
+      return false;
+    }
+    const attr = this.mergedAttr(current, desc);
+    const currentIsAccessor = current.present && (current.attr & PROP_ACCESSOR) != 0;
+    if (isAccessorInput || (currentIsAccessor && !desc.hasValue && !desc.hasWritable)) {
+      let getter = currentIsAccessor ? current.getter : undefinedValue();
+      let setter = currentIsAccessor ? current.setter : undefinedValue();
+      if (desc.hasGetter) getter = desc.getter;
+      if (desc.hasSetter) setter = desc.setter;
+      const accessor = this.heap.allocateAccessor(getter, setter);
+      this.heap.objectDefine(target, atom, cellValue(accessor), attr | PROP_ACCESSOR);
+      return true;
+    }
+    let value = current.present && !currentIsAccessor ? current.value : undefinedValue();
+    if (desc.hasValue) value = desc.value;
+    this.heap.objectDefine(target, atom, value, attr & (PROP_WRITABLE | PROP_ENUMERABLE | PROP_CONFIGURABLE));
+    return true;
+  }
+
+  // The attribute bits after applying `desc` over `current`; absent
+  // fields keep the current value, or default to false for a new property.
+  function mergedAttr(current: PropertyDescriptor, desc: DescriptorInput): u8 {
+    let attr: u8 = current.present ? current.attr & (PROP_WRITABLE | PROP_ENUMERABLE | PROP_CONFIGURABLE) : PROP_NONE;
+    if (desc.hasWritable) attr = desc.writable ? attr | PROP_WRITABLE : attr & (PROP_ENUMERABLE | PROP_CONFIGURABLE);
+    if (desc.hasEnumerable) attr = desc.enumerable ? attr | PROP_ENUMERABLE : attr & (PROP_WRITABLE | PROP_CONFIGURABLE);
+    if (desc.hasConfigurable) attr = desc.configurable ? attr | PROP_CONFIGURABLE : attr & (PROP_WRITABLE | PROP_ENUMERABLE);
+    return attr;
+  }
+
+  // SameValue: strict equality, except NaN equals NaN and +0 differs from -0.
+  function sameValue(a: Value, b: Value): boolean {
+    if (isNumber(a) && isNumber(b)) {
+      const x = toNumber(a);
+      const y = toNumber(b);
+      if (x != x && y != y) return true;
+      if (x == 0.0 && y == 0.0) return (1.0 / x < 0.0) == (1.0 / y < 0.0);
+      return x == y;
+    }
+    return this.strictEquals(a, b);
+  }
+
+  // Define an accessor from an object literal: `get x() {}` / `set x(v) {}`,
+  // merging with an accessor already there.
+  function defineAccessor(inout this, object: Value, key: Value, getter: Value, setter: Value, isGetter: boolean): void {
+    if (!this.isObjectLike(object)) return;
+    const handle = asCell(object);
+    const atom = this.propertyKey(key);
+    const target = this.definitionTarget(handle, atom);
+    if (target == 0) return;
+    const current = this.ownSlotDescriptor(target, atom);
+    let currentGetter = undefinedValue();
+    let currentSetter = undefinedValue();
+    if (current.present && (current.attr & PROP_ACCESSOR) != 0) {
+      currentGetter = current.getter;
+      currentSetter = current.setter;
+    }
+    const accessor = this.heap.allocateAccessor(isGetter ? getter : currentGetter, isGetter ? currentSetter : setter);
+    this.heap.objectDefine(target, atom, cellValue(accessor), PROP_ENUMERABLE | PROP_CONFIGURABLE | PROP_ACCESSOR);
+  }
+
+  // Own property keys in the specification's order: array indices
+  // ascending, then strings in insertion order; every own key, enumerable
+  // or not. Hidden keys never appear.
+  function ownKeys(inout this, object: Value): Array<Value> {
+    let keys = Array<Value>();
+    if (!isCell(object) || asCell(object) == 0) {
+      if (this.isStringValue(object)) this.pushStringKeys(inout keys, asCell(object));
+      return keys;
+    }
+    const handle = asCell(object);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_ARRAY) {
+      const length = this.heap.arrayLength(handle);
+      let index: u32 = 0;
+      while (index < length) {
+        if (this.heap.arrayHasIndex(handle, index)) keys.push(this.toStringValue(int32Value(i32(index))));
+        index = index + 1;
+      }
+      keys.push(cellValue(this.atomLength));
+      const bag = this.heap.linkOf(handle);
+      if (bag != 0) this.pushObjectKeys(inout keys, bag, true);
+      return keys;
+    }
+    if (tag == TAG_OBJECT) {
+      const primitive = this.wrappedPrimitive(handle);
+      if (!isDeleted(primitive) && this.isStringValue(primitive)) this.pushStringKeys(inout keys, asCell(primitive));
+      this.pushObjectKeys(inout keys, handle, false);
+      if (handle == this.globalObject) {
+        let g: usize = 0;
+        while (g < this.globals.length) {
+          if (this.globals[g].defined && this.heap.objectFindSlot(handle, this.globals[g].atom) < 0) keys.push(cellValue(this.globals[g].atom));
+          g = g + 1;
+        }
+      }
+      return keys;
+    }
+    if (this.heap.isString(handle)) {
+      this.pushStringKeys(inout keys, handle);
+      return keys;
+    }
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      const bag = this.functionBag(handle);
+      if (!this.functionBagHas(handle, this.atomLength)) keys.push(cellValue(this.atomLength));
+      if (!this.functionBagHas(handle, this.atomName)) keys.push(cellValue(this.atomName));
+      if (this.isConstructorValue(object) && !this.functionBagHas(handle, this.atomPrototype)) keys.push(cellValue(this.atomPrototype));
+      if (bag != 0) this.pushObjectKeys(inout keys, bag, false);
+      return keys;
+    }
+    return keys;
+  }
+
+  function pushStringKeys(inout this, inout keys: Array<Value>, handle: u32): void {
+    const length = this.heap.stringLength(handle);
+    let index: u32 = 0;
+    while (usize(index) < length) {
+      keys.push(this.toStringValue(int32Value(i32(index))));
+      index = index + 1;
+    }
+    keys.push(cellValue(this.atomLength));
+  }
+
+  // An object cell's own live keys: index-like names ascending first,
+  // then the rest in insertion order.
+  function pushObjectKeys(inout this, inout keys: Array<Value>, object: u32, skipIndices: boolean): void {
+    const names = this.ownNames(object);
+    let indices = Array<u32>();
+    let i: usize = 0;
+    while (i < names.length) {
+      const name = names[i];
+      if (name != 0) {
+        const slot = this.heap.objectFindSlot(object, name);
+        if (slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot)))) {
+          const index = this.arrayIndexOf(cellValue(name));
+          if (index >= 0) {
+            if (!skipIndices) indices.push(u32(index));
+          }
+        }
+      }
+      i = i + 1;
+    }
+    // Insertion sort: index keys are few.
+    let sorted: usize = 1;
+    while (sorted < indices.length) {
+      let position = sorted;
+      while (position > 0 && indices[position - 1] > indices[position]) {
+        const swapped = indices[position - 1];
+        indices[position - 1] = indices[position];
+        indices[position] = swapped;
+        position = position - 1;
+      }
+      sorted = sorted + 1;
+    }
+    i = 0;
+    while (i < indices.length) {
+      keys.push(this.toStringValue(int32Value(i32(indices[i]))));
+      i = i + 1;
+    }
+    i = 0;
+    while (i < names.length) {
+      const name = names[i];
+      if (name != 0) {
+        const slot = this.heap.objectFindSlot(object, name);
+        if (slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot))) && this.arrayIndexOf(cellValue(name)) < 0) keys.push(cellValue(name));
+      }
+      i = i + 1;
     }
   }
 
@@ -636,9 +1116,14 @@ export struct Runtime {
       }
       return false;
     }
-    // Functions: `prototype`, own named properties, then Function.prototype.
+    // Functions: `prototype` (constructors only), `length`, `name`, own
+    // named properties, then Function.prototype.
     const atom = this.propertyKey(key);
-    if (atom == this.atomPrototype) return true;
+    if (atom == this.atomPrototype) {
+      if (tag == TAG_HOST_FUNCTION) return this.heap.linkOf(handle) != 0 || isTrue(this.heap.slot(handle, 4));
+      return this.isConstructorValue(object);
+    }
+    if (atom == this.atomLength || atom == this.atomName) return true;
     const bag = this.functionBag(handle);
     if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
     const functionProto = this.functionProto;
@@ -680,7 +1165,7 @@ export struct Runtime {
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
-      if (atom == this.atomPrototype || atom == this.atomLength || (tag == TAG_HOST_FUNCTION && atom == this.atomName)) return true;
+      if (atom == this.atomPrototype || atom == this.atomLength || atom == this.atomName) return true;
       const bag = this.functionBag(handle);
       if (bag == 0) return false;
       const slot = this.heap.objectFindSlot(bag, atom);
@@ -709,25 +1194,38 @@ export struct Runtime {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
-      const slot = this.heap.objectFindSlot(handle, atom);
-      if (slot >= 0) this.heap.setSlot(handle, u32(slot), deletedValue());
-      return true;
+      return this.deleteFromObject(handle, atom);
     }
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
-        if (this.heap.arrayHasIndex(handle, u32(index))) this.heap.setSlot(handle, u32(index), deletedValue());
+        if (this.heap.arrayHasIndex(handle, u32(index))) {
+          if ((this.heap.attrOf(handle, u32(index)) & PROP_CONFIGURABLE) == 0) return false;
+          this.heap.setSlot(handle, u32(index), deletedValue());
+        }
         return true;
       }
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) return false;
       const bag = this.heap.linkOf(handle);
-      if (bag != 0) {
-        const slot = this.heap.objectFindSlot(bag, atom);
-        if (slot >= 0) this.heap.setSlot(bag, u32(slot), deletedValue());
-      }
+      if (bag != 0) return this.deleteFromObject(bag, atom);
       return true;
     }
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      const atom = this.propertyKey(key);
+      const bag = this.functionBag(handle);
+      if (bag != 0 && this.functionBagHas(handle, atom)) return this.deleteFromObject(bag, atom);
+      if (atom == this.atomPrototype) return false;
+      return true;
+    }
+    return true;
+  }
+
+  function deleteFromObject(inout this, handle: u32, atom: u32): boolean {
+    const slot = this.heap.objectFindSlot(handle, atom);
+    if (slot < 0 || isDeleted(this.heap.slot(handle, u32(slot)))) return true;
+    if ((this.heap.attrOf(handle, u32(slot)) & PROP_CONFIGURABLE) == 0) return false;
+    this.heap.setSlot(handle, u32(slot), deletedValue());
     return true;
   }
 
@@ -759,8 +1257,6 @@ export struct Runtime {
   // The keys for-in visits, as an array of strings: array indices then
   // named properties; an object's own names in insertion order, then its
   // prototypes' (stopping short of Object.prototype), each name once.
-  // Property attributes do not exist yet, so every property counts as
-  // enumerable except an inherited `constructor`.
   function enumerateKeys(inout this, value: Value): Value {
     const keys = this.heap.allocateArray(0);
     if (!isCell(value) || asCell(value) == 0) return cellValue(keys);
@@ -813,8 +1309,8 @@ export struct Runtime {
           if (!already) {
             seen.push(name);
             const slot = this.heap.objectFindSlot(current, name);
-            const inheritedConstructor = current != handle && name == this.atomConstructor;
-            if (slot >= 0 && !isDeleted(this.heap.slot(current, u32(slot))) && !inheritedConstructor) {
+            const live = slot >= 0 && !isDeleted(this.heap.slot(current, u32(slot)));
+            if (live && (this.heap.attrOf(current, u32(slot)) & PROP_ENUMERABLE) != 0) {
               const count = this.heap.arrayLength(keys);
               this.heap.arraySet(keys, count, cellValue(name));
             }
@@ -840,7 +1336,7 @@ export struct Runtime {
         continue;
       }
       const slot = this.heap.objectFindSlot(object, name);
-      const live = slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot)));
+      const live = slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot))) && (this.heap.attrOf(object, u32(slot)) & PROP_ENUMERABLE) != 0;
       if (live && !(skipIndices && this.arrayIndexOf(cellValue(name)) >= 0)) {
         const count = this.heap.arrayLength(keys);
         this.heap.arraySet(keys, count, cellValue(name));
@@ -869,8 +1365,10 @@ export struct Runtime {
 
   // --- Builtins ---
 
-  // Register a builtin: a host function cell whose payload indexes the
-  // table. Slot 0 is per-instance data, slot 1 `length`, slot 2 `name`.
+  // Register a builtin that is not a constructor: a host function cell
+  // whose payload indexes the table. Slot 0 is per-instance data, slot 1
+  // `length`, slot 2 `name`, slot 3 the property bag, slot 4 whether `new`
+  // may be applied.
   function defineHostFunction(inout this, fn: HostFunction, bound: Value, length: u32, in name: String): u32 {
     this.hostTable.push(fn);
     const id = u32(this.hostTable.length - 1);
@@ -879,15 +1377,46 @@ export struct Runtime {
     this.heap.setSlot(handle, 1, int32Value(i32(length)));
     const nameValue = this.internText(in name);
     this.heap.setSlot(handle, 2, nameValue);
+    this.heap.setSlot(handle, 4, booleanValue(false));
     return handle;
   }
 
-  // A builtin as a property of `target`.
+  // Register a builtin constructor.
+  function defineConstructor(inout this, fn: HostFunction, bound: Value, length: u32, in name: String): u32 {
+    const handle = this.defineHostFunction(fn, bound, length, in name);
+    this.heap.setSlot(handle, 4, booleanValue(true));
+    return handle;
+  }
+
+  function isConstructorValue(value: Value): boolean {
+    if (!isCell(value) || asCell(value) == 0) return false;
+    const handle = asCell(value);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_HOST_FUNCTION) return isTrue(this.heap.slot(handle, 4));
+    if (tag == TAG_FUNCTION || tag == TAG_CLOSURE) {
+      const code = this.heap.functionIndex(handle);
+      return !this.functions[usize(code)].isArrow;
+    }
+    return false;
+  }
+
+  // A builtin as a non-enumerable property of `target`.
   function defineMethod(inout this, target: u32, in name: String, fn: HostFunction, length: u32): u32 {
     const handle = this.defineHostFunction(fn, undefinedValue(), length, in name);
     const atom = this.atomOf(in name);
-    this.defineOwn(target, atom, cellValue(handle));
+    this.defineOwnAttr(target, atom, cellValue(handle), PROP_METHOD);
     return handle;
+  }
+
+  // Define an own data property with attributes on an object or a
+  // function-like cell.
+  function defineOwnAttr(inout this, target: u32, atom: u32, value: Value, attr: u8): void {
+    if (this.heap.isObject(target)) {
+      this.heap.objectDefine(target, atom, value, attr);
+      return;
+    }
+    const bag = this.ensureFunctionBag(target);
+    this.heap.objectDefine(bag, atom, value, attr);
   }
 
   function callHost(inout this, id: u32, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value {
@@ -975,6 +1504,48 @@ export struct Runtime {
     }
     this.regTop = argsBase;
     return outcome;
+  }
+
+  // Construct from Z: a fresh object inheriting from newTarget's prototype
+  // becomes this; the constructor's own object result wins. A throw is
+  // left pending; the result is then undefined.
+  function constructValue(inout this, callee: Value, args: Array<Value>, newTarget: Value): Value {
+    if (!this.isConstructorValue(callee) || !this.isConstructorValue(newTarget)) {
+      const error = this.notConstructorError(callee);
+      this.raise(error);
+      return undefinedValue();
+    }
+    const proto = this.prototypeOf(asCell(newTarget));
+    const created = cellValue(this.heap.allocateObject(proto));
+    this.pushTempRoot(created);
+    let outcome = undefinedValue();
+    if (this.isHostFunctionValue(callee)) {
+      outcome = this.callValue(callee, created, move args);
+    } else {
+      const argsBase = this.regTop;
+      const argc = u32(args.length);
+      const needed = usize(argsBase + argc);
+      while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+      let index: u32 = 0;
+      while (index < argc) {
+        const passed = args[usize(index)];
+        this.regStack[usize(argsBase + index)] = passed;
+        index = index + 1;
+      }
+      this.regTop = argsBase + argc;
+      const entryDepth = this.frameCount;
+      this.enterCallable(callee, 0, created, argsBase, argc, created);
+      const result = this.runFrames(entryDepth);
+      this.regTop = argsBase;
+      if (result.isThrow) {
+        this.raise(result.value);
+      } else {
+        outcome = result.value;
+      }
+    }
+    this.popTempRoot();
+    if (this.pendingThrow) return undefinedValue();
+    return this.isObjectLike(outcome) ? outcome : created;
   }
 
   // ToPrimitive: an object's valueOf / toString, in the order the hint
@@ -1145,6 +1716,8 @@ export struct Runtime {
         this.heap.markHandle(name);
         c = c + 1;
       }
+      const nameAtom = this.functions[index].nameAtom;
+      this.heap.markHandle(nameAtom);
       index = index + 1;
     }
     // The atom table is weak: an interned string nothing else reaches is
@@ -1744,7 +2317,10 @@ export struct Runtime {
           const callee = this.reg(base, inst.b);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 1;
-          if (this.isCompiledCallable(callee)) {
+          if (!this.isConstructorValue(callee)) {
+            thrown = this.notConstructorError(callee);
+            throwing = true;
+          } else if (this.isCompiledCallable(callee)) {
             const proto = this.prototypeOf(asCell(callee));
             const created = cellValue(this.heap.allocateObject(proto));
             this.frames[frameIndex].ip = ip;
@@ -1831,9 +2407,12 @@ export struct Runtime {
             thrown = this.propertyOfNullish(object, atom, false);
             throwing = true;
           } else {
-            this.setProperty(object, cellValue(atom), value);
+            const accepted = this.setProperty(object, cellValue(atom), value);
             if (this.pendingThrow) {
               thrown = this.takePending();
+              throwing = true;
+            } else if (!accepted && this.functions[usize(fi)].strict) {
+              thrown = this.readOnlyError(atom);
               throwing = true;
             }
           }
@@ -1862,9 +2441,12 @@ export struct Runtime {
             thrown = this.propertyOfNullish(object, atom, false);
             throwing = true;
           } else {
-            this.setProperty(object, key, value);
+            const accepted = this.setProperty(object, key, value);
             if (this.pendingThrow) {
               thrown = this.takePending();
+              throwing = true;
+            } else if (!accepted && this.functions[usize(fi)].strict) {
+              thrown = this.readOnlyError(this.propertyKey(key));
               throwing = true;
             }
           }
@@ -1924,7 +2506,18 @@ export struct Runtime {
           const object = this.reg(base, inst.b);
           const key = this.reg(base, inst.c);
           const removed = this.deleteProperty(object, key);
-          this.setReg(base, inst.a, booleanValue(removed));
+          if (!removed && this.functions[usize(fi)].strict) {
+            const message: String = "Cannot delete property";
+            thrown = this.typeError(in message);
+            throwing = true;
+          } else {
+            this.setReg(base, inst.a, booleanValue(removed));
+          }
+        } else if (op == Op.defineGetter || op == Op.defineSetter) {
+          const object = this.reg(base, inst.a);
+          const key = this.reg(base, inst.b);
+          const fn = this.reg(base, inst.c);
+          this.defineAccessor(object, key, fn, fn, op == Op.defineGetter);
         } else if (op == Op.iterPrepare) {
           const source = this.reg(base, inst.b);
           const keys = this.enumerateKeys(source);
@@ -2004,6 +2597,32 @@ export struct Runtime {
     }
     this.lastResult = result;
     return RunResult({ isThrow: false, value: result });
+  }
+
+  // The TypeError for a rejected write in strict code.
+  function readOnlyError(inout this, atom: u32): Value {
+    const head: String = "Cannot assign to read only property '";
+    const tail: String = "'";
+    let message = bytesOf(in head);
+    appendBytes(inout message, this.heap.stringBytes(atom));
+    appendBytes(inout message, bytesOf(in tail));
+    return this.makeError(ERROR_KIND_TYPE, move message);
+  }
+
+  // The TypeError for `new` on something that is not a constructor.
+  function notConstructorError(inout this, callee: Value): Value {
+    let message = Array<u8>();
+    if (this.isHostFunctionValue(callee)) {
+      const name = this.heap.slot(asCell(callee), 2);
+      if (this.isStringValue(name)) message = this.heap.stringBytes(asCell(name));
+    }
+    if (message.length == 0) {
+      const generic: String = "value";
+      message = bytesOf(in generic);
+    }
+    const tail: String = " is not a constructor";
+    appendBytes(inout message, bytesOf(in tail));
+    return this.makeError(ERROR_KIND_TYPE, move message);
   }
 
   // The TypeError for reading or writing a property of null or undefined.

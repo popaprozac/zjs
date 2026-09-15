@@ -5,7 +5,7 @@
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isNumber, isBoolean, isTrue, isInt32, asInt32, asDouble } from "../value.zs";
 import { Runtime, ERROR_KIND_RANGE, toNumber, toInt32, isIntegralDouble, truncateDouble, int32ToString, doubleToString, stringToNumber } from "../runtime.zs";
-import { bytesOf } from "../heap.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 
 function nativeAlloc(count: usize): usize = raw c { return (uintptr_t)calloc(count, 1); }
 function nativeFree(buffer: usize): void = raw c { free((void *)buffer); }
@@ -807,7 +807,7 @@ function stringLocaleCompare(inout runtime: Runtime, thisValue: Value, argsBase:
 
 function defineConstant(inout runtime: Runtime, target: u32, in name: String, value: Value): void {
   const atom = runtime.atomOf(in name);
-  runtime.defineOwn(target, atom, value);
+  runtime.defineOwnAttr(target, atom, value, PROP_NONE);
 }
 
 export function installPrimitives(inout runtime: Runtime): void {
@@ -815,11 +815,11 @@ export function installPrimitives(inout runtime: Runtime): void {
 
   const booleanProto = runtime.booleanProto;
   const booleanText: String = "Boolean";
-  const booleanCtor = runtime.defineHostFunction(constructBoolean, undefinedValue(), 1, in booleanText);
+  const booleanCtor = runtime.defineConstructor(constructBoolean, undefinedValue(), 1, in booleanText);
   runtime.heap.setLink(booleanCtor, booleanProto);
-  runtime.heap.objectSet(booleanProto, atomConstructor, cellValue(booleanCtor));
+  runtime.defineOwnAttr(booleanProto, atomConstructor, cellValue(booleanCtor), PROP_METHOD);
   const atomPrimitive = runtime.atomPrimitive;
-  runtime.heap.objectSet(booleanProto, atomPrimitive, booleanValue(false));
+  runtime.defineOwnAttr(booleanProto, atomPrimitive, booleanValue(false), PROP_NONE);
   runtime.setGlobal("Boolean", cellValue(booleanCtor));
   const toStringText: String = "toString";
   const valueOfText: String = "valueOf";
@@ -828,10 +828,10 @@ export function installPrimitives(inout runtime: Runtime): void {
 
   const numberProto = runtime.numberProto;
   const numberText: String = "Number";
-  const numberCtor = runtime.defineHostFunction(constructNumber, undefinedValue(), 1, in numberText);
+  const numberCtor = runtime.defineConstructor(constructNumber, undefinedValue(), 1, in numberText);
   runtime.heap.setLink(numberCtor, numberProto);
-  runtime.heap.objectSet(numberProto, atomConstructor, cellValue(numberCtor));
-  runtime.heap.objectSet(numberProto, atomPrimitive, int32Value(0));
+  runtime.defineOwnAttr(numberProto, atomConstructor, cellValue(numberCtor), PROP_METHOD);
+  runtime.defineOwnAttr(numberProto, atomPrimitive, int32Value(0), PROP_NONE);
   runtime.setGlobal("Number", cellValue(numberCtor));
   runtime.defineMethod(numberProto, in toStringText, numberToString, 1);
   runtime.defineMethod(numberProto, in valueOfText, numberValueOf, 0);
@@ -873,10 +873,10 @@ export function installPrimitives(inout runtime: Runtime): void {
 
   const stringProto = runtime.stringProto;
   const stringText: String = "String";
-  const stringCtor = runtime.defineHostFunction(constructString, undefinedValue(), 1, in stringText);
+  const stringCtor = runtime.defineConstructor(constructString, undefinedValue(), 1, in stringText);
   runtime.heap.setLink(stringCtor, stringProto);
-  runtime.heap.objectSet(stringProto, atomConstructor, cellValue(stringCtor));
-  runtime.heap.objectSet(stringProto, atomPrimitive, runtime.internValue(Array<u8>()));
+  runtime.defineOwnAttr(stringProto, atomConstructor, cellValue(stringCtor), PROP_METHOD);
+  runtime.defineOwnAttr(stringProto, atomPrimitive, runtime.internValue(Array<u8>()), PROP_NONE);
   runtime.setGlobal("String", cellValue(stringCtor));
   const fromCharCodeText: String = "fromCharCode";
   runtime.defineMethod(stringCtor, in fromCharCodeText, stringFromCharCode, 1);
