@@ -15,8 +15,12 @@
 // A handle indexes `headers`. Handle 0 is reserved and never allocated, so a
 // live cell handle is always >= 1 and `cellValue(0)` can mean "no cell".
 //
-// This is allocation-only: there is no collector yet. Phase 6 adds marking
-// over `headers`, which is why the mark bit already exists here.
+// Collection is mark-sweep with stable handles. Marking walks from the
+// roots the runtime supplies; sweeping frees dead headers onto a free list
+// for reuse and compacts every live cell's slots into a fresh arena, so an
+// object that outgrew its range leaves no permanent hole. Nothing outside
+// the heap has to be updated: a handle never changes, only the slot range
+// behind it.
 
 import { expect } from "std/test";
 import { Value, undefinedValue, deletedValue, isDeleted, cellValue, asCell, isCell, int32Value, asInt32 } from "./value.zs";
@@ -37,6 +41,8 @@ export const TAG_REGEXP: u8 = 9;
 // Beyond the reference's tags: an environment is its own cell here, where
 // the reference keeps captured bindings in a property bag.
 export const TAG_ENV: u8 = 200;
+// A swept cell whose handle is on the free list.
+export const TAG_FREE: u8 = 201;
 // Reserved for the unallocatable handle 0.
 export const TAG_RESERVED: u8 = 255;
 
@@ -78,6 +84,21 @@ export struct Heap {
   slots: Array<Value>;
   strings: Array<Array<u8>>;
   classes: Array<HiddenClass>;
+  // Handles and string-table indices released by a sweep, reused before
+  // the arrays grow. `freeHandleCount` / `freeStringCount` mark the live
+  // extent, since Z's Array cannot pop.
+  freeHandles: Array<u32>;
+  freeHandleCount: usize;
+  freeStrings: Array<u32>;
+  freeStringCount: usize;
+  // Marking worklist, reused across collections.
+  markStack: Array<u32>;
+  markCount: usize;
+  // Cells allocated since the last collection, and how many trigger the
+  // next one: at least a floor, otherwise proportional to what survived.
+  allocatedSinceCollect: u32;
+  collectThreshold: u32;
+  collections: u32;
 
   // These are methods rather than free functions for a concrete reason.
   // Z rejects `inout` on a place expression -- `allocate(inout
@@ -92,15 +113,142 @@ export struct Heap {
       this.slots.push(undefinedValue());
       index = index + 1;
     }
-    this.headers.push(CellHeader({
+    this.allocatedSinceCollect = this.allocatedSinceCollect + 1;
+    const header = CellHeader({
       tag: tag,
       marked: false,
       slotStart: start,
       slotCount: slotCount,
       payload: 0,
       link: 0,
-    }));
+    });
+    if (this.freeHandleCount > 0) {
+      this.freeHandleCount = this.freeHandleCount - 1;
+      const handle = this.freeHandles[this.freeHandleCount];
+      this.headers[usize(handle)] = header;
+      return handle;
+    }
+    this.headers.push(header);
     return u32(this.headers.length - 1);
+  }
+
+  // Whether enough has been allocated since the last collection for the
+  // runtime to collect at its next safe point.
+  function shouldCollect(): boolean {
+    return this.allocatedSinceCollect >= this.collectThreshold;
+  }
+
+  // --- Collection ---
+  //
+  // The runtime marks its roots with `markValue`, then calls `sweep`.
+
+  function markValue(inout this, value: Value): void {
+    if (!isCell(value)) return;
+    this.markHandle(asCell(value));
+  }
+
+  function markHandle(inout this, handle: u32): void {
+    if (handle == 0) return;
+    if (this.headers[usize(handle)].marked) return;
+    this.headers[usize(handle)].marked = true;
+    if (this.markCount < this.markStack.length) {
+      this.markStack[this.markCount] = handle;
+    } else {
+      this.markStack.push(handle);
+    }
+    this.markCount = this.markCount + 1;
+    this.drainMarks();
+  }
+
+  // Trace every marked cell's references until the worklist is empty.
+  function drainMarks(inout this): void {
+    while (this.markCount > 0) {
+      this.markCount = this.markCount - 1;
+      const handle = this.markStack[this.markCount];
+      const tag = this.headers[usize(handle)].tag;
+      const link = this.headers[usize(handle)].link;
+      if (link != 0 && !this.headers[usize(link)].marked) {
+        this.headers[usize(link)].marked = true;
+        this.pushMark(link);
+      }
+      // Slots hold values for every tag but strings and host functions.
+      if (tag != TAG_STRING && tag != TAG_HOST_FUNCTION) {
+        const start = this.headers[usize(handle)].slotStart;
+        const count = this.headers[usize(handle)].slotCount;
+        let index: u32 = 0;
+        while (index < count) {
+          const value = this.slots[usize(start + index)];
+          if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+            this.headers[usize(asCell(value))].marked = true;
+            this.pushMark(asCell(value));
+          }
+          index = index + 1;
+        }
+      }
+    }
+  }
+
+  function pushMark(inout this, handle: u32): void {
+    if (this.markCount < this.markStack.length) {
+      this.markStack[this.markCount] = handle;
+    } else {
+      this.markStack.push(handle);
+    }
+    this.markCount = this.markCount + 1;
+  }
+
+  // Free every unmarked cell, compact the live slots into a fresh arena,
+  // and clear the marks.
+  function sweep(inout this): void {
+    let compacted = Array<Value>();
+    let survivors: u32 = 0;
+    let handle: u32 = 1;
+    const count = u32(this.headers.length);
+    while (handle < count) {
+      const tag = this.headers[usize(handle)].tag;
+      if (tag == TAG_FREE) {
+        handle = handle + 1;
+        continue;
+      }
+      if (!this.headers[usize(handle)].marked) {
+        if (tag == TAG_STRING) {
+          const stringIndex = this.headers[usize(handle)].payload;
+          this.strings[usize(stringIndex)] = Array<u8>();
+          if (this.freeStringCount < this.freeStrings.length) {
+            this.freeStrings[this.freeStringCount] = stringIndex;
+          } else {
+            this.freeStrings.push(stringIndex);
+          }
+          this.freeStringCount = this.freeStringCount + 1;
+        }
+        this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
+        if (this.freeHandleCount < this.freeHandles.length) {
+          this.freeHandles[this.freeHandleCount] = handle;
+        } else {
+          this.freeHandles.push(handle);
+        }
+        this.freeHandleCount = this.freeHandleCount + 1;
+        handle = handle + 1;
+        continue;
+      }
+      survivors = survivors + 1;
+      this.headers[usize(handle)].marked = false;
+      const start = this.headers[usize(handle)].slotStart;
+      const slotCount = this.headers[usize(handle)].slotCount;
+      this.headers[usize(handle)].slotStart = u32(compacted.length);
+      let index: u32 = 0;
+      while (index < slotCount) {
+        const kept = this.slots[usize(start + index)];
+        compacted.push(kept);
+        index = index + 1;
+      }
+      handle = handle + 1;
+    }
+    this.slots = move compacted;
+    this.allocatedSinceCollect = 0;
+    const proportional = survivors * 2;
+    this.collectThreshold = proportional > COLLECT_FLOOR ? proportional : COLLECT_FLOOR;
+    this.collections = this.collections + 1;
   }
 
   // Move a cell's slots to a fresh, larger range. The old range is
@@ -331,8 +479,15 @@ export struct Heap {
 
   // A string cell owning `bytes`.
   function allocateString(inout this, bytes: Array<u8>): u32 {
-    const stringIndex = u32(this.strings.length);
-    this.strings.push(move bytes);
+    let stringIndex: u32 = 0;
+    if (this.freeStringCount > 0) {
+      this.freeStringCount = this.freeStringCount - 1;
+      stringIndex = this.freeStrings[this.freeStringCount];
+      this.strings[usize(stringIndex)] = move bytes;
+    } else {
+      stringIndex = u32(this.strings.length);
+      this.strings.push(move bytes);
+    }
     const handle = this.allocate(TAG_STRING, 0);
     this.headers[usize(handle)].payload = stringIndex;
     return handle;
@@ -446,7 +601,7 @@ export struct Heap {
 
   // Allocated cells, excluding the reserved handle 0.
   function liveCells(): u32 {
-    return u32(this.headers.length - 1);
+    return u32(this.headers.length - 1 - this.freeHandleCount);
   }
 
   function slotsInUse(): u32 {
@@ -464,8 +619,16 @@ export function createHeap(): Heap {
     parent: 0, transitionName: 0, transitionSlot: 0, propCount: 0,
     transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
   }));
-  return Heap({ headers: move headers, slots: Array<Value>(), strings: Array<Array<u8>>(), classes: move classes });
+  return Heap({
+    headers: move headers, slots: Array<Value>(), strings: Array<Array<u8>>(), classes: move classes,
+    freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
+    markStack: Array<u32>(), markCount: 0,
+    allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0,
+  });
 }
+
+// The fewest allocations between collections.
+const COLLECT_FLOOR: u32 = 4096;
 
 // The bytes of a Z String as an owned byte array.
 export function bytesOf(in text: String): Array<u8> {
@@ -631,4 +794,53 @@ test "arrays grow, keep holes, and shrink" {
   heap.setArrayLength(array, 1);
   expect(heap.arrayHasIndex(array, 6)).toEqual(false);
   expect(asInt32(heap.arrayGet(array, 0))).toEqual(5);
+}
+
+test "a sweep frees unmarked cells, compacts slots, and reuses handles" {
+  let heap = createHeap();
+  const kept = heap.allocateObject(0);
+  const dropped = heap.allocateObject(0);
+  const textKept: String = "kept";
+  const textDropped: String = "dropped";
+  const keptString = heap.allocateString(bytesOf(in textKept));
+  const droppedString = heap.allocateString(bytesOf(in textDropped));
+  const child = heap.allocateArray(2);
+  heap.setSlot(kept, 0, cellValue(child));
+  heap.setSlot(child, 0, cellValue(keptString));
+  heap.objectSet(dropped, keptString, cellValue(droppedString));
+  const slotsBefore = heap.slotsInUse();
+  heap.markHandle(kept);
+  heap.sweep();
+  expect(heap.liveCells()).toEqual(3);
+  expect(heap.tagOf(dropped)).toEqual(TAG_FREE);
+  expect(heap.tagOf(droppedString)).toEqual(TAG_FREE);
+  expect(heap.isArray(child)).toEqual(true);
+  expect(heap.stringLength(keptString)).toEqual(4);
+  expect(heap.slotsInUse() < slotsBefore).toEqual(true);
+  expect(asCell(heap.slot(child, 0))).toEqual(keptString);
+  // The freed handle and string index come back before the arrays grow.
+  const headersBefore = heap.headers.length;
+  const reused = heap.allocateString(bytesOf(in textDropped));
+  expect(reused == dropped || reused == droppedString).toEqual(true);
+  expect(heap.headers.length).toEqual(headersBefore);
+  expect(heap.stringLength(reused)).toEqual(7);
+}
+
+test "marking follows links: prototypes, environments, closures" {
+  let heap = createHeap();
+  const proto = heap.allocateObject(0);
+  const object = heap.allocateObject(proto);
+  const outerEnv = heap.allocateEnv(0, 1);
+  const innerEnv = heap.allocateEnv(outerEnv, 1);
+  const fn = heap.allocateFunction(3);
+  const closure = heap.allocateClosure(3, innerEnv, cellValue(object));
+  const unreachable = heap.allocateObject(0);
+  heap.setSlot(outerEnv, 0, cellValue(fn));
+  heap.markHandle(closure);
+  heap.sweep();
+  expect(heap.tagOf(proto)).toEqual(TAG_OBJECT);
+  expect(heap.tagOf(outerEnv)).toEqual(TAG_ENV);
+  expect(heap.tagOf(fn)).toEqual(TAG_FUNCTION);
+  expect(heap.tagOf(unreachable)).toEqual(TAG_FREE);
+  expect(heap.liveCells()).toEqual(6);
 }

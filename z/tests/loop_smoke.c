@@ -46,6 +46,15 @@ int main(void) {
     if (zjs_z_heap_cells((uintptr_t)a) != zjs_z_heap_cells(fresh)) { printf("FAIL: numeric eval allocated cells\n"); failures++; }
     zjs_z_free_context(fresh);
 
+    /* A program that allocates in a loop collects as it goes: the heap
+     * stays bounded, and the result survives the collections. */
+    uintptr_t g = zjs_z_new_context();
+    zjs_z_eval(g, "var i = 0; var last; while (i < 200000) { last = { n: i, list: [i, i + 1], text: 'x' + i }; i++; } last.n + last.list[1]");
+    if (zjs_z_had_error(g)) { printf("FAIL: allocating loop threw\n"); failures++; }
+    if (zjs_z_last_result_bits(g) != (0xFFFE000000000000ULL | 399999ULL)) { printf("FAIL: allocating loop result\n"); failures++; }
+    if (zjs_z_heap_cells(g) > 50000) { printf("FAIL: heap grew without bound: %u cells\n", (unsigned)zjs_z_heap_cells(g)); failures++; }
+    zjs_z_free_context(g);
+
     zjs_free_context(a);
     zjs_free_context(b);
 

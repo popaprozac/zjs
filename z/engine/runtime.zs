@@ -107,6 +107,8 @@ export struct Runtime {
   functionProto: u32;
   arrayProto: u32;
   stringProto: u32;
+  // The completion value of the last run, kept alive for the embedder.
+  lastResult: Value;
   // Atoms the runtime consults by identity.
   atomLength: u32;
   atomPrototype: u32;
@@ -775,6 +777,121 @@ export struct Runtime {
     }
   }
 
+  // --- Collection ---
+
+  // Mark everything reachable from the runtime's roots, then sweep. Runs
+  // only at instruction boundaries, where every live value sits in a
+  // register, a frame, a global, or a table -- never in a Z local.
+  function collectGarbage(inout this): void {
+    let index: usize = 0;
+    while (index < usize(this.regTop)) {
+      const value = this.regStack[index];
+      this.heap.markValue(value);
+      index = index + 1;
+    }
+    index = 0;
+    while (index < this.globals.length) {
+      const value = this.globals[index].value;
+      this.heap.markValue(value);
+      index = index + 1;
+    }
+    index = 0;
+    while (index < usize(this.frameCount)) {
+      const savedThis = this.frames[index].savedThis;
+      const constructThis = this.frames[index].constructThis;
+      const callee = this.frames[index].callee;
+      const env = this.frames[index].env;
+      this.heap.markValue(savedThis);
+      this.heap.markValue(constructThis);
+      this.heap.markValue(callee);
+      this.heap.markHandle(env);
+      index = index + 1;
+    }
+    const hostThis = this.hostThis;
+    this.heap.markValue(hostThis);
+    const pendingValue = this.pendingValue;
+    this.heap.markValue(pendingValue);
+    const lastError = this.lastError;
+    this.heap.markValue(lastError);
+    const lastResult = this.lastResult;
+    this.heap.markValue(lastResult);
+    const objectProto = this.objectProto;
+    this.heap.markHandle(objectProto);
+    const functionProto = this.functionProto;
+    this.heap.markHandle(functionProto);
+    const arrayProto = this.arrayProto;
+    this.heap.markHandle(arrayProto);
+    const stringProto = this.stringProto;
+    this.heap.markHandle(stringProto);
+    const atomLength = this.atomLength;
+    this.heap.markHandle(atomLength);
+    const atomPrototype = this.atomPrototype;
+    this.heap.markHandle(atomPrototype);
+    const atomConstructor = this.atomConstructor;
+    this.heap.markHandle(atomConstructor);
+    const atomName = this.atomName;
+    this.heap.markHandle(atomName);
+    const atomMessage = this.atomMessage;
+    this.heap.markHandle(atomMessage);
+    // Names that hidden classes carry: a class is never freed, so the
+    // atoms it names live as long as the runtime.
+    index = 1;
+    while (index < this.heap.classes.length) {
+      const name = this.heap.classes[index].transitionName;
+      this.heap.markHandle(name);
+      index = index + 1;
+    }
+    // Function values, strings, and property names held by compiled code.
+    index = 0;
+    while (index < this.functions.length) {
+      let c: usize = 0;
+      while (c < this.functions[index].constants.length) {
+        const constant = this.functions[index].constants[c];
+        this.heap.markValue(constant);
+        c = c + 1;
+      }
+      c = 0;
+      while (c < this.functions[index].propertyNames.length) {
+        const name = this.functions[index].propertyNames[c];
+        this.heap.markHandle(name);
+        c = c + 1;
+      }
+      index = index + 1;
+    }
+    // The atom table is weak: an interned string nothing else reaches is
+    // dropped, and the table is rebuilt from the survivors.
+    this.rebuildAtoms();
+    this.heap.sweep();
+  }
+
+  function rebuildAtoms(inout this): void {
+    let survivors = Array<u32>();
+    let index: usize = 0;
+    while (index < this.atoms.length) {
+      const atom = this.atoms[index];
+      if (atom != 0 && this.heap.marked(atom)) survivors.push(atom);
+      this.atoms[index] = 0;
+      index = index + 1;
+    }
+    this.atomCount = 0;
+    index = 0;
+    while (index < survivors.length) {
+      const atom = survivors[index];
+      this.insertAtom(atom);
+      index = index + 1;
+    }
+  }
+
+  // Place an existing string cell in the atom table by its bytes' hash.
+  function insertAtom(inout this, handle: u32): void {
+    const bytes = this.heap.stringBytes(handle);
+    const mask = this.atoms.length - 1;
+    let slot = usize(this.hashBytes(in bytes)) & mask;
+    while (this.atoms[slot] != 0) { slot = (slot + 1) & mask; }
+    this.atoms[slot] = handle;
+    this.atomCount = this.atomCount + 1;
+  }
+
   // --- Coercions that need the heap ---
 
   // An arithmetic operand: numbers pass through; anything else goes
@@ -819,11 +936,11 @@ export struct Runtime {
     }
     if (isInt32(value)) {
       const text = int32ToString(asInt32(value));
-      return this.internText(in text);
+      return this.newString(bytesOf(in text));
     }
     if (isDouble(value)) {
       const text = doubleToString(asDouble(value));
-      return this.internText(in text);
+      return this.newString(bytesOf(in text));
     }
     if (isBoolean(value)) {
       const text: String = isTrue(value) ? "true" : "false";
@@ -1114,7 +1231,14 @@ export struct Runtime {
           const outcome = this.lessThan(operandC, operandB, true);
           this.setReg(base, inst.a, booleanValue(outcome));
         } else if (op == Op.jmp) {
-          ip = usize(i64(ip) + i64(bcI16(inst)));
+          const offset = bcI16(inst);
+          ip = usize(i64(ip) + i64(offset));
+          // A loop's back edge is a safe point too, so a program that
+          // allocates without calling collects all the same.
+          if (offset < 0 && this.heap.shouldCollect()) {
+            this.frames[frameIndex].ip = ip;
+            this.collectGarbage();
+          }
         } else if (op == Op.jmpIfTrue) {
           const operandA = this.reg(base, inst.a);
           if (this.toBooleanValue(operandA)) ip = usize(i64(ip) + i64(bcI16(inst)));
@@ -1300,6 +1424,14 @@ export struct Runtime {
         } else if (op == Op.returnOp) {
           let value = this.reg(base, inst.a);
           const frame = this.popFrame();
+          // A safe point: the return value is in the caller's register
+          // once written below; keep it rooted through the collection.
+          if (this.heap.shouldCollect()) {
+            this.setReg(frame.regsBase, 0, value);
+            this.regTop = frame.regsBase + 1;
+            this.collectGarbage();
+            this.regTop = frame.regsBase;
+          }
           if (this.isObjectLike(frame.constructThis) && !this.isObjectLike(value)) value = frame.constructThis;
           if (this.frameCount <= entryDepth) {
             result = value;
@@ -1515,12 +1647,16 @@ export struct Runtime {
             this.popFrame();
           }
         }
-        if (!caught) return RunResult({ isThrow: true, value: thrown });
+        if (!caught) {
+          this.lastResult = thrown;
+          return RunResult({ isThrow: true, value: thrown });
+        }
       } else if (!returned) {
         // Fell off the end without Return: pop and yield undefined.
         this.popFrame();
       }
     }
+    this.lastResult = result;
     return RunResult({ isThrow: false, value: result });
   }
 
@@ -1560,7 +1696,7 @@ export function createRuntime(): Runtime {
     hadError: false, lastError: undefinedValue(),
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
-    objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0,
+    objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, lastResult: undefinedValue(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0,
   });
   runtime.installBuiltins();

@@ -44,6 +44,16 @@ chain) and `for`-`of` over arrays, `in`/`instanceof`/`delete`, `++`/`--` and
 logical assignment on properties, and `Object`. **34 of 34** corpus files
 identical.
 
+Phase 6, the collector: mark-sweep over the handle heap with stable handles.
+Marking walks from the runtime's roots (registers, globals, frames, the
+realm, compiled code's constants and property names); sweeping frees dead
+headers onto a free list for reuse and compacts every live cell's slots into
+a fresh arena, so an object that outgrew its range leaves no permanent hole
+and nothing outside the heap needs updating. The atom table is weak. It runs
+at instruction boundaries only -- returns and loop back edges -- so no value
+is ever held only in a Z local across a collection. The ABI smoke test runs a
+200,000-iteration allocating loop and checks the heap stays bounded.
+
 Places the corpus deliberately steps around, where the reference is wrong and
 the Z engine follows the specification: a property write to `undefined`
 throws a TypeError (the reference drops it); `Error.prototype.message` is
@@ -56,7 +66,8 @@ sees one binding), a global object (top-level and sloppy-call `this` are
 undefined), property attributes (everything is writable and enumerable,
 except that an inherited `constructor` is skipped by `for`-`in`), accessors,
 `for`-`of` over anything but an array, `return` and `break` through a
-`finally`, the remaining builtins, and a collector.
+`finally`, and the remaining builtins. The collector is stop-the-world and
+non-generational; the reference's nursery is a later refinement.
 
 ```
 $ ./z/oracle.sh
