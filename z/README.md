@@ -66,7 +66,9 @@ getters and setters (object literals included), `[[DefineOwnProperty]]`
 with its validation, own keys in specification order, extensibility flags,
 strict-mode rejection of read-only writes; `Object`'s statics and `Reflect`;
 `Function` compiled from source, `bind`, and host functions that are not
-constructors.
+constructors. The `arguments` object (an array tagged for
+`Object.prototype.toString`, shared with arrows through the environment)
+and rest parameters read the frame's actual arguments.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -74,8 +76,10 @@ subset, classification) against both engines through matching command
 lines, `z/build/zjs-ref` (public ABI) and `z/build/zjsz` (Z), and reports
 the gap with the tests the reference passes and Z does not. Needs
 `vendor/test262`. Measurements so far: `language/statements/if` 117 of the
-reference's 121; `built-ins/Math` 388 of 618 -- the gap there is now the
-`arguments` object, which `verifyProperty` reads.
+reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5604 of
+6244; `built-ins/Number` 528 of 582 -- with Z passing 18, 211, and 60
+tests respectively that the reference fails. The largest remaining gaps
+are the missing `Symbol`, `JSON`, `Date`, and `RegExp`.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -100,7 +104,7 @@ UTF-16 code units is an open design question; the oracle needs parity with
 the reference for now.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `arguments`, `JSON` / `Date` / `RegExp`, direct `eval`
+sees one binding), `Symbol` / `JSON` / `Date` / `RegExp`, direct `eval`
 seeing the caller's locals,
 `for`-`of` over anything but an array, `return` and `break` through a
 `finally`, and the remaining builtins. The collector is stop-the-world and

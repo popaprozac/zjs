@@ -103,11 +103,13 @@ function mathUnary(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
 function mathRound(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const x = numberArgument(inout runtime, argsBase, argc, 0);
   if (runtime.pendingThrow) return undefinedValue();
-  if (x != x || x == 1.0 / 0.0 || x == -1.0 / 0.0) return doubleValue(x);
-  // Round half toward +Infinity, keeping -0 for values in (-0.5, 0].
-  const floored = nativeMath1(MATH_FLOOR, x + 0.5);
-  if (floored == 0.0 && x < 0.0) return doubleValue(-0.0);
-  return numberValue(floored);
+  if (x != x || x == 1.0 / 0.0 || x == -1.0 / 0.0 || x == 0.0) return doubleValue(x);
+  // Round half toward +Infinity without adding 0.5, which rounds wrongly
+  // near 2^52; -0 for values in (-0.5, -0].
+  const floored = nativeMath1(MATH_FLOOR, x);
+  const rounded = x - floored >= 0.5 ? floored + 1.0 : floored;
+  if (rounded == 0.0 && x < 0.0) return doubleValue(-0.0);
+  return numberValue(rounded);
 }
 
 function mathSign(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -138,16 +140,24 @@ function mathAtan2(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
 }
 
 function mathHypot(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  let sum: f64 = 0.0;
+  // Every argument is coerced before any is judged.
+  let numbers = Array<f64>();
   let index: u32 = 0;
-  let sawNaN = false;
   while (index < argc) {
     const x = numberArgument(inout runtime, argsBase, argc, index);
     if (runtime.pendingThrow) return undefinedValue();
+    numbers.push(x);
+    index = index + 1;
+  }
+  let sum: f64 = 0.0;
+  let sawNaN = false;
+  let i: usize = 0;
+  while (i < numbers.length) {
+    const x = numbers[i];
     if (x == 1.0 / 0.0 || x == -1.0 / 0.0) return doubleValue(1.0 / 0.0);
     if (x != x) sawNaN = true;
     sum = sum + x * x;
-    index = index + 1;
+    i = i + 1;
   }
   if (sawNaN) return doubleValue(nativeNan());
   return numberValue(nativeMath1(MATH_SQRT, sum));

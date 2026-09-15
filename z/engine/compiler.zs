@@ -17,7 +17,7 @@ import { Parser, ParseResult, parseProgram } from "./parser.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instAU16, instAI16, instI16, instU16 } from "./bytecode.zs";
 import { Runtime } from "./runtime.zs";
 import { bytesOf } from "./heap.zs";
-import { cellValue } from "./value.zs";
+import { cellValue, deletedValue } from "./value.zs";
 import { replace } from "std/memory";
 
 const B_LF: u8 = 10;
@@ -711,6 +711,13 @@ export struct Compiler {
         this.nextReg = dst + 1;
         i = i + 1;
       }
+      return dst;
+    }
+    if (k == NodeKind.holeExpr) {
+      // An elision: the deleted marker in a slot is a hole.
+      const index = this.addConst(deletedValue());
+      const dst = this.allocReg();
+      this.emit(instAU16(Op.loadConst, dst, index));
       return dst;
     }
     if (k == NodeKind.array) {
@@ -1834,9 +1841,20 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // Parameters: plain identifiers only for now (patterns and rest need
   // objects and arrays).
   let paramCount: u32 = 0;
+  let restIndex: i32 = -1;
   let p: u32 = 0;
   while (p < n.childrenCount) {
     const param = parser.ast.node(parser.ast.child(node, p));
+    if (param.kind == NodeKind.restParam) {
+      // `...rest` binds the arguments past the plain parameters; it is
+      // filled at entry from the frame's actual arguments.
+      const inner = parser.ast.node(param.left);
+      if (inner.kind != NodeKind.identExpr || inner.nameLength == 0) return failed;
+      compiler.addLocal(inner.nameStart, inner.nameLength);
+      restIndex = i32(compiler.locals.length - 1);
+      p = p + 1;
+      continue;
+    }
     if (param.kind != NodeKind.identExpr || param.nameLength == 0) return failed;
     // Parameters arrive in the first registers; a captured one is copied
     // into the environment once it exists.
@@ -1848,11 +1866,23 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // A named function expression binds its own name.
   const index = runtime.reserveFunction();
   let selfReg: i32 = -1;
+  let selfLocal: i32 = -1;
   if (n.kind == NodeKind.functionExpr && n.nameLength > 0) {
     selfReg = i32(compiler.addLocal(n.nameStart, n.nameLength));
+    selfLocal = i32(compiler.locals.length - 1);
   }
   if (n.left != NO_NODE) compiler.collectLocals(in parser, n.left);
   if (n.left != NO_NODE && bodyUsesThis(in parser, n.left)) compiler.thisReg = i32(compiler.allocReg());
+  // `arguments`, when the body (or an arrow inside it) reads it and no
+  // parameter or declaration takes the name, is a local built at entry.
+  let argumentsIndex: i32 = -1;
+  if (n.kind != NodeKind.arrowFunc && n.left != NO_NODE) {
+    const usage = argumentsUsage(in parser, n.left);
+    if (usage != 0 && compiler.findLocal(in parser, usage, 9) < 0) {
+      compiler.addLocal(usage, 9);
+      argumentsIndex = i32(compiler.locals.length - 1);
+    }
+  }
   if (n.left != NO_NODE) compiler.scanCaptures(in parser, n.left);
   compiler.fixedRegs = compiler.nextReg;
 
@@ -1869,10 +1899,22 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // A named function expression's own name is the value it was called
   // through, which carries the environment when it is a closure.
   if (selfReg >= 0) {
-    const selfIndex = usize(paramCount);
+    const selfIndex = usize(selfLocal);
     const callee = compiler.allocReg();
     compiler.emit(instA(Op.loadCallee, callee));
     compiler.storeLocal(selfIndex, callee);
+    compiler.resetTemps();
+  }
+  if (argumentsIndex >= 0) {
+    const built = compiler.allocReg();
+    compiler.emit(instA(Op.buildArguments, built));
+    compiler.storeLocal(usize(argumentsIndex), built);
+    compiler.resetTemps();
+  }
+  if (restIndex >= 0) {
+    const built = compiler.allocReg();
+    compiler.emit(instAB(Op.buildRestArgs, built, u8(paramCount)));
+    compiler.storeLocal(usize(restIndex), built);
     compiler.resetTemps();
   }
   // Defaults: a parameter that arrived undefined takes its initializer.
@@ -2036,6 +2078,28 @@ function bodyBinds(in parser: Parser, node: u32, nameStart: u32, nameLength: u32
     i = i + 1;
   }
   return false;
+}
+
+// The position of the first `arguments` read in a body, looking into
+// arrows but not into nested functions, which have their own; 0 for none.
+function argumentsUsage(in parser: Parser, node: u32): u32 {
+  if (node == NO_NODE) return 0;
+  const n = parser.ast.node(node);
+  if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr) return 0;
+  if (n.kind == NodeKind.identExpr && n.nameLength == 9 && parser.sliceEquals(n.nameStart, 9, "arguments")) return n.nameStart;
+  const left = argumentsUsage(in parser, n.left);
+  if (left != 0) return left;
+  const right = argumentsUsage(in parser, n.right);
+  if (right != 0) return right;
+  const third = argumentsUsage(in parser, n.third);
+  if (third != 0) return third;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    const found = argumentsUsage(in parser, parser.ast.child(node, i));
+    if (found != 0) return found;
+    i = i + 1;
+  }
+  return 0;
 }
 
 // Whether a body reads `this` outside any nested non-arrow function.

@@ -22,6 +22,10 @@ struct Global {
   defined: boolean;
   // The name interned, for lookups through the global object.
   atom: u32;
+  // PROP_* bits as seen through the global object: script bindings are
+  // writable and enumerable, builtins writable and configurable, the
+  // value constants none.
+  attr: u8;
 }
 
 struct Frame {
@@ -43,6 +47,10 @@ struct Frame {
   env: u32;
   // The function or closure value the frame was called through.
   callee: Value;
+  // Where the call's actual arguments sit in the register stack, and how
+  // many there are: the `arguments` object and rest parameters read them.
+  argsBase: u32;
+  argc: u32;
 }
 
 // A live try handler: the frame it belongs to, where its catch block
@@ -181,6 +189,8 @@ export struct Runtime {
   // bytes begin with 0xFF, which no JavaScript string can contain, so
   // user code can neither read nor forge it.
   atomPrimitive: u32;
+  // The hidden key marking an arguments object's bag.
+  atomArgumentsMarker: u32;
 
   function addFunction(inout this, code: FunctionCode): u32 {
     this.functions.push(move code);
@@ -221,7 +231,7 @@ export struct Runtime {
       index = index + 1;
     }
     const atom = this.internBytes(bytesOf(in name));
-    this.globals.push(Global({ name: move name, value: undefinedValue(), defined: false, atom: atom }));
+    this.globals.push(Global({ name: move name, value: undefinedValue(), defined: false, atom: atom, attr: PROP_WRITABLE | PROP_ENUMERABLE }));
     return u16(this.globals.length - 1);
   }
 
@@ -577,7 +587,7 @@ export struct Runtime {
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
-        if (this.heap.arrayHasIndex(handle, u32(index))) return this.heap.arrayGet(handle, u32(index));
+        if (this.heap.arrayHasIndex(handle, u32(index))) return this.elementValue(handle, u32(index), object);
         const arrayProto = this.arrayProto;
         const atom = this.propertyKey(key);
         return this.lookupProperty(arrayProto, atom, object);
@@ -607,19 +617,21 @@ export struct Runtime {
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
-      if (atom == this.atomPrototype) return cellValue(this.prototypeOf(handle));
       const bag = this.functionBag(handle);
       if (bag != 0) {
         const own = this.lookupProperty(bag, atom, object);
         if (!isUndefined(own)) return own;
       }
-      if (tag == TAG_HOST_FUNCTION) {
-        if (atom == this.atomLength) return this.heap.slot(handle, 1);
-        if (atom == this.atomName) return this.heap.slot(handle, 2);
-      } else {
-        const code = this.heap.functionIndex(handle);
-        if (atom == this.atomLength) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
-        if (atom == this.atomName) return this.functionName(code);
+      if (atom == this.atomPrototype && this.isConstructorValue(object)) return cellValue(this.prototypeOf(handle));
+      if (!this.functionVirtualDeleted(handle, atom)) {
+        if (tag == TAG_HOST_FUNCTION) {
+          if (atom == this.atomLength) return this.heap.slot(handle, 1);
+          if (atom == this.atomName) return this.heap.slot(handle, 2);
+        } else {
+          const code = this.heap.functionIndex(handle);
+          if (atom == this.atomLength) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
+          if (atom == this.atomName) return this.functionName(code);
+        }
       }
       const functionProto = this.functionProto;
       return this.lookupProperty(functionProto, atom, object);
@@ -629,6 +641,29 @@ export struct Runtime {
 
   // [[Set]]. Writes to primitives are silently dropped, as in sloppy
   // mode; attribute and setter checks arrive with property descriptors.
+  // An array element, through its getter when the slot is an accessor.
+  function elementValue(inout this, array: u32, index: u32, receiver: Value): Value {
+    const held = this.heap.arrayGet(array, index);
+    if ((this.heap.attrOf(array, index) & PROP_ACCESSOR) == 0) return held;
+    const getter = this.heap.slot(asCell(held), 0);
+    if (!this.isCallable(getter)) return undefinedValue();
+    return this.callValue(getter, receiver, Array<Value>());
+  }
+
+  // The length an array may take from a value: its ToNumber must be an
+  // exact uint32, else a RangeError is raised.
+  function arrayLengthFrom(inout this, value: Value): u32 {
+    const number = this.toNumberValue(value);
+    if (this.pendingThrow) return 0;
+    if (number != number || number < 0.0 || number > 4294967295.0 || !isIntegralDouble(number)) {
+      const message: String = "Invalid array length";
+      const error = this.makeError(ERROR_KIND_RANGE, bytesOf(in message));
+      this.raise(error);
+      return 0;
+    }
+    return u32(number);
+  }
+
   // [[Set]]: an own or inherited setter runs; a non-writable property or
   // an unextensible target rejects the write, and the caller decides
   // whether that is a TypeError (strict code) or silence. Writes to
@@ -642,6 +677,7 @@ export struct Runtime {
       if (handle == this.globalObject && this.heap.objectFindSlot(handle, atom) < 0) {
         const slot = this.findGlobalByAtom(atom);
         if (slot >= 0) {
+          if ((this.globals[usize(slot)].attr & PROP_WRITABLE) == 0 && this.globals[usize(slot)].defined) return false;
           this.globals[usize(slot)].value = value;
           this.globals[usize(slot)].defined = true;
           return true;
@@ -653,7 +689,18 @@ export struct Runtime {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
         const present = this.heap.arrayHasIndex(handle, u32(index));
-        if (present && (this.heap.attrOf(handle, u32(index)) & PROP_WRITABLE) == 0) return false;
+        if (present) {
+          const attr = this.heap.attrOf(handle, u32(index));
+          if ((attr & PROP_ACCESSOR) != 0) {
+            const setter = this.heap.slot(asCell(this.heap.arrayGet(handle, u32(index))), 1);
+            if (!this.isCallable(setter)) return false;
+            let args = Array<Value>();
+            args.push(value);
+            this.callValue(setter, object, move args);
+            return true;
+          }
+          if ((attr & PROP_WRITABLE) == 0) return false;
+        }
         if (!present && (this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0) return false;
         if (!present && u32(index) >= this.heap.arrayLength(handle) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
         this.heap.arraySet(handle, u32(index), value);
@@ -662,7 +709,8 @@ export struct Runtime {
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) {
         if ((this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
-        const length = this.toLength(value);
+        const length = this.arrayLengthFrom(value);
+        if (this.pendingThrow) return false;
         this.heap.setArrayLength(handle, length);
         return true;
       }
@@ -690,6 +738,15 @@ export struct Runtime {
       return this.setOnObject(bag, atom, value, object);
     }
     return true;
+  }
+
+  // Whether a virtual property of a function (`length`, `name`,
+  // `prototype`) was deleted: its bag then holds a deleted marker.
+  function functionVirtualDeleted(handle: u32, atom: u32): boolean {
+    const bag = this.functionBag(handle);
+    if (bag == 0) return false;
+    const slot = this.heap.objectFindSlot(bag, atom);
+    return slot >= 0 && isDeleted(this.heap.slot(bag, u32(slot)));
   }
 
   // Whether a function-like cell's bag holds `atom` as a live property.
@@ -756,7 +813,7 @@ export struct Runtime {
       if (own.present) return own;
       if (handle == this.globalObject) {
         const slot = this.findGlobalByAtom(atom);
-        if (slot >= 0 && this.globals[usize(slot)].defined) return dataProperty(this.globals[usize(slot)].value, PROP_WRITABLE | PROP_ENUMERABLE);
+        if (slot >= 0 && this.globals[usize(slot)].defined) return dataProperty(this.globals[usize(slot)].value, this.globals[usize(slot)].attr);
       }
       const primitive = this.wrappedPrimitive(handle);
       if (!isDeleted(primitive) && this.isStringValue(primitive)) return this.stringOwnDescriptor(asCell(primitive), key);
@@ -766,7 +823,12 @@ export struct Runtime {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
         if (!this.heap.arrayHasIndex(handle, u32(index))) return absentProperty();
-        return dataProperty(this.heap.arrayGet(handle, u32(index)), this.heap.attrOf(handle, u32(index)));
+        const attr = this.heap.attrOf(handle, u32(index));
+        const held = this.heap.arrayGet(handle, u32(index));
+        if ((attr & PROP_ACCESSOR) != 0) {
+          return PropertyDescriptor({ present: true, value: undefinedValue(), getter: this.heap.slot(asCell(held), 0), setter: this.heap.slot(asCell(held), 1), attr: attr });
+        }
+        return dataProperty(held, attr);
       }
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) {
@@ -785,6 +847,7 @@ export struct Runtime {
         const own = this.ownSlotDescriptor(bag, atom);
         if (own.present) return own;
       }
+      if (this.functionVirtualDeleted(handle, atom)) return absentProperty();
       if (atom == this.atomPrototype) {
         if (!this.isConstructorValue(object)) return absentProperty();
         const attr: u8 = tag == TAG_HOST_FUNCTION ? PROP_NONE : PROP_WRITABLE;
@@ -855,48 +918,63 @@ export struct Runtime {
     const atom = this.propertyKey(key);
     const isAccessorInput = desc.hasGetter || desc.hasSetter;
     const current = this.getOwnDescriptor(object, key);
-    // Arrays: elements and length are not slots of a bag.
+    // An array's length: value and writability only, with RangeError for
+    // a value that is not a valid length.
+    if (tag == TAG_ARRAY && atom == this.atomLength) {
+      if (isAccessorInput) return false;
+      let newLength: u32 = 0;
+      if (desc.hasValue) {
+        newLength = this.arrayLengthFrom(desc.value);
+        if (this.pendingThrow) return false;
+      }
+      const lengthLocked = (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0;
+      if (desc.hasConfigurable && desc.configurable) return false;
+      if (desc.hasEnumerable && desc.enumerable) return false;
+      if (lengthLocked && desc.hasWritable && desc.writable) return false;
+      if (desc.hasValue) {
+        if (lengthLocked && newLength != this.heap.arrayLength(handle)) return false;
+        this.heap.setArrayLength(handle, newLength);
+      }
+      if (desc.hasWritable && !desc.writable) {
+        const flags = this.heap.flagsOf(handle);
+        this.heap.setFlags(handle, flags | FLAG_LENGTH_READONLY);
+      }
+      return true;
+    }
+    if (!this.descriptorCompatible(object, current, desc)) return false;
+    const attr = this.mergedAttr(current, desc);
+    const currentIsAccessor = current.present && (current.attr & PROP_ACCESSOR) != 0;
+    const becomesAccessor = isAccessorInput || (currentIsAccessor && !desc.hasValue && !desc.hasWritable);
+    let stored = undefinedValue();
+    let storedAttr = attr & (PROP_WRITABLE | PROP_ENUMERABLE | PROP_CONFIGURABLE);
+    if (becomesAccessor) {
+      let getter = currentIsAccessor ? current.getter : undefinedValue();
+      let setter = currentIsAccessor ? current.setter : undefinedValue();
+      if (desc.hasGetter) getter = desc.getter;
+      if (desc.hasSetter) setter = desc.setter;
+      stored = cellValue(this.heap.allocateAccessor(getter, setter));
+      storedAttr = (attr & (PROP_ENUMERABLE | PROP_CONFIGURABLE)) | PROP_ACCESSOR;
+    } else {
+      stored = current.present && !currentIsAccessor ? current.value : undefinedValue();
+      if (desc.hasValue) stored = desc.value;
+    }
+    // Array elements live in the array's slots.
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
-        if (isAccessorInput) return false;
-        if (current.present) {
-          if ((current.attr & PROP_CONFIGURABLE) == 0) {
-            if (desc.hasConfigurable && desc.configurable) return false;
-            if (desc.hasEnumerable && desc.enumerable != ((current.attr & PROP_ENUMERABLE) != 0)) return false;
-            if ((current.attr & PROP_WRITABLE) == 0) {
-              if (desc.hasWritable && desc.writable) return false;
-              if (desc.hasValue && !this.sameValue(desc.value, current.value)) return false;
-            }
-          }
-        } else if (!this.isExtensible(object)) {
-          return false;
-        } else if (u32(index) >= this.heap.arrayLength(handle) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) {
-          return false;
-        }
-        const attr = this.mergedAttr(current, desc);
-        if (desc.hasValue || !current.present) {
-          const value = desc.hasValue ? desc.value : undefinedValue();
-          this.heap.arraySet(handle, u32(index), value);
-        }
-        this.heap.setAttr(handle, u32(index), attr);
+        if (!current.present && u32(index) >= this.heap.arrayLength(handle) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
+        this.heap.arraySet(handle, u32(index), stored);
+        this.heap.setAttr(handle, u32(index), storedAttr);
         return true;
       }
-      if (atom == this.atomLength) {
-        if (isAccessorInput) return false;
-        const lengthLocked = (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0;
-        if (desc.hasConfigurable && desc.configurable) return false;
-        if (desc.hasEnumerable && desc.enumerable) return false;
-        if (lengthLocked && desc.hasWritable && desc.writable) return false;
-        if (desc.hasValue) {
-          const length = this.toLength(desc.value);
-          if (lengthLocked && length != this.heap.arrayLength(handle)) return false;
-          this.heap.setArrayLength(handle, length);
-        }
-        if (desc.hasWritable && !desc.writable) {
-          const flags = this.heap.flagsOf(handle);
-          this.heap.setFlags(handle, flags | FLAG_LENGTH_READONLY);
-        }
+    }
+    // A global binding seen through the global object stays a binding.
+    if (handle == this.globalObject && this.heap.objectFindSlot(handle, atom) < 0) {
+      const slot = this.findGlobalByAtom(atom);
+      if (slot >= 0 && this.globals[usize(slot)].defined) {
+        if (becomesAccessor) return false;
+        this.globals[usize(slot)].value = stored;
+        this.globals[usize(slot)].attr = storedAttr;
         return true;
       }
     }
@@ -904,37 +982,32 @@ export struct Runtime {
     // redefined; the bag is consulted first from then on.
     const target = this.definitionTarget(handle, atom);
     if (target == 0) return false;
-    if (current.present) {
-      if ((current.attr & PROP_CONFIGURABLE) == 0) {
-        if (desc.hasConfigurable && desc.configurable) return false;
-        if (desc.hasEnumerable && desc.enumerable != ((current.attr & PROP_ENUMERABLE) != 0)) return false;
-        const currentIsAccessor = (current.attr & PROP_ACCESSOR) != 0;
-        if (isAccessorInput != currentIsAccessor && (isAccessorInput || desc.hasValue || desc.hasWritable)) return false;
-        if (currentIsAccessor) {
-          if (desc.hasGetter && !this.sameValue(desc.getter, current.getter)) return false;
-          if (desc.hasSetter && !this.sameValue(desc.setter, current.setter)) return false;
-        } else if ((current.attr & PROP_WRITABLE) == 0) {
-          if (desc.hasWritable && desc.writable) return false;
-          if (desc.hasValue && !this.sameValue(desc.value, current.value)) return false;
-        }
-      }
-    } else if (!this.isExtensible(object)) {
-      return false;
-    }
-    const attr = this.mergedAttr(current, desc);
-    const currentIsAccessor = current.present && (current.attr & PROP_ACCESSOR) != 0;
-    if (isAccessorInput || (currentIsAccessor && !desc.hasValue && !desc.hasWritable)) {
-      let getter = currentIsAccessor ? current.getter : undefinedValue();
-      let setter = currentIsAccessor ? current.setter : undefinedValue();
-      if (desc.hasGetter) getter = desc.getter;
-      if (desc.hasSetter) setter = desc.setter;
-      const accessor = this.heap.allocateAccessor(getter, setter);
-      this.heap.objectDefine(target, atom, cellValue(accessor), attr | PROP_ACCESSOR);
+    this.heap.objectDefine(target, atom, stored, storedAttr);
+    return true;
+  }
+
+  // ValidateAndApplyPropertyDescriptor's rejections: a non-configurable
+  // property cannot become configurable, change enumerability, change
+  // kind, or (when read-only) change value or accessors; a missing
+  // property needs an extensible object.
+  function descriptorCompatible(inout this, object: Value, current: PropertyDescriptor, desc: DescriptorInput): boolean {
+    if (!current.present) return this.isExtensible(object);
+    if ((current.attr & PROP_CONFIGURABLE) != 0) return true;
+    const isAccessorInput = desc.hasGetter || desc.hasSetter;
+    if (desc.hasConfigurable && desc.configurable) return false;
+    if (desc.hasEnumerable && desc.enumerable != ((current.attr & PROP_ENUMERABLE) != 0)) return false;
+    const currentIsAccessor = (current.attr & PROP_ACCESSOR) != 0;
+    if (isAccessorInput && !currentIsAccessor) return false;
+    if ((desc.hasValue || desc.hasWritable) && currentIsAccessor) return false;
+    if (currentIsAccessor) {
+      if (desc.hasGetter && !this.sameValue(desc.getter, current.getter)) return false;
+      if (desc.hasSetter && !this.sameValue(desc.setter, current.setter)) return false;
       return true;
     }
-    let value = current.present && !currentIsAccessor ? current.value : undefinedValue();
-    if (desc.hasValue) value = desc.value;
-    this.heap.objectDefine(target, atom, value, attr & (PROP_WRITABLE | PROP_ENUMERABLE | PROP_CONFIGURABLE));
+    if ((current.attr & PROP_WRITABLE) == 0) {
+      if (desc.hasWritable && desc.writable) return false;
+      if (desc.hasValue && !this.sameValue(desc.value, current.value)) return false;
+    }
     return true;
   }
 
@@ -1021,8 +1094,8 @@ export struct Runtime {
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const bag = this.functionBag(handle);
-      if (!this.functionBagHas(handle, this.atomLength)) keys.push(cellValue(this.atomLength));
-      if (!this.functionBagHas(handle, this.atomName)) keys.push(cellValue(this.atomName));
+      if (!this.functionBagHas(handle, this.atomLength) && !this.functionVirtualDeleted(handle, this.atomLength)) keys.push(cellValue(this.atomLength));
+      if (!this.functionBagHas(handle, this.atomName) && !this.functionVirtualDeleted(handle, this.atomName)) keys.push(cellValue(this.atomName));
       if (this.isConstructorValue(object) && !this.functionBagHas(handle, this.atomPrototype)) keys.push(cellValue(this.atomPrototype));
       if (bag != 0) this.pushObjectKeys(inout keys, bag, false);
       return keys;
@@ -1119,11 +1192,9 @@ export struct Runtime {
     // Functions: `prototype` (constructors only), `length`, `name`, own
     // named properties, then Function.prototype.
     const atom = this.propertyKey(key);
-    if (atom == this.atomPrototype) {
-      if (tag == TAG_HOST_FUNCTION) return this.heap.linkOf(handle) != 0 || isTrue(this.heap.slot(handle, 4));
-      return this.isConstructorValue(object);
-    }
-    if (atom == this.atomLength || atom == this.atomName) return true;
+    if (this.functionBagHas(handle, atom)) return true;
+    if (atom == this.atomPrototype && !this.functionVirtualDeleted(handle, atom)) return this.isConstructorValue(object);
+    if ((atom == this.atomLength || atom == this.atomName) && !this.functionVirtualDeleted(handle, atom)) return true;
     const bag = this.functionBag(handle);
     if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
     const functionProto = this.functionProto;
@@ -1165,11 +1236,10 @@ export struct Runtime {
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
-      if (atom == this.atomPrototype || atom == this.atomLength || atom == this.atomName) return true;
-      const bag = this.functionBag(handle);
-      if (bag == 0) return false;
-      const slot = this.heap.objectFindSlot(bag, atom);
-      return slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)));
+      if (this.functionBagHas(handle, atom)) return true;
+      if (this.functionVirtualDeleted(handle, atom)) return false;
+      if (atom == this.atomPrototype) return this.isConstructorValue(object);
+      return atom == this.atomLength || atom == this.atomName;
     }
     return false;
   }
@@ -1213,9 +1283,17 @@ export struct Runtime {
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
-      const bag = this.functionBag(handle);
-      if (bag != 0 && this.functionBagHas(handle, atom)) return this.deleteFromObject(bag, atom);
-      if (atom == this.atomPrototype) return false;
+      if (this.functionBagHas(handle, atom)) {
+        const bag = this.functionBag(handle);
+        return this.deleteFromObject(bag, atom);
+      }
+      if (atom == this.atomPrototype) return !this.isConstructorValue(object);
+      if (atom == this.atomLength || atom == this.atomName) {
+        // Configurable: deleting leaves a tombstone in the bag.
+        const bag = this.ensureFunctionBag(handle);
+        this.heap.objectDefine(bag, atom, deletedValue(), PROP_CONFIGURABLE);
+        return true;
+      }
       return true;
     }
     return true;
@@ -1227,6 +1305,14 @@ export struct Runtime {
     if ((this.heap.attrOf(handle, u32(slot)) & PROP_CONFIGURABLE) == 0) return false;
     this.heap.setSlot(handle, u32(slot), deletedValue());
     return true;
+  }
+
+  // Whether an array cell was built as a function's arguments object.
+  function isArgumentsObject(handle: u32): boolean {
+    if (!this.heap.isArray(handle)) return false;
+    const bag = this.heap.linkOf(handle);
+    if (bag == 0) return false;
+    return this.heap.objectFindSlot(bag, this.atomArgumentsMarker) >= 0;
   }
 
   // Whether an atom is one of the engine's hidden keys.
@@ -1424,9 +1510,15 @@ export struct Runtime {
     return fn(inout this, thisValue, argsBase, argc, callee);
   }
 
+  // A builtin global: writable and configurable, not enumerable.
   function setGlobal(inout this, name: String, value: Value): void {
+    this.setGlobalAttr(move name, value, PROP_METHOD);
+  }
+
+  function setGlobalAttr(inout this, name: String, value: Value, attr: u8): void {
     const slot = this.defineGlobalSlot(move name);
     this.globals[usize(slot)].value = value;
+    this.globals[usize(slot)].attr = attr;
   }
 
   // The global with this interned name, or -1.
@@ -1608,6 +1700,12 @@ export struct Runtime {
     hidden.push(105);
     hidden.push(109);
     this.atomPrimitive = this.internBytes(move hidden);
+    let marker = Array<u8>();
+    marker.push(255);
+    marker.push(97);
+    marker.push(114);
+    marker.push(103);
+    this.atomArgumentsMarker = this.internBytes(move marker);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
@@ -1617,9 +1715,9 @@ export struct Runtime {
     this.booleanProto = this.heap.allocateObject(objectProto);
     this.globalObject = this.heap.allocateObject(objectProto);
     // Value properties of the global object.
-    this.setGlobal("NaN", doubleValue(nativeNan()));
-    this.setGlobal("Infinity", doubleValue(1.0 / 0.0));
-    this.setGlobal("undefined", undefinedValue());
+    this.setGlobalAttr("NaN", doubleValue(nativeNan()), PROP_NONE);
+    this.setGlobalAttr("Infinity", doubleValue(1.0 / 0.0), PROP_NONE);
+    this.setGlobalAttr("undefined", undefinedValue(), PROP_NONE);
     this.setGlobal("globalThis", cellValue(this.globalObject));
   }
 
@@ -1677,6 +1775,8 @@ export struct Runtime {
     this.heap.markHandle(booleanProto);
     const atomPrimitive = this.atomPrimitive;
     this.heap.markHandle(atomPrimitive);
+    const atomArgumentsMarker = this.atomArgumentsMarker;
+    this.heap.markHandle(atomArgumentsMarker);
     index = 0;
     while (index < this.tempRootCount) {
       const rooted = this.tempRoots[index];
@@ -1932,7 +2032,7 @@ export struct Runtime {
     const frame = Frame({
       functionIndex: functionIndex, ip: 0, regsBase: base, regCount: regCount, returnDst: returnDst,
       savedThis: this.hostThis, tryDepthAtEntry: this.tryDepth, constructThis: undefinedValue(),
-      env: 0, callee: undefinedValue(),
+      env: 0, callee: undefinedValue(), argsBase: 0, argc: 0,
     });
     if (usize(this.frameCount) < this.frames.length) {
       this.frames[usize(this.frameCount)] = frame;
@@ -1988,6 +2088,8 @@ export struct Runtime {
     }
     this.hostThis = thisValue;
     this.frames[top].constructThis = constructThis;
+    this.frames[top].argsBase = argsBase;
+    this.frames[top].argc = argc;
     const thisReg = this.functions[usize(target)].thisReg;
     if (thisReg >= 0) this.setReg(calleeBase, u8(thisReg), thisValue);
   }
@@ -2558,6 +2660,36 @@ export struct Runtime {
           const wrapped = this.heap.functionIndex(asCell(fn));
           const closure = this.heap.allocateClosure(wrapped, env, capturedThis);
           this.setReg(base, inst.a, cellValue(closure));
+        } else if (op == Op.buildArguments) {
+          // The frame's actual arguments as an array, marked so that
+          // Object.prototype.toString reports Arguments.
+          const argsBase = this.frames[frameIndex].argsBase;
+          const argc = this.frames[frameIndex].argc;
+          const array = this.heap.allocateArray(argc);
+          let index: u32 = 0;
+          while (index < argc) {
+            const passed = this.regStack[usize(argsBase + index)];
+            this.heap.setSlot(array, index, passed);
+            index = index + 1;
+          }
+          const bag = this.arrayBag(array);
+          const marker = this.atomArgumentsMarker;
+          this.heap.objectDefine(bag, marker, booleanValue(true), PROP_NONE);
+          this.setReg(base, inst.a, cellValue(array));
+        } else if (op == Op.buildRestArgs) {
+          // The actual arguments past the first b, as an array.
+          const argsBase = this.frames[frameIndex].argsBase;
+          const argc = this.frames[frameIndex].argc;
+          const skip = u32(inst.b);
+          const count: u32 = argc > skip ? argc - skip : 0;
+          const array = this.heap.allocateArray(count);
+          let index: u32 = 0;
+          while (index < count) {
+            const passed = this.regStack[usize(argsBase + skip + index)];
+            this.heap.setSlot(array, index, passed);
+            index = index + 1;
+          }
+          this.setReg(base, inst.a, cellValue(array));
         } else if (op == Op.loadCallee) {
           const callee = this.frames[frameIndex].callee;
           this.setReg(base, inst.a, callee);
@@ -2660,6 +2792,7 @@ export function createRuntime(): Runtime {
     randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(), tempRootCount: 0,
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
+    atomArgumentsMarker: 0,
   });
   runtime.installIntrinsics();
   return runtime;

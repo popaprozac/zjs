@@ -42,4 +42,23 @@ try { Object.defineProperty(1, "x", {}); } catch (e) { caught.push(e.name); }
 try { Object.defineProperty(o, "bad", { get: 1 }); } catch (e) { caught.push(e.name); }
 try { Object.defineProperty(o, "mixed", { get: function () {}, value: 1 }); } catch (e) { caught.push(e.name); }
 log.push(caught.join());
+var more = [];
+var holes = [0, , 2, , ];
+more.push(holes.length, 1 in holes, holes[1], Object.keys(holes).join(), [, , ].length);
+var arr2 = [];
+Object.defineProperty(arr2, "0", { get: function () { return 11; }, configurable: false });
+more.push(arr2[0], arr2.length, Object.getOwnPropertyDescriptor(arr2, "0").configurable, typeof Object.getOwnPropertyDescriptor(arr2, "0").get);
+var lengthErrors = [];
+try { Object.defineProperty([], "length", { value: undefined }); } catch (e) { lengthErrors.push(e.name); }
+try { Object.defineProperty([], "length", { value: 1.5 }); } catch (e) { lengthErrors.push(e.name); }
+try { [].length = -1; } catch (e) { lengthErrors.push(e.name); }
+try { Object.defineProperty(arr2, "0", { get: function () { return 12; } }); } catch (e) { lengthErrors.push(e.name); }
+try { Object.create({}, null); } catch (e) { lengthErrors.push(e.name); }
+more.push(lengthErrors.join());
+var wrapped = Object(5);
+more.push(typeof wrapped, wrapped.constructor === Number, wrapped + 1, Object("s").length, Object(true).valueOf());
+var g = Object.getOwnPropertyDescriptor(this, "Math");
+more.push(g.writable, g.enumerable, g.configurable);
+more.push(Object.keys(this).indexOf("Math"));
+log.push(more.join(";"));
 log.join("|");

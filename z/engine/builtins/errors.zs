@@ -72,11 +72,13 @@ function errorToString(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   return runtime.newString(move joined);
 }
 
-// Object(value): the value itself when it is already an object, else a
-// fresh empty object (primitives are not wrapped yet).
+// Object(value): the value itself when it is already an object, a
+// wrapper for a primitive, else a fresh empty object.
 function constructObject(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const first = runtime.argument(argsBase, argc, 0);
   if (runtime.isObjectLike(first)) return first;
+  const proto = runtime.primitiveProto(first);
+  if (proto != 0) return runtime.wrapPrimitive(first, proto);
   if (runtime.isObjectLike(thisValue)) return thisValue;
   const objectProto = runtime.objectProto;
   return cellValue(runtime.heap.allocateObject(objectProto));
@@ -92,7 +94,7 @@ function objectToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   } else if (runtime.isCallable(thisValue)) {
     tag = "Function";
   } else if (isCell(thisValue) && asCell(thisValue) != 0 && runtime.heap.isArray(asCell(thisValue))) {
-    tag = "Array";
+    tag = runtime.isArgumentsObject(asCell(thisValue)) ? "Arguments" : "Array";
   } else if (runtime.isStringValue(thisValue)) {
     tag = "String";
   } else if (isNumber(thisValue)) {
@@ -135,6 +137,21 @@ function objectValueOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   return thisValue;
 }
 
+// Object.prototype.toLocaleString: this.toString()
+function objectToLocaleString(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  if (isUndefined(thisValue) || thisValue.bits == 2) {
+    const message: String = "Object.prototype.toLocaleString called on null or undefined";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const toStringText: String = "toString";
+  const key = runtime.internText(in toStringText);
+  const method = runtime.getProperty(thisValue, key);
+  if (runtime.pendingThrow) return undefinedValue();
+  return runtime.callValue(method, thisValue, Array<Value>());
+}
+
 // Object.prototype.hasOwnProperty
 function objectHasOwnProperty(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const key = runtime.argument(argsBase, argc, 0);
@@ -166,6 +183,8 @@ export function installErrors(inout runtime: Runtime): void {
   runtime.defineMethod(objectProto, in toStringText, objectToString, 0);
   const valueOfText: String = "valueOf";
   runtime.defineMethod(objectProto, in valueOfText, objectValueOf, 0);
+  const toLocaleStringText: String = "toLocaleString";
+  runtime.defineMethod(objectProto, in toLocaleStringText, objectToLocaleString, 0);
   const hasOwnText: String = "hasOwnProperty";
   runtime.defineMethod(objectProto, in hasOwnText, objectHasOwnProperty, 1);
   const isProtoText: String = "isPrototypeOf";

@@ -123,7 +123,9 @@ function objectDefineProperty(inout runtime: Runtime, thisValue: Value, argsBase
   const key = runtime.argument(argsBase, argc, 1);
   const desc = toDescriptorInput(inout runtime, runtime.argument(argsBase, argc, 2));
   if (runtime.pendingThrow) return undefinedValue();
-  if (!runtime.defineOwnProperty(target, key, desc)) {
+  const defined = runtime.defineOwnProperty(target, key, desc);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (!defined) {
     const message: String = "Cannot redefine property";
     const error = runtime.typeError(in message);
     runtime.raise(error);
@@ -153,7 +155,9 @@ function objectDefineProperties(inout runtime: Runtime, thisValue: Value, argsBa
       if (runtime.pendingThrow) return undefinedValue();
       const desc = toDescriptorInput(inout runtime, descObject);
       if (runtime.pendingThrow) return undefinedValue();
-      if (!runtime.defineOwnProperty(target, key, desc)) {
+      const defined = runtime.defineOwnProperty(target, key, desc);
+      if (runtime.pendingThrow) return undefinedValue();
+      if (!defined) {
         const message: String = "Cannot redefine property";
         const error = runtime.typeError(in message);
         runtime.raise(error);
@@ -321,6 +325,12 @@ function objectCreate(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   const created = cellValue(runtime.heap.allocateObject(parent));
   const properties = runtime.argument(argsBase, argc, 1);
   if (isUndefined(properties)) return created;
+  if (!runtime.isObjectLike(properties)) {
+    const message: String = "Property description must be an object";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
   // Object.defineProperties(created, properties)
   runtime.pushTempRoot(created);
   const keys = runtime.ownKeys(properties);
