@@ -88,7 +88,10 @@ through the iterator protocol for arrays. Control flow that leaves a
 region undoes it on the way out: a `break`, `continue`, or `return`
 pops the try handlers it crosses, runs the `finally` blocks it crosses
 inline, and closes the `for`-`of` iterators it leaves; a throw inside a
-`for`-`of` body closes the iterator too.
+`for`-`of` body closes the iterator too. Anonymous functions take the name
+of the binding, property, or parameter they initialize (accessors with a
+`get ` / `set ` prefix); only a function expression written with a name
+binds it inside itself.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated

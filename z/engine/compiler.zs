@@ -142,6 +142,12 @@ export struct Compiler {
   // Open regions, innermost last; `regionDepth` is the live extent.
   regions: Array<Region>;
   regionDepth: usize;
+  // The name an anonymous function defined by the next expression takes:
+  // the binding, property, or parameter it initializes. Consumed by the
+  // expression, passed through parentheses, dropped by anything else.
+  pendingNameStart: u32;
+  pendingNameLength: u32;
+  pendingNamePrefix: u32;
   // The register holding `this` in a function that reads it, or -1.
   thisReg: i32;
   // Interned names for LoadProp / StoreProp; the instruction carries an
@@ -659,10 +665,10 @@ export struct Compiler {
   // is a closure when the function refers to enclosing bindings or is an
   // arrow (which keeps the `this` of its creation); reaching past this
   // function makes this one a closure as well.
-  function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8): void {
+  function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, strict);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, strict, nameStart, nameLength, namePrefix);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -679,10 +685,22 @@ export struct Compiler {
   //
   // Each returns the register holding the result.
 
+  // Name the anonymous function the next expression defines.
+  function nameNext(inout this, nameStart: u32, nameLength: u32, prefix: u32): void {
+    this.pendingNameStart = nameStart;
+    this.pendingNameLength = nameLength;
+    this.pendingNamePrefix = prefix;
+  }
+
   function compileExpr(inout this, in parser: Parser, inout runtime: Runtime, node: u32): u8 {
     if (node == NO_NODE) return 0;
     const n = parser.ast.node(node);
     const k = n.kind;
+    const contextualStart = this.pendingNameStart;
+    const contextualLength = this.pendingNameLength;
+    const contextualPrefix = this.pendingNamePrefix;
+    this.pendingNameLength = 0;
+    this.pendingNamePrefix = 0;
 
     if (k == NodeKind.numberExpr) {
       const dst = this.allocReg();
@@ -719,7 +737,10 @@ export struct Compiler {
       this.emit(instA(Op.loadUndefined, dst));
       return dst;
     }
-    if (k == NodeKind.paren) return this.compileExpr(in parser, inout runtime, n.left);
+    if (k == NodeKind.paren) {
+      this.nameNext(contextualStart, contextualLength, contextualPrefix);
+      return this.compileExpr(in parser, inout runtime, n.left);
+    }
     if (k == NodeKind.stringExpr) {
       const decoded = decodeStringBody(in parser, n.start + 1, n.end > 0 ? n.end - 1 : n.start + 1);
       const index = this.addConst(runtime.internValue(move decoded));
@@ -855,6 +876,16 @@ export struct Compiler {
         } else {
           const atom = this.propertyNameAtom(in parser, inout runtime, property.nameStart, property.nameLength);
           key = this.emitKey(atom);
+          let prefix: u32 = 0;
+          if (property.op == TokenKind.kwGet) prefix = 1;
+          if (property.op == TokenKind.kwSet) prefix = 2;
+          // A quoted key names the function without its quotes.
+          const firstByte = parser.source.byteAt(usize(property.nameStart));
+          if ((firstByte == 34 || firstByte == 39) && property.nameLength >= 2) {
+            this.nameNext(property.nameStart + 1, property.nameLength - 2, prefix);
+          } else {
+            this.nameNext(property.nameStart, property.nameLength, prefix);
+          }
         }
         const value = this.compileExpr(in parser, inout runtime, property.left);
         if (property.op == TokenKind.kwGet) {
@@ -1164,6 +1195,7 @@ export struct Compiler {
       if (target.kind == NodeKind.identExpr) {
         let value: u8 = 0;
         if (n.op == TokenKind.eq) {
+          this.nameNext(target.nameStart, target.nameLength, 0);
           value = this.compileExpr(in parser, inout runtime, n.right);
         } else {
           // Compound assignment: current value, operator, right operand.
@@ -1219,7 +1251,7 @@ export struct Compiler {
     }
     if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc) {
       const dst = this.allocReg();
-      this.emitFunctionValue(in parser, inout runtime, node, dst);
+      this.emitFunctionValue(in parser, inout runtime, node, dst, contextualStart, contextualLength, contextualPrefix);
       return dst;
     }
     if (k == NodeKind.call && this.hasSpreadArgument(in parser, node)) {
@@ -1579,13 +1611,17 @@ export struct Compiler {
 
   // Apply a default: when the value is undefined, evaluate the initializer
   // into the same register.
-  function applyDefault(inout this, in parser: Parser, inout runtime: Runtime, initializer: u32, value: u8): void {
+  function applyDefault(inout this, in parser: Parser, inout runtime: Runtime, initializer: u32, value: u8, target: u32): void {
     if (initializer == NO_NODE) return;
     const undefinedReg = this.allocReg();
     this.emit(instA(Op.loadUndefined, undefinedReg));
     const test = this.allocReg();
     this.emit(instABC(Op.cmpStrictEq, test, value, undefinedReg));
     const skip = this.emit(instAI16(Op.jmpIfFalse, test, 0));
+    if (target != NO_NODE) {
+      const targetNode = parser.ast.node(target);
+      if (targetNode.kind == NodeKind.identExpr) this.nameNext(targetNode.nameStart, targetNode.nameLength, 0);
+    }
     const init = this.compileExpr(in parser, inout runtime, initializer);
     if (init != value) this.emit(instAB(Op.mov, value, init));
     this.patchJump(skip);
@@ -1644,7 +1680,7 @@ export struct Compiler {
           this.emit(instAB(Op.arrayPush, keys, keyReg));
         }
       }
-      this.applyDefault(in parser, inout runtime, entry.right, value);
+      this.applyDefault(in parser, inout runtime, entry.right, value, entry.left);
       this.bindTarget(in parser, inout runtime, entry.left, value);
       this.nextReg = watermark;
       i = i + 1;
@@ -1676,7 +1712,7 @@ export struct Compiler {
       this.emit(instABC(Op.iterStep, value, iterator, done));
       this.patchJump(stepped);
       if (entry.left != NO_NODE) {
-        this.applyDefault(in parser, inout runtime, entry.right, value);
+        this.applyDefault(in parser, inout runtime, entry.right, value, entry.left);
         this.bindTarget(in parser, inout runtime, entry.left, value);
       }
       this.nextReg = watermark;
@@ -1824,6 +1860,7 @@ export struct Compiler {
             return;
           }
           if (decl.left != NO_NODE) {
+            this.nameNext(decl.nameStart, decl.nameLength, 0);
             const value = this.compileExpr(in parser, inout runtime, decl.left);
             this.storeLocal(usize(local), value);
           }
@@ -1831,6 +1868,7 @@ export struct Compiler {
           // Script-mode `var` is a global binding.
           const slot = runtime.globalSlot(parser.source.copyBytes(usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
           if (decl.left != NO_NODE) {
+            this.nameNext(decl.nameStart, decl.nameLength, 0);
             const value = this.compileExpr(in parser, inout runtime, decl.left);
             this.emit(instAU16(Op.defineGlobal, value, slot));
           } else {
@@ -1845,6 +1883,7 @@ export struct Compiler {
           const local = this.locals.length - 1;
           this.fixedRegs = this.nextReg;
           if (decl.left != NO_NODE) {
+            this.nameNext(decl.nameStart, decl.nameLength, 0);
             const value = this.compileExpr(in parser, inout runtime, decl.left);
             this.storeLocal(local, value);
           } else {
@@ -1861,7 +1900,7 @@ export struct Compiler {
     if (k == NodeKind.emptyStmt) return;
     if (k == NodeKind.functionDecl) {
       const r = this.allocReg();
-      this.emitFunctionValue(in parser, inout runtime, node, r);
+      this.emitFunctionValue(in parser, inout runtime, node, r, 0, 0, 0);
       if (this.hadError) return;
       if (this.isFunction) {
         const local = this.findLocal(in parser, n.nameStart, n.nameLength);
@@ -2261,8 +2300,11 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingStrict: boolean): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32): CompiledFunction {
   const n = parser.ast.node(node);
+  // A function expression written with a name binds it inside itself. A
+  // name the parser attached to a method or accessor does not.
+  const writtenName = n.kind == NodeKind.functionExpr && n.nameLength > 0 && parser.sliceEquals(n.start, 8, "function");
   // The enclosing scopes, outermost first, ending with the parent's own.
   let scopes = Array<Scope>();
   let i: usize = 0;
@@ -2290,7 +2332,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict, loops: Array<LoopFrame>(), loopDepth: 0,
-    pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0, thisReg: -1, propertyNames: Array<u32>(),
+    pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
 
@@ -2339,7 +2382,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   const index = runtime.reserveFunction();
   let selfReg: i32 = -1;
   let selfLocal: i32 = -1;
-  if (n.kind == NodeKind.functionExpr && n.nameLength > 0) {
+  if (writtenName) {
     selfReg = i32(compiler.addLocal(n.nameStart, n.nameLength));
     selfLocal = i32(compiler.locals.length - 1);
   }
@@ -2406,6 +2449,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       const test = compiler.allocReg();
       compiler.emit(instABC(Op.cmpStrictEq, test, paramReg, undefinedReg));
       const skip = compiler.emit(instAI16(Op.jmpIfFalse, test, 0));
+      if (param.nameLength > 0) compiler.nameNext(param.nameStart, param.nameLength, 0);
       const init = compiler.compileExpr(in parser, inout runtime, param.right);
       if (init != paramReg) compiler.emit(instAB(Op.mov, paramReg, init));
       compiler.resetTemps();
@@ -2471,7 +2515,32 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   compiled.isArrow = n.kind == NodeKind.arrowFunc;
   compiled.strict = compiler.strict;
   compiled.thisReg = compiler.thisReg;
-  if (n.nameLength > 0) compiled.nameAtom = compiler.atomOfSlice(in parser, inout runtime, n.nameStart, n.nameLength);
+  // The name: written, else the parser's (methods, accessors), else the
+  // context's; accessors carry a "get " / "set " prefix.
+  let nameStart = n.nameStart;
+  let nameLength = n.nameLength;
+  if (nameLength == 0) {
+    nameStart = contextualStart;
+    nameLength = contextualLength;
+  }
+  if (nameLength > 0) {
+    let nameBytes = Array<u8>();
+    if (namePrefix == 1) {
+      const getPrefix: String = "get ";
+      nameBytes = bytesOf(in getPrefix);
+    } else if (namePrefix == 2) {
+      const setPrefix: String = "set ";
+      nameBytes = bytesOf(in setPrefix);
+    }
+    const text = parser.source.copyBytes(usize(nameStart), usize(nameStart + nameLength));
+    const textBytes = bytesOf(in text);
+    let b: usize = 0;
+    while (b < textBytes.length) {
+      nameBytes.push(textBytes[b]);
+      b = b + 1;
+    }
+    compiled.nameAtom = runtime.internBytes(move nameBytes);
+  }
   const propertyNames: Array<u32> = replace(inout compiler.propertyNames, Array<u32>());
   compiled.propertyNames = move propertyNames;
   runtime.setFunction(index, move compiled);
@@ -2697,7 +2766,8 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(), loopDepth: 0,
-    pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0, thisReg: -1, propertyNames: Array<u32>(),
+    pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));
