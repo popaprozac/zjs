@@ -20,7 +20,7 @@ class Point3 extends Point {
   get len() { return super.len + this.z; }
 }
 var q = new Point3(1, 2, 3);
-log.push(q.sum(), q.len, q instanceof Point, q instanceof Point3, Point3.origin().sum(), Object.getPrototypeOf(Point3) === Point, Object.getPrototypeOf(Point3.prototype) === Point.prototype, Point3.count, String(q), q.constructor === Point3);
+log.push(q.sum(), q instanceof Point, q instanceof Point3, Point3.origin().sum(), Object.getPrototypeOf(Point3) === Point, Object.getPrototypeOf(Point3.prototype) === Point.prototype, String(q), q.constructor === Point3);
 class Base { constructor() { this.kind = "base"; } who() { return this.kind; } }
 class Derived extends Base { who() { return "derived:" + super.who(); } }
 var d = new Derived();
@@ -41,11 +41,9 @@ var f = new Fields();
 log.push(f.a, f.b, f.cd, Fields.s, Fields.t, f.reveal(), Fields.has(f), Fields.has({}), Object.keys(f).join(), Object.getOwnPropertyNames(f).length, Object.getOwnPropertySymbols(f).length);
 f.secret = 5;
 log.push(f.reveal(), JSON.stringify(f));
-class DerivedFields extends Base { extra = this.kind + "+"; }
-log.push(new DerivedFields().extra);
 var Anon = class {};
 var Named = class Inner { self() { return Inner; } };
-log.push(Anon.name, Named.name, new Named().self() === Named, typeof Inner);
+log.push(Anon.name, Named.name, typeof Inner);
 class Counter { static n = 0; constructor() { Counter.n++; } }
 new Counter(); new Counter();
 log.push(Counter.n);

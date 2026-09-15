@@ -526,8 +526,10 @@ export struct Compiler {
           this.envSize = this.envSize + 1;
         }
       } else if (member.kind == NodeKind.classField && !member.boolValue && member.nameLength == 0 && member.third != NO_NODE) {
+        // Named by the source from its opening bracket, so the binding
+        // can never shadow an identifier the key expression reads.
         const key = parser.ast.node(member.third);
-        this.capturedNames.push(Local({ nameStart: key.start, nameLength: key.end - key.start, reg: 0, envSlot: i32(this.envSize) }));
+        this.capturedNames.push(Local({ nameStart: key.start - 1, nameLength: key.end - key.start + 1, reg: 0, envSlot: i32(this.envSize) }));
         this.envSize = this.envSize + 1;
       }
       // Static initializers and computed keys run in this function.
@@ -623,6 +625,107 @@ export struct Compiler {
     this.emit(instABC(Op.loadElem, base, base + 1, key));
   }
 
+  // An optional chain: a spine of member / element / call links with at
+  // least one `?.`. A nullish base at any optional link makes the whole
+  // chain undefined, so every such link jumps to one exit.
+  function compileOptionalChain(inout this, in parser: Parser, inout runtime: Runtime, node: u32): u8 {
+    const dst = this.allocReg();
+    let exits = Array<u32>();
+    const produced = this.compileChainLink(in parser, inout runtime, node, inout exits);
+    if (produced != dst) this.emit(instAB(Op.mov, dst, produced));
+    const over = this.emit(instAI16(Op.jmp, 0, 0));
+    let i: usize = 0;
+    while (i < exits.length) {
+      this.patchJump(exits[i]);
+      i = i + 1;
+    }
+    this.emit(instA(Op.loadUndefined, dst));
+    this.patchJump(over);
+    this.nextReg = dst + 1;
+    return dst;
+  }
+
+  // One link of the spine; the base of an optional link jumps out when
+  // nullish. Links off the spine (arguments, computed keys) compile as
+  // ordinary expressions.
+  function compileChainLink(inout this, in parser: Parser, inout runtime: Runtime, node: u32, inout exits: Array<u32>): u8 {
+    const n = parser.ast.node(node);
+    const k = n.kind;
+    if (k == NodeKind.member || k == NodeKind.optionalMember || k == NodeKind.computed || k == NodeKind.optionalComputed) {
+      const object = this.compileChainLink(in parser, inout runtime, n.left, inout exits);
+      if (k == NodeKind.optionalMember || k == NodeKind.optionalComputed) exits.push(this.emit(instAI16(Op.jmpIfNullish, object, 0)));
+      const dst = this.allocReg();
+      if (k == NodeKind.member || k == NodeKind.optionalMember) {
+        if (this.isPrivateName(in parser, n.nameStart, n.nameLength)) {
+          const key = this.privateKeyReg(in parser, n.nameStart, n.nameLength);
+          this.emit(instABC(Op.loadElem, dst, object, key));
+        } else {
+          const atom = this.propertyNameAtom(in parser, inout runtime, n.nameStart, n.nameLength);
+          this.emit(instABC(Op.loadProp, dst, object, this.nameSlot(atom)));
+        }
+      } else {
+        const key = this.compileExpr(in parser, inout runtime, n.right);
+        this.emit(instABC(Op.loadElem, dst, object, key));
+      }
+      this.nextReg = dst + 1;
+      return dst;
+    }
+    if (k == NodeKind.call || k == NodeKind.optionalCall) {
+      if (this.hasSpreadArgument(in parser, node)) {
+        this.hadError = true;
+        return 0;
+      }
+      const callee = parser.ast.node(n.left);
+      const argCount = n.childrenCount;
+      const isMethod = callee.kind == NodeKind.member || callee.kind == NodeKind.optionalMember || callee.kind == NodeKind.computed || callee.kind == NodeKind.optionalComputed;
+      const base = this.allocReg();
+      const first: u8 = isMethod ? base + 2 : base + 1;
+      let slot: u32 = 0;
+      while (slot < u32(first - base) + argCount - 1) {
+        this.allocReg();
+        slot = slot + 1;
+      }
+      if (isMethod) {
+        const receiver = this.compileChainLink(in parser, inout runtime, callee.left, inout exits);
+        if (callee.kind == NodeKind.optionalMember || callee.kind == NodeKind.optionalComputed) exits.push(this.emit(instAI16(Op.jmpIfNullish, receiver, 0)));
+        if (receiver != base + 1) this.emit(instAB(Op.mov, base + 1, receiver));
+        this.nextReg = first + u8(argCount);
+        if (callee.kind == NodeKind.member || callee.kind == NodeKind.optionalMember) {
+          if (this.isPrivateName(in parser, callee.nameStart, callee.nameLength)) {
+            const key = this.privateKeyReg(in parser, callee.nameStart, callee.nameLength);
+            this.emit(instABC(Op.loadElem, base, base + 1, key));
+          } else {
+            const atom = this.propertyNameAtom(in parser, inout runtime, callee.nameStart, callee.nameLength);
+            this.emit(instABC(Op.loadProp, base, base + 1, this.nameSlot(atom)));
+          }
+        } else {
+          const key = this.compileExpr(in parser, inout runtime, callee.right);
+          this.emit(instABC(Op.loadElem, base, base + 1, key));
+        }
+      } else {
+        const fn = this.compileChainLink(in parser, inout runtime, n.left, inout exits);
+        if (fn != base) this.emit(instAB(Op.mov, base, fn));
+      }
+      if (k == NodeKind.optionalCall) exits.push(this.emit(instAI16(Op.jmpIfNullish, base, 0)));
+      this.nextReg = first + u8(argCount);
+      let a: u32 = 0;
+      while (a < argCount) {
+        const argReg = this.compileExpr(in parser, inout runtime, parser.ast.child(node, a));
+        if (argReg != first + u8(a)) this.emit(instAB(Op.mov, first + u8(a), argReg));
+        this.nextReg = first + u8(argCount);
+        a = a + 1;
+      }
+      if (isMethod) {
+        this.emit(instABC(Op.methodInvoke, base, base, u8(argCount)));
+      } else {
+        this.emit(instABC(Op.invoke, base, base, u8(argCount)));
+      }
+      this.nextReg = base + 1;
+      return base;
+    }
+    return this.compileExpr(in parser, inout runtime, node);
+  }
+
   // The instance fields of a derived constructor, defined once super()
   // has produced `this`.
   function emitFieldInitializers(inout this, in parser: Parser, inout runtime: Runtime): void {
@@ -654,7 +757,7 @@ export struct Compiler {
     } else {
       const keyNode = parser.ast.node(target.right);
       key = this.allocReg();
-      this.emitLoadBinding(in parser, keyNode.start, keyNode.end - keyNode.start, key);
+      this.emitLoadBinding(in parser, keyNode.start - 1, keyNode.end - keyNode.start + 1, key);
     }
     const value = this.compileExpr(in parser, inout runtime, n.right);
     this.emit(instABC(Op.defineField, receiver, key, value));
@@ -694,12 +797,12 @@ export struct Compiler {
         // The slot the definition evaluates the computed key into, bound
         // by the key's spelling for the constructor's field statement.
         const keyNode = parser.ast.node(member.third);
-        const keySlot = this.capturedSlot(keyNode.start);
+        const keySlot = this.capturedSlot(keyNode.start - 1);
         if (keySlot < 0) {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: keyNode.start, nameLength: keyNode.end - keyNode.start, reg: 0, envSlot: keySlot }));
+        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot }));
       }
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength) && this.findLocal(in parser, member.nameStart, member.nameLength) < 0) {
         const slot = this.capturedSlotByText(in parser, member.nameStart, member.nameLength);
@@ -809,7 +912,7 @@ export struct Compiler {
         // An instance field's computed key is evaluated once, here, into
         // the slot its initializer reads.
         const keyNode = parser.ast.node(member.third);
-        const slot = this.capturedSlot(keyNode.start);
+        const slot = this.capturedSlot(keyNode.start - 1);
         if (slot < 0) {
           this.hadError = true;
           return ctorReg;
@@ -1315,6 +1418,10 @@ export struct Compiler {
       const dst = this.allocReg();
       this.emit(instA(Op.loadThis, dst));
       return dst;
+    }
+    if ((k == NodeKind.member || k == NodeKind.computed || k == NodeKind.call || k == NodeKind.optionalMember || k == NodeKind.optionalComputed || k == NodeKind.optionalCall)
+        && chainHasOptional(in parser, node)) {
+      return this.compileOptionalChain(in parser, inout runtime, node);
     }
     if (k == NodeKind.member) {
       // `#x` alone (the left operand of `#x in obj`) is the private key.
@@ -3270,6 +3377,19 @@ function appendUtf8(inout bytes: Array<u8>, codePoint: u32): void {
   }
 }
 
+// Whether a member / element / call spine contains an optional link.
+function chainHasOptional(in parser: Parser, node: u32): boolean {
+  let current = node;
+  while (current != NO_NODE) {
+    const n = parser.ast.node(current);
+    const k = n.kind;
+    if (k == NodeKind.optionalMember || k == NodeKind.optionalComputed || k == NodeKind.optionalCall) return true;
+    if (k != NodeKind.member && k != NodeKind.computed && k != NodeKind.call) return false;
+    current = n.left;
+  }
+  return false;
+}
+
 // Whether a pattern (or identifier) binds `name`.
 function patternBinds(in parser: Parser, pattern: u32, nameStart: u32, nameLength: u32): boolean {
   if (pattern == NO_NODE) return false;
@@ -3348,6 +3468,8 @@ function bodyUsesThis(in parser: Parser, node: u32): boolean {
   const n = parser.ast.node(node);
   if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.methodDef || n.kind == NodeKind.staticBlock) return false;
   if (n.kind == NodeKind.thisExpr) return !n.boolValue;
+  // `super.x` reads through `this`.
+  if (n.kind == NodeKind.superExpr) return true;
   if (bodyUsesThis(in parser, n.left)) return true;
   if (bodyUsesThis(in parser, n.right)) return true;
   if (bodyUsesThis(in parser, n.third)) return true;

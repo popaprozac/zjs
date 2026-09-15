@@ -145,7 +145,10 @@ request, an `await` parks the body, and completion answers the rest as
 done. `Promise.prototype.then` / `catch` / `finally`, `resolve` /
 `reject` / `all` / `allSettled` / `any` / `race` / `withResolvers`,
 species, `%AsyncIteratorPrototype%`, and `%AsyncGeneratorPrototype%`.
-The `zjsz` tool supplies `console`.
+The `zjsz` tool supplies `console`. Optional chains: a spine of member,
+element, and call links with a `?.` short-circuits as a whole through
+one exit. A private name read or written on a value that lacks it
+throws.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -196,7 +199,13 @@ reference returns an array); `new Array(3)` has no elements (the
 reference fills them with undefined); an async function has no
 `prototype` and cannot be constructed (the reference gives it one and
 allows `new`); an async generator object inherits from its function's
-`prototype` (the reference gives it another prototype).
+`prototype` (the reference gives it another prototype); a named class
+expression binds its name inside its own body (the reference does not);
+a `super` property that is a getter runs with the instance as receiver
+(the reference gets NaN); statics inherit through the parent
+constructor (the reference finds nothing); a derived class's field
+initializers run after `super()` returns and see what the base
+constructor set (the reference runs them first).
 
 Performance, measured after classes with four micro-benchmarks (best of
 three, release builds of both engines): the Z engine ran the integer loop

@@ -492,6 +492,15 @@ export struct Runtime {
     return this.functionProto;
   }
 
+  // A private name read or written on a value that does not hold it: a
+  // primitive, or an object the class did not initialize.
+  function privateNameMissing(inout this, value: Value, key: Value): boolean {
+    if (!this.isSymbolValue(key)) return false;
+    if ((this.heap.flagsOf(asCell(key)) & FLAG_PRIVATE_NAME) == 0) return false;
+    if (!this.isObjectLike(value)) return true;
+    return !this.hasProperty(value, key);
+  }
+
   // Whether a symbol key atom names a class private name.
   function isPrivateKeyAtom(atom: u32): boolean {
     if (!this.isSymbolKeyAtom(atom)) return false;
@@ -4261,6 +4270,10 @@ export struct Runtime {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, true);
               throwing = true;
+            } else if (this.privateNameMissing(object, key)) {
+              const message: String = "Cannot read private member from an object whose class did not declare it";
+              thrown = this.typeError(in message);
+              throwing = true;
             } else {
               const found = this.getProperty(object, key);
               if (this.pendingThrow) {
@@ -4278,6 +4291,10 @@ export struct Runtime {
             if (isUndefined(object) || isNull(object)) {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, false);
+              throwing = true;
+            } else if (this.privateNameMissing(object, key)) {
+              const message: String = "Cannot write private member to an object whose class did not declare it";
+              thrown = this.typeError(in message);
               throwing = true;
             } else {
               const accepted = this.setProperty(object, key, value);
