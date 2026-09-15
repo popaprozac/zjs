@@ -475,9 +475,13 @@ need entirely.
 
 ## G22 — `std/memory.replace` on an `Array` field mis-infers its result type in codegen
 
-**Status:** `proposed` — **compiler bug** · **Size:** small · **Priority:** high
-**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no (worked around)
+**Status:** `consumer-verified` — z-lang `476e74b9` (in pin `6d1f72cd`), ZJS `ce3dac0`
+**Confirmed:** z-lang `00864194`, Stage 0 · **Blocks:** no
 **Found:** Phase 3, swapping the parser's token stream for a template substitution.
+
+Landed as inferred storage from `replace(inout this.field, move
+replacement)`. Probe `replace-array-field-inference` `LANDED`; the compiler's
+four written-out result annotations are gone.
 
 ```z
 function swap(inout this, fresh: Array<Item>): usize {
@@ -492,17 +496,26 @@ initialization from the Array struct. **Writing the annotation out —
 inferred type is wrong only in the emitter. Same diagnostic-escape class as
 G13c and G20: Z accepts, the backend rejects.
 
-Minimal reproduction: probe `replace-array-field-inference`
-(`BACKEND-REJECTED`). The engine no longer needs the swap — it appends the
-substitution's tokens and parses within a window — so nothing waits on this.
+Minimal reproduction: probe `replace-array-field-inference`. The parser
+appends a substitution's tokens and parses within a window rather than
+swapping the array, which stays as its design.
 
 ---
 
 ## G23 — `Array` cannot remove its last element
 
-**Status:** `proposed` · **Size:** small · **Priority:** medium
-**Confirmed:** z-lang `4bef7756` · **Blocks:** no (worked around)
+**Status:** `consumer-verified` — z-lang `ac391e43` (in pin `6d1f72cd`), ZJS `ce3dac0`
+**Confirmed:** z-lang `4bef7756` · **Blocks:** no
 **Found:** Phase 4, the interpreter's register and frame stacks.
+
+Landed as `pop(): Option<T>`, transferring the last element and retaining
+capacity. Probe `array-pop` `LANDED`. The runtime's temp-root stack and the
+compiler's loop stack push and pop now. The register and frame stacks keep
+their live-extent counters on purpose: a frame is a window over the
+register stack and the two move together, as in the reference. The
+compiler's region stack keeps its counter too, since compiling a `finally`
+inline lowers the live extent temporarily and restores it, which a pop
+cannot express.
 
 `Array` offers `push`, `clear`, `length`, `isEmpty`, and `freeze`. There is
 no `pop`, `remove`, `truncate`, or `resize` — no way to shrink by one. A stack
@@ -548,9 +561,17 @@ feature. Probe `lock-callback-ownership`.
 
 ## G26 — A String cannot be built from bytes the program holds
 
-**Status:** `proposed` · **Size:** small · **Priority:** medium
-**Confirmed:** z-lang `3f96e759` · **Blocks:** no (worked around)
+**Status:** `consumer-verified` — z-lang `6d1f72cd` (in pin `6d1f72cd`), ZJS `ce3dac0`
+**Confirmed:** z-lang `3f96e759` · **Blocks:** no
 **Found:** Phase 5, error messages in the interpreter.
+
+Landed as strict `String.fromBytes(bytes)`: borrows through the Slice
+conversion, returns owned text, throws `Utf8Error` (from `std/text`, with
+`byteOffset` at the end of the valid prefix) on malformed input. Probe
+`string-from-bytes` `LANDED`, including the error offset. The engine decodes
+through it and keeps its native buffer only as the fallback for malformed
+bytes, since JavaScript strings are bytes and a diagnostic must still be
+printable; a lossy or consuming variant is not asked for.
 
 JavaScript strings are `Array<u8>` in the engine (byte length, byte
 indexing, embedded NULs). Assembling `Cannot read properties of undefined
