@@ -38,17 +38,25 @@ calls with `this`, `new` with `prototype`/`constructor`, `typeof`; the Error
 family as Z builtins, `throw`, `try`/`catch`/`finally` with unwinding across
 frames; closures -- captured bindings live in environment cells addressed by
 slot, resolved at compile time through the scope chain, with arrows keeping
-the `this` of their creation. **29 of 29** corpus files identical.
+the `this` of their creation; template literals, `switch`, labeled
+`break`/`continue`, `for`-`in` (keys in insertion order across the prototype
+chain) and `for`-`of` over arrays, `in`/`instanceof`/`delete`, `++`/`--` and
+logical assignment on properties, and `Object`. **34 of 34** corpus files
+identical.
 
-Two places the corpus deliberately steps around, where the reference is
-wrong and the Z engine follows the specification: a property write to
-`undefined` throws a TypeError (the reference drops it), and
-`Error.prototype.message` is `""` (the reference has no such property).
+Places the corpus deliberately steps around, where the reference is wrong and
+the Z engine follows the specification: a property write to `undefined`
+throws a TypeError (the reference drops it); `Error.prototype.message` is
+`""` (the reference has no such property); `for`-`in` over a string visits
+its indices (the reference visits nothing); a postfix `++` on a property
+holding a string yields its numeric value (the reference concatenates).
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
 sees one binding), a global object (top-level and sloppy-call `this` are
-undefined), accessors, `return` and `break` through a `finally`, the
-remaining builtins, and a collector.
+undefined), property attributes (everything is writable and enumerable,
+except that an inherited `constructor` is skipped by `for`-`in`), accessors,
+`for`-`of` over anything but an array, `return` and `break` through a
+`finally`, the remaining builtins, and a collector.
 
 ```
 $ ./z/oracle.sh

@@ -48,6 +48,11 @@ struct LoopFrame {
   haveContinue: boolean;
   breakPatches: Array<u32>;
   continuePatches: Array<u32>;
+  // The statement's label, if any, and whether `continue` may target it
+  // (a loop, as opposed to a switch or a labeled block).
+  labelStart: u32;
+  labelLength: u32;
+  isIter: boolean;
 }
 
 // A binding of the function being compiled. It lives in a register, or --
@@ -114,6 +119,9 @@ export struct Compiler {
   // Z's Array cannot remove elements.
   loops: Array<LoopFrame>;
   loopDepth: usize;
+  // A label waiting for the loop statement it names.
+  pendingLabelStart: u32;
+  pendingLabelLength: u32;
   // The register holding `this` in a function that reads it, or -1.
   thisReg: i32;
   // Interned names for LoadProp / StoreProp; the instruction carries an
@@ -164,11 +172,16 @@ export struct Compiler {
 
   // --- Loops ---
 
-  function loopPush(inout this): void {
+  // Open a break target: a loop (which `continue` may also target) or a
+  // switch / labeled block. A pending label attaches to it.
+  function loopPush(inout this, isIter: boolean): void {
     const frame = LoopFrame({
       continueTarget: 0, haveContinue: false,
       breakPatches: Array<u32>(), continuePatches: Array<u32>(),
+      labelStart: this.pendingLabelStart, labelLength: this.pendingLabelLength, isIter: isIter,
     });
+    this.pendingLabelStart = 0;
+    this.pendingLabelLength = 0;
     if (this.loopDepth < this.loops.length) {
       this.loops[this.loopDepth] = frame;
     } else {
@@ -189,6 +202,24 @@ export struct Compiler {
       this.code[usize(at)] = instAI16(inst.op, inst.a, i32(target) - (i32(at) + 1));
       i = i + 1;
     }
+  }
+
+  // The open frame carrying `label`, or -1.
+  function findLabeledFrame(in parser: Parser, nameStart: u32, nameLength: u32): i32 {
+    let index = this.loopDepth;
+    while (index > 0) {
+      index = index - 1;
+      const labelStart = this.loops[index].labelStart;
+      const labelLength = this.loops[index].labelLength;
+      if (labelLength == nameLength && this.nameMatches(in parser, labelStart, labelLength, nameStart, nameLength)) return i32(index);
+    }
+    return -1;
+  }
+
+  // Patch a jump at `at` to land on instruction `target`.
+  function patchJumpTo(inout this, at: u32, target: u32): void {
+    const inst = this.code[usize(at)];
+    this.code[usize(at)] = instAI16(inst.op, inst.a, i32(target) - (i32(at) + 1));
   }
 
   // Patch every pending break to the next instruction, then drop the loop.
@@ -587,6 +618,32 @@ export struct Compiler {
       this.emit(instAU16(Op.loadGlobal, dst, slot));
       return dst;
     }
+    if (k == NodeKind.templatePartExpr) {
+      const decoded = decodeStringBody(in parser, n.start, n.end);
+      const index = this.addConst(runtime.internValue(move decoded));
+      const dst = this.allocReg();
+      this.emit(instAU16(Op.loadConst, dst, index));
+      return dst;
+    }
+    if (k == NodeKind.templateExpr) {
+      // Literal segments and substitutions, concatenated left to right.
+      if (n.childrenCount == 0) {
+        const index = this.addConst(runtime.internValue(Array<u8>()));
+        const dst = this.allocReg();
+        this.emit(instAU16(Op.loadConst, dst, index));
+        return dst;
+      }
+      let acc = this.compileExpr(in parser, inout runtime, parser.ast.child(node, 0));
+      let i: u32 = 1;
+      while (i < n.childrenCount) {
+        const next = this.compileExpr(in parser, inout runtime, parser.ast.child(node, i));
+        const dst = this.allocReg();
+        this.emit(instABC(Op.add, dst, acc, next));
+        acc = dst;
+        i = i + 1;
+      }
+      return acc;
+    }
     if (k == NodeKind.thisExpr) {
       if (n.boolValue) {
         // new.target
@@ -721,6 +778,13 @@ export struct Compiler {
       this.nextReg = base + 1;
       return base;
     }
+    if (k == NodeKind.binary && (n.op == TokenKind.kwIn || n.op == TokenKind.kwInstanceof)) {
+      const left = this.compileExpr(in parser, inout runtime, n.left);
+      const right = this.compileExpr(in parser, inout runtime, n.right);
+      const dst = this.allocReg();
+      this.emit(instABC(n.op == TokenKind.kwIn ? Op.inOp : Op.instanceofOp, dst, left, right));
+      return dst;
+    }
     if (k == NodeKind.binary) {
       const left = this.compileExpr(in parser, inout runtime, n.left);
       const right = this.compileExpr(in parser, inout runtime, n.right);
@@ -735,6 +799,29 @@ export struct Compiler {
     }
     if ((k == NodeKind.unary || k == NodeKind.postfix) && (n.op == TokenKind.plusPlus || n.op == TokenKind.minusMinus)) {
       const target = parser.ast.node(n.left);
+      if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
+        // Read through the key, step, write back through the same key.
+        const object = this.compileExpr(in parser, inout runtime, target.left);
+        let key: u8 = 0;
+        if (target.kind == NodeKind.member) {
+          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
+          key = this.emitKey(atom);
+        } else {
+          key = this.compileExpr(in parser, inout runtime, target.right);
+        }
+        const loaded = this.allocReg();
+        this.emit(instABC(Op.loadElem, loaded, object, key));
+        const zero = this.allocReg();
+        this.emit(instAI16(Op.loadInt, zero, 0));
+        const old = this.allocReg();
+        this.emit(instABC(Op.sub, old, loaded, zero));
+        const one = this.allocReg();
+        this.emit(instAI16(Op.loadInt, one, 1));
+        const updated = this.allocReg();
+        this.emit(instABC(n.op == TokenKind.plusPlus ? Op.add : Op.sub, updated, old, one));
+        this.emit(instABC(Op.storeElem, object, key, updated));
+        return k == NodeKind.postfix ? old : updated;
+      }
       if (target.kind != NodeKind.identExpr) {
         this.hadError = true;
         return 0;
@@ -752,6 +839,34 @@ export struct Compiler {
       this.emit(instABC(n.op == TokenKind.plusPlus ? Op.add : Op.sub, updated, old, one));
       this.storeIdent(in parser, inout runtime, target, updated);
       return k == NodeKind.postfix ? old : updated;
+    }
+    if (k == NodeKind.unary && n.op == TokenKind.kwDelete) {
+      let operandNode = n.left;
+      while (operandNode != NO_NODE && parser.ast.node(operandNode).kind == NodeKind.paren) {
+        operandNode = parser.ast.node(operandNode).left;
+      }
+      const target = parser.ast.node(operandNode);
+      const dst = this.allocReg();
+      if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
+        const object = this.compileExpr(in parser, inout runtime, target.left);
+        let key: u8 = 0;
+        if (target.kind == NodeKind.member) {
+          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
+          key = this.emitKey(atom);
+        } else {
+          key = this.compileExpr(in parser, inout runtime, target.right);
+        }
+        this.emit(instABC(Op.deleteElem, dst, object, key));
+        return dst;
+      }
+      // A binding cannot be deleted; anything else evaluates and yields true.
+      if (target.kind == NodeKind.identExpr) {
+        this.emit(instA(Op.loadFalse, dst));
+        return dst;
+      }
+      this.compileExpr(in parser, inout runtime, operandNode);
+      this.emit(instA(Op.loadTrue, dst));
+      return dst;
     }
     if (k == NodeKind.unary) {
       if (n.op == TokenKind.kwTypeof) {
@@ -803,6 +918,45 @@ export struct Compiler {
       }
       if (n.op == TokenKind.kwTypeof) {
         this.emit(instAB(Op.typeofOp, dst, operand));
+        return dst;
+      }
+      this.hadError = true;
+      return 0;
+    }
+    if (k == NodeKind.assignment && (n.op == TokenKind.ampAmpEq || n.op == TokenKind.pipePipeEq || n.op == TokenKind.questionQuestionEq)) {
+      // Short-circuit: the right side is evaluated and stored only when
+      // the current value calls for it; the result is whichever won.
+      const target = parser.ast.node(n.left);
+      let jumpOp = Op.jmpIfFalse;
+      if (n.op == TokenKind.pipePipeEq) jumpOp = Op.jmpIfTrue;
+      if (n.op == TokenKind.questionQuestionEq) jumpOp = Op.jmpIfNotNullish;
+      if (target.kind == NodeKind.identExpr) {
+        const current = this.compileExpr(in parser, inout runtime, n.left);
+        const dst = this.allocReg();
+        this.emit(instAB(Op.mov, dst, current));
+        const skip = this.emit(instAI16(jumpOp, dst, 0));
+        const value = this.compileExpr(in parser, inout runtime, n.right);
+        this.emit(instAB(Op.mov, dst, value));
+        this.storeIdent(in parser, inout runtime, target, dst);
+        this.patchJump(skip);
+        return dst;
+      }
+      if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
+        const object = this.compileExpr(in parser, inout runtime, target.left);
+        let key: u8 = 0;
+        if (target.kind == NodeKind.member) {
+          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
+          key = this.emitKey(atom);
+        } else {
+          key = this.compileExpr(in parser, inout runtime, target.right);
+        }
+        const dst = this.allocReg();
+        this.emit(instABC(Op.loadElem, dst, object, key));
+        const skip = this.emit(instAI16(jumpOp, dst, 0));
+        const value = this.compileExpr(in parser, inout runtime, n.right);
+        this.emit(instAB(Op.mov, dst, value));
+        this.emit(instABC(Op.storeElem, object, key, dst));
+        this.patchJump(skip);
         return dst;
       }
       this.hadError = true;
@@ -955,6 +1109,144 @@ export struct Compiler {
     // Not yet ported.
     this.hadError = true;
     return 0;
+  }
+
+  // --- switch ---
+  //
+  // Every case test is compared first, jumping to its body on a match;
+  // a final jump goes to the default body or past the switch. Bodies are
+  // laid out in order so control falls through. `break` targets the
+  // switch; `continue` passes it by.
+  function compileSwitch(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
+    const n = parser.ast.node(node);
+    this.resetCompletion();
+    const discriminant = this.compileExpr(in parser, inout runtime, n.left);
+    const count = n.childrenCount;
+    let casePatches = Array<u32>();
+    let defaultIndex: i32 = -1;
+    let i: u32 = 0;
+    while (i < count) {
+      const clause = parser.ast.node(parser.ast.child(node, i));
+      if (clause.boolValue) {
+        if (defaultIndex < 0) defaultIndex = i32(i);
+        casePatches.push(0);
+      } else {
+        const test = this.compileExpr(in parser, inout runtime, clause.left);
+        const matched = this.allocReg();
+        this.emit(instABC(Op.cmpStrictEq, matched, discriminant, test));
+        casePatches.push(this.emit(instAI16(Op.jmpIfTrue, matched, 0)));
+        this.nextReg = discriminant + 1;
+      }
+      i = i + 1;
+    }
+    this.resetTemps();
+    const toDefaultOrEnd = this.emit(instI16(Op.jmp, 0));
+    this.loopPush(false);
+    let bodyStarts = Array<u32>();
+    i = 0;
+    while (i < count) {
+      bodyStarts.push(u32(this.code.length));
+      const clauseIndex = parser.ast.child(node, i);
+      const clause = parser.ast.node(clauseIndex);
+      let statement: u32 = 0;
+      while (statement < clause.childrenCount) {
+        this.compileStmt(in parser, inout runtime, parser.ast.child(clauseIndex, statement));
+        statement = statement + 1;
+      }
+      i = i + 1;
+    }
+    const end = u32(this.code.length);
+    i = 0;
+    while (i < count) {
+      const clause = parser.ast.node(parser.ast.child(node, i));
+      if (!clause.boolValue) this.patchJumpTo(casePatches[usize(i)], bodyStarts[usize(i)]);
+      i = i + 1;
+    }
+    this.patchJumpTo(toDefaultOrEnd, defaultIndex >= 0 ? bodyStarts[usize(defaultIndex)] : end);
+    this.loopPop();
+  }
+
+  // --- for-in / for-of ---
+  //
+  // for-in walks an array of keys prepared up front; for-of walks an
+  // array's elements by index (other iterables wait for the iterator
+  // protocol). The loop's bookkeeping registers sit below the temporaries
+  // watermark so statement resets leave them alone.
+  function compileForEach(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
+    const n = parser.ast.node(node);
+    const isKeys = n.kind == NodeKind.forInStmt;
+    this.resetCompletion();
+    const source = this.compileExpr(in parser, inout runtime, n.right);
+    const sequence = this.allocReg();
+    if (isKeys) {
+      this.emit(instABC(Op.iterPrepare, sequence, source, 0));
+    } else {
+      this.emit(instAB(Op.mov, sequence, source));
+    }
+    const length = this.allocReg();
+    const index = this.allocReg();
+    this.emit(instAI16(Op.loadInt, index, 0));
+    if (index + 1 > this.fixedRegs) this.fixedRegs = index + 1;
+    // A lexical head binding is declared once, before the loop.
+    const binding = parser.ast.node(n.left);
+    let lexical: i32 = -1;
+    if (binding.kind == NodeKind.varDecl && binding.op != TokenKind.kwVar) {
+      const decl = parser.ast.node(parser.ast.child(n.left, 0));
+      this.addLocal(decl.nameStart, decl.nameLength);
+      lexical = i32(this.locals.length - 1);
+      this.fixedRegs = this.nextReg;
+    }
+    const loopTop = u32(this.code.length);
+    this.loopPush(true);
+    this.emit(instAB(Op.arrayLength, length, sequence));
+    const condition = this.allocReg();
+    this.emit(instABC(Op.cmpLt, condition, index, length));
+    const exit = this.emit(instAI16(Op.jmpIfFalse, condition, 0));
+    const element = this.allocReg();
+    this.emit(instABC(Op.loadElem, element, sequence, index));
+    this.assignLoopBinding(in parser, inout runtime, n.left, lexical, element);
+    this.resetTemps();
+    this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
+    this.loopSetContinue(u32(this.code.length));
+    const one = this.allocReg();
+    this.emit(instAI16(Op.loadInt, one, 1));
+    this.emit(instABC(Op.add, index, index, one));
+    this.resetTemps();
+    this.emitJumpBack(loopTop);
+    this.patchJump(exit);
+    this.loopPop();
+  }
+
+  // Store the current element into a for-in / for-of head: a declared
+  // binding, an identifier, or a property.
+  function assignLoopBinding(inout this, in parser: Parser, inout runtime: Runtime, target: u32, lexical: i32, value: u8): void {
+    const binding = parser.ast.node(target);
+    if (binding.kind == NodeKind.varDecl) {
+      if (lexical >= 0) {
+        this.storeLocal(usize(lexical), value);
+        return;
+      }
+      const decl = parser.ast.node(parser.ast.child(target, 0));
+      this.storeIdent(in parser, inout runtime, decl, value);
+      return;
+    }
+    if (binding.kind == NodeKind.identExpr) {
+      this.storeIdent(in parser, inout runtime, binding, value);
+      return;
+    }
+    if (binding.kind == NodeKind.member || binding.kind == NodeKind.computed) {
+      const object = this.compileExpr(in parser, inout runtime, binding.left);
+      let key: u8 = 0;
+      if (binding.kind == NodeKind.member) {
+        const atom = this.propertyNameAtom(in parser, inout runtime, binding.nameStart, binding.nameLength);
+        key = this.emitKey(atom);
+      } else {
+        key = this.compileExpr(in parser, inout runtime, binding.right);
+      }
+      this.emit(instABC(Op.storeElem, object, key, value));
+      return;
+    }
+    this.hadError = true;
   }
 
   // --- try / catch / finally ---
@@ -1155,7 +1447,7 @@ export struct Compiler {
     if (k == NodeKind.whileStmt) {
       this.resetCompletion();
       const loopTop = u32(this.code.length);
-      this.loopPush();
+      this.loopPush(true);
       this.loopSetContinue(loopTop);
       const condition = this.compileExpr(in parser, inout runtime, n.left);
       const jumpExit = this.emit(instAI16(Op.jmpIfFalse, condition, 0));
@@ -1169,7 +1461,7 @@ export struct Compiler {
     if (k == NodeKind.doWhileStmt) {
       this.resetCompletion();
       const loopTop = u32(this.code.length);
-      this.loopPush();
+      this.loopPush(true);
       this.compileStmt(in parser, inout runtime, n.left);
       const bound4 = u32(this.code.length);
       this.loopSetContinue(bound4);
@@ -1183,7 +1475,7 @@ export struct Compiler {
       if (n.left != NO_NODE) this.compileStmtOrExpr(in parser, inout runtime, n.left);
       this.resetCompletion();
       const loopTop = u32(this.code.length);
-      this.loopPush();
+      this.loopPush(true);
       let jumpExit: i32 = -1;
       if (n.right != NO_NODE) {
         const condition = this.compileExpr(in parser, inout runtime, n.right);
@@ -1203,28 +1495,73 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.breakStmt) {
-      if (this.loopDepth == 0 || n.nameLength > 0) {
+      if (this.loopDepth == 0) {
+        this.hadError = true;
+        return;
+      }
+      let target = i32(this.loopDepth) - 1;
+      if (n.nameLength > 0) target = this.findLabeledFrame(in parser, n.nameStart, n.nameLength);
+      if (target < 0) {
         this.hadError = true;
         return;
       }
       const at = this.emit(instI16(Op.jmp, 0));
-      const top = this.loopDepth - 1;
-      this.loops[top].breakPatches.push(at);
+      this.loops[usize(target)].breakPatches.push(at);
       return;
     }
     if (k == NodeKind.continueStmt) {
-      if (this.loopDepth == 0 || n.nameLength > 0) {
+      // The nearest loop, or the labeled one -- which must be a loop.
+      let target: i32 = -1;
+      if (n.nameLength > 0) {
+        target = this.findLabeledFrame(in parser, n.nameStart, n.nameLength);
+        if (target >= 0 && !this.loops[usize(target)].isIter) target = -1;
+      } else {
+        let walk = i32(this.loopDepth) - 1;
+        while (walk >= 0 && target < 0) {
+          if (this.loops[usize(walk)].isIter) target = walk;
+          walk = walk - 1;
+        }
+      }
+      if (target < 0) {
         this.hadError = true;
         return;
       }
-      const top = this.loopDepth - 1;
-      if (this.loops[top].haveContinue) {
-        const bound6 = this.loops[top].continueTarget;
-        this.emitJumpBack(bound6);
+      const frame = usize(target);
+      if (this.loops[frame].haveContinue) {
+        const continueTarget = this.loops[frame].continueTarget;
+        this.emitJumpBack(continueTarget);
       } else {
         const at = this.emit(instI16(Op.jmp, 0));
-        this.loops[top].continuePatches.push(at);
+        this.loops[frame].continuePatches.push(at);
       }
+      return;
+    }
+    if (k == NodeKind.labeledStmt) {
+      const inner = parser.ast.node(n.left);
+      const ik = inner.kind;
+      if (ik == NodeKind.whileStmt || ik == NodeKind.doWhileStmt || ik == NodeKind.forStmt
+          || ik == NodeKind.forInStmt || ik == NodeKind.forOfStmt) {
+        // The loop takes the label when it opens its frame.
+        this.pendingLabelStart = n.nameStart;
+        this.pendingLabelLength = n.nameLength;
+        this.compileStmt(in parser, inout runtime, n.left);
+        this.pendingLabelStart = 0;
+        this.pendingLabelLength = 0;
+        return;
+      }
+      this.pendingLabelStart = n.nameStart;
+      this.pendingLabelLength = n.nameLength;
+      this.loopPush(false);
+      this.compileStmt(in parser, inout runtime, n.left);
+      this.loopPop();
+      return;
+    }
+    if (k == NodeKind.switchStmt) {
+      this.compileSwitch(in parser, inout runtime, node);
+      return;
+    }
+    if (k == NodeKind.forInStmt || k == NodeKind.forOfStmt) {
+      this.compileForEach(in parser, inout runtime, node);
       return;
     }
     if (k == NodeKind.throwStmt) {
@@ -1265,9 +1602,7 @@ export struct Compiler {
 
 // Kinds that are statements but not yet compiled.
 function isStatementKind(k: NodeKind): boolean {
-  return k == NodeKind.forInStmt || k == NodeKind.forOfStmt || k == NodeKind.switchStmt
-    || k == NodeKind.labeledStmt || k == NodeKind.withStmt
-    || k == NodeKind.classDecl || k == NodeKind.importDecl || k == NodeKind.exportDecl;
+  return k == NodeKind.withStmt || k == NodeKind.classDecl || k == NodeKind.importDecl || k == NodeKind.exportDecl;
 }
 
 function compoundOp(kind: TokenKind): Op {
@@ -1482,7 +1817,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict, loops: Array<LoopFrame>(), loopDepth: 0,
-    thisReg: -1, propertyNames: Array<u32>(),
+    pendingLabelStart: 0, pendingLabelLength: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
 
@@ -1750,7 +2085,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(), loopDepth: 0,
-    thisReg: -1, propertyNames: Array<u32>(),
+    pendingLabelStart: 0, pendingLabelLength: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));

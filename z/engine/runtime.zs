@@ -57,14 +57,18 @@ const BUILTIN_TYPE_ERROR: u32 = 1;
 const BUILTIN_REFERENCE_ERROR: u32 = 2;
 const BUILTIN_RANGE_ERROR: u32 = 3;
 const BUILTIN_SYNTAX_ERROR: u32 = 4;
-const BUILTIN_COUNT: u32 = 5;
+// The error constructors are the ids below this; `builtinName` and the
+// prototype chain depend on that.
+const BUILTIN_ERROR_COUNT: u32 = 5;
+const BUILTIN_OBJECT: u32 = 5;
 
 function builtinName(id: u32): String {
   if (id == BUILTIN_ERROR) return "Error";
   if (id == BUILTIN_TYPE_ERROR) return "TypeError";
   if (id == BUILTIN_REFERENCE_ERROR) return "ReferenceError";
   if (id == BUILTIN_RANGE_ERROR) return "RangeError";
-  return "SyntaxError";
+  if (id == BUILTIN_SYNTAX_ERROR) return "SyntaxError";
+  return "Object";
 }
 
 export struct RunResult {
@@ -472,6 +476,187 @@ export struct Runtime {
     }
   }
 
+  // The `in` operator's lookup: whether `object` or its prototype chain
+  // has `key`. The caller has checked that `object` is object-like.
+  function hasProperty(inout this, object: Value, key: Value): boolean {
+    const handle = asCell(object);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_ARRAY) {
+      const index = this.arrayIndexOf(key);
+      if (index >= 0) {
+        if (this.heap.arrayHasIndex(handle, u32(index))) return true;
+        const arrayProto = this.arrayProto;
+        return !isUndefined(this.getProperty(cellValue(arrayProto), key));
+      }
+      const atom = this.propertyKey(key);
+      if (atom == this.atomLength) return true;
+      const bag = this.heap.linkOf(handle);
+      if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
+      const arrayProto = this.arrayProto;
+      return !isUndefined(this.objectGet(arrayProto, atom));
+    }
+    if (tag == TAG_OBJECT) {
+      const atom = this.propertyKey(key);
+      let current = handle;
+      while (current != 0) {
+        const slot = this.heap.objectFindSlot(current, atom);
+        if (slot >= 0 && !isDeleted(this.heap.slot(current, u32(slot)))) return true;
+        current = this.heap.objectProto(current);
+      }
+      return false;
+    }
+    // Functions: `prototype`, then Function.prototype.
+    const atom = this.propertyKey(key);
+    if (atom == this.atomPrototype) return true;
+    const functionProto = this.functionProto;
+    return !isUndefined(this.objectGet(functionProto, atom));
+  }
+
+  // The prototype a value inherits from, for instanceof: 0 for none.
+  function protoOfValue(value: Value): u32 {
+    if (!isCell(value) || asCell(value) == 0) return 0;
+    const handle = asCell(value);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_OBJECT) return this.heap.objectProto(handle);
+    if (tag == TAG_ARRAY) return this.arrayProto;
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.functionProto;
+    if (this.heap.isString(handle)) return this.stringProto;
+    return 0;
+  }
+
+  // Remove an own property. Objects keep their class and mark the slot
+  // deleted, as the reference does; arrays leave a hole.
+  function deleteProperty(inout this, object: Value, key: Value): boolean {
+    if (!isCell(object) || asCell(object) == 0) return true;
+    const handle = asCell(object);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_OBJECT) {
+      const atom = this.propertyKey(key);
+      const slot = this.heap.objectFindSlot(handle, atom);
+      if (slot >= 0) this.heap.setSlot(handle, u32(slot), deletedValue());
+      return true;
+    }
+    if (tag == TAG_ARRAY) {
+      const index = this.arrayIndexOf(key);
+      if (index >= 0) {
+        if (this.heap.arrayHasIndex(handle, u32(index))) this.heap.setSlot(handle, u32(index), deletedValue());
+        return true;
+      }
+      const atom = this.propertyKey(key);
+      if (atom == this.atomLength) return false;
+      const bag = this.heap.linkOf(handle);
+      if (bag != 0) {
+        const slot = this.heap.objectFindSlot(bag, atom);
+        if (slot >= 0) this.heap.setSlot(bag, u32(slot), deletedValue());
+      }
+      return true;
+    }
+    return true;
+  }
+
+  // The names an object's own class holds, in slot order.
+  function ownNames(handle: u32): Array<u32> {
+    const propCount = this.heap.classPropCount(this.heap.objectClass(handle));
+    let names = Array<u32>();
+    let fill: u32 = 0;
+    while (fill < propCount) {
+      names.push(0);
+      fill = fill + 1;
+    }
+    let classId = this.heap.objectClass(handle);
+    while (classId != 0) {
+      const slot = this.heap.classes[usize(classId)].transitionSlot;
+      names[usize(slot)] = this.heap.classes[usize(classId)].transitionName;
+      classId = this.heap.classes[usize(classId)].parent;
+    }
+    return names;
+  }
+
+  // The keys for-in visits, as an array of strings: array indices then
+  // named properties; an object's own names in insertion order, then its
+  // prototypes' (stopping short of Object.prototype), each name once.
+  // Property attributes do not exist yet, so every property counts as
+  // enumerable except an inherited `constructor`.
+  function enumerateKeys(inout this, value: Value): Value {
+    const keys = this.heap.allocateArray(0);
+    if (!isCell(value) || asCell(value) == 0) return cellValue(keys);
+    const handle = asCell(value);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_ARRAY) {
+      const length = this.heap.arrayLength(handle);
+      let index: u32 = 0;
+      while (index < length) {
+        if (this.heap.arrayHasIndex(handle, index)) {
+          const key = this.toStringValue(int32Value(i32(index)));
+          const count = this.heap.arrayLength(keys);
+          this.heap.arraySet(keys, count, key);
+        }
+        index = index + 1;
+      }
+      const bag = this.heap.linkOf(handle);
+      if (bag != 0) this.appendObjectKeys(keys, bag, true);
+      return cellValue(keys);
+    }
+    if (this.heap.isString(handle)) {
+      const length = this.heap.stringLength(handle);
+      let index: u32 = 0;
+      while (usize(index) < length) {
+        const key = this.toStringValue(int32Value(i32(index)));
+        const count = this.heap.arrayLength(keys);
+        this.heap.arraySet(keys, count, key);
+        index = index + 1;
+      }
+      return cellValue(keys);
+    }
+    if (tag == TAG_OBJECT) {
+      let current = handle;
+      let seen = Array<u32>();
+      while (current != 0 && current != this.objectProto) {
+        const names = this.ownNames(current);
+        let i: usize = 0;
+        while (i < names.length) {
+          const name = names[i];
+          let already = false;
+          let j: usize = 0;
+          while (j < seen.length) {
+            if (seen[j] == name) already = true;
+            j = j + 1;
+          }
+          if (!already) {
+            seen.push(name);
+            const slot = this.heap.objectFindSlot(current, name);
+            const inheritedConstructor = current != handle && name == this.atomConstructor;
+            if (slot >= 0 && !isDeleted(this.heap.slot(current, u32(slot))) && !inheritedConstructor) {
+              const count = this.heap.arrayLength(keys);
+              this.heap.arraySet(keys, count, cellValue(name));
+            }
+          }
+          i = i + 1;
+        }
+        current = this.heap.objectProto(current);
+      }
+      return cellValue(keys);
+    }
+    return cellValue(keys);
+  }
+
+  // Append an object's own live names to `keys`, skipping array indices
+  // when the object is an array's bag.
+  function appendObjectKeys(inout this, keys: u32, object: u32, skipIndices: boolean): void {
+    const names = this.ownNames(object);
+    let i: usize = 0;
+    while (i < names.length) {
+      const name = names[i];
+      const slot = this.heap.objectFindSlot(object, name);
+      const live = slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot)));
+      if (live && !(skipIndices && this.arrayIndexOf(cellValue(name)) >= 0)) {
+        const count = this.heap.arrayLength(keys);
+        this.heap.arraySet(keys, count, cellValue(name));
+      }
+      i = i + 1;
+    }
+  }
+
   function typeofValue(inout this, value: Value): Value {
     let label: String = "object";
     if (isUndefined(value)) {
@@ -498,8 +683,21 @@ export struct Runtime {
 
   // Call a builtin with its arguments in the register stack.
   function callHost(inout this, id: u32, thisValue: Value, argsBase: u32, argc: u32): Value {
-    if (id < BUILTIN_COUNT) return this.constructError(id, thisValue, argsBase, argc);
+    if (id < BUILTIN_ERROR_COUNT) return this.constructError(id, thisValue, argsBase, argc);
+    if (id == BUILTIN_OBJECT) return this.constructObject(thisValue, argsBase, argc);
     return undefinedValue();
+  }
+
+  // Object(value): the value itself when it is already an object, else a
+  // fresh empty object (primitives are not wrapped yet).
+  function constructObject(inout this, thisValue: Value, argsBase: u32, argc: u32): Value {
+    if (argc > 0) {
+      const first = this.regStack[usize(argsBase)];
+      if (this.isObjectLike(first)) return first;
+    }
+    if (this.isObjectLike(thisValue)) return thisValue;
+    const objectProto = this.objectProto;
+    return cellValue(this.heap.allocateObject(objectProto));
   }
 
   // The Error constructors, called or constructed. An object under
@@ -549,10 +747,16 @@ export struct Runtime {
     this.functionProto = this.heap.allocateObject(objectProto);
     this.arrayProto = this.heap.allocateObject(objectProto);
     this.stringProto = this.heap.allocateObject(objectProto);
+    // Object: its prototype is the root every object literal inherits.
+    const objectCtor = this.heap.allocateHostFunction(BUILTIN_OBJECT);
+    this.heap.setLink(objectCtor, objectProto);
+    const atomConstructor = this.atomConstructor;
+    this.heap.objectSet(objectProto, atomConstructor, cellValue(objectCtor));
+    this.setGlobal(builtinName(BUILTIN_OBJECT), cellValue(objectCtor));
     // Error, then the subclasses whose prototypes inherit from its.
     let errorProto: u32 = 0;
     let kind: u32 = 0;
-    while (kind < BUILTIN_COUNT) {
+    while (kind < BUILTIN_ERROR_COUNT) {
       const ctor = this.heap.allocateHostFunction(kind);
       const parentProto = kind == BUILTIN_ERROR ? this.objectProto : errorProto;
       const proto = this.heap.allocateObject(parentProto);
@@ -564,7 +768,6 @@ export struct Runtime {
       const emptyMessage = this.internValue(Array<u8>());
       const atomMessage = this.atomMessage;
       this.heap.objectSet(proto, atomMessage, emptyMessage);
-      const atomConstructor = this.atomConstructor;
       this.heap.objectSet(proto, atomConstructor, cellValue(ctor));
       this.heap.setLink(ctor, proto);
       this.setGlobal(builtinName(kind), cellValue(ctor));
@@ -1211,6 +1414,48 @@ export struct Runtime {
           this.pushTry(target, inst.a);
         } else if (op == Op.leaveTry) {
           this.tryDepth = this.tryDepth - 1;
+        } else if (op == Op.inOp) {
+          const key = this.reg(base, inst.b);
+          const object = this.reg(base, inst.c);
+          if (!this.isObjectLike(object)) {
+            const message: String = "Cannot use 'in' on a non-object";
+            thrown = this.typeError(in message);
+            throwing = true;
+          } else {
+            const present = this.hasProperty(object, key);
+            this.setReg(base, inst.a, booleanValue(present));
+          }
+        } else if (op == Op.instanceofOp) {
+          const value = this.reg(base, inst.b);
+          const ctor = this.reg(base, inst.c);
+          if (!this.isCallable(ctor)) {
+            const message: String = "Right-hand side of 'instanceof' is not callable";
+            thrown = this.typeError(in message);
+            throwing = true;
+          } else {
+            const target = this.prototypeOf(asCell(ctor));
+            let current = this.protoOfValue(value);
+            let found = false;
+            while (current != 0 && !found) {
+              if (current == target) found = true;
+              current = this.heap.objectProto(current);
+            }
+            this.setReg(base, inst.a, booleanValue(found));
+          }
+        } else if (op == Op.deleteElem) {
+          const object = this.reg(base, inst.b);
+          const key = this.reg(base, inst.c);
+          const removed = this.deleteProperty(object, key);
+          this.setReg(base, inst.a, booleanValue(removed));
+        } else if (op == Op.iterPrepare) {
+          const source = this.reg(base, inst.b);
+          const keys = this.enumerateKeys(source);
+          this.setReg(base, inst.a, keys);
+        } else if (op == Op.arrayLength) {
+          const source = this.reg(base, inst.b);
+          let length: i32 = 0;
+          if (isCell(source) && asCell(source) != 0 && this.heap.isArray(asCell(source))) length = i32(this.heap.arrayLength(asCell(source)));
+          this.setReg(base, inst.a, int32Value(length));
         } else if (op == Op.newEnv) {
           const parent = this.frames[frameIndex].env;
           const created = this.heap.allocateEnv(parent, u32(bcU16(inst)));
