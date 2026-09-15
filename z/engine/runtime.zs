@@ -818,6 +818,10 @@ export struct Runtime {
 
   // --- Descriptors ---
 
+  function emptyInput(): DescriptorInput {
+    return emptyDescriptorInput();
+  }
+
   // [[GetOwnProperty]] for every value: objects (with the global object's
   // bindings and a String wrapper's characters), arrays, strings, and
   // the virtual properties of functions.

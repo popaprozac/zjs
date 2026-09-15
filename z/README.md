@@ -73,7 +73,10 @@ is a cell whose property key is a hidden atom (0xFF, a counter) linked
 back to it, so the property machinery is unchanged and the key is
 unforgeable; the registry, the well-known symbols, `@@toPrimitive` with
 the default hint for `+` and `==`, `@@toStringTag`, `@@hasInstance`, and
-symbol keys last in `Reflect.ownKeys`.
+symbol keys last in `Reflect.ownKeys`. `JSON.parse` (a byte-level
+recursive-descent parser with the reviver walk) and `JSON.stringify`
+(`toJSON`, replacer function and allow-list, indentation, wrappers, cycle
+detection).
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -83,9 +86,10 @@ the gap with the tests the reference passes and Z does not. Needs
 `vendor/test262`. Measurements so far: `language/statements/if` 117 of the
 reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5714 of
 6244; `built-ins/Number` 578 of 582; `built-ins/Symbol` 130 against the
-reference's 90 -- with Z passing 18, 230, 64, and 50 tests respectively
-that the reference fails. The largest remaining gaps are the missing
-`JSON`, `Date`, and `RegExp`, and the iteration protocol.
+reference's 90; `built-ins/JSON` 220 of 224 -- with Z passing 18, 230,
+64, 50, and 14 tests respectively that the reference fails. The largest
+remaining gaps are the iteration protocol and the missing `Date` and
+`RegExp`.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -110,7 +114,7 @@ UTF-16 code units is an open design question; the oracle needs parity with
 the reference for now.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `JSON` / `Date` / `RegExp`, the iteration protocol
+sees one binding), `Date` / `RegExp`, the iteration protocol
 (`for`-`of` over anything but an array, spread, destructuring), direct
 `eval` seeing the caller's locals,
 `for`-`of` over anything but an array, `return` and `break` through a
