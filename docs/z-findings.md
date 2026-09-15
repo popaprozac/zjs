@@ -71,7 +71,7 @@ engine-shaped code in Z.
 **Status:** `consumer-verified`
 **Implemented:** z-lang `135b64c9` — radix literals and digit separators
 **Verified:** ZJS `b00f7b4` — engine NaN-box constants respelled in hex, the
-shift-from-small-value workaround removed. Probe `g01-numeric-literals`.
+shift-from-small-value workaround removed. Probe `numeric-literals`.
 **Note:** the `isIntegerLiteral` trap below was handled; the shipped example
 covers `0x1e5` explicitly. One limitation found on adoption: `0xFFFE << 48`
 still fails because the literal types as `i32` in a shift — see G13. Full-width
@@ -126,7 +126,7 @@ built from hex; `docs/language-reference.md` numeric-literal text is updated.
 **No `std/bits` module was added**; the proposed free-function shape below was
 not taken, and the shipped spelling is the better fit for Z.
 **Verified:** ZJS `0f5c94e` — the NaN-box encode/decode path is now ordinary Z
-and `value.zs` contains no `raw c` at all. Probe `g02-std-bits`.
+and `value.zs` contains no `raw c` at all. Probe `float-bits`.
 **Why it mattered beyond a round trip:** NaN *payloads* survive, which is the
 property NaN boxing depends on — boxing stores data in payload bits, so
 canonicalization would silently destroy values. Signed zeros and infinities
@@ -239,7 +239,7 @@ This mirrors the `fromBits`/`toBits` pair shipped for floats. It is a
 was considered and is **not approved**. Checked numeric constructors keep their
 existing trapping behaviour regardless of what is chosen.
 
-Probe `g11-bit-preserving-conversion` is written against the recommended
+Probe `integer-bits` is written against the recommended
 spelling and says so.
 
 ### Done when
@@ -279,9 +279,9 @@ already-typed variable.
 
 | Case | Behaviour at `00864194` | Probe |
 |---|---|---|
-| `return flag ? 7 : 6` from a `u64` function | fails: expected u64, found i32 | `g13a-ternary-literal` |
-| `const mask: u64 = 0xFFFE << 48` | fails: the shift is checked as `i32` before destination context reaches the literal | `g13b-shift-literal` |
-| `expect(handle).toEqual(1)` with a `u32` handle | `z check` accepts; generated C fails `-Wsign-compare`. Generated storage is `uint32_t actual` versus `int32_t expected = 1U`: contextual literal emission and the expectation's storage metadata disagree | `g13c-expect-literal` (needs `z test`) |
+| `return flag ? 7 : 6` from a `u64` function | fails: expected u64, found i32 | `literal-in-ternary` |
+| `const mask: u64 = 0xFFFE << 48` | fails: the shift is checked as `i32` before destination context reaches the literal | `literal-in-shift` |
+| `expect(handle).toEqual(1)` with a `u32` handle | `z check` accepts; generated C fails `-Wsign-compare`. Generated storage is `uint32_t actual` versus `int32_t expected = 1U`: contextual literal emission and the expectation's storage metadata disagree | `literal-in-expectation` (needs `z test`) |
 
 The third case matters beyond ergonomics: a Z type error reaching clang with no
 Z source location is a diagnostic escape, whatever happens with contextual
@@ -356,7 +356,7 @@ Broader ownership support through indexed storage. If the restriction is kept,
 the diagnostic should name the method workaround, since "requires inout
 <mutable binding>" describes the symptom without pointing at the fix.
 
-Probe `g16-inout-indexed-storage` exercises both the working field case and the
+Probe `inout-indexed-storage` exercises both the working field case and the
 failing indexed case.
 ---
 
@@ -375,7 +375,7 @@ construction is deliberately **not** requested here — that is G5's territory.
 ZJS use: serializing token kinds and cell tags, and any table indexed by an
 enum. The engine generates a 110-arm `match` (`kindCode` in
 `z/engine/token.zs`) to reproduce the reference numbering instead.
-Probe `g17-enum-integer-code` (spelling is a proposal).
+Probe `enum-integer-code` (spelling is a proposal).
 
 ---
 
@@ -391,7 +391,7 @@ tests named numeric constants: `z/engine/lexer.zs` opens with ~70 lines of
 those comparisons, and `47` is not reviewable where `'/'` is.
 
 Ask: a reviewable spelling for a `u8` naming an ASCII character. Probe
-`g18-byte-literal` proposes `b'/'`; any equivalent is fine.
+`byte-literal` proposes `b'/'`; any equivalent is fine.
 
 ---
 
@@ -409,7 +409,7 @@ lookupKeyword(in text, 0, text.byteLength)
 Both uses are reads. The workaround (bind the length first) is harmless but
 moves a value away from its use for no safety gain. If the rule is intentional
 simplicity, the diagnostic should say so and name the bind-first workaround.
-Probe `g19-in-borrow-with-field-read`.
+Probe `in-borrow-with-field-read`.
 
 ---
 
@@ -428,7 +428,7 @@ function main(): i32 { return TABLE.byteAt(0) == 97 ? 0 : 1; }
 receiver dropped, and clang fails: *"call to undeclared function 'byteAt'"*.
 The same call on a local `String` binding lowers correctly. This is a
 diagnostic escape of the same class as G13c — Z accepts, the backend rejects.
-Minimal reproduction: probe `g20-module-const-string-method`
+Minimal reproduction: probe `module-const-string-method`
 (`BACKEND-REJECTED`). Engine workaround: the table is a function returning
 the literal.
 

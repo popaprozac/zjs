@@ -1,6 +1,6 @@
-// G2 — exact float bit representation.  STATUS: landed (z-lang dee8ea80)
+// Exact float bit representation.
 //
-// Shipped as methods on the primitives rather than a std/bits module:
+// Available as methods on the primitives:
 //   f64.fromBits(u64) / f64.toBits()
 //   f32.fromBits(u32) / f32.toBits()
 //
@@ -26,6 +26,6 @@ function main(): i32 {
   const payload: u64 = 0x7FF8_0000_0000_0042;
   if (f64.fromBits(payload).toBits() != payload) return 5;
 
-  console.log("g02 ok");
+  console.log("ok");
   return 0;
 }

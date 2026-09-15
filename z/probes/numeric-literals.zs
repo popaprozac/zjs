@@ -1,4 +1,4 @@
-// G1 — radix literals and digit separators.  STATUS: landed (z-lang 135b64c9)
+// Radix literals and digit separators.
 //
 // ZJS use case: every NaN-box constant and mask, spelled reviewably.
 import console from "std/console";
@@ -11,6 +11,6 @@ function main(): i32 {
   const hexWithE: i32 = 0x1e5;   // `e` is a hex digit here, not an exponent
   if (numberTag == 0 || doubleOffset == 0 || payloadMask == 0) return 1;
   if (flags != 165 || hexWithE != 485) return 2;
-  console.log("g01 ok");
+  console.log("ok");
   return 0;
 }

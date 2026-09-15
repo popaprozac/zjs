@@ -29,15 +29,16 @@ struct Registry {
   slots: Array<ContextSlot>;
 }
 
-// Finding G8, sharpened by Phase 1. `Once<T>` accepts only a class whose
-// lifecycle is main-bound -- but marking the whole class `on thread.main`
+// `Once<T>` accepts only a class whose lifecycle is main-bound -- but
+// marking the whole class `on thread.main`
 // then makes every field main-affine, and `export c function` rejects
 // executor-affine functions, so the C ABI becomes unreachable.
 //
 // The way through is a *vestigial* main-bound field: it satisfies Once's
 // requirement while `registry` stays an ordinary thread-shareable Mutex.
 // That works, but a class needing a field it never reads in order to be
-// publishable is a design smell, and it is recorded as such.
+// publishable is a smell, and the worker model will need a root that is
+// publishable without main-binding.
 class Engine {
   readonly registry: Mutex<Registry>;
   publicationEpoch: i32 on thread.main;

@@ -80,7 +80,7 @@ baseline_status() {
 declare -a names statuses details
 counts_landed=0; counts_other=0; counts_regress=0
 
-for probe in "$HERE"/g*.zs; do
+for probe in "$HERE"/*.zs; do
   name="$(basename "$probe" .zs)"
   log="$RESULTS/$name.log"
   mode="run"

@@ -11,7 +11,7 @@ import {
   buildProgram, buildConstants, workloadSize,
 } from "./isa.zs";
 
-// Finding G12: std/time exposes only sleep/delay -- there is no monotonic
+// std/time exposes only sleep/delay -- there is no monotonic
 // clock read, so any benchmark harness in Z needs its own raw c timer.
 function monotonicNanoseconds(): u64 = raw c {
   struct timespec now;
@@ -93,7 +93,7 @@ function run(in code: Array<u8>, in consts: Array<Value>): Value {
       return fromInt32(0);
     }
   }
-  // Finding G14: `while (true)` whose only exits are `return` is not
+  // `while (true)` whose only exits are `return` is not
   // recognized as diverging, so an unreachable trailing return is required.
   return fromInt32(0);
 }

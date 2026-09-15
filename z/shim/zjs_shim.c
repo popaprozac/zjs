@@ -2,13 +2,13 @@
  * library's uintptr_t exports.
  *
  * This exists because Z's `export c function` does not yet accept pointer
- * parameters (finding G7), and zjs.h is `ZjsContext*` throughout. The Z side
+ * parameters, and zjs.h is `ZjsContext*` throughout. The Z side
  * hands out an opaque handle; this file casts it into the pointer-shaped
  * type the frozen contract promises. The host -- test262_runner.c, Zapp,
  * embed_smoke.c -- sees no difference.
  *
- * It is deliberately mechanical. When G7 lands, or when Z grows an
- * opaque-handle export form, this file shrinks to nothing.
+ * It is deliberately mechanical. When Z's export tier accepts pointers, or
+ * grows an opaque-handle export form, this file shrinks to nothing.
  */
 #include <stdbool.h>
 #include <stddef.h>

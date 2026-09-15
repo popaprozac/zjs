@@ -1,4 +1,4 @@
-// G14 — `while (true)` recognized as diverging.  STATUS: open
+// `while (true)` recognized as diverging.
 //
 // This is the shape of every bytecode interpreter loop. Today it reports
 // "function must end with a return value" and needs an unreachable trailing
@@ -15,6 +15,6 @@ function run(limit: i32): i32 {
 
 function main(): i32 {
   if (run(3) != 3) return 1;
-  console.log("g14 ok");
+  console.log("ok");
   return 0;
 }

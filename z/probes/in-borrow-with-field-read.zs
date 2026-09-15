@@ -1,4 +1,4 @@
-// G19 — an `in` borrow conflicts with a field read of the same value in one call.  STATUS: proposed
+// An `in` borrow conflicts with a field read of the same value in one call.
 //
 // Found at z-lang 00864194 writing the ZJS lexer:
 //
@@ -21,6 +21,6 @@ function count(in text: String, length: usize): usize {
 function main(): i32 {
   const text: String = "abc";
   if (count(in text, text.byteLength) != 3) return 1;
-  console.log("g19 ok");
+  console.log("ok");
   return 0;
 }

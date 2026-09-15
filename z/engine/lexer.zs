@@ -12,8 +12,8 @@
 // allocation.
 //
 // Z has no byte/char literal (`'a'`), so every byte the scanner tests is a
-// named constant below. Recorded as finding G18. Also unlike `if`, a `while`
-// body must be braced -- there is no single-statement form.
+// named constant below. Also unlike `if`, a `while` body must be braced --
+// there is no single-statement form.
 
 import { expect } from "std/test";
 import { TextBuffer } from "std/text";
@@ -196,10 +196,9 @@ function lookupKeyword(in source: String, start: usize, length: usize): TokenKin
 // append a single byte to a TextBuffer or build a String from bytes, so the
 // decoded bytes are looked up in this table and copied out of it.
 //
-// This is a function, not a module `const String`, because of finding G20:
-// a method call on a module-level String constant (`ID_BYTES.byteAt(i)`)
-// passes `z check` and then lowers to C with the receiver dropped
-// (`byteAt(i)`), failing in clang. Probe g20 has the minimal reproduction.
+// This is a function, not a module `const String`: a method call on a
+// module-level String constant (`ID_BYTES.byteAt(i)`) passes `z check` and
+// then lowers to C with the receiver dropped (`byteAt(i)`), failing in clang.
 function idByteTable(): String {
   return "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$";
 }
@@ -424,8 +423,7 @@ export struct Lexer {
     }
     const text = rebuilt.finish();
     // Z rejects an `in` borrow of `text` alongside a read of `text.byteLength`
-    // in the same call ("overlapping in and value uses"). Both are reads;
-    // recorded as finding G19.
+    // in the same call ("overlapping in and value uses"), so bind the length.
     const textLength = text.byteLength;
     return lookupKeyword(in text, 0, textLength);
   }
@@ -909,7 +907,7 @@ export function tokenize(source: String): Array<Token> {
     tokens.push(token);
     if (token.kind == TokenKind.eof) return tokens;
   }
-  // G14: `while (true)` with only `return` exits is not seen as diverging.
+  // `while (true)` with only `return` exits is not seen as diverging.
   return tokens;
 }
 

@@ -53,7 +53,7 @@ export struct Heap {
   // registry.slots[i].heap, ...)` is an error, because an `inout` argument
   // must be a plain mutable binding. A method call on the same projection is
   // accepted, so the heap API has to be methods for the engine to reach a
-  // per-context heap at all. Recorded as finding G16.
+  // per-context heap at all.
   function allocate(inout this, tag: u8, slotCount: u32): u32 {
     const start = u32(this.slots.length);
     let index: u32 = 0;

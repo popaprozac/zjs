@@ -1,6 +1,6 @@
-// G17 — no outward integer conversion for enums.  STATUS: proposed
+// No outward integer conversion for enums.
 //
-// Found at z-lang 00864194 writing the ZJS token dump. Neither a plain enum
+// Found writing the ZJS token dump. Neither a plain enum
 // nor a `c enum` with a declared representation can be read as an integer:
 // `u8(kind)` is rejected with "numeric construction requires a numeric value".
 //
@@ -19,6 +19,6 @@ function main(): i32 {
   const kind = Kind.number;
   const code: u8 = kind.toBits();
   if (code != 3) return 1;
-  console.log("g17 ok");
+  console.log("ok");
   return 0;
 }

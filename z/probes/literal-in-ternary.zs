@@ -1,6 +1,6 @@
-// G13a — contextual typing of a literal in ternary branches.  STATUS: proposed
+// Contextual typing of a literal in ternary branches.
 //
-// Confirmed at z-lang 00864194 (Stage 0): `return flag ? 7 : 6` from a u64
+// `return flag ? 7 : 6` from a u64
 // function fails with "expected u64, found i32". The destination type is
 // known; the literals in the branches should take it.
 //
@@ -15,6 +15,6 @@ function pick(flag: boolean): u64 {
 function main(): i32 {
   if (pick(true) != 7) return 1;
   if (pick(false) != 6) return 2;
-  console.log("g13a ok");
+  console.log("ok");
   return 0;
 }

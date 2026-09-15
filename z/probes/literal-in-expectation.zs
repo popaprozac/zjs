@@ -1,8 +1,8 @@
-// G13c — a literal in `toEqual` against a u32 actual.  STATUS: proposed
+// A literal in `toEqual` against a u32 actual.
 //
-// Confirmed at z-lang 00864194 (Stage 0). This is the case that escapes Z:
+// This is the case that escapes Z:
 // `z check` accepts the file, then the generated C fails to compile with
-// -Wsign-compare. Codex's diagnosis: generated storage is `uint32_t actual`
+// -Wsign-compare. Diagnosis from review: generated storage is `uint32_t actual`
 // versus `int32_t expected = 1U` -- contextual literal emission and the
 // expectation's storage metadata disagree.
 //

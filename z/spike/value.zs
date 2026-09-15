@@ -1,10 +1,10 @@
 // Spike: NaN-boxed value, JSC layout (same as the Zen-c reference engine).
 //
-// Z has no hex literals (finding G1), so wide constants are built by
+// Z has no hex literals, so wide constants are built by
 // shifting from small values -- the same workaround src/value.zc uses for
 // Zen-c's 32-bit literal parsing.
 //
-// Z has no bitcast intrinsic (finding G2), so f64<->u64 punning goes
+// Z has no bitcast intrinsic, so f64<->u64 punning goes
 // through `raw c` + memcpy.
 
 import string from "string.h";
@@ -40,7 +40,7 @@ export function bitsToDouble(bits: u64): f64 = raw c {
   return value;
 }
 
-// Finding G11: Z's numeric construction is *checked* -- `u32(-42)` traps
+// Z's numeric construction is *checked* -- `u32(-42)` traps
 // rather than reinterpreting the bit pattern. NaN boxing needs the C
 // `(uint32_t)i` reinterpretation, so the sign bit is folded by hand.
 export function fromInt32(value: i32): Value {

@@ -1,6 +1,6 @@
-// G11 — bit-preserving *integer* conversion.  STATUS: proposed (API pending)
+// Bit-preserving *integer* conversion.
 //
-// The integer half of what dee8ea80 landed for floats. Integers still have
+// The integer half of what already exists for floats. Integers still have
 // only the checked, value-preserving constructors, which trap rather than
 // reinterpret: `u32(-42)` aborts.
 //
@@ -8,8 +8,8 @@
 // `(uint32_t)i`. The engine folds the sign by hand today
 // (int32Value/asInt32 in z/engine/value.zs).
 //
-// Spelling below is Codex's recommendation from review at 00864194. It is a
-// RECOMMENDATION, NOT AN APPROVED EXTENSION. In particular
+// The spelling below is the one recommended in review. It is a
+// recommendation, not an approved extension. In particular
 // `u32.fromBits(negative)` was considered and is not approved. Checked
 // constructors keep their existing trapping behaviour regardless.
 import console from "std/console";
@@ -28,6 +28,6 @@ function main(): i32 {
   if (restored != -42) return 3;
   if (i32.fromBits(0x8000_0000) != minimum) return 4;
 
-  console.log("g11 ok");
+  console.log("ok");
   return 0;
 }

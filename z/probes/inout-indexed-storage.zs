@@ -1,12 +1,12 @@
-// G16 — `inout` through indexed storage.  STATUS: proposed
+// `inout` through indexed storage.
 //
-// Scope corrected after Codex review at 00864194. `allocate(inout slot.heap)`
-// through a plain field projection ALREADY WORKS. What fails is specifically
+// `allocate(inout slot.heap)` through a plain field projection already
+// works. What fails is specifically
 // the indexed-storage boundary:
 //
 //     allocate(inout registry.slots[index].heap)   // rejected
 //
-// Codex classifies this as a conservative implementation restriction, not a
+// This is a conservative implementation restriction, not a
 // language rule that mutating APIs must be methods. The method-call form on
 // the same projection is accepted, and the engine uses it as the workaround.
 // Broader ownership support is left for upstream review.
@@ -31,6 +31,6 @@ function main(): i32 {
   registry.slots.push(Slot({ heap: Heap({ cells: 0 }) }));
   const handle = allocate(inout registry.slots[0].heap);
   if (handle != 1) return 2;
-  console.log("g16 ok");
+  console.log("ok");
   return 0;
 }

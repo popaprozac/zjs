@@ -4,13 +4,12 @@
 // divergence: a cell payload is a *handle* into the Z-owned heap, not a
 // machine address. See `cellValue` below for why that changes the encoding.
 //
-// G1 (radix literals, z-lang 135b64c9) and G2 (exact float bit
-// representation, dee8ea80) have both landed, so constants are spelled in the
-// base that reads best and the NaN-box encode path is ordinary Z -- no raw c.
+// Constants are spelled in the base that reads best, and the NaN-box encode
+// path is ordinary Z through f64.toBits/fromBits -- no raw c.
 //
-// Still outstanding: G11, the integer half of the same idea. Z's numeric
-// construction is checked and traps rather than reinterpreting a sign bit, so
-// int32 boxing still folds the sign by hand below.
+// Z's numeric construction is checked and traps rather than reinterpreting a
+// sign bit, so int32 boxing folds the sign by hand below until Z offers a
+// bit-preserving integer conversion.
 
 import { expect } from "std/test";
 
@@ -46,7 +45,7 @@ export function notCellMask(): u64 { return NOT_CELL_MASK; }
 
 // --- Numbers --------------------------------------------------------------
 
-// G11: `u32(value)` traps on a negative input, so the sign bit is folded
+// `u32(value)` traps on a negative input, so the sign bit is folded
 // explicitly. This is what C spells `(uint32_t)i`.
 export function int32Value(value: i32): Value {
   const widened: i64 = i64(value) & 0xFFFF_FFFF;
@@ -161,8 +160,8 @@ test "NaN and the zero signs survive boxing" {
   expect(asDouble(doubleValue(0.0)).toBits()).toEqual((0.0).toBits());
   expect((-0.0).toBits() == (0.0).toBits()).toEqual(false);
 
-  // Infinities round-trip. G13: the expected literal needs an explicit u64
-  // binding, otherwise it types as i32 and the mismatch escapes into
+  // Infinities round-trip. The expected literal needs an explicit u64
+  // binding: otherwise it types as i32 and the mismatch escapes into
   // generated C rather than being reported against this line.
   const positiveInfinity: u64 = 0x7FF0_0000_0000_0000;
   expect(asDouble(doubleValue(f64.fromBits(positiveInfinity))).toBits())
@@ -185,10 +184,10 @@ test "singletons are distinct and none is a cell" {
 }
 
 test "cell handles round-trip and never alias a sentinel" {
-  // G13, and a sharper symptom of it: `toEqual` does not contextually type
-  // its literal against a u32 actual. The mismatch is not reported as a Z
-  // diagnostic -- it escapes into generated C and surfaces as a clang
-  // -Wsign-compare error with no Z source location.
+  // `toEqual` does not contextually type its literal against a u32 actual,
+  // and the mismatch is not reported as a Z diagnostic -- it escapes into
+  // generated C and surfaces as a clang -Wsign-compare error with no Z
+  // source location. Hence the typed bindings.
   const one: u32 = 1;
   const two: u32 = 2;
   const many: u32 = 1000000;

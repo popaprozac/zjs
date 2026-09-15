@@ -1,6 +1,6 @@
-// G18 — no byte/character literal.  STATUS: proposed (feature)
+// No byte/character literal.
 //
-// Found at z-lang 00864194 writing the ZJS lexer. Z has no `char` type and
+// Found writing the ZJS lexer. Z has no `char` type and
 // no way to spell a byte as a character, so every byte a scanner tests is a
 // named numeric constant: the lexer carries ~70 lines of `const B_SLASH:
 // u8 = 47;` before any logic. Correctness reviews of a lexer are reviews
@@ -19,6 +19,6 @@ function main(): i32 {
   const text: String = "a/b";
   if (!isSlash(text.byteAt(1))) return 1;
   if (isSlash(text.byteAt(0))) return 2;
-  console.log("g18 ok");
+  console.log("ok");
   return 0;
 }

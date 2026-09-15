@@ -4,9 +4,9 @@
 // reference engine's integer numbering, so token dumps from both engines can
 // be diffed line-for-line. Do not reorder without regenerating kindCode.
 //
-// Finding G17: Z enums (plain or `c enum`) have no outward integer
-// conversion -- `u8(kind)` is rejected -- so the numbering has to be an
-// exhaustive match instead of a cast. Generated from src/token.zc.
+// Z enums (plain or `c enum`) have no outward integer conversion --
+// `u8(kind)` is rejected -- so the numbering has to be an exhaustive match
+// instead of a cast. Generated from src/token.zc.
 //
 // A Token is a slice into the source plus a kind. No decoded value lives
 // here; numbers and strings are decoded when the compiler materializes
