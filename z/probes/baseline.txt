@@ -1,5 +1,5 @@
-# probe status at z-lang 3f96e759 (clean). Written by run.sh --record.
-array-pop COMPILER-REJECTED
+# probe status at z-lang 6d1f72cd (clean). Written by run.sh --record.
+array-pop LANDED
 byte-literal COMPILER-REJECTED
 enum-integer-code COMPILER-REJECTED
 float-bits LANDED
@@ -13,7 +13,9 @@ literal-in-ternary LANDED
 lock-callback-ownership COMPILER-REJECTED
 module-const-string-method LANDED
 numeric-literals LANDED
-replace-array-field-inference BACKEND-REJECTED
-string-from-bytes COMPILER-REJECTED
+replace-array-field-inference LANDED
+self-parameter-name BACKEND-REJECTED
+string-from-bytes LANDED
 string-to-native COMPILER-REJECTED
 while-true-diverges COMPILER-REJECTED
+wrapping-shift COMPILER-REJECTED

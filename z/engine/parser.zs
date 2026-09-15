@@ -103,9 +103,8 @@ export struct Parser {
   source: String;
   // The token stream, plus the window of it currently being parsed. A
   // template substitution is re-tokenized and appended, and the window
-  // moved over it, rather than swapping the array: a Z field cannot be
-  // moved out of its owner, and std/memory.replace on an Array field
-  // mis-lowers today (see the string-to-native / replace probes).
+  // moved over it, rather than swapping the array, so the stream is
+  // never copied.
   tokens: Array<Token>;
   tokenLimit: usize;
   pos: usize;

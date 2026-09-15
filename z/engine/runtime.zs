@@ -155,8 +155,8 @@ export struct Runtime {
   atoms: Array<u32>;
   atomCount: u32;
   // The register stack and frame stack grow monotonically and are reused;
-  // `regTop` / `frameCount` mark the live extent. This is the reference's
-  // model, and it sidesteps Z's Array having no pop.
+  // `regTop` / `frameCount` mark the live extent, as in the reference. A
+  // frame is a window over the register stack, so both move together.
   regStack: Array<Value>;
   regTop: u32;
   frames: Array<Frame>;
@@ -190,9 +190,8 @@ export struct Runtime {
   // properties fall through to the globals table.
   globalObject: u32;
   // Cells a builtin holds in Z locals across a call back into JavaScript,
-  // so a collection there cannot free them. Live to `tempRootCount`.
+  // so a collection there cannot free them.
   tempRoots: Array<Value>;
-  tempRootCount: usize;
   // Atoms the runtime consults by identity.
   atomLength: u32;
   atomPrototype: u32;
@@ -2081,16 +2080,11 @@ export struct Runtime {
   }
 
   function pushTempRoot(inout this, value: Value): void {
-    if (this.tempRootCount < this.tempRoots.length) {
-      this.tempRoots[this.tempRootCount] = value;
-    } else {
-      this.tempRoots.push(value);
-    }
-    this.tempRootCount = this.tempRootCount + 1;
+    this.tempRoots.push(value);
   }
 
   function popTempRoot(inout this): void {
-    this.tempRootCount = this.tempRootCount - 1;
+    const dropped = this.tempRoots.pop();
   }
 
   // Call a function value from Z with the arguments given, running the
@@ -2409,7 +2403,7 @@ export struct Runtime {
       index = index + 1;
     }
     index = 0;
-    while (index < this.tempRootCount) {
+    while (index < this.tempRoots.length) {
       const rooted = this.tempRoots[index];
       this.heap.markValue(rooted);
       index = index + 1;
@@ -3636,7 +3630,7 @@ export function createRuntime(): Runtime {
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
     randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
-    hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(), tempRootCount: 0,
+    hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
@@ -3898,7 +3892,18 @@ function nativeReadInt(buffer: usize): i32 = raw c {
 // A Z String from a JavaScript string's bytes, by way of a NUL-terminated
 // native buffer: Z has no direct construction from bytes, and the copy
 // stops at an embedded NUL.
+// The bytes as a String. Engine text is bytes, not necessarily UTF-8; a
+// malformed sequence is kept as-is through a native buffer rather than
+// rejected, since this only feeds diagnostics and source text.
 export function bytesToString(in bytes: Array<u8>): String {
+  const decoded = attempt String.fromBytes(bytes);
+  return match (decoded) {
+    success(text) => text;
+    failure(error) => bytesToStringLossy(in bytes);
+  };
+}
+
+function bytesToStringLossy(in bytes: Array<u8>): String {
   const buffer = nativeAlloc(bytes.length + 1);
   let index: usize = 0;
   while (index < bytes.length) {

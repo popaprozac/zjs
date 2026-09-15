@@ -132,10 +132,8 @@ export struct Compiler {
   isFunction: boolean;
   hadError: boolean;
   strict: boolean;
-  // Loop stack: `loopDepth` marks the live extent of a reused array, since
-  // Z's Array cannot remove elements.
+  // Open loops, innermost last.
   loops: Array<LoopFrame>;
-  loopDepth: usize;
   // A label waiting for the loop statement it names.
   pendingLabelStart: u32;
   pendingLabelLength: u32;
@@ -209,16 +207,11 @@ export struct Compiler {
     });
     this.pendingLabelStart = 0;
     this.pendingLabelLength = 0;
-    if (this.loopDepth < this.loops.length) {
-      this.loops[this.loopDepth] = frame;
-    } else {
-      this.loops.push(frame);
-    }
-    this.loopDepth = this.loopDepth + 1;
+    this.loops.push(frame);
   }
 
   function loopSetContinue(inout this, target: u32): void {
-    const top = this.loopDepth - 1;
+    const top = this.loops.length - 1;
     this.loops[top].continueTarget = target;
     this.loops[top].haveContinue = true;
     let i: usize = 0;
@@ -287,7 +280,7 @@ export struct Compiler {
 
   // The open frame carrying `label`, or -1.
   function findLabeledFrame(in parser: Parser, nameStart: u32, nameLength: u32): i32 {
-    let index = this.loopDepth;
+    let index = this.loops.length;
     while (index > 0) {
       index = index - 1;
       const labelStart = this.loops[index].labelStart;
@@ -305,7 +298,7 @@ export struct Compiler {
 
   // Patch every pending break to the next instruction, then drop the loop.
   function loopPop(inout this): void {
-    const top = this.loopDepth - 1;
+    const top = this.loops.length - 1;
     let i: usize = 0;
     const count = this.loops[top].breakPatches.length;
     while (i < count) {
@@ -313,7 +306,7 @@ export struct Compiler {
       this.patchJump(bound1);
       i = i + 1;
     }
-    this.loopDepth = this.loopDepth - 1;
+    const dropped = this.loops.pop();
   }
 
   // The top-level completion value resets to undefined before a
@@ -1545,7 +1538,7 @@ export struct Compiler {
     }
     const loopTop = u32(this.code.length);
     this.loopPush(true);
-    const top = this.loopDepth - 1;
+    const top = this.loops.length - 1;
     this.pushRegion(REGION_ITERATOR, NO_NODE, iterator, done);
     this.loops[top].continueRegions = this.regionDepth;
     this.loopSetContinue(loopTop);
@@ -2037,11 +2030,11 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.breakStmt) {
-      if (this.loopDepth == 0) {
+      if (this.loops.length == 0) {
         this.hadError = true;
         return;
       }
-      let target = i32(this.loopDepth) - 1;
+      let target = i32(this.loops.length) - 1;
       if (n.nameLength > 0) target = this.findLabeledFrame(in parser, n.nameStart, n.nameLength);
       if (target < 0) {
         this.hadError = true;
@@ -2060,7 +2053,7 @@ export struct Compiler {
         target = this.findLabeledFrame(in parser, n.nameStart, n.nameLength);
         if (target >= 0 && !this.loops[usize(target)].isIter) target = -1;
       } else {
-        let walk = i32(this.loopDepth) - 1;
+        let walk = i32(this.loops.length) - 1;
         while (walk >= 0 && target < 0) {
           if (this.loops[usize(walk)].isIter) target = walk;
           walk = walk - 1;
@@ -2365,7 +2358,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0,
     locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
-    hadError: false, strict: enclosingStrict, loops: Array<LoopFrame>(), loopDepth: 0,
+    hadError: false, strict: enclosingStrict, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
@@ -2537,8 +2530,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   if (compiler.hadError) return failed;
 
   let compiled = createFunctionCode();
-  const code: Array<Inst> = replace(inout compiler.code, Array<Inst>());
-  const constants: Array<Value> = replace(inout compiler.constants, Array<Value>());
+  const code = replace(inout compiler.code, Array<Inst>());
+  const constants = replace(inout compiler.constants, Array<Value>());
   compiled.code = move code;
   compiled.constants = move constants;
   compiled.registerCount = u32(compiler.maxReg) + 1;
@@ -2584,7 +2577,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     }
     compiled.nameAtom = runtime.internBytes(move nameBytes);
   }
-  const propertyNames: Array<u32> = replace(inout compiler.propertyNames, Array<u32>());
+  const propertyNames = replace(inout compiler.propertyNames, Array<u32>());
   compiled.propertyNames = move propertyNames;
   runtime.setFunction(index, move compiled);
   return CompiledFunction({ index: i32(index), minOuterScope: compiler.minOuterScope });
@@ -2808,7 +2801,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0,
     locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
-    hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(), loopDepth: 0,
+    hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, propertyNames: Array<u32>(),
   });
@@ -2840,17 +2833,16 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   if (compiler.hadError) return -1;
 
   // A field cannot be moved out of its owner; replace hands the buffers
-  // out and leaves empty ones behind. The result types are written out
-  // because inference on replace of an Array field mis-lowers today.
+  // out and leaves empty ones behind.
   let compiled = createFunctionCode();
-  const code: Array<Inst> = replace(inout compiler.code, Array<Inst>());
-  const constants: Array<Value> = replace(inout compiler.constants, Array<Value>());
+  const code = replace(inout compiler.code, Array<Inst>());
+  const constants = replace(inout compiler.constants, Array<Value>());
   compiled.code = move code;
   compiled.constants = move constants;
   compiled.registerCount = u32(compiler.maxReg) + 1;
   compiled.fixedRegs = u32(compiler.fixedRegs);
   compiled.strict = compiler.strict;
-  const propertyNames: Array<u32> = replace(inout compiler.propertyNames, Array<u32>());
+  const propertyNames = replace(inout compiler.propertyNames, Array<u32>());
   compiled.propertyNames = move propertyNames;
   return i32(runtime.addFunction(move compiled));
 }
