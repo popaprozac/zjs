@@ -171,8 +171,8 @@ export struct Heap {
         this.headers[usize(link)].marked = true;
         this.pushMark(link);
       }
-      // Slots hold values for every tag but strings and host functions.
-      if (tag != TAG_STRING && tag != TAG_HOST_FUNCTION) {
+      // Slots hold values for every tag but strings.
+      if (tag != TAG_STRING) {
         const start = this.headers[usize(handle)].slotStart;
         const count = this.headers[usize(handle)].slotCount;
         let index: u32 = 0;
@@ -446,9 +446,10 @@ export struct Heap {
 
   // A closure: a function index (`payload`, as for a plain function cell)
   // with the environment it was created in (`link`). Slot 0 holds the
-  // `this` an arrow captured; slot 1 its `prototype` object once created.
+  // `this` an arrow captured, slot 1 its `prototype` object once created,
+  // slot 2 its bag of named properties once one is needed.
   function allocateClosure(inout this, functionIndex: u32, env: u32, capturedThis: Value): u32 {
-    const handle = this.allocate(TAG_CLOSURE, 2);
+    const handle = this.allocate(TAG_CLOSURE, 3);
     this.headers[usize(handle)].payload = functionIndex;
     this.headers[usize(handle)].link = env;
     this.setSlot(handle, 0, capturedThis);
@@ -461,10 +462,12 @@ export struct Heap {
 
   // --- Host functions ---
 
-  // A builtin implemented in Z; `payload` selects it in the runtime's
-  // dispatch, `link` is its `prototype` object once created.
+  // A builtin implemented in Z; `payload` indexes the runtime's host
+  // table, `link` is its `prototype` object once created. Slot 0 is
+  // per-instance data, slot 1 `length`, slot 2 `name`, slot 3 the bag of
+  // named properties once one is needed.
   function allocateHostFunction(inout this, builtinId: u32): u32 {
-    const handle = this.allocate(TAG_HOST_FUNCTION, 0);
+    const handle = this.allocate(TAG_HOST_FUNCTION, 4);
     this.headers[usize(handle)].payload = builtinId;
     return handle;
   }
@@ -503,8 +506,11 @@ export struct Heap {
   }
 
   // A function cell referring to compiled code by index.
+  // A function value: `payload` indexes the runtime's function table,
+  // `link` is its `prototype` object once created, and the slot holds its
+  // bag of named properties once one is needed.
   function allocateFunction(inout this, functionIndex: u32): u32 {
-    const handle = this.allocate(TAG_FUNCTION, 0);
+    const handle = this.allocate(TAG_FUNCTION, 1);
     this.headers[usize(handle)].payload = functionIndex;
     return handle;
   }

@@ -4,7 +4,8 @@ import console from "std/console";
 import fs from "std/fs";
 import process from "std/process";
 import { Value, isUndefined, isNull, isBoolean, isTrue, isInt32, asInt32, isDouble, asDouble, isCell, asCell } from "../../engine/value.zs";
-import { Runtime, createRuntime } from "../../engine/runtime.zs";
+import { Runtime } from "../../engine/runtime.zs";
+import { createEngine } from "../../engine/builtins.zs";
 import { bytesOf } from "../../engine/heap.zs";
 import { evaluate } from "../../engine/lib.zs";
 import stdio from "stdio.h";
@@ -60,7 +61,7 @@ function render(in runtime: Runtime, value: Value): String {
 
 function dump(in path: String): i32 throws String {
   const source = try fs.readText(path);
-  let runtime = createRuntime();
+  let runtime = createEngine();
   const outcome = evaluate(inout runtime, move source);
   const prefix: String = outcome.isThrow ? "throw" : "value";
   if (runtime.isStringValue(outcome.value)) {

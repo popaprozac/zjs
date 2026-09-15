@@ -16,7 +16,8 @@
 
 import { Mutex, Once, OnceLifetime } from "std/sync";
 import { thread } from "std/thread";
-import { Runtime, RunResult, createRuntime } from "./runtime.zs";
+import { Runtime, RunResult } from "./runtime.zs";
+import { createEngine } from "./builtins.zs";
 import { parseProgram } from "./parser.zs";
 import { compileProgram } from "./compiler.zs";
 import { Value, undefinedValue } from "./value.zs";
@@ -73,7 +74,7 @@ export c function zjs_z_new_context(): usize {
       live: true,
       hadError: false,
       evalCount: 0,
-      runtime: createRuntime(),
+      runtime: createEngine(),
       lastResult: undefinedValue(),
     }));
     return registry.slots.length;
@@ -143,10 +144,15 @@ export c function zjs_z_eval_count(handle: usize): u64 {
 export function evaluate(inout runtime: Runtime, source: String): RunResult {
   const parsed = parseProgram(move source, false);
   if (parsed.hadError) {
-    // SyntaxError; Error objects do not exist yet.
-    return RunResult({ isThrow: true, value: undefinedValue() });
+    // The reference reports both phases as a SyntaxError whose message
+    // names the phase; test262 tooling reads the phase from it.
+    const message: String = "parse error";
+    return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
   }
   const functionIndex = compileProgram(in parsed.parser, parsed.root, inout runtime);
-  if (functionIndex < 0) return RunResult({ isThrow: true, value: undefinedValue() });
+  if (functionIndex < 0) {
+    const message: String = "compile error";
+    return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
+  }
   return runtime.run(u32(functionIndex));
 }

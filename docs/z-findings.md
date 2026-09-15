@@ -568,6 +568,40 @@ without a native detour.
 
 ---
 
+## G27 — A parameter named `self` collides with the lowered receiver
+
+**Status:** `proposed` — **compiler bug** · **Size:** small · **Priority:** medium
+**Confirmed:** z-lang `3f96e759` · **Blocks:** no (renamed)
+**Found:** Phase 7, the builtins' host-function type.
+
+A method's `this` lowers to a C parameter named `self`. A Z parameter of
+the same name in that method is accepted by `z check` and rejected by
+clang: *redefinition of parameter 'self'*, with no Z source location. A
+diagnostic escape of the class G13c / G20 / G22 belong to. Either `self`
+should be a reported reserved name, or generated names should be mangled
+apart from user names. Probe `self-parameter-name` (`BACKEND-REJECTED`).
+
+---
+
+## G28 — No truncating conversion from `f64` to an integer
+
+**Status:** `proposed` · **Size:** small · **Priority:** high
+**Confirmed:** z-lang `3f96e759` · **Blocks:** no (worked around)
+**Found:** Phase 7, the builtins' index and length arguments.
+
+`i32(value)` and `u32(value)` on an `f64` are checked and trap on a
+fractional value -- and on NaN -- with no diagnostic (G15), so
+`parseFloat("-.5")`, `array[1.5]`, and `new Array(2.5)` each took the engine
+down before the guard was found. JavaScript narrows by truncation
+everywhere (ToInt32, ToLength, ToIntegerOrInfinity), so every such site now
+calls a `raw c` `__builtin_trunc` first and compares. The value-preserving
+default is right; the ask is a spelled-out truncating conversion
+(`value.truncate()`, or `trunc` in `std/math` alongside G3) so the intent is
+in Z and not in C. A checked conversion that named the offending value
+when it traps would have found these in seconds; that half is G15.
+
+---
+
 # Wave 2 — substantive language design
 
 These need agreement on direction before implementation. Each has a real

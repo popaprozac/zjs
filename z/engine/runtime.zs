@@ -8,6 +8,7 @@
 // `slots[i].runtime.eval(...)`.
 
 import { expect } from "std/test";
+import { thread } from "std/thread";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV } from "./heap.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
@@ -19,6 +20,8 @@ struct Global {
   name: String;
   value: Value;
   defined: boolean;
+  // The name interned, for lookups through the global object.
+  atom: u32;
 }
 
 struct Frame {
@@ -50,26 +53,29 @@ struct TryFrame {
   catchReg: u8;
 }
 
-// Builtins implemented in Z. A host function cell carries one of these
-// ids; `callHost` dispatches on it.
-const BUILTIN_ERROR: u32 = 0;
-const BUILTIN_TYPE_ERROR: u32 = 1;
-const BUILTIN_REFERENCE_ERROR: u32 = 2;
-const BUILTIN_RANGE_ERROR: u32 = 3;
-const BUILTIN_SYNTAX_ERROR: u32 = 4;
-// The error constructors are the ids below this; `builtinName` and the
-// prototype chain depend on that.
-const BUILTIN_ERROR_COUNT: u32 = 5;
-const BUILTIN_OBJECT: u32 = 5;
+// The errors the engine itself throws, by the name of their constructor.
+// The builtins module installs the constructors; the runtime finds a
+// prototype through the global of that name.
+export const ERROR_KIND_ERROR: u32 = 0;
+export const ERROR_KIND_TYPE: u32 = 1;
+export const ERROR_KIND_REFERENCE: u32 = 2;
+export const ERROR_KIND_RANGE: u32 = 3;
+export const ERROR_KIND_SYNTAX: u32 = 4;
+export const ERROR_KIND_COUNT: u32 = 5;
 
-function builtinName(id: u32): String {
-  if (id == BUILTIN_ERROR) return "Error";
-  if (id == BUILTIN_TYPE_ERROR) return "TypeError";
-  if (id == BUILTIN_REFERENCE_ERROR) return "ReferenceError";
-  if (id == BUILTIN_RANGE_ERROR) return "RangeError";
-  if (id == BUILTIN_SYNTAX_ERROR) return "SyntaxError";
-  return "Object";
+export function errorKindName(kind: u32): String {
+  if (kind == ERROR_KIND_ERROR) return "Error";
+  if (kind == ERROR_KIND_TYPE) return "TypeError";
+  if (kind == ERROR_KIND_REFERENCE) return "ReferenceError";
+  if (kind == ERROR_KIND_RANGE) return "RangeError";
+  return "SyntaxError";
 }
+
+// A builtin implemented in Z. The runtime keeps these in a table; a host
+// function cell carries its index. `callee` is the cell being called, whose
+// slots hold per-instance data (an Error constructor's kind, a bound
+// function's target) and its `length` and `name`.
+export type HostFunction = (inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32) => Value on thread.any;
 
 export struct RunResult {
   isThrow: boolean;
@@ -109,6 +115,15 @@ export struct Runtime {
   stringProto: u32;
   // The completion value of the last run, kept alive for the embedder.
   lastResult: Value;
+  // Builtins, indexed by a host function cell's payload.
+  hostTable: Array<HostFunction>;
+  // The global object: `this` at the top level and in sloppy calls; its
+  // properties fall through to the globals table.
+  globalObject: u32;
+  // Cells a builtin holds in Z locals across a call back into JavaScript,
+  // so a collection there cannot free them. Live to `tempRootCount`.
+  tempRoots: Array<Value>;
+  tempRootCount: usize;
   // Atoms the runtime consults by identity.
   atomLength: u32;
   atomPrototype: u32;
@@ -154,7 +169,8 @@ export struct Runtime {
       if (this.globals[index].name == name) return u16(index);
       index = index + 1;
     }
-    this.globals.push(Global({ name: move name, value: undefinedValue(), defined: false }));
+    const atom = this.internBytes(bytesOf(in name));
+    this.globals.push(Global({ name: move name, value: undefinedValue(), defined: false, atom: atom }));
     return u16(this.globals.length - 1);
   }
 
@@ -284,7 +300,7 @@ export struct Runtime {
 
   // The prototype of the named error constructor, or 0 before builtins.
   function errorPrototype(inout this, kind: u32): u32 {
-    const slot = this.globalSlot(builtinName(kind));
+    const slot = this.globalSlot(errorKindName(kind));
     const ctor = this.globals[usize(slot)].value;
     if (!this.isHostFunctionValue(ctor)) return 0;
     return this.heap.linkOf(asCell(ctor));
@@ -295,7 +311,7 @@ export struct Runtime {
   function makeError(inout this, kind: u32, message: Array<u8>): Value {
     const proto = this.errorPrototype(kind);
     const object = this.heap.allocateObject(proto);
-    const kindName = builtinName(kind);
+    const kindName = errorKindName(kind);
     const nameValue = this.internText(in kindName);
     const atomName = this.atomName;
     this.heap.objectSet(object, atomName, nameValue);
@@ -306,7 +322,11 @@ export struct Runtime {
   }
 
   function typeError(inout this, in message: String): Value {
-    return this.makeError(BUILTIN_TYPE_ERROR, bytesOf(in message));
+    return this.makeError(ERROR_KIND_TYPE, bytesOf(in message));
+  }
+
+  function syntaxError(inout this, in message: String): Value {
+    return this.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
   }
 
   // A property key as an atom handle: strings intern their bytes; anything
@@ -324,7 +344,7 @@ export struct Runtime {
     if (isInt32(key)) return asInt32(key) >= 0 ? asInt32(key) : -1;
     if (isDouble(key)) {
       const d = asDouble(key);
-      if (d >= 0.0 && d < 2147483648.0 && f64(i32(d)) == d) return i32(d);
+      if (d >= 0.0 && d < 2147483648.0 && isIntegralDouble(d)) return i32(d);
       return -1;
     }
     if (!this.isStringValue(key)) return -1;
@@ -390,6 +410,41 @@ export struct Runtime {
     return created;
   }
 
+  // The slot that holds a function-like cell's bag of named properties.
+  function functionBagSlot(handle: u32): u32 {
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_HOST_FUNCTION) return 3;
+    if (tag == TAG_CLOSURE) return 2;
+    return 0;
+  }
+
+  // A function-like cell's bag, 0 if none exists yet.
+  function functionBag(handle: u32): u32 {
+    const held = this.heap.slot(handle, this.functionBagSlot(handle));
+    if (isCell(held) && asCell(held) != 0) return asCell(held);
+    return 0;
+  }
+
+  // A function-like cell's bag, created on first use.
+  function ensureFunctionBag(inout this, handle: u32): u32 {
+    const existing = this.functionBag(handle);
+    if (existing != 0) return existing;
+    const created = this.heap.allocateObject(0);
+    const slot = this.functionBagSlot(handle);
+    this.heap.setSlot(handle, slot, cellValue(created));
+    return created;
+  }
+
+  // Define an own data property on an object or a function-like cell.
+  function defineOwn(inout this, target: u32, atom: u32, value: Value): void {
+    if (this.heap.isObject(target)) {
+      this.heap.objectSet(target, atom, value);
+      return;
+    }
+    const bag = this.ensureFunctionBag(target);
+    this.heap.objectSet(bag, atom, value);
+  }
+
   // [[Get]] for every value the engine has. Absent properties are
   // undefined; primitives read from their intrinsic prototype.
   function getProperty(inout this, object: Value, key: Value): Value {
@@ -398,7 +453,12 @@ export struct Runtime {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
-      return this.objectGet(handle, atom);
+      const found = this.objectGet(handle, atom);
+      if (handle == this.globalObject && isUndefined(found)) {
+        const slot = this.findGlobalByAtom(atom);
+        if (slot >= 0 && this.globals[usize(slot)].defined) return this.globals[usize(slot)].value;
+      }
+      return found;
     }
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
@@ -434,6 +494,18 @@ export struct Runtime {
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
       if (atom == this.atomPrototype) return cellValue(this.prototypeOf(handle));
+      if (tag == TAG_HOST_FUNCTION) {
+        if (atom == this.atomLength) return this.heap.slot(handle, 1);
+        if (atom == this.atomName) return this.heap.slot(handle, 2);
+      } else {
+        const code = this.heap.functionIndex(handle);
+        if (atom == this.atomLength) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
+      }
+      const bag = this.functionBag(handle);
+      if (bag != 0) {
+        const slot = this.heap.objectFindSlot(bag, atom);
+        if (slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)))) return this.heap.slot(bag, u32(slot));
+      }
       const functionProto = this.functionProto;
       return this.objectGet(functionProto, atom);
     }
@@ -448,6 +520,14 @@ export struct Runtime {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
+      if (handle == this.globalObject && this.heap.objectFindSlot(handle, atom) < 0) {
+        const slot = this.findGlobalByAtom(atom);
+        if (slot >= 0) {
+          this.globals[usize(slot)].value = value;
+          this.globals[usize(slot)].defined = true;
+          return;
+        }
+      }
       this.heap.objectSet(handle, atom, value);
       return;
     }
@@ -466,14 +546,19 @@ export struct Runtime {
       this.heap.objectSet(bag, atom, value);
       return;
     }
-    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION) {
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
-      if (atom == this.atomPrototype && this.isObjectLike(value)) this.heap.setLink(handle, asCell(value));
-      return;
-    }
-    if (tag == TAG_CLOSURE) {
-      const atom = this.propertyKey(key);
-      if (atom == this.atomPrototype && this.isObjectLike(value)) this.heap.setSlot(handle, 1, value);
+      if (atom == this.atomPrototype) {
+        if (!this.isObjectLike(value)) return;
+        if (tag == TAG_CLOSURE) {
+          this.heap.setSlot(handle, 1, value);
+        } else {
+          this.heap.setLink(handle, asCell(value));
+        }
+        return;
+      }
+      const bag = this.ensureFunctionBag(handle);
+      this.heap.objectSet(bag, atom, value);
       return;
     }
   }
@@ -507,11 +592,57 @@ export struct Runtime {
       }
       return false;
     }
-    // Functions: `prototype`, then Function.prototype.
+    // Functions: `prototype`, own named properties, then Function.prototype.
     const atom = this.propertyKey(key);
     if (atom == this.atomPrototype) return true;
+    const bag = this.functionBag(handle);
+    if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
     const functionProto = this.functionProto;
     return !isUndefined(this.objectGet(functionProto, atom));
+  }
+
+  // Whether a value has `key` as an own property: an object's live slot,
+  // an array's present element or bag entry, a string's index or length,
+  // a function's `prototype` / `length` / `name`.
+  function hasOwnProperty(inout this, object: Value, key: Value): boolean {
+    if (!isCell(object) || asCell(object) == 0) return false;
+    const handle = asCell(object);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_OBJECT) {
+      const atom = this.propertyKey(key);
+      const slot = this.heap.objectFindSlot(handle, atom);
+      if (slot >= 0 && !isDeleted(this.heap.slot(handle, u32(slot)))) return true;
+      if (handle == this.globalObject) {
+        const global = this.findGlobalByAtom(atom);
+        return global >= 0 && this.globals[usize(global)].defined;
+      }
+      return false;
+    }
+    if (tag == TAG_ARRAY) {
+      const index = this.arrayIndexOf(key);
+      if (index >= 0) return this.heap.arrayHasIndex(handle, u32(index));
+      const atom = this.propertyKey(key);
+      if (atom == this.atomLength) return true;
+      const bag = this.heap.linkOf(handle);
+      if (bag == 0) return false;
+      const slot = this.heap.objectFindSlot(bag, atom);
+      return slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)));
+    }
+    if (this.heap.isString(handle)) {
+      const index = this.arrayIndexOf(key);
+      if (index >= 0) return usize(index) < this.heap.stringLength(handle);
+      const atom = this.propertyKey(key);
+      return atom == this.atomLength;
+    }
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      const atom = this.propertyKey(key);
+      if (atom == this.atomPrototype || atom == this.atomLength || (tag == TAG_HOST_FUNCTION && atom == this.atomName)) return true;
+      const bag = this.functionBag(handle);
+      if (bag == 0) return false;
+      const slot = this.heap.objectFindSlot(bag, atom);
+      return slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)));
+    }
+    return false;
   }
 
   // The prototype a value inherits from, for instanceof: 0 for none.
@@ -679,52 +810,30 @@ export struct Runtime {
 
   // --- Builtins ---
 
-  function hostFunctionValue(inout this, id: u32): Value {
-    return cellValue(this.heap.allocateHostFunction(id));
+  // Register a builtin: a host function cell whose payload indexes the
+  // table. Slot 0 is per-instance data, slot 1 `length`, slot 2 `name`.
+  function defineHostFunction(inout this, fn: HostFunction, bound: Value, length: u32, in name: String): u32 {
+    this.hostTable.push(fn);
+    const id = u32(this.hostTable.length - 1);
+    const handle = this.heap.allocateHostFunction(id);
+    this.heap.setSlot(handle, 0, bound);
+    this.heap.setSlot(handle, 1, int32Value(i32(length)));
+    const nameValue = this.internText(in name);
+    this.heap.setSlot(handle, 2, nameValue);
+    return handle;
   }
 
-  // Call a builtin with its arguments in the register stack.
-  function callHost(inout this, id: u32, thisValue: Value, argsBase: u32, argc: u32): Value {
-    if (id < BUILTIN_ERROR_COUNT) return this.constructError(id, thisValue, argsBase, argc);
-    if (id == BUILTIN_OBJECT) return this.constructObject(thisValue, argsBase, argc);
-    return undefinedValue();
+  // A builtin as a property of `target`.
+  function defineMethod(inout this, target: u32, in name: String, fn: HostFunction, length: u32): u32 {
+    const handle = this.defineHostFunction(fn, undefinedValue(), length, in name);
+    const atom = this.atomOf(in name);
+    this.defineOwn(target, atom, cellValue(handle));
+    return handle;
   }
 
-  // Object(value): the value itself when it is already an object, else a
-  // fresh empty object (primitives are not wrapped yet).
-  function constructObject(inout this, thisValue: Value, argsBase: u32, argc: u32): Value {
-    if (argc > 0) {
-      const first = this.regStack[usize(argsBase)];
-      if (this.isObjectLike(first)) return first;
-    }
-    if (this.isObjectLike(thisValue)) return thisValue;
-    const objectProto = this.objectProto;
-    return cellValue(this.heap.allocateObject(objectProto));
-  }
-
-  // The Error constructors, called or constructed. An object under
-  // construction arrives as `this`; a plain call makes its own.
-  function constructError(inout this, kind: u32, thisValue: Value, argsBase: u32, argc: u32): Value {
-    let object: u32 = 0;
-    if (isCell(thisValue) && asCell(thisValue) != 0 && this.heap.isObject(asCell(thisValue))) {
-      object = asCell(thisValue);
-    } else {
-      const proto = this.errorPrototype(kind);
-      object = this.heap.allocateObject(proto);
-    }
-    if (argc > 0) {
-      const first = this.regStack[usize(argsBase)];
-      if (!isUndefined(first)) {
-        const message = this.toStringValue(first);
-        const atomMessage = this.atomMessage;
-        this.heap.objectSet(object, atomMessage, message);
-      }
-    }
-    const kindName = builtinName(kind);
-    const nameValue = this.internText(in kindName);
-    const atomName = this.atomName;
-    this.heap.objectSet(object, atomName, nameValue);
-    return cellValue(object);
+  function callHost(inout this, id: u32, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value {
+    const fn = this.hostTable[usize(id)];
+    return fn(inout this, thisValue, argsBase, argc, callee);
   }
 
   function setGlobal(inout this, name: String, value: Value): void {
@@ -732,8 +841,126 @@ export struct Runtime {
     this.globals[usize(slot)].value = value;
   }
 
-  // The intrinsics every context starts with.
-  function installBuiltins(inout this): void {
+  // The global with this interned name, or -1.
+  function findGlobalByAtom(atom: u32): i32 {
+    let index: usize = 0;
+    while (index < this.globals.length) {
+      if (this.globals[index].atom == atom) return i32(index);
+      index = index + 1;
+    }
+    return -1;
+  }
+
+  // ToLength: an integer clamped to [0, 2^32 - 1] as a u32; NaN is 0.
+  // Every conversion to an unsigned index goes through here, since Z's
+  // checked numeric conversion traps on anything out of range.
+  function toLength(inout this, value: Value): u32 {
+    const number = this.toNumberValue(value);
+    if (number != number || number <= 0.0) return 0;
+    if (number >= 4294967295.0) return 4294967295;
+    return u32(truncateDouble(number));
+  }
+
+  // An argument by position, undefined past the end.
+  function argument(argsBase: u32, argc: u32, index: u32): Value {
+    if (index >= argc) return undefinedValue();
+    return this.regStack[usize(argsBase + index)];
+  }
+
+  function pushTempRoot(inout this, value: Value): void {
+    if (this.tempRootCount < this.tempRoots.length) {
+      this.tempRoots[this.tempRootCount] = value;
+    } else {
+      this.tempRoots.push(value);
+    }
+    this.tempRootCount = this.tempRootCount + 1;
+  }
+
+  function popTempRoot(inout this): void {
+    this.tempRootCount = this.tempRootCount - 1;
+  }
+
+  // Call a function value from Z with the arguments given, running the
+  // interpreter re-entrantly for compiled code. A throw is left pending
+  // for the caller to check; the result is then undefined.
+  function callValue(inout this, callee: Value, thisValue: Value, args: Array<Value>): Value {
+    const argsBase = this.regTop;
+    const argc = u32(args.length);
+    const needed = usize(argsBase + argc);
+    while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    let index: u32 = 0;
+    while (index < argc) {
+      const passed = args[usize(index)];
+      this.regStack[usize(argsBase + index)] = passed;
+      index = index + 1;
+    }
+    this.regTop = argsBase + argc;
+    let outcome = undefinedValue();
+    if (this.isHostFunctionValue(callee)) {
+      const handle = asCell(callee);
+      const builtin = this.heap.hostFunctionId(handle);
+      outcome = this.callHost(builtin, thisValue, argsBase, argc, handle);
+    } else if (this.isCompiledCallable(callee)) {
+      const entryDepth = this.frameCount;
+      this.enterCallable(callee, 0, thisValue, argsBase, argc, undefinedValue());
+      const result = this.runFrames(entryDepth);
+      if (result.isThrow) {
+        this.raise(result.value);
+      } else {
+        outcome = result.value;
+      }
+    } else {
+      const message: String = "value is not a function";
+      const error = this.typeError(in message);
+      this.raise(error);
+    }
+    this.regTop = argsBase;
+    return outcome;
+  }
+
+  // ToPrimitive: an object's valueOf / toString, in the order the hint
+  // asks for; the first that yields a primitive wins.
+  function toPrimitive(inout this, value: Value, preferString: boolean): Value {
+    if (!this.isObjectLike(value)) return value;
+    const valueOfText: String = "valueOf";
+    const toStringText: String = "toString";
+    let first = undefinedValue();
+    if (preferString) {
+      first = this.tryPrimitiveMethod(value, in toStringText);
+    } else {
+      first = this.tryPrimitiveMethod(value, in valueOfText);
+    }
+    if (this.pendingThrow) return undefinedValue();
+    if (!isDeleted(first)) return first;
+    let second = undefinedValue();
+    if (preferString) {
+      second = this.tryPrimitiveMethod(value, in valueOfText);
+    } else {
+      second = this.tryPrimitiveMethod(value, in toStringText);
+    }
+    if (this.pendingThrow) return undefinedValue();
+    if (!isDeleted(second)) return second;
+    const message: String = "Cannot convert object to primitive value";
+    const error = this.typeError(in message);
+    this.raise(error);
+    return undefinedValue();
+  }
+
+  // The deleted marker means "no primitive from this method".
+  function tryPrimitiveMethod(inout this, object: Value, in name: String): Value {
+    const key = this.internText(in name);
+    const method = this.getProperty(object, key);
+    if (this.pendingThrow) return undefinedValue();
+    if (!this.isCallable(method)) return deletedValue();
+    const result = this.callValue(method, object, Array<Value>());
+    if (this.pendingThrow) return undefinedValue();
+    if (this.isObjectLike(result)) return deletedValue();
+    return result;
+  }
+
+  // The atoms and prototype objects everything else hangs off. The
+  // builtins module attaches constructors and methods to them.
+  function installIntrinsics(inout this): void {
     const lengthText: String = "length";
     const prototypeText: String = "prototype";
     const constructorText: String = "constructor";
@@ -749,32 +976,12 @@ export struct Runtime {
     this.functionProto = this.heap.allocateObject(objectProto);
     this.arrayProto = this.heap.allocateObject(objectProto);
     this.stringProto = this.heap.allocateObject(objectProto);
-    // Object: its prototype is the root every object literal inherits.
-    const objectCtor = this.heap.allocateHostFunction(BUILTIN_OBJECT);
-    this.heap.setLink(objectCtor, objectProto);
-    const atomConstructor = this.atomConstructor;
-    this.heap.objectSet(objectProto, atomConstructor, cellValue(objectCtor));
-    this.setGlobal(builtinName(BUILTIN_OBJECT), cellValue(objectCtor));
-    // Error, then the subclasses whose prototypes inherit from its.
-    let errorProto: u32 = 0;
-    let kind: u32 = 0;
-    while (kind < BUILTIN_ERROR_COUNT) {
-      const ctor = this.heap.allocateHostFunction(kind);
-      const parentProto = kind == BUILTIN_ERROR ? this.objectProto : errorProto;
-      const proto = this.heap.allocateObject(parentProto);
-      if (kind == BUILTIN_ERROR) errorProto = proto;
-      const kindName = builtinName(kind);
-      const nameValue = this.internText(in kindName);
-      const atomName = this.atomName;
-      this.heap.objectSet(proto, atomName, nameValue);
-      const emptyMessage = this.internValue(Array<u8>());
-      const atomMessage = this.atomMessage;
-      this.heap.objectSet(proto, atomMessage, emptyMessage);
-      this.heap.objectSet(proto, atomConstructor, cellValue(ctor));
-      this.heap.setLink(ctor, proto);
-      this.setGlobal(builtinName(kind), cellValue(ctor));
-      kind = kind + 1;
-    }
+    this.globalObject = this.heap.allocateObject(objectProto);
+    // Value properties of the global object.
+    this.setGlobal("NaN", doubleValue(nativeNan()));
+    this.setGlobal("Infinity", doubleValue(1.0 / 0.0));
+    this.setGlobal("undefined", undefinedValue());
+    this.setGlobal("globalThis", cellValue(this.globalObject));
   }
 
   // --- Collection ---
@@ -823,6 +1030,14 @@ export struct Runtime {
     this.heap.markHandle(arrayProto);
     const stringProto = this.stringProto;
     this.heap.markHandle(stringProto);
+    const globalObject = this.globalObject;
+    this.heap.markHandle(globalObject);
+    index = 0;
+    while (index < this.tempRootCount) {
+      const rooted = this.tempRoots[index];
+      this.heap.markValue(rooted);
+      index = index + 1;
+    }
     const atomLength = this.atomLength;
     this.heap.markHandle(atomLength);
     const atomPrototype = this.atomPrototype;
@@ -906,10 +1121,10 @@ export struct Runtime {
       const bytes = this.heap.stringBytes(asCell(value));
       return stringToNumber(in bytes);
     }
-    if (isCell(value) && asCell(value) != 0 && this.heap.isArray(asCell(value))) {
-      const text = this.toStringValue(value);
-      const bytes = this.heap.stringBytes(asCell(text));
-      return stringToNumber(in bytes);
+    if (this.isObjectLike(value)) {
+      const primitive = this.toPrimitive(value, false);
+      if (this.pendingThrow) return nativeNan();
+      return this.toNumberValue(primitive);
     }
     return toNumber(value);
   }
@@ -920,19 +1135,14 @@ export struct Runtime {
     return toBoolean(value);
   }
 
-  // ToString. Objects have no user-visible toString yet, so they render
-  // the way the reference renders an object without one.
+  // ToString. An object goes through ToPrimitive with the string hint;
+  // a throw there is left pending and the result is the empty string.
   function toStringValue(inout this, value: Value): Value {
     if (this.isStringValue(value)) return value;
-    if (isCell(value) && asCell(value) != 0) {
-      const handle = asCell(value);
-      if (this.heap.isArray(handle)) return this.joinArray(handle);
-      if (this.isCallable(value)) {
-        const functionText: String = "function";
-        return this.internText(in functionText);
-      }
-      const objectText: String = "[object Object]";
-      return this.internText(in objectText);
+    if (this.isObjectLike(value)) {
+      const primitive = this.toPrimitive(value, true);
+      if (this.pendingThrow) return this.internValue(Array<u8>());
+      return this.toStringValue(primitive);
     }
     if (isInt32(value)) {
       const text = int32ToString(asInt32(value));
@@ -1014,6 +1224,22 @@ export struct Runtime {
     const aNullish = isNull(a) || isUndefined(a);
     const bNullish = isNull(b) || isUndefined(b);
     if (aNullish && bNullish) return true;
+    if (aNullish || bNullish) return false;
+    // An object against a primitive compares through ToPrimitive; two
+    // objects compare by identity.
+    const aObject = this.isObjectLike(a);
+    const bObject = this.isObjectLike(b);
+    if (aObject && bObject) return a.bits == b.bits;
+    if (aObject) {
+      const primitive = this.toPrimitive(a, false);
+      if (this.pendingThrow) return false;
+      return this.looseEquals(primitive, b);
+    }
+    if (bObject) {
+      const primitive = this.toPrimitive(b, false);
+      if (this.pendingThrow) return false;
+      return this.looseEquals(a, primitive);
+    }
     if (isNumber(a) && bString) return toNumber(a) == this.toNumberValue(b);
     if (aString && isNumber(b)) return this.toNumberValue(a) == toNumber(b);
     if (isBoolean(a)) return this.looseEquals(int32Value(isTrue(a) ? 1 : 0), b);
@@ -1024,6 +1250,13 @@ export struct Runtime {
   // Relational comparison. `orEqual` selects <= over <; swap operands for
   // > and >=.
   function lessThan(inout this, a: Value, b: Value, orEqual: boolean): boolean {
+    if (this.isObjectLike(a) || this.isObjectLike(b)) {
+      const left = this.toPrimitive(a, false);
+      if (this.pendingThrow) return false;
+      const right = this.toPrimitive(b, false);
+      if (this.pendingThrow) return false;
+      return this.lessThan(left, right, orEqual);
+    }
     if (this.isStringValue(a) && this.isStringValue(b)) {
       const order = this.heap.compareStrings(asCell(a), asCell(b));
       return orEqual ? order <= 0 : order < 0;
@@ -1084,6 +1317,8 @@ export struct Runtime {
       env = this.heap.linkOf(handle);
       if (this.functions[usize(target)].isArrow) boundThis = this.heap.slot(handle, 0);
     }
+    // A sloppy function called with no receiver sees the global object.
+    if (!this.functions[usize(target)].strict && (isUndefined(boundThis) || isNull(boundThis))) boundThis = cellValue(this.globalObject);
     this.enterFunction(target, returnDst, boundThis, argsBase, argc, constructThis);
     const top = usize(this.frameCount - 1);
     this.frames[top].env = env;
@@ -1132,9 +1367,16 @@ export struct Runtime {
 
   // Every operand is bound before a `setReg` call: Z rejects a value use
   // of `this` inside a call that borrows `this` mutably.
+  // Run a program: its frame on the stack, `this` the global object.
   function run(inout this, functionIndex: u32): RunResult {
     const entryDepth = this.frameCount;
     this.pushFrame(functionIndex, 0);
+    this.hostThis = cellValue(this.globalObject);
+    return this.runFrames(entryDepth);
+  }
+
+  // The dispatch loop, until the frame stack is back to `entryDepth`.
+  function runFrames(inout this, entryDepth: u32): RunResult {
     let result = undefinedValue();
     while (this.frameCount > entryDepth) {
       const frameIndex = usize(this.frameCount - 1);
@@ -1177,11 +1419,20 @@ export struct Runtime {
         } else if (op == Op.loadGlobal) {
           const slot = usize(bcU16(inst));
           if (!this.globals[slot].defined) {
-            const nameLength = this.globals[slot].name.byteLength;
-            const name = this.globals[slot].name.copyBytes(0, nameLength);
-            const text: String = `${name} is not defined`;
-            thrown = this.makeError(BUILTIN_REFERENCE_ERROR, bytesOf(in text));
-            throwing = true;
+            // A property set on the global object counts as a global.
+            const atom = this.globals[slot].atom;
+            const globalObject = this.globalObject;
+            const own = this.heap.objectFindSlot(globalObject, atom);
+            if (own >= 0 && !isDeleted(this.heap.slot(globalObject, u32(own)))) {
+              const operand3 = this.heap.slot(globalObject, u32(own));
+              this.setReg(base, inst.a, operand3);
+            } else {
+              const nameLength = this.globals[slot].name.byteLength;
+              const name = this.globals[slot].name.copyBytes(0, nameLength);
+              const text: String = `${name} is not defined`;
+              thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in text));
+              throwing = true;
+            }
           } else {
             const operand3 = this.globals[slot].value;
             this.setReg(base, inst.a, operand3);
@@ -1191,20 +1442,41 @@ export struct Runtime {
           const operand4 = this.globals[slot].defined ? this.globals[slot].value : undefinedValue();
           this.setReg(base, inst.a, operand4);
         } else if (op == Op.add) {
-          const left = this.reg(base, inst.b);
-          const right = this.reg(base, inst.c);
-          if (this.isStringValue(left) || this.isStringValue(right)) {
-            const joined = this.concatStrings(left, right);
-            this.setReg(base, inst.a, joined);
-          } else {
-            const sum = numericAdd(left, right);
+          const rawLeft = this.reg(base, inst.b);
+          const rawRight = this.reg(base, inst.c);
+          if (isNumber(rawLeft) && isNumber(rawRight)) {
+            const sum = numericAdd(rawLeft, rawRight);
             this.setReg(base, inst.a, sum);
+          } else {
+            const left = this.toPrimitive(rawLeft, false);
+            const right = this.toPrimitive(rawRight, false);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else if (this.isStringValue(left) || this.isStringValue(right)) {
+              const joined = this.concatStrings(left, right);
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+              } else {
+                this.setReg(base, inst.a, joined);
+              }
+            } else {
+              const leftNumber = this.numericOperand(left);
+              const rightNumber = this.numericOperand(right);
+              const sum = numericAdd(leftNumber, rightNumber);
+              this.setReg(base, inst.a, sum);
+            }
           }
         } else if (op == Op.cmpEq || op == Op.cmpNe) {
           const operandB = this.reg(base, inst.b);
           const operandC = this.reg(base, inst.c);
           const equal = this.looseEquals(operandB, operandC);
           this.setReg(base, inst.a, booleanValue(op == Op.cmpEq ? equal : !equal));
+          if (this.pendingThrow) {
+            thrown = this.takePending();
+            throwing = true;
+          }
         } else if (op == Op.cmpStrictEq || op == Op.cmpStrictNe) {
           const operandB = this.reg(base, inst.b);
           const operandC = this.reg(base, inst.c);
@@ -1355,7 +1627,7 @@ export struct Runtime {
             returned = true;
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
-            const outcome = this.callHost(builtin, undefinedValue(), argsBase, argc);
+            const outcome = this.callHost(builtin, undefinedValue(), argsBase, argc, asCell(callee));
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
@@ -1379,7 +1651,7 @@ export struct Runtime {
             returned = true;
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
-            const outcome = this.callHost(builtin, receiver, argsBase, argc);
+            const outcome = this.callHost(builtin, receiver, argsBase, argc, asCell(callee));
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
@@ -1408,7 +1680,7 @@ export struct Runtime {
             const proto = this.prototypeOf(asCell(callee));
             const created = cellValue(this.heap.allocateObject(proto));
             const builtin = this.heap.hostFunctionId(asCell(callee));
-            const outcome = this.callHost(builtin, created, argsBase, argc);
+            const outcome = this.callHost(builtin, created, argsBase, argc, asCell(callee));
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
@@ -1671,7 +1943,7 @@ export struct Runtime {
     appendBytes(inout message, bytesOf(in action));
     appendBytes(inout message, this.heap.stringBytes(atom));
     appendBytes(inout message, bytesOf(in tail));
-    return this.makeError(BUILTIN_TYPE_ERROR, move message);
+    return this.makeError(ERROR_KIND_TYPE, move message);
   }
 }
 
@@ -1684,22 +1956,18 @@ function appendBytes(inout target: Array<u8>, source: Array<u8>): void {
 }
 
 export function createRuntime(): Runtime {
-  let globals = Array<Global>();
-  // Value properties of the global object the engine has so far.
-  globals.push(Global({ name: "NaN", value: doubleValue(nativeNan()), defined: true }));
-  globals.push(Global({ name: "Infinity", value: doubleValue(1.0 / 0.0), defined: true }));
-  globals.push(Global({ name: "undefined", value: undefinedValue(), defined: true }));
   let runtime = Runtime({
-    heap: createHeap(), functions: Array<FunctionCode>(), globals: move globals,
+    heap: createHeap(), functions: Array<FunctionCode>(), globals: Array<Global>(),
     atoms: Array<u32>(), atomCount: 0,
     regStack: Array<Value>(), regTop: 0, frames: Array<Frame>(), frameCount: 0,
     hadError: false, lastError: undefinedValue(),
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, lastResult: undefinedValue(),
+    hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(), tempRootCount: 0,
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0,
   });
-  runtime.installBuiltins();
+  runtime.installIntrinsics();
   return runtime;
 }
 
@@ -1715,6 +1983,16 @@ function nativePow(base: f64, exponent: f64): f64 = raw c {
 
 function nativeFmod(a: f64, b: f64): f64 = raw c {
   return __builtin_fmod(a, b);
+}
+
+// Z's checked conversion from f64 traps on a fractional value, so every
+// place that narrows a double to an integer truncates first and compares.
+export function truncateDouble(value: f64): f64 = raw c {
+  return __builtin_trunc(value);
+}
+
+export function isIntegralDouble(value: f64): boolean {
+  return value == value && truncateDouble(value) == value;
 }
 
 function nativeNan(): f64 = raw c {
@@ -1933,6 +2211,21 @@ function nativeParseNumber(buffer: usize, length: usize, outOk: usize): f64 = ra
 
 function nativeReadInt(buffer: usize): i32 = raw c {
   return *(int *)buffer;
+}
+
+// A Z String from a JavaScript string's bytes, by way of a NUL-terminated
+// native buffer: Z has no direct construction from bytes, and the copy
+// stops at an embedded NUL.
+export function bytesToString(in bytes: Array<u8>): String {
+  const buffer = nativeAlloc(bytes.length + 1);
+  let index: usize = 0;
+  while (index < bytes.length) {
+    nativeStoreByte(buffer, index, bytes[index]);
+    index = index + 1;
+  }
+  const text = bufferToString(buffer);
+  nativeFree(buffer);
+  return text;
 }
 
 function bufferToString(buffer: usize): String {

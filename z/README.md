@@ -44,6 +44,29 @@ chain) and `for`-`of` over arrays, `in`/`instanceof`/`delete`, `++`/`--` and
 logical assignment on properties, and `Object`. **34 of 34** corpus files
 identical.
 
+Phase 7, builtins, in progress. Builtins are Z modules under
+`engine/builtins/`, each registering its functions in the runtime's
+host-function table (Z function values with an any-thread contract) and
+attaching them to the intrinsic prototypes -- the runtime module knows
+nothing of them, so they call back into it, and through `callValue` into
+JavaScript, with no import cycle. Landed: the Error family, `Object` and
+its prototype's `toString` / `valueOf` / `hasOwnProperty` / `isPrototypeOf`,
+`Function.prototype.call` / `apply`, `Array` with `isArray` and the core
+prototype methods, `eval` (global scope), `parseInt` / `parseFloat` /
+`isNaN` / `isFinite`, and `globalThis` as a real object whose properties
+fall through to the globals table. ToPrimitive runs `valueOf` / `toString`,
+so `"" + obj` and `obj + 1` follow user code. Top-level and sloppy-call
+`this` are the global object.
+
+`./z/test262.py` runs the reference's own test262 runner logic
+(`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
+subset, classification) against both engines through matching command
+lines, `z/build/zjs-ref` (public ABI) and `z/build/zjsz` (Z), and reports
+the gap with the tests the reference passes and Z does not. Needs
+`vendor/test262`. First measurements: `language/statements/if` 117 of the
+reference's 121; `language/expressions/addition` 23 of 89, the rest waiting
+on the `Number` / `String` / `Boolean` constructors.
+
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
 realm, compiled code's constants and property names); sweeping frees dead
@@ -62,9 +85,10 @@ its indices (the reference visits nothing); a postfix `++` on a property
 holding a string yields its numeric value (the reference concatenates).
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), a global object (top-level and sloppy-call `this` are
-undefined), property attributes (everything is writable and enumerable,
-except that an inherited `constructor` is skipped by `for`-`in`), accessors,
+sees one binding), primitive wrappers and the `Number` / `String` /
+`Boolean` / `Math` / `JSON` builtins, direct `eval` seeing the caller's
+locals, property attributes (everything is writable and enumerable, except
+that an inherited `constructor` is skipped by `for`-`in`), accessors,
 `for`-`of` over anything but an array, `return` and `break` through a
 `finally`, and the remaining builtins. The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.
