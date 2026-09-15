@@ -21,3 +21,5 @@ src/stdlib/*.gen.h
 zjs_smoke_modules/
 # Z compiler build cache.
 .z-cache/
+# Probe runner logs (kept locally as evidence, regenerated each run).
+z/probes/.results/

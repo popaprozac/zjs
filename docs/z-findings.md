@@ -22,6 +22,9 @@ upstream fix is not called done before the consumer exercises it.
 
 Items also note whether they **block** progress, since most do not.
 
+Confirmations stamped with a revision are **Stage 0** reproductions unless
+stated otherwise; they are not a claim of native-compiler verification.
+
 Two operating rules, per the agreed handoff model:
 
 - **One writer per checkout.** ZJS never writes to z-lang. Probe runs keep
@@ -211,34 +214,38 @@ exercises the non-finite cases.
 
 ## G11 — Checked numeric conversion cannot reinterpret a bit pattern
 
-**Status:** `proposed` — confirmed by Codex as separate work from `dee8ea80`
+**Status:** `proposed` — API pending deliberation
+**Confirmed:** z-lang `00864194`, Stage 0 reproduction
 **Blocks:** no. The engine folds the sign by hand today.
-**Priority:** high — it is the integer half of what already landed for floats
-**Found:** Phase 0 spike, while NaN-boxing an `i32`.
+**Priority:** high — it is the integer half of what `dee8ea80` landed for floats
 
 ### Why
 `u32(-42)` **traps**. Z's numeric construction is value-preserving by design,
-which is right for ordinary code — but NaN boxing needs exactly the opposite: C's
+which is right for ordinary code — but NaN boxing needs the opposite: C's
 `(uint32_t)i` reinterpretation of the sign bit. There is no way to express that
-in Z today, so the spike folds the sign by hand:
+in Z today, so the engine folds the sign with arithmetic standing in for a
+representation change (`int32Value`/`asInt32` in `z/engine/value.zs`).
+
+### Codex's recommendation from review — not an approved extension
 
 ```z
-const widened: i64 = i64(value) & 4294967295;   // instead of u32(value)
+const negative: i32 = -42;
+const bits: u32 = negative.toBits();
+const restored = i32.fromBits(bits);
 ```
 
-Decoding needs the mirror-image branch. Every engine that boxes integers hits
-this on its very first function.
+This mirrors the `fromBits`/`toBits` pair shipped for floats. It is a
+**recommendation, not an approved API**. In particular `u32.fromBits(negative)`
+was considered and is **not approved**. Checked numeric constructors keep their
+existing trapping behaviour regardless of what is chosen.
 
-### Spec
-A bit-preserving integer conversion, distinct from the checked constructor and
-visibly different at the call site — `bits.toU32(value)` in `std/bits` (G2)
-would be a natural home, keeping `u32(...)` trapping and unambiguous. Must cover
-every signed/unsigned pair of equal width.
+Probe `g11-bit-preserving-conversion` is written against the recommended
+spelling and says so.
 
 ### Done when
 An `i32` round-trips through `u32` and back preserving its bit pattern, without
-`raw c` and without manual sign folding.
-
+`raw c` and without manual sign folding, and the engine's sign-folding code is
+deleted.
 ---
 
 ## G12 — No monotonic clock
@@ -257,44 +264,35 @@ such.
 
 ---
 
-## G13 — Integer literals are not contextually typed against non-`i32` operands
+## G13 — Integer literals are not contextually typed in some positions
 
-**Status:** `proposed`
-**Blocks:** no, but it is now the **highest-value open item**. G1 landing did
-not fully deliver hex literals in practice: a literal still cannot be used in a
-comparison, ternary, shift, or expectation position without a named binding,
-and every instance in the Phase 2 engine work needed one.
-**Found:** Phase 0 spike, twice within ten minutes.
+**Status:** `proposed` — Codex recommends this as the next upstream slice
+**Confirmed:** z-lang `00864194`, Stage 0 reproductions
+**Blocks:** no, but it is the highest-value open item. G1 made hex spellings
+legal; this is what stops them being usable where the engine needs them.
 
-Both of these are errors:
+### Intended principle
+Contextual typing of **literals** — never implicit conversion of an
+already-typed variable.
 
-```z
-return Value({ bits: value ? 7 : 6 });        // expected u64, found i32
-if (sum >= -2147483648 && sum <= 2147483647)  // operands must match (sum is i64)
-```
+### Confirmed gaps, each with its own probe
 
-Literals are contextually typed in some positions but not in ternary branches or
-comparisons against a wider operand, so each one needs a named typed binding.
-In bit-manipulation code, which is nothing but wide constants, this is
-persistent friction and it pushes constants away from their use site — the
-opposite of what review wants.
+| Case | Behaviour at `00864194` | Probe |
+|---|---|---|
+| `return flag ? 7 : 6` from a `u64` function | fails: expected u64, found i32 | `g13a-ternary-literal` |
+| `const mask: u64 = 0xFFFE << 48` | fails: the shift is checked as `i32` before destination context reaches the literal | `g13b-shift-literal` |
+| `expect(handle).toEqual(1)` with a `u32` handle | `z check` accepts; generated C fails `-Wsign-compare`. Generated storage is `uint32_t actual` versus `int32_t expected = 1U`: contextual literal emission and the expectation's storage metadata disagree | `g13c-expect-literal` (needs `z test`) |
 
-Ask: extend contextual typing to ternary branches and comparison operands.
+The third case matters beyond ergonomics: a Z type error reaching clang with no
+Z source location is a diagnostic escape, whatever happens with contextual
+typing.
 
-### Sharpened by Phase 2 — the failure can escape into generated C
+### Not gaps — removed from this item after review
+- `sum >= -2147483648 && sum <= 2147483647` with an `i64` operand **works**.
+- A direct `u32` comparison against `1` **works**.
 
-`expect(someU32Value).toEqual(1)` does not contextually type the literal
-against a `u32` actual, and the mismatch is **not reported as a Z diagnostic**.
-It escapes into generated C and surfaces as:
-
-```
-<z-generated>:379:26: error: comparison of integers of different signs
-```
-
-with no Z source location. A type error reaching the C compiler is worse than
-the ergonomic gap itself -- whatever happens with contextual typing, the
-standard-library expectation helpers should type-check in Z.
-
+Earlier drafts of this item listed both; the probes were split so one early
+failure cannot hide the others.
 ---
 
 ## G14 — `while (true)` is not recognized as diverging
@@ -326,50 +324,40 @@ at emission time.
 
 ---
 
-## G16 — `inout` arguments must be plain bindings, not place expressions
+## G16 — `inout` through indexed storage
 
-**Status:** `proposed` · **Size:** medium · **Priority:** medium
-**Found:** Phase 2, wiring a per-context heap.
+**Status:** `proposed` — scope corrected after review
+**Confirmed:** z-lang `00864194`, Stage 0 reproduction
+**Blocks:** no. The method-call form is the workaround and the engine uses it.
 
-### Why
-This is rejected:
+### Scope, precisely
+`allocate(inout slot.heap)` through a plain field projection **already works**.
+What fails is specifically the **indexed-storage boundary**:
 
 ```z
-allocate(inout registry.slots[index].heap, TAG_OBJECT, 4);
+allocate(inout registry.slots[index].heap);
 //        ^ requires inout <mutable binding> for parameter 1
 ```
 
-An `inout` argument must be a simple mutable binding. A field of an array
-element -- or any projection -- cannot be passed `inout`, and there is no way
-to bind one to a local without moving it out of its owner.
-
-A **method call on the same projection is accepted**
-(`registry.slots[index].heap.allocate(...)`), so the workaround is to make
-every mutating operation a method on the receiver rather than a free function.
+Codex classifies this as a **conservative implementation restriction, not a
+language rule** that mutating APIs must be methods. An earlier draft of this
+item overstated it as "inout arguments must be plain bindings"; that was wrong.
 
 ### Why it matters for ZJS
-An engine mutates nested state constantly -- a context's heap, a frame's
-register file, a shape's transition table, all reached through an index or a
-field. This rule means that entire API surface is forced into methods. That is
-often the nicer design and the engine has adopted it, but it is a constraint
-rather than a choice, and it bites at the exact moment you reach through a
-collection.
+An engine reaches through collections to mutate nested state constantly — a
+context's heap, a frame's register file, a shape's transition table. Today each
+of those APIs is a method on the receiver, because a method call on the same
+projection (`registry.slots[index].heap.allocate(...)`) is accepted. That is a
+fine design and the engine keeps it; it is recorded here so the restriction is
+known rather than rediscovered.
 
-### Question for z-lang rather than a demand
-This may be deliberate: proving exclusivity for an arbitrary place expression
-is harder than for a binding or a receiver. If so it should be **documented as
-a rule with the method workaround named**, because the current diagnostic
-("requires inout <mutable binding>") describes the symptom without pointing at
-the fix. If it is incidental, accepting projections whose base is a uniquely
-owned local would remove a persistent papercut.
+### Left for upstream review
+Broader ownership support through indexed storage. If the restriction is kept,
+the diagnostic should name the method workaround, since "requires inout
+<mutable binding>" describes the symptom without pointing at the fix.
 
-
-# Wave 2 — substantive language design
-
-These need agreement on direction before implementation. Each has a real
-decision inside it, and the ZJS spike (Phase 0) will produce evidence for the
-first two.
-
+Probe `g16-inout-indexed-storage` exercises both the working field case and the
+failing indexed case.
 ---
 
 ## G4 / G5 — Interpreter dispatch: no `goto`, and `match` is enum-only

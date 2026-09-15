@@ -1,0 +1,9 @@
+# probe status at z-lang 00864194 (clean). Written by run.sh --record.
+g01-numeric-literals LANDED
+g02-std-bits LANDED
+g11-bit-preserving-conversion COMPILER-REJECTED
+g13a-ternary-literal COMPILER-REJECTED
+g13b-shift-literal COMPILER-REJECTED
+g13c-expect-literal BACKEND-REJECTED
+g14-while-true-diverges COMPILER-REJECTED
+g16-inout-indexed-storage COMPILER-REJECTED
