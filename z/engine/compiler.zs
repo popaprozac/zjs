@@ -663,9 +663,12 @@ export struct Compiler {
   // its prototype, the members in source order, the static initializers
   // running with `this` bound to the constructor. Private names are
   // fresh symbols stored in the class's environment slots.
-  function compileClass(inout this, in parser: Parser, inout runtime: Runtime, node: u32): u8 {
+  function compileClass(inout this, in parser: Parser, inout runtime: Runtime, node: u32, contextualStart: u32, contextualLength: u32): u8 {
     const n = parser.ast.node(node);
     const derived = n.right != NO_NODE;
+    // An anonymous class expression takes the name of what it initializes.
+    const classNameStart: u32 = n.nameLength > 0 ? n.nameStart : contextualStart;
+    const classNameLength: u32 = n.nameLength > 0 ? n.nameLength : contextualLength;
     const ctorReg = this.allocReg();
     const protoReg = this.allocReg();
     const localsBefore = this.locals.length;
@@ -685,6 +688,17 @@ export struct Compiler {
           && (member.num == 2.0 || (member.nameLength == 11 && parser.sliceEquals(member.nameStart, 11, "constructor")))) {
         ctorNode = memberIndex;
       }
+      if (member.kind == NodeKind.classField && !member.boolValue && member.nameLength == 0 && member.third != NO_NODE) {
+        // The slot the definition evaluates the computed key into, bound
+        // by the key's spelling for the constructor's field statement.
+        const keyNode = parser.ast.node(member.third);
+        const keySlot = this.capturedSlot(keyNode.start);
+        if (keySlot < 0) {
+          this.hadError = true;
+          return ctorReg;
+        }
+        this.locals.push(Local({ nameStart: keyNode.start, nameLength: keyNode.end - keyNode.start, reg: 0, envSlot: keySlot }));
+      }
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength) && this.findLocal(in parser, member.nameStart, member.nameLength) < 0) {
         const slot = this.capturedSlotByText(in parser, member.nameStart, member.nameLength);
         if (slot < 0) {
@@ -703,13 +717,13 @@ export struct Compiler {
     let parentReg: u8 = 0;
     if (derived) parentReg = this.compileExpr(in parser, inout runtime, n.right);
     if (ctorNode != NO_NODE) {
-      this.emitClassFunction(in parser, inout runtime, ctorNode, ctorReg, n.nameStart, n.nameLength, 0, derived ? 2 : 1, fieldCount);
+      this.emitClassFunction(in parser, inout runtime, ctorNode, ctorReg, classNameStart, classNameLength, 0, derived ? 2 : 1, fieldCount);
     } else {
       // No constructor written: an empty one, or for a derived class
       // one that forwards its arguments to the parent.
       const index = runtime.reserveFunction();
       let code = createFunctionCode();
-      if (n.nameLength > 0) code.nameAtom = this.atomOfSlice(in parser, inout runtime, n.nameStart, n.nameLength);
+      if (classNameLength > 0) code.nameAtom = this.atomOfSlice(in parser, inout runtime, classNameStart, classNameLength);
       code.strict = true;
       code.isClassConstructor = true;
       code.isDerived = derived;
@@ -1028,6 +1042,13 @@ export struct Compiler {
       const number = parser.parseNumberLiteral(nameStart, nameLength);
       return runtime.propertyKey(doubleValue(number));
     }
+    // An identifier name written with unicode escapes names the
+    // property by its decoded characters.
+    let i: u32 = 0;
+    while (i < nameLength) {
+      if (parser.source[usize(nameStart + i)] == 92) return runtime.internBytes(decodeIdentifierName(in parser, nameStart, nameLength));
+      i = i + 1;
+    }
     return this.atomOfSlice(in parser, inout runtime, nameStart, nameLength);
   }
 
@@ -1318,7 +1339,7 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.classExpr) {
-      return this.compileClass(in parser, inout runtime, node);
+      return this.compileClass(in parser, inout runtime, node, contextualStart, contextualLength);
     }
     if (k == NodeKind.object) {
       const dst = this.allocReg();
@@ -2415,7 +2436,7 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.classDecl) {
-      const r = this.compileClass(in parser, inout runtime, node);
+      const r = this.compileClass(in parser, inout runtime, node, 0, 0);
       if (this.hadError) return;
       if (this.isFunction) {
         const local = this.findLocal(in parser, n.nameStart, n.nameLength);
@@ -3165,6 +3186,66 @@ function parameterPattern(in parser: Parser, param: u32): u32 {
   if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) return param;
   if (n.kind == NodeKind.identExpr && n.nameLength == 0 && n.third != NO_NODE) return n.third;
   return NO_NODE;
+}
+
+// An identifier name with its `\uXXXX` / `\u{...}` escapes decoded to
+// UTF-8; other bytes copied through.
+function decodeIdentifierName(in parser: Parser, start: u32, length: u32): Array<u8> {
+  let bytes = Array<u8>();
+  let i: u32 = 0;
+  while (i < length) {
+    const byte = parser.source[usize(start + i)];
+    if (byte == 92 && i + 1 < length && parser.source[usize(start + i + 1)] == 117) {
+      let codePoint: u32 = 0;
+      let j: u32 = i + 2;
+      if (j < length && parser.source[usize(start + j)] == 123) {
+        j = j + 1;
+        while (j < length && parser.source[usize(start + j)] != 125) {
+          codePoint = codePoint * 16 + hexDigitValue(parser.source[usize(start + j)]);
+          j = j + 1;
+        }
+        j = j + 1;
+      } else {
+        let digits: u32 = 0;
+        while (digits < 4 && j < length) {
+          codePoint = codePoint * 16 + hexDigitValue(parser.source[usize(start + j)]);
+          j = j + 1;
+          digits = digits + 1;
+        }
+      }
+      appendUtf8(inout bytes, codePoint);
+      i = j;
+    } else {
+      bytes.push(byte);
+      i = i + 1;
+    }
+  }
+  return bytes;
+}
+
+function hexDigitValue(byte: u8): u32 {
+  if (byte >= 48 && byte <= 57) return u32(byte - 48);
+  if (byte >= 97 && byte <= 102) return u32(byte - 87);
+  if (byte >= 65 && byte <= 70) return u32(byte - 55);
+  return 0;
+}
+
+function appendUtf8(inout bytes: Array<u8>, codePoint: u32): void {
+  if (codePoint < 0x80) {
+    bytes.push(u8(codePoint));
+  } else if (codePoint < 0x800) {
+    bytes.push(u8(0xC0 | (codePoint >> 6)));
+    bytes.push(u8(0x80 | (codePoint & 0x3F)));
+  } else if (codePoint < 0x10000) {
+    bytes.push(u8(0xE0 | (codePoint >> 12)));
+    bytes.push(u8(0x80 | ((codePoint >> 6) & 0x3F)));
+    bytes.push(u8(0x80 | (codePoint & 0x3F)));
+  } else {
+    bytes.push(u8(0xF0 | (codePoint >> 18)));
+    bytes.push(u8(0x80 | ((codePoint >> 12) & 0x3F)));
+    bytes.push(u8(0x80 | ((codePoint >> 6) & 0x3F)));
+    bytes.push(u8(0x80 | (codePoint & 0x3F)));
+  }
 }
 
 // Whether a pattern (or identifier) binds `name`.

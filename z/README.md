@@ -115,7 +115,22 @@ prototype chain for holes and String wrappers), with ArraySpeciesCreate
 for `map` / `filter` / `slice` / `splice` / `concat` / `flat`, a stable
 merge sort over rooted heap arrays, `@@isConcatSpreadable`, the ES2023
 copying methods, and `@@unscopables`; a real array's `push` / `pop`
-keep their direct path. `new Array(n)` has no elements.
+keep their direct path. `new Array(n)` has no elements. Classes: a
+declaration or expression compiles to a constructor function carrying
+the class flags, a prototype object, and the members defined in source
+order -- methods, accessors, statics, instance and static fields with
+define semantics (computed keys evaluated once, at definition), static
+blocks, and private names, which are fresh private-symbol keys held in
+the class's environment slots and never appear as own keys. `super`
+calls and property access go through the method's home object,
+recorded when the method is defined (object-literal methods too);
+`new.target` rides in the frame. A derived constructor starts with
+`this` uninitialized until super() returns, and its instance fields are
+defined right after each super(); a class constructor called without
+`new` throws; methods are not constructors; a class's [[Prototype]] is
+its parent, so statics inherit. Function values of class members are
+fresh per evaluation. Anonymous class expressions take the name of what
+they initialize; identifier names with unicode escapes decode.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -180,9 +195,13 @@ String's valid-UTF-8 invariant and is never mistaken for the original
 bytes.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), classes, `Date` / `RegExp`, direct `eval` seeing the
-caller's locals, weak semantics for `WeakMap` / `WeakSet`, and the
-remaining builtins. The collector is stop-the-world and
+sees one binding), `Date` / `RegExp`, async functions and `Promise`,
+direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
+`WeakSet`, subclassing `Array`, a private name shadowed by an inner
+class of the same spelling, `super()` from an arrow inside a
+constructor, and the remaining builtins. A function declaration
+evaluated more than once yields the same function object each time
+(class members do not). The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.
 
 ```
