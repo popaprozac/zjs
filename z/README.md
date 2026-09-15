@@ -148,7 +148,15 @@ species, `%AsyncIteratorPrototype%`, and `%AsyncGeneratorPrototype%`.
 The `zjsz` tool supplies `console`. Optional chains: a spine of member,
 element, and call links with a `?.` short-circuits as a whole through
 one exit. A private name read or written on a value that lacks it
-throws. `yield*` in an async generator takes the operand's async
+throws. Tagged templates: the site's template object -- the cooked
+strings as a frozen array carrying a frozen `raw` array -- is built once
+at compile time as a constant, so every evaluation of the site passes
+the same object; a member tag keeps its receiver. `String.prototype`
+gains `codePointAt`, `replaceAll`, `normalize`, `isWellFormed` /
+`toWellFormed`, the locale case methods, `$`-pattern substitution in
+`replace` / `replaceAll`, Unicode whitespace in `trim`, and spec position
+clamping in `includes` / `startsWith` / `endsWith`; `String.raw` and
+`String.fromCodePoint`. `yield*` in an async generator takes the operand's async
 iterator (a sync one wrapped through `%AsyncFromSyncIteratorPrototype%`),
 awaits each `next`, hands each value to the request as it is, forwards
 what `next` sends, and yields the delegate's final value as the
@@ -209,7 +217,9 @@ a `super` property that is a getter runs with the instance as receiver
 (the reference gets NaN); statics inherit through the parent
 constructor (the reference finds nothing); a derived class's field
 initializers run after `super()` returns and see what the base
-constructor set (the reference runs them first).
+constructor set (the reference runs them first);
+`String.fromCodePoint(0x1F600)` is the four-byte encoding, equal to the
+literal (the reference produces something else).
 
 Performance, measured after classes with four micro-benchmarks (best of
 three, release builds of both engines): the Z engine ran the integer loop

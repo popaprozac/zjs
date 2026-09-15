@@ -1376,6 +1376,66 @@ export struct Compiler {
       }
       return acc;
     }
+    if (k == NodeKind.taggedTemplate) {
+      // tag`...`: the site's template object (built once, a constant)
+      // and the substitutions as the tag's arguments; a member tag keeps
+      // its receiver.
+      const template = parser.ast.node(n.right);
+      let cooked = Array<Value>();
+      let raw = Array<Value>();
+      let substitutions = Array<u32>();
+      let i: u32 = 0;
+      while (i < template.childrenCount) {
+        const partIndex = parser.ast.child(n.right, i);
+        const part = parser.ast.node(partIndex);
+        if (part.kind == NodeKind.templatePartExpr) {
+          cooked.push(runtime.internValue(decodeStringBody(in parser, part.start, part.end)));
+          raw.push(runtime.internValue(sliceBytes(in parser.source, usize(part.start), usize(part.end))));
+        } else {
+          substitutions.push(partIndex);
+        }
+        i = i + 1;
+      }
+      // A template with no literal text still has one empty string.
+      if (cooked.length == 0) {
+        cooked.push(runtime.internValue(Array<u8>()));
+        raw.push(runtime.internValue(Array<u8>()));
+      }
+      const templateObject = runtime.newTemplateObject(move cooked, move raw);
+      const constant = this.addConst(templateObject);
+      const callee = parser.ast.node(n.left);
+      const isMethod = callee.kind == NodeKind.member || callee.kind == NodeKind.computed;
+      const argCount = u32(substitutions.length) + 1;
+      const base = this.allocReg();
+      const first: u8 = isMethod ? base + 2 : base + 1;
+      let slot: u32 = 0;
+      while (slot < u32(first - base) + argCount - 1) {
+        this.allocReg();
+        slot = slot + 1;
+      }
+      if (isMethod) {
+        this.emitCalleeAndReceiver(in parser, inout runtime, callee, base);
+      } else {
+        const fn = this.compileExpr(in parser, inout runtime, n.left);
+        if (fn != base) this.emit(instAB(Op.mov, base, fn));
+      }
+      this.nextReg = first + u8(argCount);
+      this.emit(instAU16(Op.loadConst, first, constant));
+      let a: u32 = 0;
+      while (a < u32(substitutions.length)) {
+        const argReg = this.compileExpr(in parser, inout runtime, substitutions[usize(a)]);
+        if (argReg != first + 1 + u8(a)) this.emit(instAB(Op.mov, first + 1 + u8(a), argReg));
+        this.nextReg = first + u8(argCount);
+        a = a + 1;
+      }
+      if (isMethod) {
+        this.emit(instABC(Op.methodInvoke, base, base, u8(argCount)));
+      } else {
+        this.emit(instABC(Op.invoke, base, base, u8(argCount)));
+      }
+      this.nextReg = base + 1;
+      return base;
+    }
     if (k == NodeKind.awaitExpr) {
       // Suspend on the awaited value; the async driver resumes with the
       // settled value (into dst) or throws the rejection here.

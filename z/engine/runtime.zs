@@ -3323,6 +3323,39 @@ export struct Runtime {
     this.regStack[usize(base.wrappingAdd(u32(index)))] = value;
   }
 
+  // --- Template objects ---
+
+  // The template object of a tagged template site: the cooked strings
+  // as a frozen array with a frozen `raw` array of the raw strings.
+  // Built once at compile time, so every evaluation of the site gets
+  // the same object.
+  function newTemplateObject(inout this, cooked: Array<Value>, raw: Array<Value>): Value {
+    const count = u32(cooked.length);
+    const rawArray = this.heap.allocateArray(count);
+    this.pushTempRoot(cellValue(rawArray));
+    const cookedArray = this.heap.allocateArray(count);
+    this.pushTempRoot(cellValue(cookedArray));
+    let index: u32 = 0;
+    while (index < count) {
+      const rawValue = raw[usize(index)];
+      this.heap.setSlot(rawArray, index, rawValue);
+      this.heap.setAttr(rawArray, index, PROP_ENUMERABLE);
+      const cookedValue = cooked[usize(index)];
+      this.heap.setSlot(cookedArray, index, cookedValue);
+      this.heap.setAttr(cookedArray, index, PROP_ENUMERABLE);
+      index = index + 1;
+    }
+    this.heap.setFlags(rawArray, FLAG_NON_EXTENSIBLE | FLAG_LENGTH_READONLY);
+    const rawText: String = "raw";
+    const rawAtom = this.atomOf(in rawText);
+    const bag = this.arrayBag(cookedArray);
+    this.heap.objectDefine(bag, rawAtom, cellValue(rawArray), PROP_NONE);
+    this.heap.setFlags(cookedArray, FLAG_NON_EXTENSIBLE | FLAG_LENGTH_READONLY);
+    this.popTempRoot();
+    this.popTempRoot();
+    return cellValue(cookedArray);
+  }
+
   // --- Promises and jobs ---
   //
   // A promise is an ordinary object holding a record under a hidden key:
@@ -5339,7 +5372,7 @@ const REPLACEMENT_TAIL: u8 = 0xBD;
 
 // The length of the well-formed UTF-8 sequence starting at `index`, or
 // the length of the maximal invalid subpart there, negated (-1 to -3).
-function utf8SequenceLength(in bytes: Array<u8>, index: usize): i32 {
+export function utf8SequenceLength(in bytes: Array<u8>, index: usize): i32 {
   const count = bytes.length;
   const lead = bytes[index];
   if (lead < 0x80) return 1;

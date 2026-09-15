@@ -930,7 +930,7 @@ segment fetch are the two sites that want it. Probe `unchecked-index`
 
 ## G32 — A borrowed view of an array field cannot be held across a loop that mutates the owner
 
-**Status:** `proposed` · **Size:** medium · **Priority:** medium
+**Status:** `implemented` — z-lang `684ce980` (pin `684ce980`); probe `field-view-borrow` `LANDED`. Not consumer-verified: the interpreter loop calls `inout this` methods at nearly every opcode, and a live field view rejects the first of them (Z0205 at `this.takePending()`), so the loop cannot hold the view. The fetch itself already gained what a hoisted pointer gives (the code-segment change, and the C-level hoist experiment showed no further gain), so no benefit is lost; the remaining ask would be effects on methods -- a call to a method that does not touch the viewed field while the view lives -- which is a larger design step and not one the engine needs now.
 **Confirmed:** z-lang `93611fe5` · **Blocks:** no (worked around)
 **Found:** the performance spike after classes.
 

@@ -4,7 +4,7 @@
 // every method here count bytes.
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isNumber, isBoolean, isTrue, isInt32, asInt32, asDouble } from "../value.zs";
-import { Runtime, ERROR_KIND_RANGE, toNumber, toInt32, isIntegralDouble, truncateDouble, int32ToString, doubleToString, stringToNumber } from "../runtime.zs";
+import { Runtime, ERROR_KIND_RANGE, toNumber, toInt32, isIntegralDouble, truncateDouble, int32ToString, doubleToString, stringToNumber, utf8SequenceLength } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 
 function nativeAlloc(count: usize): usize = raw c { return (uintptr_t)calloc(count, 1); }
@@ -93,6 +93,12 @@ function integerArgument(inout runtime: Runtime, value: Value, fallback: i32): i
   if (number <= -2147483648.0) return -2147483648;
   if (number >= 2147483647.0) return 2147483647;
   return i32(truncateDouble(number));
+}
+
+// A position argument clamped into [0, length]: negatives are 0.
+function clampPosition(index: i32, length: i32): i32 {
+  if (index < 0) return 0;
+  return index > length ? length : index;
 }
 
 function clampIndex(index: i32, length: i32): i32 {
@@ -320,11 +326,110 @@ function pushUtf8(inout bytes: Array<u8>, codePoint: u32): void {
   } else if (codePoint < 0x800) {
     bytes.push(u8(0xC0 | (codePoint >> 6)));
     bytes.push(u8(0x80 | (codePoint & 0x3F)));
-  } else {
+  } else if (codePoint < 0x10000) {
     bytes.push(u8(0xE0 | (codePoint >> 12)));
     bytes.push(u8(0x80 | ((codePoint >> 6) & 0x3F)));
     bytes.push(u8(0x80 | (codePoint & 0x3F)));
+  } else {
+    bytes.push(u8(0xF0 | (codePoint >> 18)));
+    bytes.push(u8(0x80 | ((codePoint >> 12) & 0x3F)));
+    bytes.push(u8(0x80 | ((codePoint >> 6) & 0x3F)));
+    bytes.push(u8(0x80 | (codePoint & 0x3F)));
   }
+}
+
+// String.fromCodePoint: each argument an integral code point, else a
+// RangeError.
+function stringFromCodePoint(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  let bytes = Array<u8>();
+  let index: u32 = 0;
+  while (index < argc) {
+    const number = runtime.toNumberValue(runtime.argument(argsBase, argc, index));
+    if (runtime.pendingThrow) return undefinedValue();
+    if (!isIntegralDouble(number) || number < 0.0 || number > 1114111.0) {
+      const message: String = "Invalid code point";
+      const error = runtime.rangeError(in message);
+      runtime.raise(error);
+      return undefinedValue();
+    }
+    pushUtf8(inout bytes, u32(number));
+    index = index + 1;
+  }
+  return runtime.newString(move bytes);
+}
+
+// codePointAt(position): the code point whose encoding starts at the
+// byte position, else that byte's value.
+function stringCodePointAt(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const text: String = "codePointAt";
+  const bytes = thisString(inout runtime, thisValue, in text);
+  if (runtime.pendingThrow) return undefinedValue();
+  const index = integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (index < 0 || usize(index) >= bytes.length) return undefinedValue();
+  const at = usize(index);
+  const length = utf8SequenceLength(in bytes, at);
+  if (length <= 1) return int32Value(i32(bytes[at]));
+  let codePoint: u32 = 0;
+  if (length == 2) {
+    codePoint = (u32(bytes[at]) & 0x1F) << 6 | (u32(bytes[at + 1]) & 0x3F);
+  } else if (length == 3) {
+    codePoint = (u32(bytes[at]) & 0x0F) << 12 | (u32(bytes[at + 1]) & 0x3F) << 6 | (u32(bytes[at + 2]) & 0x3F);
+  } else {
+    codePoint = (u32(bytes[at]) & 0x07) << 18 | (u32(bytes[at + 1]) & 0x3F) << 12 | (u32(bytes[at + 2]) & 0x3F) << 6 | (u32(bytes[at + 3]) & 0x3F);
+  }
+  return int32Value(i32(codePoint));
+}
+
+// String.raw(template, ...substitutions): the template's raw strings
+// interleaved with the substitutions.
+function stringRaw(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const template = runtime.toObjectValue(runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  runtime.pushTempRoot(template);
+  const rawText: String = "raw";
+  const rawKey = runtime.internText(in rawText);
+  const rawValue = runtime.getProperty(template, rawKey);
+  if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
+  const raw = runtime.toObjectValue(rawValue);
+  if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
+  runtime.pushTempRoot(raw);
+  const atomLength = runtime.atomLength;
+  const lengthValue = runtime.getProperty(raw, cellValue(atomLength));
+  let joined = Array<u8>();
+  let failed = runtime.pendingThrow;
+  if (!failed) {
+    const count = runtime.toLength(lengthValue);
+    failed = runtime.pendingThrow;
+    let index: u32 = 0;
+    while (!failed && index < count) {
+      const segment = runtime.getProperty(raw, int32Value(i32(index)));
+      if (runtime.pendingThrow) { failed = true; break; }
+      const segmentText = runtime.toStringValue(segment);
+      if (runtime.pendingThrow) { failed = true; break; }
+      const segmentBytes = runtime.heap.stringBytes(asCell(segmentText));
+      let k: usize = 0;
+      while (k < segmentBytes.length) {
+        joined.push(segmentBytes[k]);
+        k = k + 1;
+      }
+      if (index + 1 < count && index + 1 < argc) {
+        const substitution = runtime.toStringValue(runtime.argument(argsBase, argc, index + 1));
+        if (runtime.pendingThrow) { failed = true; break; }
+        const substitutionBytes = runtime.heap.stringBytes(asCell(substitution));
+        k = 0;
+        while (k < substitutionBytes.length) {
+          joined.push(substitutionBytes[k]);
+          k = k + 1;
+        }
+      }
+      index = index + 1;
+    }
+  }
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  if (failed) return undefinedValue();
+  return runtime.newString(move joined);
 }
 
 function stringToStringMethod(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -440,7 +545,7 @@ function stringIncludes(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   if (runtime.pendingThrow) return undefinedValue();
   const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  const startAt = clampIndex(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
+  const startAt = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
   if (runtime.pendingThrow) return undefinedValue();
   return booleanValue(findBytes(in bytes, in needle, usize(startAt)) >= 0);
 }
@@ -451,7 +556,7 @@ function stringStartsWith(inout runtime: Runtime, thisValue: Value, argsBase: u3
   if (runtime.pendingThrow) return undefinedValue();
   const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  const startAt = clampIndex(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
+  const startAt = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
   if (runtime.pendingThrow) return undefinedValue();
   if (usize(startAt) + needle.length > bytes.length) return booleanValue(false);
   let k: usize = 0;
@@ -468,7 +573,7 @@ function stringEndsWith(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   if (runtime.pendingThrow) return undefinedValue();
   const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  const end = clampIndex(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), i32(bytes.length)), i32(bytes.length));
+  const end = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), i32(bytes.length)), i32(bytes.length));
   if (runtime.pendingThrow) return undefinedValue();
   if (needle.length > usize(end)) return booleanValue(false);
   const start = usize(end) - needle.length;
@@ -577,20 +682,238 @@ function stringConcat(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   return runtime.newString(move bytes);
 }
 
-function isSpace(byte: u8): boolean {
-  return byte == 32 || byte == 9 || byte == 10 || byte == 13 || byte == 11 || byte == 12;
+// The byte length of the WhiteSpace or LineTerminator encoded at
+// `index`, or 0: the ASCII set, NBSP, U+1680, U+2000-U+200A, U+2028,
+// U+2029, U+202F, U+205F, U+3000, and the BOM.
+function spaceLengthAt(in bytes: Array<u8>, index: usize, end: usize): usize {
+  const byte = bytes[index];
+  if (byte == 32 || byte == 9 || byte == 10 || byte == 13 || byte == 11 || byte == 12) return 1;
+  if (byte < 0x80 || index + 1 >= end) return 0;
+  const second = bytes[index + 1];
+  if (byte == 0xC2 && second == 0xA0) return 2;
+  if (index + 2 >= end) return 0;
+  const third = bytes[index + 2];
+  if (byte == 0xE1 && second == 0x9A && third == 0x80) return 3;
+  if (byte == 0xE2 && second == 0x80 && (third >= 0x80 && third <= 0x8A || third == 0xA8 || third == 0xA9 || third == 0xAF)) return 3;
+  if (byte == 0xE2 && second == 0x81 && third == 0x9F) return 3;
+  if (byte == 0xE3 && second == 0x80 && third == 0x80) return 3;
+  if (byte == 0xEF && second == 0xBB && third == 0xBF) return 3;
+  return 0;
 }
 
 function trimBytes(in bytes: Array<u8>, leading: boolean, trailing: boolean): Array<u8> {
   let start: usize = 0;
   let end = bytes.length;
   if (leading) {
-    while (start < end && isSpace(bytes[start])) { start = start + 1; }
+    while (start < end) {
+      const length = spaceLengthAt(in bytes, start, end);
+      if (length == 0) break;
+      start = start + length;
+    }
   }
   if (trailing) {
-    while (end > start && isSpace(bytes[end - 1])) { end = end - 1; }
+    while (end > start) {
+      // A space ending at `end` starts one to three bytes before it.
+      let stepped = false;
+      let back: usize = 1;
+      while (back <= 3 && end >= start + back) {
+        if (spaceLengthAt(in bytes, end - back, end) == back) {
+          end = end - back;
+          stepped = true;
+          break;
+        }
+        back = back + 1;
+      }
+      if (!stepped) break;
+    }
   }
   return sliceBytes(in bytes, start, end);
+}
+
+// GetSubstitution for a string pattern: $$, $&, $` and $' expand; other
+// dollar forms stay as written.
+function expandReplacement(in replacement: Array<u8>, in matched: Array<u8>, position: usize, in subject: Array<u8>): Array<u8> {
+  let joined = Array<u8>();
+  let k: usize = 0;
+  while (k < replacement.length) {
+    const byte = replacement[k];
+    if (byte == 36 && k + 1 < replacement.length) {
+      const next = replacement[k + 1];
+      if (next == 36) {
+        joined.push(36);
+        k = k + 2;
+        continue;
+      }
+      if (next == 38) {
+        let m: usize = 0;
+        while (m < matched.length) { joined.push(matched[m]); m = m + 1; }
+        k = k + 2;
+        continue;
+      }
+      if (next == 96) {
+        let m: usize = 0;
+        while (m < position) { joined.push(subject[m]); m = m + 1; }
+        k = k + 2;
+        continue;
+      }
+      if (next == 39) {
+        let m = position + matched.length;
+        while (m < subject.length) { joined.push(subject[m]); m = m + 1; }
+        k = k + 2;
+        continue;
+      }
+    }
+    joined.push(byte);
+    k = k + 1;
+  }
+  return joined;
+}
+
+// The replacement for one match: the function's result, or the
+// replacement string expanded.
+function replacementFor(inout runtime: Runtime, replaceValue: Value, in matched: Array<u8>, position: usize, in subject: Array<u8>): Array<u8> {
+  if (runtime.isCallable(replaceValue)) {
+    let args = Array<Value>();
+    args.push(runtime.newString(copyAll(in matched)));
+    args.push(int32Value(i32(position)));
+    args.push(runtime.newString(copyAll(in subject)));
+    const produced = runtime.callValue(replaceValue, undefinedValue(), move args);
+    if (runtime.pendingThrow) return Array<u8>();
+    return argumentBytes(inout runtime, produced);
+  }
+  const replacement = argumentBytes(inout runtime, replaceValue);
+  if (runtime.pendingThrow) return Array<u8>();
+  return expandReplacement(in replacement, in matched, position, in subject);
+}
+
+// replaceAll(pattern, replacement) with a string pattern: every match,
+// an empty pattern matching between every byte.
+function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const text: String = "replaceAll";
+  const bytes = thisString(inout runtime, thisValue, in text);
+  if (runtime.pendingThrow) return undefinedValue();
+  const pattern = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  const replaceValue = runtime.argument(argsBase, argc, 1);
+  // The replacement string converts once, before any match.
+  let fixedReplacement = Array<u8>();
+  const isFunction = runtime.isCallable(replaceValue);
+  if (!isFunction) {
+    fixedReplacement = argumentBytes(inout runtime, replaceValue);
+    if (runtime.pendingThrow) return undefinedValue();
+  }
+  let positions = Array<usize>();
+  const advance: usize = pattern.length == 0 ? 1 : pattern.length;
+  let searchFrom: usize = 0;
+  while (searchFrom <= bytes.length) {
+    const found = findBytes(in bytes, in pattern, searchFrom);
+    if (found < 0) break;
+    positions.push(usize(found));
+    searchFrom = usize(found) + advance;
+  }
+  let joined = Array<u8>();
+  let copied: usize = 0;
+  let i: usize = 0;
+  while (i < positions.length) {
+    const position = positions[i];
+    while (copied < position) {
+      joined.push(bytes[copied]);
+      copied = copied + 1;
+    }
+    let replacement = Array<u8>();
+    if (isFunction) {
+      replacement = replacementFor(inout runtime, replaceValue, in pattern, position, in bytes);
+      if (runtime.pendingThrow) return undefinedValue();
+    } else {
+      replacement = expandReplacement(in fixedReplacement, in pattern, position, in bytes);
+    }
+    let r: usize = 0;
+    while (r < replacement.length) {
+      joined.push(replacement[r]);
+      r = r + 1;
+    }
+    copied = position + pattern.length;
+    i = i + 1;
+  }
+  while (copied < bytes.length) {
+    joined.push(bytes[copied]);
+    copied = copied + 1;
+  }
+  return runtime.newString(move joined);
+}
+
+// normalize(form): the bytes as they are; the form must be a known one.
+function stringNormalize(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const text: String = "normalize";
+  const bytes = thisString(inout runtime, thisValue, in text);
+  if (runtime.pendingThrow) return undefinedValue();
+  const formValue = runtime.argument(argsBase, argc, 0);
+  if (!isUndefined(formValue)) {
+    const form = argumentBytes(inout runtime, formValue);
+    if (runtime.pendingThrow) return undefinedValue();
+    const nfc: String = "NFC";
+    const nfd: String = "NFD";
+    const nfkc: String = "NFKC";
+    const nfkd: String = "NFKD";
+    const known = sameBytes(in form, bytesOfText(in nfc)) || sameBytes(in form, bytesOfText(in nfd)) || sameBytes(in form, bytesOfText(in nfkc)) || sameBytes(in form, bytesOfText(in nfkd));
+    if (!known) {
+      const message: String = "The normalization form should be one of NFC, NFD, NFKC, NFKD";
+      const error = runtime.rangeError(in message);
+      runtime.raise(error);
+      return undefinedValue();
+    }
+  }
+  return runtime.newString(copyAll(in bytes));
+}
+
+function sameBytes(in a: Array<u8>, b: Array<u8>): boolean {
+  if (a.length != b.length) return false;
+  let i: usize = 0;
+  while (i < a.length) {
+    if (a[i] != b[i]) return false;
+    i = i + 1;
+  }
+  return true;
+}
+
+// isWellFormed / toWellFormed: whether the bytes are well-formed UTF-8,
+// and a copy with each malformed subpart replaced by U+FFFD.
+function stringIsWellFormed(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const text: String = "isWellFormed";
+  const bytes = thisString(inout runtime, thisValue, in text);
+  if (runtime.pendingThrow) return undefinedValue();
+  let index: usize = 0;
+  while (index < bytes.length) {
+    const length = utf8SequenceLength(in bytes, index);
+    if (length <= 0) return booleanValue(false);
+    index = index + usize(length);
+  }
+  return booleanValue(true);
+}
+
+function stringToWellFormed(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const text: String = "toWellFormed";
+  const bytes = thisString(inout runtime, thisValue, in text);
+  if (runtime.pendingThrow) return undefinedValue();
+  let joined = Array<u8>();
+  let index: usize = 0;
+  while (index < bytes.length) {
+    const length = utf8SequenceLength(in bytes, index);
+    if (length > 0) {
+      let k: usize = 0;
+      while (k < usize(length)) {
+        joined.push(bytes[index + k]);
+        k = k + 1;
+      }
+      index = index + usize(length);
+    } else {
+      joined.push(0xEF);
+      joined.push(0xBF);
+      joined.push(0xBD);
+      index = index + usize(0 - length);
+    }
+  }
+  return runtime.newString(move joined);
 }
 
 function stringTrim(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -762,20 +1085,8 @@ function stringReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const found = findBytes(in bytes, in pattern, 0);
   if (found < 0) return runtime.newString(copyAll(in bytes));
   const replacementValue = runtime.argument(argsBase, argc, 1);
-  let replacement = Array<u8>();
-  if (runtime.isCallable(replacementValue)) {
-    let args = Array<Value>();
-    args.push(runtime.newString(copyAll(in pattern)));
-    args.push(int32Value(found));
-    args.push(runtime.newString(copyAll(in bytes)));
-    const produced = runtime.callValue(replacementValue, undefinedValue(), move args);
-    if (runtime.pendingThrow) return undefinedValue();
-    replacement = argumentBytes(inout runtime, produced);
-    if (runtime.pendingThrow) return undefinedValue();
-  } else {
-    replacement = argumentBytes(inout runtime, replacementValue);
-    if (runtime.pendingThrow) return undefinedValue();
-  }
+  const replacement = replacementFor(inout runtime, replacementValue, in pattern, usize(found), in bytes);
+  if (runtime.pendingThrow) return undefinedValue();
   let joined = sliceBytes(in bytes, 0, usize(found));
   let k: usize = 0;
   while (k < replacement.length) {
@@ -885,6 +1196,24 @@ export function installPrimitives(inout runtime: Runtime): void {
   runtime.setGlobal("String", cellValue(stringCtor));
   const fromCharCodeText: String = "fromCharCode";
   runtime.defineMethod(stringCtor, in fromCharCodeText, stringFromCharCode, 1);
+  const fromCodePointText: String = "fromCodePoint";
+  runtime.defineMethod(stringCtor, in fromCodePointText, stringFromCodePoint, 1);
+  const rawText: String = "raw";
+  runtime.defineMethod(stringCtor, in rawText, stringRaw, 1);
+  const codePointAtText: String = "codePointAt";
+  runtime.defineMethod(stringProto, in codePointAtText, stringCodePointAt, 1);
+  const replaceAllText: String = "replaceAll";
+  runtime.defineMethod(stringProto, in replaceAllText, stringReplaceAll, 2);
+  const normalizeText: String = "normalize";
+  runtime.defineMethod(stringProto, in normalizeText, stringNormalize, 0);
+  const isWellFormedText: String = "isWellFormed";
+  runtime.defineMethod(stringProto, in isWellFormedText, stringIsWellFormed, 0);
+  const toWellFormedText: String = "toWellFormed";
+  runtime.defineMethod(stringProto, in toWellFormedText, stringToWellFormed, 0);
+  const toLocaleUpperCaseText: String = "toLocaleUpperCase";
+  runtime.defineMethod(stringProto, in toLocaleUpperCaseText, stringToUpperCase, 0);
+  const toLocaleLowerCaseText: String = "toLocaleLowerCase";
+  runtime.defineMethod(stringProto, in toLocaleLowerCaseText, stringToLowerCase, 0);
   runtime.defineMethod(stringProto, in toStringText, stringToStringMethod, 0);
   runtime.defineMethod(stringProto, in valueOfText, stringToStringMethod, 0);
   const charAtText: String = "charAt";
