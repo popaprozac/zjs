@@ -173,5 +173,9 @@ export function evaluate(inout runtime: Runtime, source: Array<u8>): RunResult {
     const message: String = "compile error";
     return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
   }
-  return runtime.run(u32(functionIndex));
+  const outcome = runtime.run(u32(functionIndex));
+  // The script's jobs (promise reactions, async continuations) run once
+  // it completes, before control returns to the host.
+  runtime.runJobs();
+  return outcome;
 }

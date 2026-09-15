@@ -154,6 +154,8 @@ export struct Compiler {
   // in a derived one.
   fieldSource: u32;
   fieldCount: u32;
+  // Compiling an async function's body: `await` suspends like yield.
+  isAsyncBody: boolean;
   // Interned names for LoadProp / StoreProp; the instruction carries an
   // index into this table.
   propertyNames: Array<u32>;
@@ -1248,6 +1250,18 @@ export struct Compiler {
         i = i + 1;
       }
       return acc;
+    }
+    if (k == NodeKind.awaitExpr) {
+      // Suspend on the awaited value; the async driver resumes with the
+      // settled value (into dst) or throws the rejection here.
+      if (!this.isAsyncBody) {
+        this.hadError = true;
+        return 0;
+      }
+      const value = this.compileExpr(in parser, inout runtime, n.left);
+      const dst = this.allocReg();
+      this.emit(instAB(Op.yieldOp, dst, value));
+      return dst;
     }
     if (k == NodeKind.yieldExpr) {
       if (n.boolValue) {
@@ -2869,7 +2883,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, propertyNames: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
 
@@ -2969,6 +2983,12 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.resetTemps();
   }
   const isGenerator = n.kind == NodeKind.methodDef ? (n.num == 4.0 || n.num == 5.0) : n.num == 3.0;
+  // Async: a flag on functions and arrows, a kind code on methods.
+  const isAsync = n.kind == NodeKind.methodDef ? (n.num == 1.0 || n.num == 5.0) : n.boolValue;
+  // An async function is a coroutine driven by its promise; an async
+  // generator (both) is not compiled yet.
+  if (isAsync && isGenerator) return failed;
+  const isCoroutine = isGenerator || isAsync;
   // Defaults: a parameter that arrived undefined takes its initializer.
   // A pattern parameter then destructures into its names.
   p = 0;
@@ -3001,7 +3021,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   // A generator suspends here, its parameters initialized, and the call
   // returns the generator object.
-  if (isGenerator) {
+  if (isCoroutine) {
     const resume = compiler.allocReg();
     compiler.emit(instA(Op.generatorStart, resume));
     compiler.resetTemps();
@@ -3014,6 +3034,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.fieldSource = n.left;
     compiler.fieldCount = fieldCount;
   }
+  compiler.isAsyncBody = isAsync;
   const forwards = role == 2 && n.num == 2.0;
   if (forwards) {
     const rest = compiler.allocReg();
@@ -3080,6 +3101,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   compiled.expectedArgCount = expected;
   compiled.isArrow = n.kind == NodeKind.arrowFunc;
   compiled.isGenerator = isGenerator;
+  compiled.isAsync = isAsync;
+  compiler.isAsyncBody = false;
   compiled.strict = compiler.strict;
   compiled.isClassConstructor = role == 1 || role == 2;
   compiled.isDerived = role == 2;
@@ -3401,7 +3424,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, propertyNames: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));

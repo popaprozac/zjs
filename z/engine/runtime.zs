@@ -75,6 +75,14 @@ export const ERROR_KIND_RANGE: u32 = 3;
 export const ERROR_KIND_SYNTAX: u32 = 4;
 export const ERROR_KIND_COUNT: u32 = 5;
 
+export const PROMISE_PENDING: i32 = 0;
+export const PROMISE_FULFILLED: i32 = 1;
+export const PROMISE_REJECTED: i32 = 2;
+const JOB_REACTION: i32 = 0;
+const JOB_THENABLE: i32 = 1;
+export const REACTION_HANDLER: i32 = 0;
+export const REACTION_ASYNC: i32 = 1;
+
 // ToPrimitive hints.
 export const HINT_DEFAULT: u32 = 0;
 export const HINT_NUMBER: u32 = 1;
@@ -237,6 +245,12 @@ export struct Runtime {
   atomHome: u32;
   atomNewTarget: u32;
   atomFunctionProto: u32;
+  // Promises: %Promise.prototype%, the hidden key of a promise's record,
+  // and the job queue (each job a heap array) with its read cursor.
+  promiseProto: u32;
+  atomPromiseRecord: u32;
+  jobs: Array<Value>;
+  jobCursor: usize;
   atomIterSource: u32;
   atomIterIndex: u32;
   atomIterKind: u32;
@@ -2293,7 +2307,7 @@ export struct Runtime {
     if (tag == TAG_HOST_FUNCTION) return isTrue(this.heap.slot(handle, 4));
     if (tag == TAG_FUNCTION || tag == TAG_CLOSURE) {
       const code = this.heap.functionIndex(handle);
-      return !this.functions[usize(code)].isArrow && !this.functions[usize(code)].isGenerator && !this.functions[usize(code)].isMethod;
+      return !this.functions[usize(code)].isArrow && !this.functions[usize(code)].isGenerator && !this.functions[usize(code)].isAsync && !this.functions[usize(code)].isMethod;
     }
     return false;
   }
@@ -2597,6 +2611,7 @@ export struct Runtime {
     this.atomHome = this.hiddenAtom(104, 111);
     this.atomNewTarget = this.hiddenAtom(110, 116);
     this.atomFunctionProto = this.hiddenAtom(102, 112);
+    this.atomPromiseRecord = this.hiddenAtom(112, 114);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
@@ -2731,6 +2746,16 @@ export struct Runtime {
     this.heap.markHandle(atomNewTarget);
     const atomFunctionProto = this.atomFunctionProto;
     this.heap.markHandle(atomFunctionProto);
+    const atomPromiseRecord = this.atomPromiseRecord;
+    this.heap.markHandle(atomPromiseRecord);
+    const promiseProto = this.promiseProto;
+    this.heap.markHandle(promiseProto);
+    let job: usize = 0;
+    while (job < this.jobs.length) {
+      const queued = this.jobs[job];
+      this.heap.markValue(queued);
+      job = job + 1;
+    }
     const symbolIterator = this.symbolIterator;
     this.heap.markValue(symbolIterator);
     const symbolToPrimitive = this.symbolToPrimitive;
@@ -3061,7 +3086,7 @@ export struct Runtime {
     // A generator's parameters initialize now; GeneratorStart then
     // suspends and hands the caller the generator object.
     let generator: u32 = 0;
-    if (this.functions[usize(target)].isGenerator) generator = asCell(this.createGenerator(callee, thisValue));
+    if (this.functions[usize(target)].isGenerator || this.functions[usize(target)].isAsync) generator = asCell(this.createGenerator(callee, thisValue));
     this.enterFunction(target, returnDst, boundThis, argsBase, argc, constructThis);
     const top = usize(this.frameCount - 1);
     this.frames[top].env = env;
@@ -3198,6 +3223,279 @@ export struct Runtime {
 
   function setReg(inout this, base: u32, index: u8, value: Value): void {
     this.regStack[usize(base.wrappingAdd(u32(index)))] = value;
+  }
+
+  // --- Promises and jobs ---
+  //
+  // A promise is an ordinary object holding a record under a hidden key:
+  // [state, result, fulfill reactions, reject reactions, handled]. A
+  // reaction is [kind, handler, derived promise, generator]: kind 0 runs
+  // a JavaScript handler and settles the derived promise with its
+  // result; kind 1 resumes an async function. Jobs are heap arrays
+  // [kind, a, b, c] in a queue the host drains after each script.
+
+  function isPromise(value: Value): boolean {
+    if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return false;
+    return this.heap.objectFindSlot(asCell(value), this.atomPromiseRecord) >= 0;
+  }
+
+  function promiseRecord(handle: u32): u32 {
+    const slot = this.heap.objectFindSlot(handle, this.atomPromiseRecord);
+    return asCell(this.heap.slot(handle, u32(slot)));
+  }
+
+  function newPromise(inout this): Value {
+    const promiseProto = this.promiseProto;
+    return this.newPromiseWithProto(promiseProto);
+  }
+
+  function newPromiseWithProto(inout this, proto: u32): Value {
+    const object = this.heap.allocateObject(proto);
+    this.pushTempRoot(cellValue(object));
+    const record = this.heap.allocateArray(5);
+    this.heap.setSlot(record, 0, int32Value(PROMISE_PENDING));
+    this.heap.setSlot(record, 1, undefinedValue());
+    this.heap.setSlot(record, 2, cellValue(this.heap.allocateArray(0)));
+    this.heap.setSlot(record, 3, cellValue(this.heap.allocateArray(0)));
+    this.heap.setSlot(record, 4, booleanValue(false));
+    const atomPromiseRecord = this.atomPromiseRecord;
+    this.heap.objectDefine(object, atomPromiseRecord, cellValue(record), PROP_NONE);
+    this.popTempRoot();
+    return cellValue(object);
+  }
+
+  function promiseState(handle: u32): i32 {
+    return asInt32(this.heap.slot(this.promiseRecord(handle), 0));
+  }
+
+  function promiseResult(handle: u32): Value {
+    return this.heap.slot(this.promiseRecord(handle), 1);
+  }
+
+  function enqueueJob(inout this, kind: i32, a: Value, b: Value, c: Value): void {
+    const job = this.heap.allocateArray(4);
+    this.heap.setSlot(job, 0, int32Value(kind));
+    this.heap.setSlot(job, 1, a);
+    this.heap.setSlot(job, 2, b);
+    this.heap.setSlot(job, 3, c);
+    this.jobs.push(cellValue(job));
+  }
+
+  function settlePromise(inout this, handle: u32, state: i32, value: Value): void {
+    const record = this.promiseRecord(handle);
+    if (asInt32(this.heap.slot(record, 0)) != PROMISE_PENDING) return;
+    this.heap.setSlot(record, 0, int32Value(state));
+    this.heap.setSlot(record, 1, value);
+    const reactions = asCell(this.heap.slot(record, state == PROMISE_FULFILLED ? 2 : 3));
+    this.heap.setSlot(record, 2, cellValue(this.heap.allocateArray(0)));
+    this.heap.setSlot(record, 3, cellValue(this.heap.allocateArray(0)));
+    const count = this.heap.arrayLength(reactions);
+    let index: u32 = 0;
+    while (index < count) {
+      const reaction = this.heap.arrayGet(reactions, index);
+      this.enqueueJob(JOB_REACTION, reaction, value, booleanValue(state == PROMISE_REJECTED));
+      index = index + 1;
+    }
+  }
+
+  function fulfillPromise(inout this, handle: u32, value: Value): void {
+    this.settlePromise(handle, PROMISE_FULFILLED, value);
+  }
+
+  function rejectPromise(inout this, handle: u32, reason: Value): void {
+    this.settlePromise(handle, PROMISE_REJECTED, reason);
+  }
+
+  // The promise resolve function's work: a thenable is followed through
+  // a job, anything else fulfills.
+  function resolvePromise(inout this, handle: u32, resolution: Value): void {
+    if (isCell(resolution) && asCell(resolution) == handle) {
+      const message: String = "Chaining cycle detected for promise";
+      const error = this.typeError(in message);
+      this.rejectPromise(handle, error);
+      return;
+    }
+    if (!this.isObjectLike(resolution)) {
+      this.fulfillPromise(handle, resolution);
+      return;
+    }
+    const thenText: String = "then";
+    const thenKey = this.internText(in thenText);
+    const then = this.getProperty(resolution, thenKey);
+    if (this.pendingThrow) {
+      const thrown = this.takePending();
+      this.rejectPromise(handle, thrown);
+      return;
+    }
+    if (!this.isCallable(then)) {
+      this.fulfillPromise(handle, resolution);
+      return;
+    }
+    this.enqueueJob(JOB_THENABLE, resolution, then, cellValue(handle));
+  }
+
+  function newReaction(inout this, kind: i32, handler: Value, derived: Value, gen: u32): Value {
+    const reaction = this.heap.allocateArray(4);
+    this.heap.setSlot(reaction, 0, int32Value(kind));
+    this.heap.setSlot(reaction, 1, handler);
+    this.heap.setSlot(reaction, 2, derived);
+    this.heap.setSlot(reaction, 3, int32Value(i32(gen)));
+    return cellValue(reaction);
+  }
+
+  // PerformPromiseThen with one reaction for each outcome.
+  function performThen(inout this, handle: u32, onFulfilled: Value, onRejected: Value, derived: Value): void {
+    this.pushTempRoot(derived);
+    const fulfillReaction = this.newReaction(REACTION_HANDLER, onFulfilled, derived, 0);
+    this.pushTempRoot(fulfillReaction);
+    const rejectReaction = this.newReaction(REACTION_HANDLER, onRejected, derived, 0);
+    this.popTempRoot();
+    this.popTempRoot();
+    this.attachReactions(handle, fulfillReaction, rejectReaction);
+  }
+
+  function attachReactions(inout this, handle: u32, fulfillReaction: Value, rejectReaction: Value): void {
+    const record = this.promiseRecord(handle);
+    const state = asInt32(this.heap.slot(record, 0));
+    if (state == PROMISE_PENDING) {
+      const fulfillList = asCell(this.heap.slot(record, 2));
+      this.heap.arraySet(fulfillList, this.heap.arrayLength(fulfillList), fulfillReaction);
+      const rejectList = asCell(this.heap.slot(record, 3));
+      this.heap.arraySet(rejectList, this.heap.arrayLength(rejectList), rejectReaction);
+    } else {
+      const result = this.heap.slot(record, 1);
+      const isReject = state == PROMISE_REJECTED;
+      this.enqueueJob(JOB_REACTION, isReject ? rejectReaction : fulfillReaction, result, booleanValue(isReject));
+    }
+    this.heap.setSlot(record, 4, booleanValue(true));
+  }
+
+  // PromiseResolve(%Promise%, value): a promise as-is, anything else
+  // wrapped in a new one.
+  function promiseResolveValue(inout this, value: Value): Value {
+    if (this.isPromise(value)) return value;
+    const promise = this.newPromise();
+    this.pushTempRoot(promise);
+    this.resolvePromise(asCell(promise), value);
+    this.popTempRoot();
+    return promise;
+  }
+
+  // The resolve / reject function pair for a promise, sharing an
+  // "already resolved" record: [promise, resolved].
+  function resolvingFunction(inout this, promise: Value, shared: Value, isReject: boolean): Value {
+    const name: String = "";
+    const fn = this.defineHostFunction(isReject ? promiseRejectFunction : promiseResolveFunction, shared, 1, in name);
+    return cellValue(fn);
+  }
+
+  function newResolvingShared(inout this, promise: Value): Value {
+    const shared = this.heap.allocateArray(2);
+    this.heap.setSlot(shared, 0, promise);
+    this.heap.setSlot(shared, 1, booleanValue(false));
+    return cellValue(shared);
+  }
+
+  // Run every queued job, including those queued while running.
+  function runJobs(inout this): void {
+    while (this.jobCursor < this.jobs.length) {
+      const job = asCell(this.jobs[this.jobCursor]);
+      this.jobCursor = this.jobCursor + 1;
+      const kind = asInt32(this.heap.slot(job, 0));
+      if (kind == JOB_REACTION) {
+        const reaction = asCell(this.heap.slot(job, 1));
+        const argument = this.heap.slot(job, 2);
+        const isReject = isTrue(this.heap.slot(job, 3));
+        this.runReaction(reaction, argument, isReject);
+      } else {
+        const thenable = this.heap.slot(job, 1);
+        const then = this.heap.slot(job, 2);
+        const promise = this.heap.slot(job, 3);
+        const shared = this.newResolvingShared(promise);
+        this.pushTempRoot(shared);
+        const resolve = this.resolvingFunction(promise, shared, false);
+        this.pushTempRoot(resolve);
+        const reject = this.resolvingFunction(promise, shared, true);
+        this.pushTempRoot(reject);
+        let args = Array<Value>();
+        args.push(resolve);
+        args.push(reject);
+        this.callValue(then, thenable, move args);
+        if (this.pendingThrow) {
+          const thrown = this.takePending();
+          if (!isTrue(this.heap.slot(asCell(shared), 1))) {
+            this.heap.setSlot(asCell(shared), 1, booleanValue(true));
+            this.rejectPromise(asCell(promise), thrown);
+          }
+        }
+        this.popTempRoot();
+        this.popTempRoot();
+        this.popTempRoot();
+      }
+      if (this.pendingThrow) { const dropped = this.takePending(); }
+    }
+    this.jobs = Array<Value>();
+    this.jobCursor = 0;
+  }
+
+  function runReaction(inout this, reaction: u32, argument: Value, isReject: boolean): void {
+    const kind = asInt32(this.heap.slot(reaction, 0));
+    if (kind == REACTION_ASYNC) {
+      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      this.asyncStep(gen, argument, isReject ? 1 : 0);
+      return;
+    }
+    const handler = this.heap.slot(reaction, 1);
+    const derived = this.heap.slot(reaction, 2);
+    if (!this.isCallable(handler)) {
+      if (this.isPromise(derived)) {
+        if (isReject) {
+          this.rejectPromise(asCell(derived), argument);
+        } else {
+          this.fulfillPromise(asCell(derived), argument);
+        }
+      }
+      return;
+    }
+    let args = Array<Value>();
+    args.push(argument);
+    const produced = this.callValue(handler, undefinedValue(), move args);
+    if (this.pendingThrow) {
+      const thrown = this.takePending();
+      if (this.isPromise(derived)) this.rejectPromise(asCell(derived), thrown);
+      return;
+    }
+    if (this.isPromise(derived)) this.resolvePromise(asCell(derived), produced);
+  }
+
+  // Drive an async function: resume its body; a completed body settles
+  // the promise, an await parks the continuation on the awaited value.
+  function asyncStep(inout this, gen: u32, sent: Value, mode: u32): void {
+    const record = this.generatorRecord(gen);
+    const promise = this.heap.slot(record, 3);
+    const outcome = this.generatorResume(gen, sent, mode);
+    if (this.pendingThrow) {
+      const thrown = this.takePending();
+      this.rejectPromise(asCell(promise), thrown);
+      return;
+    }
+    const doneText: String = "done";
+    const doneKey = this.internText(in doneText);
+    const done = this.getProperty(outcome, doneKey);
+    const valueText: String = "value";
+    const valueKey = this.internText(in valueText);
+    const value = this.getProperty(outcome, valueKey);
+    if (this.toBooleanValue(done)) {
+      this.resolvePromise(asCell(promise), value);
+      return;
+    }
+    this.pushTempRoot(value);
+    const awaited = this.promiseResolveValue(value);
+    this.popTempRoot();
+    this.pushTempRoot(awaited);
+    const reaction = this.newReaction(REACTION_ASYNC, undefinedValue(), undefinedValue(), gen);
+    this.attachReactions(asCell(awaited), reaction, reaction);
+    this.popTempRoot();
   }
 
   // --- Interpreter ---
@@ -3580,15 +3878,24 @@ export struct Runtime {
           }
           generatorStart => {
             // The prologue is done: suspend, and the call's result is the
-            // generator object.
+            // generator object -- or, for an async function, its promise,
+            // after the body has run to its first await.
             const gen = this.frames[frameIndex].generator;
             this.suspendGenerator(frameIndex, ip, inst.a);
             const frame = this.popFrame();
+            let produced = cellValue(gen);
+            if (this.functions[usize(fi)].isAsync) {
+              const promise = this.newPromise();
+              const record = this.generatorRecord(gen);
+              this.heap.setSlot(record, 3, promise);
+              this.asyncStep(gen, undefinedValue(), 0);
+              produced = promise;
+            }
             if (this.frameCount <= entryDepth) {
-              result = cellValue(gen);
+              result = produced;
             } else {
               const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
-              this.setReg(callerBase, frame.returnDst, cellValue(gen));
+              this.setReg(callerBase, frame.returnDst, produced);
             }
             returned = true;
           }
@@ -4422,7 +4729,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
@@ -4900,4 +5207,24 @@ test "display decoding replaces each maximal invalid subpart with U+FFFD" {
   unfinished.push(0x9F);
   const short = displayOf(move unfinished);
   expect(short.byteLength).toEqual(3);
+}
+
+// The resolve function of a promise: the first call wins, later ones
+// are ignored. `callee`'s bound data is the shared [promise, resolved].
+function promiseResolveFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const shared = asCell(runtime.heap.slot(callee, 0));
+  if (isTrue(runtime.heap.slot(shared, 1))) return undefinedValue();
+  runtime.heap.setSlot(shared, 1, booleanValue(true));
+  const promise = runtime.heap.slot(shared, 0);
+  runtime.resolvePromise(asCell(promise), runtime.argument(argsBase, argc, 0));
+  return undefinedValue();
+}
+
+function promiseRejectFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const shared = asCell(runtime.heap.slot(callee, 0));
+  if (isTrue(runtime.heap.slot(shared, 1))) return undefinedValue();
+  runtime.heap.setSlot(shared, 1, booleanValue(true));
+  const promise = runtime.heap.slot(shared, 0);
+  runtime.rejectPromise(asCell(promise), runtime.argument(argsBase, argc, 0));
+  return undefinedValue();
 }

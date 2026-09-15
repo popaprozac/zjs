@@ -10,8 +10,10 @@
 // engine works around it by keeping all code in one array and indexing
 // by offset; the view itself is the ask.
 //
-// The spelling below is a proposal only: a field-disjoint borrow, where
-// a view of `this.code` may live while `this.registers` is mutated.
+// `view this.code` is the existing spelling for a borrowed view of a
+// field. Both compilers reject the write to `this.registers[0]` while
+// the view lives: sibling-field tracking is conservative at indexed
+// access. The ask is that precision, with the existing syntax.
 import console from "std/console";
 
 struct Machine {
@@ -19,7 +21,7 @@ struct Machine {
   registers: Array<i32>;
 
   function run(inout this): i32 {
-    const program = in this.code;
+    const program = view this.code;
     let ip: usize = 0;
     while (ip < program.length) {
       const instruction = program[ip];

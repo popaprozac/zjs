@@ -4,10 +4,12 @@
 // Found in the ZJS interpreter loop. Every array index lowers to a
 // compare-and-abort, and the loop does two to four per bytecode
 // instruction (fetch, register reads, register write). Rebuilding the
-// generated C with the check removed, and nothing else, made the engine
-// 7 to 13 percent faster across four benchmarks. The register window
-// and the code segment are validated once per frame push; re-checking
-// each access buys nothing there.
+// generated C with the bounds checks AND the overflow checks on index
+// arithmetic both removed, and nothing else, made the engine 7 to 13
+// percent faster across four benchmarks; a bounds-only rebuild is
+// reported alongside in the findings ledger. The register window and
+// the code segment are validated once per frame push; re-checking each
+// access buys nothing there.
 //
 // The spelling below is a proposal only: `atUnchecked(i)` on Array,
 // paired with a debug-build check. An `unsafe` index expression or a

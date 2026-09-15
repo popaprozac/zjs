@@ -901,6 +901,23 @@ the loop went 0.92 to 0.63 s. `wrappingAdd` already removes the overflow
 half where the program can prove the sum fits; the bounds half has no
 spelling.
 
+Bounds-only follow-up, as asked: the current generated C (register and
+instruction-pointer arithmetic already wrapping, nine checked adds left in
+the file) rebuilt with only `z_bounds_index` made unchecked, identical
+flags (`-O2`), five runs each, min / median / max in seconds:
+
+| benchmark | checked | bounds unchecked | median gain |
+|---|---|---|---|
+| integer loop | 0.615 / 0.618 / 0.867 | 0.577 / 0.579 / 0.908 | 6% |
+| calls | 0.120 / 0.121 / 0.125 | 0.118 / 0.119 / 0.121 | 2% |
+| constructing | 0.201 / 0.203 / 0.204 | 0.183 / 0.184 / 0.185 | 9% |
+| array methods | 0.253 / 0.258 / 0.262 | 0.233 / 0.238 / 0.243 | 8% |
+
+Run-to-run spread is under 2 percent except the loop's one slow outlier
+each. So the bounds checks alone are worth 2 to 9 percent on these paths;
+the earlier 7 to 13 included the overflow checks since removed by
+`wrappingAdd`.
+
 The ask: an indexing form that skips the bounds check where the program
 asserts the invariant -- `array.at_unchecked(i)`, an `unsafe` index
 expression, or a release-mode elision behind a per-function attribute --
@@ -929,9 +946,13 @@ still not expressible.
 The ask: a way to hold an `in` view of a field (or an element) of `this`
 for the extent of a loop that only mutates *other* fields -- a
 field-disjointness borrow -- so an interpreter's code pointer, register
-window, and constant table can each be a local view. Probe
-`field-view-borrow` (`COMPILER-REJECTED`: `in` is only valid for an
-imported C record-pointer parameter).
+window, and constant table can each be a local view. The spelling exists:
+`view this.code`. Probe `field-view-borrow` (`COMPILER-REJECTED`, Z0205:
+cannot mutate `this` while the view is live); the upstream review confirms
+sibling-field tracking is conservative at indexed access, and that the
+native checker currently permits an element view held across a loop that
+pushes to the same array (a separate soundness fix that comes first). The
+engine uses neither pattern.
 
 ---
 

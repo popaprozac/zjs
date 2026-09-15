@@ -178,7 +178,9 @@ byte yields the three-byte string (the reference throws a SyntaxError);
 `Array.prototype.join.call("abc", "-")` sees the string's characters
 (the reference joins nothing); `new Array(-1)` throws a RangeError (the
 reference returns an array); `new Array(3)` has no elements (the
-reference fills them with undefined).
+reference fills them with undefined); an async function has no
+`prototype` and cannot be constructed (the reference gives it one and
+allows `new`).
 
 Performance, measured after classes with four micro-benchmarks (best of
 three, release builds of both engines): the Z engine ran the integer loop

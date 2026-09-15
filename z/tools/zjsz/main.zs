@@ -8,7 +8,8 @@
 import console from "std/console";
 import process from "std/process";
 import fs from "std/fs";
-import { Value, isCell, asCell } from "../../engine/value.zs";
+import { Value, isCell, asCell, cellValue, undefinedValue } from "../../engine/value.zs";
+import { thread } from "std/thread";
 import { Runtime } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate } from "../../engine/lib.zs";
@@ -78,9 +79,63 @@ function reportThrow(inout runtime: Runtime, thrown: Value): void {
   writeError(in line);
 }
 
+// console.log / console.error: the arguments' string forms joined by
+// spaces, one line, to stdout or stderr. The engine has no console of
+// its own; a host supplies one.
+function consoleWrite(inout runtime: Runtime, argsBase: u32, argc: u32, toError: boolean): Value {
+  let line = Array<u8>();
+  let index: u32 = 0;
+  while (index < argc) {
+    if (index > 0) line.push(32);
+    const text = runtime.toStringValue(runtime.argument(argsBase, argc, index));
+    if (runtime.pendingThrow) return undefinedValue();
+    appendString(inout line, in runtime, text);
+    index = index + 1;
+  }
+  line.push(10);
+  if (toError) {
+    writeError(in line);
+  } else {
+    writeOut(in line);
+  }
+  return undefinedValue();
+}
+
+function consoleLog(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return consoleWrite(inout runtime, argsBase, argc, false);
+}
+
+function consoleError(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return consoleWrite(inout runtime, argsBase, argc, true);
+}
+
+function installConsole(inout runtime: Runtime): void {
+  const objectProto = runtime.objectProto;
+  const console = runtime.heap.allocateObject(objectProto);
+  const logText: String = "log";
+  runtime.defineMethod(console, in logText, consoleLog, 0);
+  const errorText: String = "error";
+  runtime.defineMethod(console, in errorText, consoleError, 0);
+  runtime.setGlobal("console", cellValue(console));
+}
+
+function nativeWriteOut(buffer: usize, count: usize): void = raw c { fwrite((const void *)buffer, 1, count, stdout); fflush(stdout); }
+
+function writeOut(in bytes: Array<u8>): void {
+  const buffer = nativeAlloc(bytes.length + 1);
+  let index: usize = 0;
+  while (index < bytes.length) {
+    nativeStoreByte(buffer, index, bytes[index]);
+    index = index + 1;
+  }
+  nativeWriteOut(buffer, bytes.length);
+  nativeFree(buffer);
+}
+
 function runFile(in path: String): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
+  installConsole(inout runtime);
   const outcome = evaluate(inout runtime, move source);
   if (!outcome.isThrow) return 0;
   reportThrow(inout runtime, outcome.value);
