@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "zjs.h"
 #include "zjsz.h"
@@ -52,7 +53,7 @@ void zjs_free_context(ZjsContext *ctx) {
 }
 
 ZjsValue zjs_eval(ZjsContext *ctx, const char *source) {
-  zjs_z_eval((uintptr_t)ctx, (uintptr_t)source);
+  zjs_z_eval((uintptr_t)ctx, (const uint8_t *)source, strlen(source));
   ZjsValue undefined;
   undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
   return undefined;

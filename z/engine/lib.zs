@@ -91,15 +91,13 @@ export c function zjs_z_free_context(handle: usize): void {
   });
 }
 
-// Source arrives as the address of a NUL-terminated C string (the shim
-// casts the pointer; the C-export tier has no borrowed byte-buffer type
-// and a String parameter would validate and abort on malformed input)
-// and is copied byte for byte: JavaScript source is bytes to the engine
-// and is never validated as UTF-8, so a script that is not text cannot
-// abort the host.
-export c function zjs_z_eval(handle: usize, source: usize): void {
-  if (handle == 0 || source == 0) return;
-  const bytes = cstringBytes(source);
+// Source arrives as a borrowed byte slice (pointer and length at the C
+// boundary) and is copied byte for byte: JavaScript source is bytes to
+// the engine and is never validated as UTF-8, so a script that is not
+// text cannot abort the host.
+export c function zjs_z_eval(handle: usize, source: Slice<u8>): void {
+  if (handle == 0) return;
+  const bytes = sliceToBytes(source);
   const current = engine.get();
   current.registry.withLock((inout registry): void => {
     if (handle > registry.slots.length) return;
@@ -110,19 +108,13 @@ export c function zjs_z_eval(handle: usize, source: usize): void {
   });
 }
 
-function cstringByte(address: usize, index: usize): u8 = raw c {
-  return ((const uint8_t *)address)[index];
-}
-
-// The bytes of a NUL-terminated C string at `address`, without the
-// terminator.
-function cstringBytes(address: usize): Array<u8> {
+// An owned copy of a borrowed slice.
+function sliceToBytes(source: Slice<u8>): Array<u8> {
   let bytes = Array<u8>();
   let index: usize = 0;
-  while (true) {
-    const byte = cstringByte(address, index);
-    if (byte == 0) return bytes;
-    bytes.push(byte);
+  const count = source.length;
+  while (index < count) {
+    bytes.push(source[index]);
     index = index + 1;
   }
   return bytes;

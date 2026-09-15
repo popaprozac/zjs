@@ -4306,9 +4306,10 @@ function nativeFmod(a: f64, b: f64): f64 = raw c {
   return __builtin_fmod(a, b);
 }
 
-// Z's shift traps when bits leave the word; JavaScript's discards them.
-export function shiftLeft32(bits: u32, count: u32): u32 = raw c {
-  return bits << count;
+// JavaScript's shift discards the bits that leave the word; the count
+// is already masked to the word by the caller.
+export function shiftLeft32(bits: u32, count: u32): u32 {
+  return bits.wrappingShiftLeft(usize(count));
 }
 
 // Z's checked conversion from f64 traps on a fractional value, so every

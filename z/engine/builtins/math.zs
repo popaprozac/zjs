@@ -44,12 +44,13 @@ function nativeMath2(op: i32, x: f64, y: f64): f64 = raw c {
   }
 }
 function nativeNan(): f64 = raw c { return __builtin_nan(""); }
-// One xorshift64 step; Z's shift traps when bits leave the word.
-function nativeXorshift(state: u64): u64 = raw c {
-  state ^= state >> 12;
-  state ^= state << 25;
-  state ^= state >> 27;
-  return state;
+// One xorshift64 step; the left shift discards the bits that leave
+// the word.
+function nativeXorshift(state: u64): u64 {
+  let next = state ^ (state >> 12);
+  next = next ^ next.wrappingShiftLeft(25);
+  next = next ^ (next >> 27);
+  return next;
 }
 
 const MATH_ABS: i32 = 0;
