@@ -1,5 +1,11 @@
 # ZJS Engine Migration: Zen-c → Nim — Design
 
+> **SUPERSEDED (2026-09-14)** — Nim is no longer the target. Zapp migrated
+> itself to **Z**, not Nim, so the toolchain-unification driver now points at Z.
+> See [`2026-09-14-zjs-z-rewrite-design.md`](2026-09-14-zjs-z-rewrite-design.md).
+> Retained as historical record: its invariants, differential-oracle discipline,
+> two-register principle, and cutover gates carried forward largely intact.
+
 **Date:** 2026-06-20
 **Status:** Approved design, pre-implementation
 **Author:** Zach + Claude (brainstorming session)
