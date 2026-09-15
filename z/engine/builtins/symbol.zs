@@ -111,9 +111,8 @@ export function installSymbol(inout runtime: Runtime): void {
   defineSymbolConstant(inout runtime, ctor, in hasInstanceText, symbolHasInstanceBound);
   // The remaining well-known symbols exist so code can name them.
   const asyncIteratorText: String = "asyncIterator";
-  const asyncIteratorDesc: String = "Symbol.asyncIterator";
-  const asyncIteratorDescValue = runtime.internText(in asyncIteratorDesc);
-  defineSymbolConstant(inout runtime, ctor, in asyncIteratorText, runtime.newSymbol(asyncIteratorDescValue));
+  const symbolAsyncIteratorBound = runtime.symbolAsyncIterator;
+  defineSymbolConstant(inout runtime, ctor, in asyncIteratorText, symbolAsyncIteratorBound);
   const speciesText: String = "species";
   const symbolSpeciesBound = runtime.symbolSpecies;
   defineSymbolConstant(inout runtime, ctor, in speciesText, symbolSpeciesBound);

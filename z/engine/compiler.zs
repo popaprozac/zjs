@@ -1260,7 +1260,7 @@ export struct Compiler {
       }
       const value = this.compileExpr(in parser, inout runtime, n.left);
       const dst = this.allocReg();
-      this.emit(instAB(Op.yieldOp, dst, value));
+      this.emit(instAB(Op.awaitOp, dst, value));
       return dst;
     }
     if (k == NodeKind.yieldExpr) {
@@ -2985,9 +2985,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   const isGenerator = n.kind == NodeKind.methodDef ? (n.num == 4.0 || n.num == 5.0) : n.num == 3.0;
   // Async: a flag on functions and arrows, a kind code on methods.
   const isAsync = n.kind == NodeKind.methodDef ? (n.num == 1.0 || n.num == 5.0) : n.boolValue;
-  // An async function is a coroutine driven by its promise; an async
-  // generator (both) is not compiled yet.
-  if (isAsync && isGenerator) return failed;
+  // Async functions and async generators are coroutines driven by
+  // promises; both suspend on await.
   const isCoroutine = isGenerator || isAsync;
   // Defaults: a parameter that arrived undefined takes its initializer.
   // A pattern parameter then destructures into its names.

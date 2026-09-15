@@ -131,6 +131,21 @@ defined right after each super(); a class constructor called without
 its parent, so statics inherit. Function values of class members are
 fresh per evaluation. Anonymous class expressions take the name of what
 they initialize; identifier names with unicode escapes decode.
+Promises and async: a promise is an ordinary object holding a record
+under a hidden key (state, result, the two reaction lists, handled);
+reactions and jobs are heap arrays, and the runtime drains its job
+queue after each script, before control returns to the host. An async
+function is a coroutine on the generator machinery: its call runs the
+body to the first `await` and returns a promise; each await parks a
+continuation reaction on the awaited value's promise; completion or an
+uncaught throw settles the function's promise. An async generator
+queues its `next` / `return` / `throw` requests on its record, each
+with a promise; a `yield` awaits its value and answers the front
+request, an `await` parks the body, and completion answers the rest as
+done. `Promise.prototype.then` / `catch` / `finally`, `resolve` /
+`reject` / `all` / `allSettled` / `any` / `race` / `withResolvers`,
+species, `%AsyncIteratorPrototype%`, and `%AsyncGeneratorPrototype%`.
+The `zjsz` tool supplies `console`.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -180,7 +195,8 @@ byte yields the three-byte string (the reference throws a SyntaxError);
 reference returns an array); `new Array(3)` has no elements (the
 reference fills them with undefined); an async function has no
 `prototype` and cannot be constructed (the reference gives it one and
-allows `new`).
+allows `new`); an async generator object inherits from its function's
+`prototype` (the reference gives it another prototype).
 
 Performance, measured after classes with four micro-benchmarks (best of
 three, release builds of both engines): the Z engine ran the integer loop
@@ -222,8 +238,9 @@ String's valid-UTF-8 invariant and is never mistaken for the original
 bytes.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `Date` / `RegExp`, async functions and `Promise`,
-direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
+sees one binding), `Date` / `RegExp`, `for await`, `yield*` inside
+async generators, `AggregateError` as a constructor, promise subclassing
+through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, and the remaining builtins. A function declaration

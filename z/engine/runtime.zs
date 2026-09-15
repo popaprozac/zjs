@@ -82,6 +82,8 @@ const JOB_REACTION: i32 = 0;
 const JOB_THENABLE: i32 = 1;
 export const REACTION_HANDLER: i32 = 0;
 export const REACTION_ASYNC: i32 = 1;
+export const REACTION_ASYNC_GEN_AWAIT: i32 = 2;
+export const REACTION_ASYNC_GEN_YIELD: i32 = 3;
 
 // ToPrimitive hints.
 export const HINT_DEFAULT: u32 = 0;
@@ -93,6 +95,9 @@ const GEN_START: i32 = 0;
 const GEN_YIELDED: i32 = 1;
 const GEN_RUNNING: i32 = 2;
 const GEN_COMPLETED: i32 = 3;
+// An async body parked on an await (or an async generator on the await
+// of its yielded value): only the driver resumes it.
+const GEN_AWAITING: i32 = 4;
 
 export function errorKindName(kind: u32): String {
   if (kind == ERROR_KIND_ERROR) return "Error";
@@ -249,6 +254,10 @@ export struct Runtime {
   // and the job queue (each job a heap array) with its read cursor.
   promiseProto: u32;
   atomPromiseRecord: u32;
+  // %AsyncIteratorPrototype% and %AsyncGeneratorPrototype%.
+  asyncIteratorProto: u32;
+  asyncGeneratorProto: u32;
+  symbolAsyncIterator: Value;
   jobs: Array<Value>;
   jobCursor: usize;
   atomIterSource: u32;
@@ -749,8 +758,13 @@ export struct Runtime {
       const code = this.heap.functionIndex(fn);
       isGeneratorFunction = this.functions[usize(code)].isGenerator;
     }
+    let isAsyncGeneratorFunction = false;
+    if (isGeneratorFunction) {
+      const code = this.heap.functionIndex(fn);
+      isAsyncGeneratorFunction = this.functions[usize(code)].isAsync;
+    }
     const objectProto = this.objectProto;
-    const generatorProto = this.generatorProto;
+    const generatorProto = isAsyncGeneratorFunction ? this.asyncGeneratorProto : this.generatorProto;
     const created = this.heap.allocateObject(isGeneratorFunction ? generatorProto : objectProto);
     const atomConstructor = this.atomConstructor;
     if (!isGeneratorFunction) this.heap.objectDefine(created, atomConstructor, cellValue(fn), PROP_METHOD);
@@ -2144,13 +2158,24 @@ export struct Runtime {
   function createGenerator(inout this, callee: Value, thisValue: Value): Value {
     const proto = this.prototypeOf(asCell(callee));
     const gen = this.heap.allocateObject(proto);
-    const record = this.heap.allocateArray(9);
+    // [state, callee, this, promise, saved regs, ip, resume dst, saved
+    // tries, env, suspension kind, request queue, queue cursor]; the
+    // queue exists for async generators only.
+    const record = this.heap.allocateArray(12);
     this.heap.setSlot(record, 0, int32Value(GEN_START));
     this.heap.setSlot(record, 1, callee);
     this.heap.setSlot(record, 2, thisValue);
+    this.heap.setSlot(record, 3, undefinedValue());
     this.heap.setSlot(record, 5, int32Value(0));
     this.heap.setSlot(record, 6, int32Value(0));
     this.heap.setSlot(record, 8, int32Value(0));
+    this.heap.setSlot(record, 9, int32Value(0));
+    this.heap.setSlot(record, 10, undefinedValue());
+    this.heap.setSlot(record, 11, int32Value(0));
+    const code = this.heap.functionIndex(asCell(callee));
+    if (this.functions[usize(code)].isAsync && this.functions[usize(code)].isGenerator) {
+      this.heap.setSlot(record, 10, cellValue(this.heap.allocateArray(0)));
+    }
     const atomGenRecord = this.atomGenRecord;
     this.heap.objectDefine(gen, atomGenRecord, cellValue(record), PROP_NONE);
     return cellValue(gen);
@@ -2624,6 +2649,9 @@ export struct Runtime {
     const iteratorProto = this.iteratorProto;
     this.arrayIteratorProto = this.heap.allocateObject(iteratorProto);
     this.generatorProto = this.heap.allocateObject(iteratorProto);
+    this.asyncIteratorProto = this.heap.allocateObject(objectProto);
+    const asyncIteratorProto = this.asyncIteratorProto;
+    this.asyncGeneratorProto = this.heap.allocateObject(asyncIteratorProto);
     this.globalObject = this.heap.allocateObject(objectProto);
     const iteratorText: String = "Symbol.iterator";
     this.symbolIterator = this.newSymbol(this.internText(in iteratorText));
@@ -2639,6 +2667,8 @@ export struct Runtime {
     this.symbolIsConcatSpreadable = this.newSymbol(this.internText(in spreadableText));
     const unscopablesText: String = "Symbol.unscopables";
     this.symbolUnscopables = this.newSymbol(this.internText(in unscopablesText));
+    const asyncIteratorText: String = "Symbol.asyncIterator";
+    this.symbolAsyncIterator = this.newSymbol(this.internText(in asyncIteratorText));
     // Value properties of the global object.
     this.setGlobalAttr("NaN", doubleValue(nativeNan()), PROP_NONE);
     this.setGlobalAttr("Infinity", doubleValue(1.0 / 0.0), PROP_NONE);
@@ -2770,6 +2800,12 @@ export struct Runtime {
     this.heap.markValue(symbolIsConcatSpreadable);
     const symbolUnscopables = this.symbolUnscopables;
     this.heap.markValue(symbolUnscopables);
+    const symbolAsyncIterator = this.symbolAsyncIterator;
+    this.heap.markValue(symbolAsyncIterator);
+    const asyncIteratorProto = this.asyncIteratorProto;
+    this.heap.markHandle(asyncIteratorProto);
+    const asyncGeneratorProto = this.asyncGeneratorProto;
+    this.heap.markHandle(asyncGeneratorProto);
     index = 0;
     while (index < this.symbolRegistry.length) {
       const registered = this.symbolRegistry[index];
@@ -3445,6 +3481,33 @@ export struct Runtime {
       this.asyncStep(gen, argument, isReject ? 1 : 0);
       return;
     }
+    if (kind == REACTION_ASYNC_GEN_AWAIT) {
+      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      this.asyncGeneratorStep(gen, argument, isReject ? 1 : 0);
+      return;
+    }
+    if (kind == REACTION_ASYNC_GEN_YIELD) {
+      // The yielded value settled: a fulfillment answers the request, a
+      // rejection is thrown into the body at the yield.
+      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      if (isReject) {
+        this.asyncGeneratorStep(gen, argument, 1);
+        return;
+      }
+      const record = this.generatorRecord(gen);
+      this.heap.setSlot(record, 0, int32Value(GEN_YIELDED));
+      const request = this.asyncGeneratorFront(record);
+      if (request != 0) {
+        const promise = this.heap.slot(request, 2);
+        this.pushTempRoot(argument);
+        const produced = this.createIterResult(argument, false);
+        this.popTempRoot();
+        this.resolvePromise(asCell(promise), produced);
+        this.asyncGeneratorPop(record);
+      }
+      this.asyncGeneratorResumeNext(gen);
+      return;
+    }
     const handler = this.heap.slot(reaction, 1);
     const derived = this.heap.slot(reaction, 2);
     if (!this.isCallable(handler)) {
@@ -3494,6 +3557,130 @@ export struct Runtime {
     this.popTempRoot();
     this.pushTempRoot(awaited);
     const reaction = this.newReaction(REACTION_ASYNC, undefinedValue(), undefinedValue(), gen);
+    this.attachReactions(asCell(awaited), reaction, reaction);
+    this.popTempRoot();
+  }
+
+  // --- Async generators ---
+  //
+  // Requests (next / return / throw, each with its promise) queue on
+  // the generator record; the front one drives the body. A yield awaits
+  // its value and then answers the front request; an await parks the
+  // body; completion or a throw answers the front request and settles
+  // the rest as done.
+
+  function isAsyncGeneratorObject(value: Value): boolean {
+    if (!this.isGeneratorObject(value)) return false;
+    const record = this.generatorRecord(asCell(value));
+    return !isUndefined(this.heap.slot(record, 10));
+  }
+
+  function asyncGeneratorFront(record: u32): u32 {
+    const queue = asCell(this.heap.slot(record, 10));
+    const cursor = u32(asInt32(this.heap.slot(record, 11)));
+    if (cursor >= this.heap.arrayLength(queue)) return 0;
+    return asCell(this.heap.slot(queue, cursor));
+  }
+
+  function asyncGeneratorPop(inout this, record: u32): void {
+    const queue = asCell(this.heap.slot(record, 10));
+    const cursor = u32(asInt32(this.heap.slot(record, 11))) + 1;
+    if (cursor >= this.heap.arrayLength(queue)) {
+      this.heap.setSlot(record, 10, cellValue(this.heap.allocateArray(0)));
+      this.heap.setSlot(record, 11, int32Value(0));
+    } else {
+      this.heap.setSlot(record, 11, int32Value(i32(cursor)));
+    }
+  }
+
+  // AsyncGeneratorEnqueue: the promise for one next / return / throw.
+  function asyncGeneratorEnqueue(inout this, gen: u32, mode: u32, value: Value): Value {
+    const promise = this.newPromise();
+    this.pushTempRoot(promise);
+    const record = this.generatorRecord(gen);
+    const request = this.heap.allocateArray(3);
+    this.heap.setSlot(request, 0, int32Value(i32(mode)));
+    this.heap.setSlot(request, 1, value);
+    this.heap.setSlot(request, 2, promise);
+    const queue = asCell(this.heap.slot(record, 10));
+    this.heap.arraySet(queue, this.heap.arrayLength(queue), cellValue(request));
+    const state = asInt32(this.heap.slot(record, 0));
+    if (state != GEN_RUNNING && state != GEN_AWAITING) this.asyncGeneratorResumeNext(gen);
+    this.popTempRoot();
+    return promise;
+  }
+
+  // Answer requests that need no body run; start the body for one that does.
+  function asyncGeneratorResumeNext(inout this, gen: u32): void {
+    while (true) {
+      const record = this.generatorRecord(gen);
+      const request = this.asyncGeneratorFront(record);
+      if (request == 0) return;
+      const state = asInt32(this.heap.slot(record, 0));
+      const mode = u32(asInt32(this.heap.slot(request, 0)));
+      const value = this.heap.slot(request, 1);
+      const promise = this.heap.slot(request, 2);
+      if (state == GEN_COMPLETED || (state == GEN_START && mode != 0)) {
+        this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+        if (mode == 1) {
+          this.rejectPromise(asCell(promise), value);
+        } else {
+          const produced = this.createIterResult(mode == 2 ? value : undefinedValue(), true);
+          this.resolvePromise(asCell(promise), produced);
+        }
+        this.asyncGeneratorPop(record);
+        continue;
+      }
+      this.asyncGeneratorStep(gen, value, mode);
+      return;
+    }
+  }
+
+  // Run the body from where it stopped and act on how it stops.
+  function asyncGeneratorStep(inout this, gen: u32, sent: Value, mode: u32): void {
+    const outcome = this.generatorResume(gen, sent, mode);
+    const record = this.generatorRecord(gen);
+    if (this.pendingThrow) {
+      const thrown = this.takePending();
+      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      const request = this.asyncGeneratorFront(record);
+      if (request != 0) {
+        const promise = this.heap.slot(request, 2);
+        this.rejectPromise(asCell(promise), thrown);
+        this.asyncGeneratorPop(record);
+      }
+      this.asyncGeneratorResumeNext(gen);
+      return;
+    }
+    const doneText: String = "done";
+    const doneKey = this.internText(in doneText);
+    const done = this.getProperty(outcome, doneKey);
+    const valueText: String = "value";
+    const valueKey = this.internText(in valueText);
+    const value = this.getProperty(outcome, valueKey);
+    if (this.toBooleanValue(done)) {
+      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      const request = this.asyncGeneratorFront(record);
+      if (request != 0) {
+        const promise = this.heap.slot(request, 2);
+        this.pushTempRoot(value);
+        const produced = this.createIterResult(value, true);
+        this.popTempRoot();
+        this.resolvePromise(asCell(promise), produced);
+        this.asyncGeneratorPop(record);
+      }
+      this.asyncGeneratorResumeNext(gen);
+      return;
+    }
+    const kind = asInt32(this.heap.slot(record, 9));
+    // A yield awaits its value before answering; nothing else resumes
+    // the body meanwhile.
+    if (kind == 0) this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+    this.pushTempRoot(value);
+    const awaited = this.promiseResolveValue(value);
+    this.popTempRoot();
+    this.pushTempRoot(awaited);
+    const reaction = this.newReaction(kind == 1 ? REACTION_ASYNC_GEN_AWAIT : REACTION_ASYNC_GEN_YIELD, undefinedValue(), undefinedValue(), gen);
     this.attachReactions(asCell(awaited), reaction, reaction);
     this.popTempRoot();
   }
@@ -3884,7 +4071,7 @@ export struct Runtime {
             this.suspendGenerator(frameIndex, ip, inst.a);
             const frame = this.popFrame();
             let produced = cellValue(gen);
-            if (this.functions[usize(fi)].isAsync) {
+            if (this.functions[usize(fi)].isAsync && !this.functions[usize(fi)].isGenerator) {
               const promise = this.newPromise();
               const record = this.generatorRecord(gen);
               this.heap.setSlot(record, 3, promise);
@@ -3908,7 +4095,35 @@ export struct Runtime {
             } else {
               const yielded = this.reg(base, inst.b);
               this.suspendGenerator(frameIndex, ip, inst.a);
+              const gen = this.frames[frameIndex].generator;
+              const record = this.generatorRecord(gen);
+              this.heap.setSlot(record, 9, int32Value(0));
               const produced = this.createIterResult(yielded, false);
+              const frame = this.popFrame();
+              if (this.frameCount <= entryDepth) {
+                result = produced;
+              } else {
+                const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+                this.setReg(callerBase, frame.returnDst, produced);
+              }
+              returned = true;
+            }
+          }
+          awaitOp => {
+            // Like yield, but the body is parked until the value settles:
+            // the driver alone resumes it.
+            if (this.frames[frameIndex].generator == 0) {
+              const message: String = "await outside an async function";
+              thrown = this.typeError(in message);
+              throwing = true;
+            } else {
+              const awaited = this.reg(base, inst.b);
+              this.suspendGenerator(frameIndex, ip, inst.a);
+              const gen = this.frames[frameIndex].generator;
+              const record = this.generatorRecord(gen);
+              this.heap.setSlot(record, 9, int32Value(1));
+              this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+              const produced = this.createIterResult(awaited, false);
               const frame = this.popFrame();
               if (this.frameCount <= entryDepth) {
                 result = produced;
@@ -4729,7 +4944,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

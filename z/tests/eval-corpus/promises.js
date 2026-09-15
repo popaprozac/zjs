@@ -13,6 +13,9 @@ var tp = thrower();
 var arrow = async (a) => a;
 class K { async m() { return 1; } }
 log.push(order.join(), fp instanceof Promise, tp instanceof Promise, arrow(1) instanceof Promise, new K().m() instanceof Promise, typeof f, f.name, typeof arrow, f.length);
+async function* ag() { yield 1; }
+var agObject = ag();
+log.push(typeof agObject.next, typeof agObject.return, typeof agObject.throw, Object.prototype.toString.call(agObject), typeof agObject[Symbol.asyncIterator], agObject[Symbol.asyncIterator]() === agObject, agObject.next() instanceof Promise, typeof Symbol.asyncIterator);
 var errors = [];
 try { Promise(); } catch (e) { errors.push(e.name); }
 try { new Promise(); } catch (e) { errors.push(e.name); }

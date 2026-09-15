@@ -2,7 +2,7 @@
 import { thread } from "std/thread";
 import { Value, undefinedValue, cellValue, asCell } from "../value.zs";
 import { Runtime } from "../runtime.zs";
-import { PROP_CONFIGURABLE } from "../heap.zs";
+import { PROP_CONFIGURABLE, PROP_METHOD } from "../heap.zs";
 
 function requireGenerator(inout runtime: Runtime, thisValue: Value, in method: String): boolean {
   if (runtime.isGeneratorObject(thisValue)) return true;
@@ -30,7 +30,66 @@ function generatorThrow(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   return runtime.generatorResume(asCell(thisValue), runtime.argument(argsBase, argc, 0), 1);
 }
 
+function requireAsyncGenerator(inout runtime: Runtime, thisValue: Value, in method: String): boolean {
+  if (runtime.isAsyncGeneratorObject(thisValue)) return true;
+  const message: String = `AsyncGenerator.prototype.${method} called on incompatible receiver`;
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
+  return false;
+}
+
+// AsyncGenerator.prototype.next / return / throw: a promise for the
+// request, queued on the generator. An incompatible receiver rejects.
+function asyncGeneratorRequest(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, mode: u32, in method: String): Value {
+  if (!requireAsyncGenerator(inout runtime, thisValue, in method)) {
+    const thrown = runtime.takePending();
+    const promise = runtime.newPromise();
+    runtime.rejectPromise(asCell(promise), thrown);
+    return promise;
+  }
+  return runtime.asyncGeneratorEnqueue(asCell(thisValue), mode, runtime.argument(argsBase, argc, 0));
+}
+
+function asyncGeneratorNext(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "next";
+  return asyncGeneratorRequest(inout runtime, thisValue, argsBase, argc, 0, in method);
+}
+
+function asyncGeneratorReturn(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "return";
+  return asyncGeneratorRequest(inout runtime, thisValue, argsBase, argc, 2, in method);
+}
+
+function asyncGeneratorThrow(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "throw";
+  return asyncGeneratorRequest(inout runtime, thisValue, argsBase, argc, 1, in method);
+}
+
+// %AsyncIteratorPrototype%[@@asyncIterator]: itself.
+function asyncIteratorSelf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return thisValue;
+}
+
 export function installGenerator(inout runtime: Runtime): void {
+  const asyncIteratorProto = runtime.asyncIteratorProto;
+  const symbolAsyncIterator = runtime.symbolAsyncIterator;
+  const asyncIteratorKey = runtime.propertyKey(symbolAsyncIterator);
+  const asyncIteratorName: String = "[Symbol.asyncIterator]";
+  const selfFn = runtime.defineHostFunction(asyncIteratorSelf, undefinedValue(), 0, in asyncIteratorName);
+  runtime.heap.objectDefine(asyncIteratorProto, asyncIteratorKey, cellValue(selfFn), PROP_METHOD);
+  const asyncGeneratorProto = runtime.asyncGeneratorProto;
+  const asyncNextText: String = "next";
+  runtime.defineMethod(asyncGeneratorProto, in asyncNextText, asyncGeneratorNext, 1);
+  const asyncReturnText: String = "return";
+  runtime.defineMethod(asyncGeneratorProto, in asyncReturnText, asyncGeneratorReturn, 1);
+  const asyncThrowText: String = "throw";
+  runtime.defineMethod(asyncGeneratorProto, in asyncThrowText, asyncGeneratorThrow, 1);
+  const symbolToStringTagBound = runtime.symbolToStringTag;
+  const asyncTagKey = runtime.propertyKey(symbolToStringTagBound);
+  const asyncTagText: String = "AsyncGenerator";
+  const asyncTagValue = runtime.internText(in asyncTagText);
+  runtime.heap.objectDefine(asyncGeneratorProto, asyncTagKey, asyncTagValue, PROP_CONFIGURABLE);
+
   const generatorProto = runtime.generatorProto;
   const nextText: String = "next";
   runtime.defineMethod(generatorProto, in nextText, generatorNext, 1);
