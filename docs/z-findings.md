@@ -496,23 +496,27 @@ substitution's tokens and parses within a window — so nothing waits on this.
 **Confirmed:** z-lang `4bef7756` · **Blocks:** no (worked around)
 **Found:** Phase 4, the interpreter's register and frame stacks.
 
-The documented `Array` surface is `push` / `remove` / `clear`. There is no
-`pop`, `truncate`, or `resize`. A stack — the most common growable-array use
-in an engine — keeps its own live-extent counter over a monotonically grown
-array instead. Probe `array-pop` proposes `pop(): Option<T>`; a
-`truncate(length)` alongside would serve the stack case directly.
+`Array` offers `push`, `clear`, `length`, `isEmpty`, and `freeze`. There is
+no `pop`, `remove`, `truncate`, or `resize` — no way to shrink by one. A stack
+— the most common growable-array use in an engine — keeps its own
+live-extent counter over a monotonically grown array instead; the engine
+does this in three places already (registers, frames, loop bookkeeping).
+Probe `array-pop` proposes `pop(): Option<T>`; a `truncate(length)` alongside
+would serve the stack case directly.
 
 ---
 
-## G24 — A value read of `this` inside a call that borrows `this` mutably is rejected
+## G24 — A field read of `this` inside a call that borrows `this` mutably is rejected
 
 **Status:** `proposed` · **Size:** small · **Priority:** low
 **Confirmed:** z-lang `4bef7756` · **Blocks:** no (worked around)
 **Found:** Phase 4, every register write in the interpreter.
 
-`this.setReg(a, this.reg(b))` fails with *"overlapping inout and value uses
+`this.setReg(a, this.regs[b])` fails with *"overlapping inout and value uses
 of this in one call"*, so each operand is bound to a local first — 17 sites
-in the interpreter loop alone. The receiver-side twin of G19; both uses are
+in the interpreter loop alone. A *method call* on `this` in the same position
+(`this.setReg(a, this.reg(b))`) is accepted, so the rule is specifically
+about a field projection. The receiver-side twin of G19; both forms are
 reads, and argument evaluation precedes the call. If intentional, the
 diagnostic should name the bind-first workaround. Probe
 `inout-receiver-operand`.

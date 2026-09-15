@@ -6,7 +6,7 @@ The Z rewrite of the ZJS engine. Design:
 `src/` (Zen-c) remains the shipping engine and the behavioral oracle. This tree
 is built beside it, never on top of it.
 
-## Status — Phase 3 complete: lexer and parser
+## Status — Phases 4–5 in progress: the engine evaluates JavaScript
 
 The loop works end to end: the **unmodified** `tests/test262_runner.c` links
 against a Z-implemented `libzjs.a` and runs. It reports 0 passed, because no
@@ -23,7 +23,17 @@ reference over the whole local corpus (24 files, 33,168 tokens,
 all 24 real files plus an 11-file synthetic corpus covering every construct
 (`./z/oracle-ast.sh`). Both reference dumps link `build/libzjs.a` directly, so
 the oracles need no Zen-c toolchain. The parser is ordinary Z throughout; its
-one native call is `strtod` for decimal literals. Bytecode and compiler next.
+one native call is `strtod` for decimal literals.
+
+Phases 4–5, grown as vertical slices against a **behavioral oracle**
+(`./z/oracle-eval.sh`: both engines evaluate a file and print a canonical
+rendering of the completion value or uncaught throw): numbers with the
+reference's int32 fast paths, strings as byte arrays with interning,
+concatenation, number/string coercions and formatting, equality and ordering,
+logical operators, `var`/`let`/`const`, assignment in all forms, `++`/`--`,
+`if`/`while`/`do`/`for`/`break`/`continue`. **14 of 15** corpus files
+identical; the one that differs needs Error objects. Functions and objects
+next.
 
 ```
 $ ./z/oracle.sh
@@ -41,6 +51,11 @@ reference passed: 5   z passed: 0   gap: 5
 | `engine/lexer.zs` | the lexer, idiomatic register, no `raw c` |
 | `engine/ast.zs` | AST: one flat node shape, index-linked, order mirrors `src/ast.zc` |
 | `engine/parser.zs` | recursive-descent parser, index-linked nodes, no raw pointers |
+| `engine/bytecode.zs` | opcodes (order mirrors `src/bytecode.zc`), instructions, compiled functions |
+| `engine/compiler.zs` | AST to bytecode; high-water register allocation |
+| `engine/runtime.zs` | per-context state and the interpreter loop; coercions and comparisons |
+| `tools/evaldump-ref.c`, `tools/evaldump-z/` | eval-result dumps from each engine |
+| `tests/eval-corpus/` | behavioral corpus for the eval oracle |
 | `tools/astdump-ref.c`, `tools/astdump-z/` | AST dumps from each engine |
 | `tests/parse-corpus/` | synthetic corpus, one file per construct family |
 | `tools/tokdump-ref.c`, `tools/tokdump-z/` | token dumps from each engine |
@@ -60,6 +75,7 @@ reference passed: 5   z passed: 0   gap: 5
 ./z/oracle.sh vendor/test262/test/language/expressions   # real corpus
 ./z/oracle-tokens.sh              # lexer oracle: diff token dumps, both engines
 ./z/oracle-ast.sh                 # parser oracle: diff AST dumps, both engines
+./z/oracle-eval.sh                # behavioral oracle: diff eval results, both engines
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 ./z/spike/run.sh                  # Phase 0 measurements
 

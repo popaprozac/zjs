@@ -1,11 +1,13 @@
-// A value read of `this` inside a call that borrows `this` mutably is rejected.
+// A field read of `this` inside a call that borrows `this` mutably is rejected.
 //
-// Found writing the ZJS interpreter: every register write of the form
-//   this.setReg(a, this.reg(b))
+// Found writing the ZJS interpreter: a register write of the form
+//   this.setReg(a, this.regs[b])
 // fails with "overlapping inout and value uses of this in one call", so each
-// operand is bound to a local first. Both `reg` and the read of a field are
-// non-mutating; the sequencing is unambiguous (arguments evaluate before the
-// call). This is the receiver-side twin of the in-borrow-with-field-read
+// operand is bound to a local first (17 sites in the dispatch loop). A
+// method call on `this` in the same position -- this.setReg(a, this.reg(b))
+// -- is accepted, so the rule is specifically about a field projection.
+// Both forms are non-mutating reads, and arguments evaluate before the
+// call. This is the receiver-side twin of the in-borrow-with-field-read
 // probe. If the rule is intentional, the diagnostic should name the
 // bind-first workaround.
 import console from "std/console";
@@ -22,7 +24,7 @@ struct Machine {
   }
 
   function copy(inout this, dst: usize, src: usize): void {
-    this.setReg(dst, this.reg(src));
+    this.setReg(dst, this.regs[src]);
   }
 }
 

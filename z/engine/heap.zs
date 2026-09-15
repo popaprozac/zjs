@@ -42,11 +42,19 @@ struct CellHeader {
   marked: boolean;
   slotStart: u32;
   slotCount: u32;
+  // Tag-specific extra: for a string cell, the index of its bytes in
+  // `strings`. Zero-initialized and unused by other tags.
+  payload: u32;
 }
 
+// String cells keep their bytes in a Z-owned Array<u8>, held in a side
+// table indexed through the cell header's payload. The reference stores
+// plain bytes with a byte length and byte-indexed access -- including
+// embedded NULs, which is why the storage is bytes rather than a Z String.
 export struct Heap {
   headers: Array<CellHeader>;
   slots: Array<Value>;
+  strings: Array<Array<u8>>;
 
   // These are methods rather than free functions for a concrete reason.
   // Z rejects `inout` on a place expression -- `allocate(inout
@@ -66,8 +74,79 @@ export struct Heap {
       marked: false,
       slotStart: start,
       slotCount: slotCount,
+      payload: 0,
     }));
     return u32(this.headers.length - 1);
+  }
+
+  // A string cell owning `bytes`.
+  function allocateString(inout this, bytes: Array<u8>): u32 {
+    const stringIndex = u32(this.strings.length);
+    this.strings.push(move bytes);
+    const handle = this.allocate(TAG_STRING, 0);
+    this.headers[usize(handle)].payload = stringIndex;
+    return handle;
+  }
+
+  // A string cell holding a copy of a Z String's bytes.
+  function allocateText(inout this, in text: String): u32 {
+    return this.allocateString(bytesOf(in text));
+  }
+
+  function isString(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_STRING;
+  }
+
+  function stringLength(handle: u32): usize {
+    return this.strings[usize(this.headers[usize(handle)].payload)].length;
+  }
+
+  function stringByte(handle: u32, index: usize): u8 {
+    return this.strings[usize(this.headers[usize(handle)].payload)][index];
+  }
+
+  // An owned copy of a string cell's bytes.
+  function stringBytes(handle: u32): Array<u8> {
+    const at = usize(this.headers[usize(handle)].payload);
+    let copied = Array<u8>();
+    let index: usize = 0;
+    const length = this.strings[at].length;
+    while (index < length) {
+      copied.push(this.strings[at][index]);
+      index = index + 1;
+    }
+    return copied;
+  }
+
+  function stringsEqual(a: u32, b: u32): boolean {
+    if (a == b) return true;
+    const length = this.stringLength(a);
+    if (length != this.stringLength(b)) return false;
+    let index: usize = 0;
+    while (index < length) {
+      if (this.stringByte(a, index) != this.stringByte(b, index)) return false;
+      index = index + 1;
+    }
+    return true;
+  }
+
+  // Byte-wise ordering, the reference's memcmp-then-length rule:
+  // negative, zero, or positive.
+  function compareStrings(a: u32, b: u32): i32 {
+    const aLength = this.stringLength(a);
+    const bLength = this.stringLength(b);
+    const shorter = aLength < bLength ? aLength : bLength;
+    let index: usize = 0;
+    while (index < shorter) {
+      const ab = this.stringByte(a, index);
+      const bb = this.stringByte(b, index);
+      if (ab < bb) return -1;
+      if (ab > bb) return 1;
+      index = index + 1;
+    }
+    if (aLength < bLength) return -1;
+    if (aLength > bLength) return 1;
+    return 0;
   }
 
   function allocateValue(inout this, tag: u8, slotCount: u32): Value {
@@ -113,8 +192,20 @@ export struct Heap {
 export function createHeap(): Heap {
   let headers = Array<CellHeader>();
   // Handle 0 is reserved; push a sentinel so live handles start at 1.
-  headers.push(CellHeader({ tag: TAG_RESERVED, marked: false, slotStart: 0, slotCount: 0 }));
-  return Heap({ headers: move headers, slots: Array<Value>() });
+  headers.push(CellHeader({ tag: TAG_RESERVED, marked: false, slotStart: 0, slotCount: 0, payload: 0 }));
+  return Heap({ headers: move headers, slots: Array<Value>(), strings: Array<Array<u8>>() });
+}
+
+// The bytes of a Z String as an owned byte array.
+export function bytesOf(in text: String): Array<u8> {
+  let bytes = Array<u8>();
+  let index: usize = 0;
+  const length = text.byteLength;
+  while (index < length) {
+    bytes.push(text.byteAt(index));
+    index = index + 1;
+  }
+  return bytes;
 }
 
 // --- Tests ----------------------------------------------------------------
@@ -200,4 +291,24 @@ test "mark bits are per-cell and default clear" {
   heap.setMarked(first, true);
   expect(heap.marked(first)).toEqual(true);
   expect(heap.marked(second)).toEqual(false);
+}
+
+test "string cells keep their bytes and compare bytewise" {
+  let heap = createHeap();
+  const hello = heap.allocateText("hello");
+  const help = heap.allocateText("help");
+  const helloAgain = heap.allocateText("hello");
+  expect(heap.isString(hello)).toEqual(true);
+  const five: usize = 5;
+  expect(heap.stringLength(hello)).toEqual(five);
+  expect(heap.stringByte(hello, 1)).toEqual(101);
+  expect(heap.stringsEqual(hello, helloAgain)).toEqual(true);
+  expect(heap.stringsEqual(hello, help)).toEqual(false);
+  expect(heap.compareStrings(hello, help) < 0).toEqual(true);
+  expect(heap.compareStrings(help, hello) > 0).toEqual(true);
+  const prefix = heap.allocateText("hel");
+  expect(heap.compareStrings(prefix, hello) < 0).toEqual(true);
+  const copied = heap.stringBytes(hello);
+  expect(copied.length).toEqual(five);
+  expect(copied[4]).toEqual(111);
 }

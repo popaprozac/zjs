@@ -1,10 +1,11 @@
 // Array has no way to remove its last element.
 //
-// Found writing the ZJS interpreter's register and frame stacks. The
-// documented Array surface is push / remove / clear; there is no pop,
-// truncate, or resize. A stack -- the most common growable-array use in an
-// engine -- has to keep its own live-extent counter over a monotonically
-// grown array, which is what the engine does.
+// Found writing the ZJS interpreter's register, frame, and loop stacks.
+// Array offers push, clear, length, isEmpty, and freeze; there is no pop,
+// remove, truncate, or resize -- no way to shrink by one. A stack -- the
+// most common growable-array use in an engine -- has to keep its own
+// live-extent counter over a monotonically grown array, which is what the
+// engine does in three places already.
 //
 // The spelling below is a proposal only: `pop()` returning Option<T>. Any
 // equivalent that removes and returns the last element without an O(n)
