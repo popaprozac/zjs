@@ -91,7 +91,12 @@ inline, and closes the `for`-`of` iterators it leaves; a throw inside a
 `for`-`of` body closes the iterator too. Anonymous functions take the name
 of the binding, property, or parameter they initialize (accessors with a
 `get ` / `set ` prefix); only a function expression written with a name
-binds it inside itself.
+binds it inside itself. Generators: a generator object is an ordinary
+object holding a record under a hidden key; a call runs the parameter
+prologue and suspends at GeneratorStart, `yield` copies the frame's
+register window and open try handlers out, and `next` / `throw` / `return`
+push a fresh frame and copy them back. `yield*` delegates values (what
+`next` sends is not yet forwarded, nor is the delegate's final value).
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -103,7 +108,7 @@ reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5714 of
 6244; `built-ins/Number` 578 of 582; `built-ins/Symbol` 130 against the
 reference's 90; `built-ins/JSON` 220 of 224 -- with Z passing 18, 230,
 64, 50, and 14 tests respectively that the reference fails. The largest
-remaining gaps are the missing `Date` and `RegExp`, classes, generators,
+remaining gaps are the missing `Date` and `RegExp`, classes, `Map` / `Set`,
 and the rest of `Array.prototype` / `String.prototype`.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.

@@ -826,6 +826,40 @@ export struct Compiler {
       }
       return acc;
     }
+    if (k == NodeKind.yieldExpr) {
+      if (n.boolValue) {
+        // yield*: yield everything the operand's iterator produces. What
+        // next() sends is not forwarded, and the delegate's final value
+        // is not the expression's (limitations).
+        const iterable = this.compileExpr(in parser, inout runtime, n.left);
+        const iterator = this.allocReg();
+        this.emit(instAB(Op.iterGet, iterator, iterable));
+        const done = this.allocReg();
+        const value = this.allocReg();
+        const sent = this.allocReg();
+        if (sent + 1 > this.fixedRegs) this.fixedRegs = sent + 1;
+        const loopTop = u32(this.code.length);
+        this.emit(instA(Op.loadUndefined, value));
+        this.emit(instABC(Op.iterStep, value, iterator, done));
+        const exit = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+        this.emit(instAB(Op.yieldOp, sent, value));
+        this.emitJumpBack(loopTop);
+        this.patchJump(exit);
+        const dst = this.allocReg();
+        this.emit(instA(Op.loadUndefined, dst));
+        return dst;
+      }
+      let value: u8 = 0;
+      if (n.left != NO_NODE) {
+        value = this.compileExpr(in parser, inout runtime, n.left);
+      } else {
+        value = this.allocReg();
+        this.emit(instA(Op.loadUndefined, value));
+      }
+      const dst = this.allocReg();
+      this.emit(instAB(Op.yieldOp, dst, value));
+      return dst;
+    }
     if (k == NodeKind.thisExpr) {
       if (n.boolValue) {
         // new.target
@@ -2432,6 +2466,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.storeLocal(usize(restIndex), built);
     compiler.resetTemps();
   }
+  const isGenerator = n.num == 3.0;
   // Defaults: a parameter that arrived undefined takes its initializer.
   // A pattern parameter then destructures into its names.
   p = 0;
@@ -2461,6 +2496,13 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       compiler.resetTemps();
     }
     p = p + 1;
+  }
+  // A generator suspends here, its parameters initialized, and the call
+  // returns the generator object.
+  if (isGenerator) {
+    const resume = compiler.allocReg();
+    compiler.emit(instA(Op.generatorStart, resume));
+    compiler.resetTemps();
   }
 
   if (n.left != NO_NODE) {
@@ -2513,6 +2555,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   compiled.expectedArgCount = expected;
   compiled.isArrow = n.kind == NodeKind.arrowFunc;
+  compiled.isGenerator = n.num == 3.0;
   compiled.strict = compiler.strict;
   compiled.thisReg = compiler.thisReg;
   // The name: written, else the parser's (methods, accessors), else the

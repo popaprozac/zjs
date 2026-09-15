@@ -51,6 +51,8 @@ struct Frame {
   // many there are: the `arguments` object and rest parameters read them.
   argsBase: u32;
   argc: u32;
+  // The generator object this frame runs for, 0 for none.
+  generator: u32;
 }
 
 // A live try handler: the frame it belongs to, where its catch block
@@ -75,6 +77,12 @@ export const ERROR_KIND_COUNT: u32 = 5;
 export const HINT_DEFAULT: u32 = 0;
 export const HINT_NUMBER: u32 = 1;
 export const HINT_STRING: u32 = 2;
+
+// Generator states.
+const GEN_START: i32 = 0;
+const GEN_YIELDED: i32 = 1;
+const GEN_RUNNING: i32 = 2;
+const GEN_COMPLETED: i32 = 3;
 
 export function errorKindName(kind: u32): String {
   if (kind == ERROR_KIND_ERROR) return "Error";
@@ -202,6 +210,10 @@ export struct Runtime {
   // whose presence allows the allocation-free fast path.
   iteratorProto: u32;
   arrayIteratorProto: u32;
+  // %GeneratorPrototype%, and the hidden key under which a generator
+  // object keeps its record.
+  generatorProto: u32;
+  atomGenRecord: u32;
   atomIterSource: u32;
   atomIterIndex: u32;
   atomIterKind: u32;
@@ -501,10 +513,18 @@ export struct Runtime {
       const existing = this.heap.linkOf(fn);
       if (existing != 0) return existing;
     }
+    // A generator function's prototype inherits %GeneratorPrototype% and
+    // has no constructor.
+    let isGeneratorFunction = false;
+    if (this.heap.tagOf(fn) == TAG_FUNCTION || closure) {
+      const code = this.heap.functionIndex(fn);
+      isGeneratorFunction = this.functions[usize(code)].isGenerator;
+    }
     const objectProto = this.objectProto;
-    const created = this.heap.allocateObject(objectProto);
+    const generatorProto = this.generatorProto;
+    const created = this.heap.allocateObject(isGeneratorFunction ? generatorProto : objectProto);
     const atomConstructor = this.atomConstructor;
-    this.heap.objectDefine(created, atomConstructor, cellValue(fn), PROP_METHOD);
+    if (!isGeneratorFunction) this.heap.objectDefine(created, atomConstructor, cellValue(fn), PROP_METHOD);
     if (closure) {
       this.heap.setSlot(fn, 1, cellValue(created));
     } else {
@@ -1800,6 +1820,157 @@ export struct Runtime {
     return argsBase;
   }
 
+  // --- Generators ---
+  //
+  // A generator object is an ordinary object holding a record under a
+  // hidden key: state, the function value, this, the original arguments,
+  // the saved registers, the resume point, the register that receives
+  // what next() sends, the saved try handlers, and the environment.
+  // Suspending copies the frame's register window out; resuming pushes a
+  // fresh frame and copies it back.
+
+  function isGeneratorObject(value: Value): boolean {
+    if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return false;
+    return this.heap.objectFindSlot(asCell(value), this.atomGenRecord) >= 0;
+  }
+
+  function generatorRecord(gen: u32): u32 {
+    const slot = this.heap.objectFindSlot(gen, this.atomGenRecord);
+    return asCell(this.heap.slot(gen, u32(slot)));
+  }
+
+  // A generator object for a call of a generator function. The call runs
+  // the parameter prologue at once; GeneratorStart suspends the frame and
+  // returns this object, and the first next() resumes after it.
+  function createGenerator(inout this, callee: Value, thisValue: Value): Value {
+    const proto = this.prototypeOf(asCell(callee));
+    const gen = this.heap.allocateObject(proto);
+    const record = this.heap.allocateArray(9);
+    this.heap.setSlot(record, 0, int32Value(GEN_START));
+    this.heap.setSlot(record, 1, callee);
+    this.heap.setSlot(record, 2, thisValue);
+    this.heap.setSlot(record, 5, int32Value(0));
+    this.heap.setSlot(record, 6, int32Value(0));
+    this.heap.setSlot(record, 8, int32Value(0));
+    const atomGenRecord = this.atomGenRecord;
+    this.heap.objectDefine(gen, atomGenRecord, cellValue(record), PROP_NONE);
+    return cellValue(gen);
+  }
+
+  // Resume with next (mode 0), throw (1), or return (2). The result is
+  // the iterator result the body produced; a throw is left pending.
+  function generatorResume(inout this, gen: u32, sent: Value, mode: u32): Value {
+    const record = this.generatorRecord(gen);
+    const state = asInt32(this.heap.slot(record, 0));
+    if (state == GEN_COMPLETED) {
+      if (mode == 1) {
+        this.raise(sent);
+        return undefinedValue();
+      }
+      return this.createIterResult(mode == 2 ? sent : undefinedValue(), true);
+    }
+    if (state == GEN_RUNNING) {
+      const message: String = "Generator is already running";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    if (mode == 2) {
+      // A return injected at a yield: the body does not run again (its
+      // finally blocks are not run; a limitation).
+      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      return this.createIterResult(sent, true);
+    }
+    this.heap.setSlot(record, 0, int32Value(GEN_RUNNING));
+    const callee = this.heap.slot(record, 1);
+    const thisValue = this.heap.slot(record, 2);
+    const entryDepth = this.frameCount;
+    const savedTop = this.regTop;
+    {
+      const target = this.heap.functionIndex(asCell(callee));
+      this.pushFrame(target, 0);
+      const top = usize(this.frameCount - 1);
+      const base = this.frames[top].regsBase;
+      const saved = asCell(this.heap.slot(record, 4));
+      const count = this.heap.arrayLength(saved);
+      let index: u32 = 0;
+      while (index < count) {
+        const held = this.heap.slot(saved, index);
+        this.regStack[usize(base + index)] = held;
+        index = index + 1;
+      }
+      this.frames[top].ip = usize(asInt32(this.heap.slot(record, 5)));
+      this.frames[top].env = u32(asInt32(this.heap.slot(record, 8)));
+      this.frames[top].callee = callee;
+      this.hostThis = thisValue;
+      const tries = asCell(this.heap.slot(record, 7));
+      const pairs = this.heap.arrayLength(tries);
+      let t: u32 = 0;
+      while (t + 1 < pairs) {
+        const catchIp = usize(asInt32(this.heap.slot(tries, t)));
+        const catchReg = u8(asInt32(this.heap.slot(tries, t + 1)));
+        this.pushTry(catchIp, catchReg);
+        t = t + 2;
+      }
+      const resumeDst = u8(asInt32(this.heap.slot(record, 6)));
+      if (mode == 0) {
+        this.setReg(base, resumeDst, sent);
+      } else {
+        this.raise(sent);
+      }
+    }
+    const top = usize(this.frameCount - 1);
+    this.frames[top].generator = gen;
+    const result = this.runFrames(entryDepth);
+    this.regTop = savedTop;
+    if (result.isThrow) {
+      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      this.raise(result.value);
+      return undefinedValue();
+    }
+    return result.value;
+  }
+
+  // Suspend the running generator frame at a yield: registers, resume
+  // point, environment, and the frame's try handlers go into the record.
+  function suspendGenerator(inout this, frameIndex: usize, ip: usize, resumeDst: u8): void {
+    const gen = this.frames[frameIndex].generator;
+    const record = this.generatorRecord(gen);
+    const base = this.frames[frameIndex].regsBase;
+    const count = this.frames[frameIndex].regCount;
+    const saved = this.heap.allocateArray(count);
+    let index: u32 = 0;
+    while (index < count) {
+      const held = this.regStack[usize(base + index)];
+      this.heap.setSlot(saved, index, held);
+      index = index + 1;
+    }
+    this.heap.setSlot(record, 4, cellValue(saved));
+    this.heap.setSlot(record, 5, int32Value(i32(ip)));
+    this.heap.setSlot(record, 6, int32Value(i32(resumeDst)));
+    const env = this.frames[frameIndex].env;
+    this.heap.setSlot(record, 8, int32Value(i32(env)));
+    // The frame's handlers, bottom-up, then popped.
+    const tries = this.heap.allocateArray(0);
+    let first = this.tryDepth;
+    while (first > 0 && this.tryStack[usize(first - 1)].frameIndex == u32(frameIndex)) { first = first - 1; }
+    let t = first;
+    while (t < this.tryDepth) {
+      const length = this.heap.arrayLength(tries);
+      this.heap.arraySet(tries, length, int32Value(i32(this.tryStack[usize(t)].catchIp)));
+      this.heap.arraySet(tries, length + 1, int32Value(i32(this.tryStack[usize(t)].catchReg)));
+      t = t + 1;
+    }
+    this.tryDepth = first;
+    this.heap.setSlot(record, 7, cellValue(tries));
+    this.heap.setSlot(record, 0, int32Value(GEN_YIELDED));
+  }
+
+  function completeGenerator(inout this, gen: u32): void {
+    const record = this.generatorRecord(gen);
+    this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+  }
+
   // --- Builtins ---
 
   // Register a builtin that is not a constructor: a host function cell
@@ -1825,13 +1996,6 @@ export struct Runtime {
     return handle;
   }
 
-  // Whether a function value exposes `prototype`: constructors, and host
-  // functions given one explicitly (Symbol).
-  function functionHasPrototype(value: Value): boolean {
-    if (this.isConstructorValue(value)) return true;
-    return this.isHostFunctionValue(value) && this.heap.linkOf(asCell(value)) != 0;
-  }
-
   function isConstructorValue(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0) return false;
     const handle = asCell(value);
@@ -1839,9 +2003,20 @@ export struct Runtime {
     if (tag == TAG_HOST_FUNCTION) return isTrue(this.heap.slot(handle, 4));
     if (tag == TAG_FUNCTION || tag == TAG_CLOSURE) {
       const code = this.heap.functionIndex(handle);
-      return !this.functions[usize(code)].isArrow;
+      return !this.functions[usize(code)].isArrow && !this.functions[usize(code)].isGenerator;
     }
     return false;
+  }
+
+  // Whether a function value exposes `prototype`: constructors, generator
+  // functions, and host functions given one explicitly (Symbol).
+  function functionHasPrototype(value: Value): boolean {
+    if (this.isConstructorValue(value)) return true;
+    if (this.isCompiledCallable(value)) {
+      const code = this.heap.functionIndex(asCell(value));
+      return this.functions[usize(code)].isGenerator;
+    }
+    return this.isHostFunctionValue(value) && this.heap.linkOf(asCell(value)) != 0;
   }
 
   // A builtin as a non-enumerable property of `target`.
@@ -2112,6 +2287,11 @@ export struct Runtime {
     iterKind.push(105);
     iterKind.push(107);
     this.atomIterKind = this.internBytes(move iterKind);
+    let genRecord = Array<u8>();
+    genRecord.push(255);
+    genRecord.push(103);
+    genRecord.push(114);
+    this.atomGenRecord = this.internBytes(move genRecord);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
@@ -2123,6 +2303,7 @@ export struct Runtime {
     this.iteratorProto = this.heap.allocateObject(objectProto);
     const iteratorProto = this.iteratorProto;
     this.arrayIteratorProto = this.heap.allocateObject(iteratorProto);
+    this.generatorProto = this.heap.allocateObject(iteratorProto);
     this.globalObject = this.heap.allocateObject(objectProto);
     const iteratorText: String = "Symbol.iterator";
     this.symbolIterator = this.newSymbol(this.internText(in iteratorText));
@@ -2209,6 +2390,10 @@ export struct Runtime {
     this.heap.markHandle(atomIterKind);
     const arrayIteratorNext = this.arrayIteratorNext;
     this.heap.markHandle(arrayIteratorNext);
+    const generatorProto = this.generatorProto;
+    this.heap.markHandle(generatorProto);
+    const atomGenRecord = this.atomGenRecord;
+    this.heap.markHandle(atomGenRecord);
     const symbolIterator = this.symbolIterator;
     this.heap.markValue(symbolIterator);
     const symbolToPrimitive = this.symbolToPrimitive;
@@ -2490,7 +2675,7 @@ export struct Runtime {
     const frame = Frame({
       functionIndex: functionIndex, ip: 0, regsBase: base, regCount: regCount, returnDst: returnDst,
       savedThis: this.hostThis, tryDepthAtEntry: this.tryDepth, constructThis: undefinedValue(),
-      env: 0, callee: undefinedValue(), argsBase: 0, argc: 0,
+      env: 0, callee: undefinedValue(), argsBase: 0, argc: 0, generator: 0,
     });
     if (usize(this.frameCount) < this.frames.length) {
       this.frames[usize(this.frameCount)] = frame;
@@ -2594,6 +2779,10 @@ export struct Runtime {
       let returned = false;
       let throwing = false;
       let thrown = undefinedValue();
+      if (this.pendingThrow) {
+        thrown = this.takePending();
+        throwing = true;
+      }
       while (ip < codeLength && !returned && !throwing) {
         const inst = this.functions[usize(fi)].code[ip];
         ip = ip + 1;
@@ -2833,7 +3022,15 @@ export struct Runtime {
           const callee = this.reg(base, inst.b);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 1;
-          if (this.isCompiledCallable(callee)) {
+          if (this.isCompiledCallable(callee) && this.functions[usize(this.heap.functionIndex(asCell(callee)))].isGenerator) {
+            // The parameters initialize now; GeneratorStart then suspends
+            // and hands the caller the generator object.
+            const created = this.createGenerator(callee, undefinedValue());
+            this.frames[frameIndex].ip = ip;
+            this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue());
+            this.frames[usize(this.frameCount - 1)].generator = asCell(created);
+            returned = true;
+          } else if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
             this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue());
             returned = true;
@@ -2857,7 +3054,13 @@ export struct Runtime {
           const receiver = this.reg(base, inst.b + 1);
           const argc = u32(inst.c);
           const argsBase = base + u32(inst.b) + 2;
-          if (this.isCompiledCallable(callee)) {
+          if (this.isCompiledCallable(callee) && this.functions[usize(this.heap.functionIndex(asCell(callee)))].isGenerator) {
+            const created = this.createGenerator(callee, receiver);
+            this.frames[frameIndex].ip = ip;
+            this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
+            this.frames[usize(this.frameCount - 1)].generator = asCell(created);
+            returned = true;
+          } else if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
             this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue());
             returned = true;
@@ -2908,9 +3111,45 @@ export struct Runtime {
             thrown = this.typeError(in message);
             throwing = true;
           }
+        } else if (op == Op.generatorStart) {
+          // The prologue is done: suspend, and the call's result is the
+          // generator object.
+          const gen = this.frames[frameIndex].generator;
+          this.suspendGenerator(frameIndex, ip, inst.a);
+          const frame = this.popFrame();
+          if (this.frameCount <= entryDepth) {
+            result = cellValue(gen);
+          } else {
+            const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+            this.setReg(callerBase, frame.returnDst, cellValue(gen));
+          }
+          returned = true;
+        } else if (op == Op.yieldOp) {
+          // a receives what next() sends on resume; b is the value yielded.
+          if (this.frames[frameIndex].generator == 0) {
+            const message: String = "yield outside a generator";
+            thrown = this.typeError(in message);
+            throwing = true;
+          } else {
+            const yielded = this.reg(base, inst.b);
+            this.suspendGenerator(frameIndex, ip, inst.a);
+            const produced = this.createIterResult(yielded, false);
+            const frame = this.popFrame();
+            if (this.frameCount <= entryDepth) {
+              result = produced;
+            } else {
+              const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+              this.setReg(callerBase, frame.returnDst, produced);
+            }
+            returned = true;
+          }
         } else if (op == Op.returnOp) {
           let value = this.reg(base, inst.a);
           const frame = this.popFrame();
+          if (frame.generator != 0) {
+            this.completeGenerator(frame.generator);
+            value = this.createIterResult(value, true);
+          }
           // A safe point: the return value is in the caller's register
           // once written below; keep it rooted through the collection.
           if (this.heap.shouldCollect()) {
@@ -3320,6 +3559,8 @@ export struct Runtime {
             this.tryDepth = this.tryDepth - 1;
             caught = true;
           } else {
+            const generator = this.frames[usize(top)].generator;
+            if (generator != 0) this.completeGenerator(generator);
             this.popFrame();
           }
         }
@@ -3398,6 +3639,7 @@ export function createRuntime(): Runtime {
     hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(), tempRootCount: 0,
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
+    generatorProto: 0, atomGenRecord: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(),
   });

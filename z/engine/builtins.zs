@@ -17,6 +17,7 @@ import { installReflect } from "./builtins/reflect.zs";
 import { installSymbol } from "./builtins/symbol.zs";
 import { installJson } from "./builtins/json.zs";
 import { installIteration } from "./builtins/iteration.zs";
+import { installGenerator } from "./builtins/generator.zs";
 
 export function createEngine(): Runtime {
   let runtime = createRuntime();
@@ -31,5 +32,6 @@ export function createEngine(): Runtime {
   installSymbol(inout runtime);
   installJson(inout runtime);
   installIteration(inout runtime);
+  installGenerator(inout runtime);
   return runtime;
 }
