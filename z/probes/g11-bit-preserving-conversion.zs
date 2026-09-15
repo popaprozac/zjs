@@ -1,25 +1,34 @@
-// G11 — bit-preserving integer conversion.  STATUS: open
+// G11 — bit-preserving *integer* conversion.  STATUS: open
 //
-// Pairs with G2 and is the reason to build them together: NaN boxing an
-// int32 needs C's `(uint32_t)i` reinterpretation. Z's `u32(value)` is
-// value-preserving and *traps* on a negative input, so today the engine
-// folds the sign by hand (z/engine/value.zs). Checked conversion is right
-// for ordinary code; this is the deliberate opt-out beside it.
+// The integer half of what landed for floats in dee8ea80. That commit gave
+// f64/f32 a `fromBits`/`toBits` pair that preserves representation instead of
+// mathematical value; integers still have only the checked, value-preserving
+// constructors, which trap rather than reinterpret.
 //
-// Written against the proposed `std/bits` spelling; rename freely.
+// ZJS use case: boxing an int32 into a NaN-boxed value needs C's
+// `(uint32_t)i` reinterpretation. `u32(-42)` traps today, so the engine folds
+// the sign by hand (see asInt32/int32Value in z/engine/value.zs) -- arithmetic
+// standing in for a representation change.
+//
+// Written against the idiom already shipped for floats, which seems like the
+// obviously consistent spelling; any equivalent naming is fine.
 import console from "std/console";
-import { toU32, toI32 } from "std/bits";
 
 function main(): i32 {
-  // The case that traps today.
-  if (toU32(-42) != 0xFFFF_FFD6) return 1;
-  if (toU32(-2147483648) != 0x8000_0000) return 2;
-  if (toU32(2147483647) != 0x7FFF_FFFF) return 3;
+  const negative: i32 = -42;
+  const minimum: i32 = -2147483648;
 
-  // And the decode direction.
-  if (toI32(0xFFFF_FFD6) != -42) return 4;
-  if (toI32(0x8000_0000) != -2147483648) return 5;
+  // Reinterpret, do not convert: the value changes, the bits do not.
+  if (u32.fromBits(negative) != 0xFFFF_FFD6) return 1;
+  if (u32.fromBits(minimum) != 0x8000_0000) return 2;
+  if (negative.toBits() != 0xFFFF_FFD6) return 3;
 
+  // And back.
+  if (i32.fromBits(0xFFFF_FFD6) != -42) return 4;
+  if (i32.fromBits(0x8000_0000) != minimum) return 5;
+
+  // The checked constructor must keep trapping -- this is an opt-out beside
+  // it, not a replacement for it.
   console.log("g11 ok");
   return 0;
 }

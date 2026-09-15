@@ -4,13 +4,14 @@
 // divergence: a cell payload is a *handle* into the Z-owned heap, not a
 // machine address. See `cellValue` below for why that changes the encoding.
 //
-// G1 (radix literals + digit separators) landed in z-lang 135b64c9, so the
-// constants below are spelled in the base that makes them reviewable.
-// Still outstanding: Z has no bitcast (G2, in progress), so f64<->u64 punning
-// goes through raw c; and Z's numeric construction is checked and traps rather
-// than reinterpreting a sign bit (G11), so int32 boxing folds the sign by hand.
+// G1 (radix literals, z-lang 135b64c9) and G2 (exact float bit
+// representation, dee8ea80) have both landed, so constants are spelled in the
+// base that reads best and the NaN-box encode path is ordinary Z -- no raw c.
+//
+// Still outstanding: G11, the integer half of the same idea. Z's numeric
+// construction is checked and traps rather than reinterpreting a sign bit, so
+// int32 boxing still folds the sign by hand below.
 
-import string from "string.h";
 import { expect } from "std/test";
 
 export struct Value {
@@ -43,20 +44,6 @@ export function numberTag(): u64 { return NUMBER_TAG; }
 export function doubleEncodeOffset(): u64 { return DOUBLE_ENCODE_OFFSET; }
 export function notCellMask(): u64 { return NOT_CELL_MASK; }
 
-// --- Bit reinterpretation (G2) -------------------------------------------
-
-export function doubleToBits(value: f64): u64 = raw c {
-  uint64_t bits;
-  memcpy(&bits, &value, sizeof(bits));
-  return bits;
-}
-
-export function bitsToDouble(bits: u64): f64 = raw c {
-  double value;
-  memcpy(&value, &bits, sizeof(value));
-  return value;
-}
-
 // --- Numbers --------------------------------------------------------------
 
 // G11: `u32(value)` traps on a negative input, so the sign bit is folded
@@ -73,11 +60,11 @@ export function asInt32(value: Value): i32 {
 }
 
 export function doubleValue(value: f64): Value {
-  return Value({ bits: doubleToBits(value).wrappingAdd(doubleEncodeOffset()) });
+  return Value({ bits: value.toBits().wrappingAdd(DOUBLE_ENCODE_OFFSET) });
 }
 
 export function asDouble(value: Value): f64 {
-  return bitsToDouble(value.bits.wrappingSubtract(doubleEncodeOffset()));
+  return f64.fromBits(value.bits.wrappingSubtract(DOUBLE_ENCODE_OFFSET));
 }
 
 export function isNumber(value: Value): boolean {
@@ -160,6 +147,26 @@ test "double round-trips and classifies as a non-int32 number" {
   expect(isInt32(value)).toEqual(false);
   expect(isCell(value)).toEqual(false);
   expect(asDouble(doubleValue(-0.125))).toEqual(-0.125);
+}
+
+test "NaN and the zero signs survive boxing" {
+  // NaN boxing stores data in NaN payload bits, so the encoding must not
+  // canonicalize them. This is the property f64.fromBits/.toBits promises
+  // and the reason the engine can rely on it.
+  const quietNan = f64.fromBits(0x7FF8_0000_0000_0042);
+  expect(asDouble(doubleValue(quietNan)).toBits()).toEqual(quietNan.toBits());
+
+  // -0.0 and 0.0 are distinct in JS and must stay distinct through the box.
+  expect(asDouble(doubleValue(-0.0)).toBits()).toEqual((-0.0).toBits());
+  expect(asDouble(doubleValue(0.0)).toBits()).toEqual((0.0).toBits());
+  expect((-0.0).toBits() == (0.0).toBits()).toEqual(false);
+
+  // Infinities round-trip. G13: the expected literal needs an explicit u64
+  // binding, otherwise it types as i32 and the mismatch escapes into
+  // generated C rather than being reported against this line.
+  const positiveInfinity: u64 = 0x7FF0_0000_0000_0000;
+  expect(asDouble(doubleValue(f64.fromBits(positiveInfinity))).toBits())
+    .toEqual(positiveInfinity);
 }
 
 test "singletons are distinct and none is a cell" {
