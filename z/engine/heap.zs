@@ -399,12 +399,13 @@ export struct Heap {
   // Elements live in the slots; `payload` is the length and the slot count
   // is the capacity. A slot past the length, or holding the deleted
   // marker, is a hole.
+  // ArrayCreate: `length` elements, none present. Every slot, within
+  // the length and in the spare capacity past it, starts as a hole.
   function allocateArray(inout this, length: u32): u32 {
     const capacity: u32 = length < 4 ? 4 : length;
     const handle = this.allocate(TAG_ARRAY, capacity);
     this.headers[usize(handle)].payload = length;
-    // Capacity past the length is holes, not undefined.
-    let hole = length;
+    let hole: u32 = 0;
     while (hole < capacity) {
       this.setSlot(handle, hole, deletedValue());
       hole = hole + 1;

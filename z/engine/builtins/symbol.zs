@@ -118,13 +118,11 @@ export function installSymbol(inout runtime: Runtime): void {
   const symbolSpeciesBound = runtime.symbolSpecies;
   defineSymbolConstant(inout runtime, ctor, in speciesText, symbolSpeciesBound);
   const isConcatSpreadableText: String = "isConcatSpreadable";
-  const isConcatSpreadableDesc: String = "Symbol.isConcatSpreadable";
-  const isConcatSpreadableDescValue = runtime.internText(in isConcatSpreadableDesc);
-  defineSymbolConstant(inout runtime, ctor, in isConcatSpreadableText, runtime.newSymbol(isConcatSpreadableDescValue));
+  const symbolIsConcatSpreadableBound = runtime.symbolIsConcatSpreadable;
+  defineSymbolConstant(inout runtime, ctor, in isConcatSpreadableText, symbolIsConcatSpreadableBound);
   const unscopablesText: String = "unscopables";
-  const unscopablesDesc: String = "Symbol.unscopables";
-  const unscopablesDescValue = runtime.internText(in unscopablesDesc);
-  defineSymbolConstant(inout runtime, ctor, in unscopablesText, runtime.newSymbol(unscopablesDescValue));
+  const symbolUnscopablesBound = runtime.symbolUnscopables;
+  defineSymbolConstant(inout runtime, ctor, in unscopablesText, symbolUnscopablesBound);
   const matchText: String = "match";
   const matchDesc: String = "Symbol.match";
   const matchDescValue = runtime.internText(in matchDesc);

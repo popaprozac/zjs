@@ -108,7 +108,14 @@ iterators (`Map Iterator` / `Set Iterator` prototypes), `Map.groupBy` /
 `get [Symbol.species]` on `Map`, `Set`, and `Array`. The weak
 collections keep their keys alive; the collector does not yet treat them
 weakly. Deleting a global through the global object undefines the
-binding.
+binding. `Array.prototype` complete and generic: every method takes any
+array-like through ToObject / LengthOfArrayLike and the property
+protocol (lengths as doubles up to 2^53 - 1, `HasProperty` through the
+prototype chain for holes and String wrappers), with ArraySpeciesCreate
+for `map` / `filter` / `slice` / `splice` / `concat` / `flat`, a stable
+merge sort over rooted heap arrays, `@@isConcatSpreadable`, the ES2023
+copying methods, and `@@unscopables`; a real array's `push` / `pop`
+keep their direct path. `new Array(n)` has no elements.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -118,13 +125,15 @@ the gap with the tests the reference passes and Z does not. Needs
 `vendor/test262`. Measurements so far: `language/statements/if` 117 of the
 reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5714 of
 6244; `built-ins/Number` 578 of 582; `built-ins/Symbol` 130 against the
-reference's 90; `built-ins/JSON` 220 of 224 -- with Z passing 18, 230,
-64, 50, and 14 tests respectively that the reference fails. `built-ins/Map`
+reference's 90; `built-ins/JSON` 224 of 224 -- with Z passing 18, 230,
+64, 50, and 18 tests respectively that the reference fails. `built-ins/Map`
 395 against the reference's 367, `WeakMap` 273 against 244, `WeakSet` 166
 against 154, and `Set` 628 of 725, where the gap is the class syntax the
-set-method tests are written with and `Array.prototype.shift`. The largest
-remaining gaps are the missing `Date` and `RegExp`, classes, and the rest
-of `Array.prototype` / `String.prototype`.
+set-method tests are written with. `built-ins/Array` 5300 against the
+reference's 5259 (`Array.prototype` 4894 of 5002, the rest `Date`,
+`RegExp`, `Proxy`, and cross-realm tests). The largest remaining gaps are
+the missing `Date` and `RegExp`, classes, and the rest of
+`String.prototype`.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -149,7 +158,12 @@ distinct functions); `Object.prototype.toString` on a collection iterator
 reads its `@@toStringTag` (the reference says `[object Object]`); a
 closure created inside `catch` sees the catch parameter (the reference
 throws a ReferenceError); `eval` of a string literal holding a raw NUL
-byte yields the three-byte string (the reference throws a SyntaxError).
+byte yields the three-byte string (the reference throws a SyntaxError);
+`Array.prototype[@@unscopables]` exists (the reference has none);
+`Array.prototype.join.call("abc", "-")` sees the string's characters
+(the reference joins nothing); `new Array(-1)` throws a RangeError (the
+reference returns an array); `new Array(3)` has no elements (the
+reference fills them with undefined).
 
 Strings are byte strings, as in the reference: `length`, indexing, and
 the String methods count bytes. Whether the rewrite keeps that or moves to

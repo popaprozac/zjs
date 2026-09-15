@@ -2,7 +2,7 @@
 // xorshift random source seeded per runtime.
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, isNumber, isInt32, asInt32 } from "../value.zs";
-import { PROP_METHOD, PROP_NONE } from "../heap.zs";
+import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE } from "../heap.zs";
 import { Runtime, toNumber, toInt32, toUint32, isIntegralDouble, truncateDouble } from "../runtime.zs";
 
 function nativeMath1(op: i32, x: f64): f64 = raw c {
@@ -239,6 +239,11 @@ export function installMath(inout runtime: Runtime): void {
   const objectProto = runtime.objectProto;
   const math = runtime.heap.allocateObject(objectProto);
   runtime.setGlobal("Math", cellValue(math));
+  const tagText: String = "Math";
+  const tagValue = runtime.internText(in tagText);
+  const symbolToStringTag = runtime.symbolToStringTag;
+  const tagKey = runtime.propertyKey(symbolToStringTag);
+  runtime.heap.objectDefine(math, tagKey, tagValue, PROP_CONFIGURABLE);
   const eText: String = "E";
   defineConstant(inout runtime, math, in eText, 2.718281828459045);
   const ln10Text: String = "LN10";

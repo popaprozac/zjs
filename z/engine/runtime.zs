@@ -237,6 +237,8 @@ export struct Runtime {
   symbolToStringTag: Value;
   symbolHasInstance: Value;
   symbolSpecies: Value;
+  symbolIsConcatSpreadable: Value;
+  symbolUnscopables: Value;
 
   function addFunction(inout this, code: FunctionCode): u32 {
     this.functions.push(move code);
@@ -612,6 +614,20 @@ export struct Runtime {
     const atomPrimitive = this.atomPrimitive;
     this.heap.objectSet(object, atomPrimitive, primitive);
     return cellValue(object);
+  }
+
+  // ToObject: an object as-is, a primitive in its wrapper, null and
+  // undefined a TypeError (left pending; the result is then undefined).
+  function toObjectValue(inout this, value: Value): Value {
+    if (this.isObjectLike(value)) return value;
+    if (isUndefined(value) || isNull(value)) {
+      const message: String = "Cannot convert undefined or null to object";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    const proto = this.primitiveProto(value);
+    return this.wrapPrimitive(value, proto);
   }
 
   // The intrinsic prototype a primitive reads through, 0 for none.
@@ -1290,17 +1306,25 @@ export struct Runtime {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
         if (this.heap.arrayHasIndex(handle, u32(index))) return true;
+        // A hole reads through the prototype chain, where an element may
+        // be an accessor without a getter: presence, not value.
         const arrayProto = this.arrayProto;
-        return !isUndefined(this.getProperty(cellValue(arrayProto), key));
+        return this.hasProperty(cellValue(arrayProto), key);
       }
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) return true;
       const bag = this.heap.linkOf(handle);
-      if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
+      if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0 && !isDeleted(this.heap.slot(bag, u32(this.heap.objectFindSlot(bag, atom))))) return true;
       const arrayProto = this.arrayProto;
-      return !isUndefined(this.objectGet(arrayProto, atom));
+      return this.hasProperty(cellValue(arrayProto), key);
     }
     if (tag == TAG_OBJECT) {
+      // A String wrapper has its characters and length.
+      const primitive = this.wrappedPrimitive(handle);
+      if (!isDeleted(primitive) && this.isStringValue(primitive)) {
+        const own = this.stringOwnDescriptor(asCell(primitive), key);
+        if (own.present) return true;
+      }
       const atom = this.propertyKey(key);
       let current = handle;
       while (current != 0) {
@@ -2387,6 +2411,10 @@ export struct Runtime {
     this.symbolHasInstance = this.newSymbol(this.internText(in hasInstanceText));
     const speciesText: String = "Symbol.species";
     this.symbolSpecies = this.newSymbol(this.internText(in speciesText));
+    const spreadableText: String = "Symbol.isConcatSpreadable";
+    this.symbolIsConcatSpreadable = this.newSymbol(this.internText(in spreadableText));
+    const unscopablesText: String = "Symbol.unscopables";
+    this.symbolUnscopables = this.newSymbol(this.internText(in unscopablesText));
     // Value properties of the global object.
     this.setGlobalAttr("NaN", doubleValue(nativeNan()), PROP_NONE);
     this.setGlobalAttr("Infinity", doubleValue(1.0 / 0.0), PROP_NONE);
@@ -2494,6 +2522,10 @@ export struct Runtime {
     this.heap.markValue(symbolHasInstance);
     const symbolSpecies = this.symbolSpecies;
     this.heap.markValue(symbolSpecies);
+    const symbolIsConcatSpreadable = this.symbolIsConcatSpreadable;
+    this.heap.markValue(symbolIsConcatSpreadable);
+    const symbolUnscopables = this.symbolUnscopables;
+    this.heap.markValue(symbolUnscopables);
     index = 0;
     while (index < this.symbolRegistry.length) {
       const registered = this.symbolRegistry[index];
@@ -3726,7 +3758,7 @@ export function createRuntime(): Runtime {
     generatorProto: 0, atomGenRecord: 0,
     mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
-    symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(),
+    symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
   runtime.installIntrinsics();
   return runtime;
