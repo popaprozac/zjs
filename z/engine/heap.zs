@@ -345,6 +345,24 @@ export struct Heap {
     return child;
   }
 
+  // Whether `child` is the class `parent` reaches by adding `atom`.
+  function isTransitionOf(child: u32, parent: u32, atom: u32): boolean {
+    return this.classes[usize(child)].parent == parent && this.classes[usize(child)].transitionName == atom;
+  }
+
+  // Move an object to `classId` by writing its new property, the slot
+  // and class known from a previous transition.
+  function transitionTo(inout this, handle: u32, classId: u32, slotIndex: u32, value: Value): void {
+    if (slotIndex >= this.headers[usize(handle)].slotCount) {
+      const grown: u32 = this.headers[usize(handle)].slotCount * 2;
+      const needed: u32 = slotIndex + 1;
+      this.growSlots(handle, grown > needed ? grown : needed);
+    }
+    this.headers[usize(handle)].payload = classId;
+    this.setSlot(handle, slotIndex, value);
+    this.setAttr(handle, slotIndex, PROP_DEFAULT);
+  }
+
   // --- Objects ---
 
   // An empty object whose prototype is `proto` (0 for none), with room

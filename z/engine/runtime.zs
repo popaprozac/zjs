@@ -12,7 +12,7 @@ import { thread } from "std/thread";
 import math from "std/math";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME } from "./heap.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -278,7 +278,127 @@ export struct Runtime {
       at = at + 1;
     }
     installed.code = Array<Inst>();
+    installed.caches = Array<PropertyCache>();
+    let nameSlot: usize = 0;
+    const names = installed.propertyNames.length;
+    while (nameSlot < names) {
+      installed.caches.push(emptyCache());
+      nameSlot = nameSlot + 1;
+    }
     this.functions[usize(index)] = move installed;
+  }
+
+  // --- Inline caches ---
+  //
+  // A property access site remembers the receiver's hidden class and
+  // where the property was found. Validation is by class: a class fixes
+  // the slot layout, adding a property changes the class, and a deleted
+  // or redefined slot is caught by the marker and attribute checks. A
+  // cached prototype is compared by handle against the receiver's actual
+  // prototype, so a reused handle cannot alias.
+
+  // A cached load, or the deleted marker for a miss.
+  function loadCached(fi: u32, nameSlot: usize, handle: u32): Value {
+    const cache = this.functions[usize(fi)].caches[nameSlot];
+    if (cache.kind == CACHE_OWN) {
+      if (this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
+      if ((this.heap.attrOf(handle, cache.slot) & PROP_ACCESSOR) != 0) return deletedValue();
+      return this.heap.slot(handle, cache.slot);
+    }
+    if (cache.kind == CACHE_PROTO) {
+      if (this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
+      const proto = this.heap.objectProto(handle);
+      if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return deletedValue();
+      if ((this.heap.attrOf(proto, cache.slot) & PROP_ACCESSOR) != 0) return deletedValue();
+      return this.heap.slot(proto, cache.slot);
+    }
+    return deletedValue();
+  }
+
+  function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    const receiverClass = this.heap.objectClass(handle);
+    const own = this.heap.objectFindSlot(handle, atom);
+    if (own >= 0) {
+      if (isDeleted(this.heap.slot(handle, u32(own)))) return;
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0 });
+      return;
+    }
+    const proto = this.heap.objectProto(handle);
+    if (proto == 0 || !this.heap.isObject(proto)) return;
+    const inherited = this.heap.objectFindSlot(proto, atom);
+    if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
+    const protoClass = this.heap.objectClass(proto);
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, depth: 1, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0 });
+  }
+
+  // A cached store; false for a miss.
+  function storeCached(inout this, fi: u32, nameSlot: usize, handle: u32, value: Value): boolean {
+    const cache = this.functions[usize(fi)].caches[nameSlot];
+    if (cache.kind == CACHE_OWN) {
+      if (this.heap.objectClass(handle) != cache.receiverClass) return false;
+      const attr = this.heap.attrOf(handle, cache.slot);
+      if ((attr & PROP_ACCESSOR) != 0 || (attr & PROP_WRITABLE) == 0) return false;
+      if (isDeleted(this.heap.slot(handle, cache.slot))) return false;
+      this.heap.setSlot(handle, cache.slot, value);
+      return true;
+    }
+    if (cache.kind == CACHE_TRANSITION) {
+      if (this.heap.objectClass(handle) != cache.receiverClass) return false;
+      if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0) return false;
+      let proto = this.heap.objectProto(handle);
+      if (cache.depth >= 1) {
+        if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return false;
+        proto = this.heap.objectProto(proto);
+      }
+      if (cache.depth >= 2) {
+        if (proto != cache.proto2 || this.heap.objectClass(proto) != cache.proto2Class) return false;
+        proto = this.heap.objectProto(proto);
+      }
+      if (proto != 0) return false;
+      this.heap.transitionTo(handle, cache.targetClass, cache.slot, value);
+      return true;
+    }
+    return false;
+  }
+
+  // After a slow-path store on an object: remember an own writable data
+  // property, or the transition that added one when the prototype chain
+  // (at most two objects, ending in null) holds no such property.
+  function populateStoreCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, classBefore: u32): void {
+    if (handle == this.globalObject) return;
+    const own = this.heap.objectFindSlot(handle, atom);
+    if (own < 0) return;
+    const attr = this.heap.attrOf(handle, u32(own));
+    if ((attr & PROP_ACCESSOR) != 0 || (attr & PROP_WRITABLE) == 0) return;
+    if (isDeleted(this.heap.slot(handle, u32(own)))) return;
+    const classAfter = this.heap.objectClass(handle);
+    if (classAfter == classBefore) {
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: classAfter, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0 });
+      return;
+    }
+    if (!this.heap.isTransitionOf(classAfter, classBefore, atom)) return;
+    let depth: u8 = 0;
+    let proto1: u32 = 0;
+    let proto1Class: u32 = 0;
+    let proto2: u32 = 0;
+    let proto2Class: u32 = 0;
+    let proto = this.heap.objectProto(handle);
+    if (proto != 0) {
+      if (!this.heap.isObject(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      depth = 1;
+      proto1 = proto;
+      proto1Class = this.heap.objectClass(proto);
+      proto = this.heap.objectProto(proto);
+    }
+    if (proto != 0) {
+      if (!this.heap.isObject(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      depth = 2;
+      proto2 = proto;
+      proto2Class = this.heap.objectClass(proto);
+      proto = this.heap.objectProto(proto);
+    }
+    if (proto != 0) return;
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, depth: depth, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class });
   }
 
   function functionValue(inout this, index: u32): Value {
@@ -3562,35 +3682,53 @@ export struct Runtime {
           }
           loadProp => {
             const object = this.reg(base, inst.b);
-            const atom = this.functions[usize(fi)].propertyNames[usize(inst.c)];
-            if (isUndefined(object) || isNull(object)) {
-              thrown = this.propertyOfNullish(object, atom, true);
-              throwing = true;
+            const nameSlot = usize(inst.c);
+            const isPlainObject = isCell(object) && asCell(object) != 0 && this.heap.isObject(asCell(object));
+            let cached = deletedValue();
+            if (isPlainObject) cached = this.loadCached(fi, nameSlot, asCell(object));
+            if (!isDeleted(cached)) {
+              this.setReg(base, inst.a, cached);
             } else {
-              const found = this.getProperty(object, cellValue(atom));
-              if (this.pendingThrow) {
-                thrown = this.takePending();
+              const atom = this.functions[usize(fi)].propertyNames[nameSlot];
+              if (isUndefined(object) || isNull(object)) {
+                thrown = this.propertyOfNullish(object, atom, true);
                 throwing = true;
               } else {
-                this.setReg(base, inst.a, found);
+                const found = this.getProperty(object, cellValue(atom));
+                if (this.pendingThrow) {
+                  thrown = this.takePending();
+                  throwing = true;
+                } else {
+                  this.setReg(base, inst.a, found);
+                  if (isPlainObject) this.populateLoadCache(fi, nameSlot, asCell(object), atom);
+                }
               }
             }
           }
           storeProp => {
             const object = this.reg(base, inst.a);
-            const atom = this.functions[usize(fi)].propertyNames[usize(inst.b)];
+            const nameSlot = usize(inst.b);
             const value = this.reg(base, inst.c);
-            if (isUndefined(object) || isNull(object)) {
-              thrown = this.propertyOfNullish(object, atom, false);
-              throwing = true;
-            } else {
-              const accepted = this.setProperty(object, cellValue(atom), value);
-              if (this.pendingThrow) {
-                thrown = this.takePending();
+            const isPlainObject = isCell(object) && asCell(object) != 0 && this.heap.isObject(asCell(object));
+            let stored = false;
+            if (isPlainObject) stored = this.storeCached(fi, nameSlot, asCell(object), value);
+            if (!stored) {
+              const atom = this.functions[usize(fi)].propertyNames[nameSlot];
+              if (isUndefined(object) || isNull(object)) {
+                thrown = this.propertyOfNullish(object, atom, false);
                 throwing = true;
-              } else if (!accepted && this.functions[usize(fi)].strict) {
-                thrown = this.readOnlyError(atom);
-                throwing = true;
+              } else {
+                const classBefore: u32 = isPlainObject ? this.heap.objectClass(asCell(object)) : 0;
+                const accepted = this.setProperty(object, cellValue(atom), value);
+                if (this.pendingThrow) {
+                  thrown = this.takePending();
+                  throwing = true;
+                } else if (!accepted && this.functions[usize(fi)].strict) {
+                  thrown = this.readOnlyError(atom);
+                  throwing = true;
+                } else if (accepted && isPlainObject) {
+                  this.populateStoreCache(fi, nameSlot, asCell(object), atom, classBefore);
+                }
               }
             }
           }

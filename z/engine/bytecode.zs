@@ -384,6 +384,33 @@ export function opCode(op: Op): i32 {
   };
 }
 
+// One property access site's inline cache, kept per property name of a
+// function: the receiver's hidden class and where the property was
+// last found, so the next access with the same shape skips the lookup.
+// A transition entry records the class an added property moves the
+// receiver to, and the prototype chain (at most two objects, then
+// null) that was checked to hold no such property.
+export const CACHE_EMPTY: u8 = 0;
+export const CACHE_OWN: u8 = 1;
+export const CACHE_PROTO: u8 = 2;
+export const CACHE_TRANSITION: u8 = 3;
+
+export struct PropertyCache {
+  kind: u8;
+  depth: u8;
+  receiverClass: u32;
+  slot: u32;
+  targetClass: u32;
+  proto1: u32;
+  proto1Class: u32;
+  proto2: u32;
+  proto2Class: u32;
+}
+
+export function emptyCache(): PropertyCache {
+  return PropertyCache({ kind: CACHE_EMPTY, depth: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0 });
+}
+
 // One compiled function. Fields beyond the code and constants are added
 // as the interpreter grows to need them (inline caches, template sites,
 // closure environment, class flags).
@@ -400,6 +427,8 @@ export struct FunctionCode {
   // name operand. This is the reference's inline-cache slot table; the
   // cache itself is a performance-phase addition.
   propertyNames: Array<u32>;
+  // One inline cache per property name, filled in as the code runs.
+  caches: Array<PropertyCache>;
   // The declared name as an atom, 0 for none.
   nameAtom: u32;
   registerCount: u32;
@@ -420,7 +449,7 @@ export struct FunctionCode {
 
 export function createFunctionCode(): FunctionCode {
   return FunctionCode({
-    code: Array<Inst>(), codeStart: 0, codeLength: 0, constants: Array<Value>(), propertyNames: Array<u32>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
+    code: Array<Inst>(), codeStart: 0, codeLength: 0, constants: Array<Value>(), propertyNames: Array<u32>(), caches: Array<PropertyCache>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
     isClassConstructor: false, isDerived: false, isMethod: false,

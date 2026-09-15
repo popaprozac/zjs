@@ -190,13 +190,20 @@ the bounds and overflow checks on every index 7 to 13 percent, and the
 two-level instruction fetch a further few. The first and third landed in
 Z (the opcode chain is a `match`, which lowers to a switch; register
 arithmetic wraps; all installed code lives in one segment): the loop is
-now 0.67 s, calls 0.15, constructing 0.46, array methods 0.28. The
-remaining gap is per-instruction overhead -- about thirty instructions
-of loop, fetch, checks, and dispatch around each opcode's own work --
-and the absence of inline caches for property access. Neither is a
-representation problem: the handle heap and the NaN-boxed values stay.
-The checked-index cost and the field-borrow limitation are recorded as
-compiler findings with the measurements.
+now 0.65 s, calls 0.14, array methods 0.29. Inline caches then went in:
+each property name a function uses has one cache entry recording the
+receiver's hidden class and where the property was found -- an own
+slot, a slot on the direct prototype, or the class transition that adds
+it, with the prototype chain (at most two objects, then null) recorded
+so a later setter is noticed. Validation is by class, so nothing is
+invalidated and a reused handle cannot alias. Constructing two million
+objects went from 0.46 s to 0.23 s, ahead of the reference's 0.24; a
+property-read loop from 0.59 to 0.34 (reference 0.19). The remaining
+gap is per-instruction overhead -- about thirty instructions of loop,
+fetch, checks, and dispatch around each opcode's own work. None of it
+is a representation problem: the handle heap and the NaN-boxed values
+stay. The checked-index cost and the field-borrow limitation are
+recorded as compiler findings with the measurements.
 
 Strings are byte strings, as in the reference: `length`, indexing, and
 the String methods count bytes. Whether the rewrite keeps that or moves to
