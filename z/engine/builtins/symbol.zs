@@ -115,9 +115,8 @@ export function installSymbol(inout runtime: Runtime): void {
   const asyncIteratorDescValue = runtime.internText(in asyncIteratorDesc);
   defineSymbolConstant(inout runtime, ctor, in asyncIteratorText, runtime.newSymbol(asyncIteratorDescValue));
   const speciesText: String = "species";
-  const speciesDesc: String = "Symbol.species";
-  const speciesDescValue = runtime.internText(in speciesDesc);
-  defineSymbolConstant(inout runtime, ctor, in speciesText, runtime.newSymbol(speciesDescValue));
+  const symbolSpeciesBound = runtime.symbolSpecies;
+  defineSymbolConstant(inout runtime, ctor, in speciesText, symbolSpeciesBound);
   const isConcatSpreadableText: String = "isConcatSpreadable";
   const isConcatSpreadableDesc: String = "Symbol.isConcatSpreadable";
   const isConcatSpreadableDescValue = runtime.internText(in isConcatSpreadableDesc);

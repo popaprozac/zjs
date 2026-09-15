@@ -97,6 +97,18 @@ prologue and suspends at GeneratorStart, `yield` copies the frame's
 register window and open try handlers out, and `next` / `throw` / `return`
 push a fresh frame and copy them back. `yield*` delegates values (what
 `next` sends is not yet forwarded, nor is the delegate's final value).
+Keyed collections: `Map`, `Set`, `WeakMap`, `WeakSet` as ordinary objects
+holding a record under a hidden key -- keys and values in insertion order
+with a deleted marker, an open-addressed index hashed consistently with
+SameValueZero, and the live count -- so iteration walks by position and
+sees additions and deletions during the walk; `forEach`, the three
+iterators (`Map Iterator` / `Set Iterator` prototypes), `Map.groupBy` /
+`Object.groupBy`, `getOrInsert` / `getOrInsertComputed`, the Set methods
+(`union` through `isDisjointFrom` over any set-like), and
+`get [Symbol.species]` on `Map`, `Set`, and `Array`. The weak
+collections keep their keys alive; the collector does not yet treat them
+weakly. Deleting a global through the global object undefines the
+binding.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -107,9 +119,12 @@ the gap with the tests the reference passes and Z does not. Needs
 reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5714 of
 6244; `built-ins/Number` 578 of 582; `built-ins/Symbol` 130 against the
 reference's 90; `built-ins/JSON` 220 of 224 -- with Z passing 18, 230,
-64, 50, and 14 tests respectively that the reference fails. The largest
-remaining gaps are the missing `Date` and `RegExp`, classes, `Map` / `Set`,
-and the rest of `Array.prototype` / `String.prototype`.
+64, 50, and 14 tests respectively that the reference fails. `built-ins/Map`
+395 against the reference's 367, `WeakMap` 273 against 244, `WeakSet` 166
+against 154, and `Set` 628 of 725, where the gap is the class syntax the
+set-method tests are written with and `Array.prototype.shift`. The largest
+remaining gaps are the missing `Date` and `RegExp`, classes, and the rest
+of `Array.prototype` / `String.prototype`.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -126,7 +141,14 @@ the Z engine follows the specification: a property write to `undefined`
 throws a TypeError (the reference drops it); `Error.prototype.message` is
 `""` (the reference has no such property); `for`-`in` over a string visits
 its indices (the reference visits nothing); a postfix `++` on a property
-holding a string yields its numeric value (the reference concatenates).
+holding a string yields its numeric value (the reference concatenates);
+`Map()` without `new` throws a TypeError (the reference returns
+undefined); `Map.prototype[@@iterator]` is `entries` and
+`Set.prototype.keys` / `[@@iterator]` are `values` (the reference makes
+distinct functions); `Object.prototype.toString` on a collection iterator
+reads its `@@toStringTag` (the reference says `[object Object]`); a
+closure created inside `catch` sees the catch parameter (the reference
+throws a ReferenceError).
 
 Strings are byte strings, as in the reference: `length`, indexing, and
 the String methods count bytes. Whether the rewrite keeps that or moves to
@@ -134,9 +156,9 @@ UTF-16 code units is an open design question; the oracle needs parity with
 the reference for now.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `Date` / `RegExp`, direct `eval` seeing the caller's
-locals,
-and the remaining builtins. The collector is stop-the-world and
+sees one binding), classes, `Date` / `RegExp`, direct `eval` seeing the
+caller's locals, weak semantics for `WeakMap` / `WeakSet`, and the
+remaining builtins. The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.
 
 ```

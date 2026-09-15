@@ -213,6 +213,17 @@ export struct Runtime {
   // object keeps its record.
   generatorProto: u32;
   atomGenRecord: u32;
+  // Keyed collections: the prototypes the collections module installs,
+  // and the hidden keys a collection and its iterator keep their records
+  // under.
+  mapProto: u32;
+  setProto: u32;
+  weakMapProto: u32;
+  weakSetProto: u32;
+  mapIteratorProto: u32;
+  setIteratorProto: u32;
+  atomMapRecord: u32;
+  atomMapIter: u32;
   atomIterSource: u32;
   atomIterIndex: u32;
   atomIterKind: u32;
@@ -225,6 +236,7 @@ export struct Runtime {
   symbolToPrimitive: Value;
   symbolToStringTag: Value;
   symbolHasInstance: Value;
+  symbolSpecies: Value;
 
   function addFunction(inout this, code: FunctionCode): u32 {
     this.functions.push(move code);
@@ -418,6 +430,10 @@ export struct Runtime {
 
   function typeError(inout this, in message: String): Value {
     return this.makeError(ERROR_KIND_TYPE, bytesOf(in message));
+  }
+
+  function rangeError(inout this, in message: String): Value {
+    return this.makeError(ERROR_KIND_RANGE, bytesOf(in message));
   }
 
   function syntaxError(inout this, in message: String): Value {
@@ -1074,6 +1090,36 @@ export struct Runtime {
     return attr;
   }
 
+  // SameValueZero: strict equality, except NaN equals NaN.
+  function sameValueZero(a: Value, b: Value): boolean {
+    if (isNumber(a) && isNumber(b)) {
+      const x = toNumber(a);
+      const y = toNumber(b);
+      if (x != x && y != y) return true;
+      return x == y;
+    }
+    return this.strictEquals(a, b);
+  }
+
+  // A hash consistent with SameValueZero: numbers by value (both zeros
+  // and every NaN alike), strings by content, everything else by bits.
+  function hashValue(value: Value): u32 {
+    if (isNumber(value)) {
+      let number = toNumber(value);
+      if (number != number) return 0x7FF80000;
+      if (number == 0.0) number = 0.0;
+      const bits = number.toBits();
+      const mixed = (bits ^ (bits >> 32)).wrappingMultiply(0x9E3779B1);
+      return u32(mixed & 0xFFFFFFFF);
+    }
+    if (this.isStringValue(value)) {
+      const bytes = this.heap.stringBytes(asCell(value));
+      return this.hashBytes(in bytes);
+    }
+    const mixed = (value.bits ^ (value.bits >> 29)).wrappingMultiply(0x9E3779B1);
+    return u32(mixed & 0xFFFFFFFF);
+  }
+
   // SameValue: strict equality, except NaN equals NaN and +0 differs from -0.
   function sameValue(a: Value, b: Value): boolean {
     if (isNumber(a) && isNumber(b)) {
@@ -1346,6 +1392,17 @@ export struct Runtime {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
+      // A global binding seen through the global object: deleting it
+      // undefines the binding.
+      if (handle == this.globalObject && this.heap.objectFindSlot(handle, atom) < 0) {
+        const slot = this.findGlobalByAtom(atom);
+        if (slot >= 0 && this.globals[usize(slot)].defined) {
+          if ((this.globals[usize(slot)].attr & PROP_CONFIGURABLE) == 0) return false;
+          this.globals[usize(slot)].defined = false;
+          this.globals[usize(slot)].value = undefinedValue();
+          return true;
+        }
+      }
       return this.deleteFromObject(handle, atom);
     }
     if (tag == TAG_ARRAY) {
@@ -2286,6 +2343,16 @@ export struct Runtime {
     genRecord.push(103);
     genRecord.push(114);
     this.atomGenRecord = this.internBytes(move genRecord);
+    let mapRecord = Array<u8>();
+    mapRecord.push(255);
+    mapRecord.push(109);
+    mapRecord.push(114);
+    this.atomMapRecord = this.internBytes(move mapRecord);
+    let mapIter = Array<u8>();
+    mapIter.push(255);
+    mapIter.push(109);
+    mapIter.push(105);
+    this.atomMapIter = this.internBytes(move mapIter);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
     this.functionProto = this.heap.allocateObject(objectProto);
@@ -2307,6 +2374,8 @@ export struct Runtime {
     this.symbolToStringTag = this.newSymbol(this.internText(in toStringTagText));
     const hasInstanceText: String = "Symbol.hasInstance";
     this.symbolHasInstance = this.newSymbol(this.internText(in hasInstanceText));
+    const speciesText: String = "Symbol.species";
+    this.symbolSpecies = this.newSymbol(this.internText(in speciesText));
     // Value properties of the global object.
     this.setGlobalAttr("NaN", doubleValue(nativeNan()), PROP_NONE);
     this.setGlobalAttr("Infinity", doubleValue(1.0 / 0.0), PROP_NONE);
@@ -2388,6 +2457,22 @@ export struct Runtime {
     this.heap.markHandle(generatorProto);
     const atomGenRecord = this.atomGenRecord;
     this.heap.markHandle(atomGenRecord);
+    const mapProto = this.mapProto;
+    this.heap.markHandle(mapProto);
+    const setProto = this.setProto;
+    this.heap.markHandle(setProto);
+    const weakMapProto = this.weakMapProto;
+    this.heap.markHandle(weakMapProto);
+    const weakSetProto = this.weakSetProto;
+    this.heap.markHandle(weakSetProto);
+    const mapIteratorProto = this.mapIteratorProto;
+    this.heap.markHandle(mapIteratorProto);
+    const setIteratorProto = this.setIteratorProto;
+    this.heap.markHandle(setIteratorProto);
+    const atomMapRecord = this.atomMapRecord;
+    this.heap.markHandle(atomMapRecord);
+    const atomMapIter = this.atomMapIter;
+    this.heap.markHandle(atomMapIter);
     const symbolIterator = this.symbolIterator;
     this.heap.markValue(symbolIterator);
     const symbolToPrimitive = this.symbolToPrimitive;
@@ -2396,6 +2481,8 @@ export struct Runtime {
     this.heap.markValue(symbolToStringTag);
     const symbolHasInstance = this.symbolHasInstance;
     this.heap.markValue(symbolHasInstance);
+    const symbolSpecies = this.symbolSpecies;
+    this.heap.markValue(symbolSpecies);
     index = 0;
     while (index < this.symbolRegistry.length) {
       const registered = this.symbolRegistry[index];
@@ -3625,8 +3712,9 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
-    symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(),
+    symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(),
   });
   runtime.installIntrinsics();
   return runtime;
