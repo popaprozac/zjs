@@ -121,9 +121,16 @@ function objectToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
       }
     }
   }
+  // An own or inherited @@toStringTag string overrides the builtin tag.
+  let tagBytes = bytesOf(in tag);
+  if (runtime.isObjectLike(thisValue) || runtime.isSymbolValue(thisValue) || isNumber(thisValue) || runtime.isStringValue(thisValue) || thisValue.bits == 6 || thisValue.bits == 7) {
+    const tagKey = runtime.symbolToStringTag;
+    const custom = runtime.getProperty(thisValue, tagKey);
+    if (runtime.pendingThrow) return undefinedValue();
+    if (runtime.isStringValue(custom)) tagBytes = runtime.heap.stringBytes(asCell(custom));
+  }
   const head: String = "[object ";
   let text = bytesOf(in head);
-  const tagBytes = bytesOf(in tag);
   let index: usize = 0;
   while (index < tagBytes.length) {
     text.push(tagBytes[index]);

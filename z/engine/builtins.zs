@@ -14,6 +14,7 @@ import { installPrimitives } from "./builtins/primitives.zs";
 import { installMath } from "./builtins/math.zs";
 import { installObject } from "./builtins/object.zs";
 import { installReflect } from "./builtins/reflect.zs";
+import { installSymbol } from "./builtins/symbol.zs";
 
 export function createEngine(): Runtime {
   let runtime = createRuntime();
@@ -25,5 +26,6 @@ export function createEngine(): Runtime {
   installMath(inout runtime);
   installObject(inout runtime);
   installReflect(inout runtime);
+  installSymbol(inout runtime);
   return runtime;
 }

@@ -206,6 +206,7 @@ const KEYS_NAMES: u32 = 0;
 const KEYS_ENUMERABLE: u32 = 1;
 const KEYS_VALUES: u32 = 2;
 const KEYS_ENTRIES: u32 = 3;
+const KEYS_SYMBOLS: u32 = 4;
 
 function collectKeys(inout runtime: Runtime, argsBase: u32, argc: u32, mode: u32): Value {
   const target = runtime.argument(argsBase, argc, 0);
@@ -221,8 +222,15 @@ function collectKeys(inout runtime: Runtime, argsBase: u32, argc: u32, mode: u32
   let index: usize = 0;
   while (index < keys.length) {
     const key = keys[index];
-    let take = mode == KEYS_NAMES;
-    if (!take) {
+    const isSymbol = runtime.isSymbolValue(key);
+    let take = false;
+    if (mode == KEYS_SYMBOLS) {
+      take = isSymbol;
+    } else if (isSymbol) {
+      take = false;
+    } else if (mode == KEYS_NAMES) {
+      take = true;
+    } else {
       const desc = runtime.getOwnDescriptor(target, key);
       take = desc.present && (desc.attr & PROP_ENUMERABLE) != 0;
     }
@@ -263,6 +271,9 @@ function objectEntries(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
 }
 function objectGetOwnPropertyNames(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   return collectKeys(inout runtime, argsBase, argc, KEYS_NAMES);
+}
+function objectGetOwnPropertySymbols(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return collectKeys(inout runtime, argsBase, argc, KEYS_SYMBOLS);
 }
 
 function objectGetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -524,6 +535,8 @@ export function installObject(inout runtime: Runtime): void {
   runtime.defineMethod(ctor, in getOwnPropertyDescriptorsText, objectGetOwnPropertyDescriptors, 1);
   const getOwnPropertyNamesText: String = "getOwnPropertyNames";
   runtime.defineMethod(ctor, in getOwnPropertyNamesText, objectGetOwnPropertyNames, 1);
+  const getOwnPropertySymbolsText: String = "getOwnPropertySymbols";
+  runtime.defineMethod(ctor, in getOwnPropertySymbolsText, objectGetOwnPropertySymbols, 1);
   const keysText: String = "keys";
   runtime.defineMethod(ctor, in keysText, objectKeys, 1);
   const valuesText: String = "values";

@@ -10,7 +10,7 @@
 import { expect } from "std/test";
 import { thread } from "std/thread";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY } from "./heap.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16 } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
@@ -70,6 +70,11 @@ export const ERROR_KIND_REFERENCE: u32 = 2;
 export const ERROR_KIND_RANGE: u32 = 3;
 export const ERROR_KIND_SYNTAX: u32 = 4;
 export const ERROR_KIND_COUNT: u32 = 5;
+
+// ToPrimitive hints.
+export const HINT_DEFAULT: u32 = 0;
+export const HINT_NUMBER: u32 = 1;
+export const HINT_STRING: u32 = 2;
 
 export function errorKindName(kind: u32): String {
   if (kind == ERROR_KIND_ERROR) return "Error";
@@ -166,6 +171,7 @@ export struct Runtime {
   stringProto: u32;
   numberProto: u32;
   booleanProto: u32;
+  symbolProto: u32;
   // Math.random's state.
   randomState: u64;
   // The completion value of the last run, kept alive for the embedder.
@@ -191,6 +197,14 @@ export struct Runtime {
   atomPrimitive: u32;
   // The hidden key marking an arguments object's bag.
   atomArgumentsMarker: u32;
+  // Symbols: each takes a fresh number for its key atom; the registry
+  // backs Symbol.for; the well-known ones the runtime consults.
+  symbolCounter: u32;
+  symbolRegistry: Array<Value>;
+  symbolIterator: Value;
+  symbolToPrimitive: Value;
+  symbolToStringTag: Value;
+  symbolHasInstance: Value;
 
   function addFunction(inout this, code: FunctionCode): u32 {
     this.functions.push(move code);
@@ -394,6 +408,7 @@ export struct Runtime {
   // else goes through ToString first.
   function propertyKey(inout this, key: Value): u32 {
     if (this.isStringValue(key)) return this.internBytes(this.heap.stringBytes(asCell(key)));
+    if (this.isSymbolValue(key)) return this.heap.symbolKeyAtom(asCell(key));
     const text = this.toStringValue(key);
     const textBytes = this.heap.stringBytes(asCell(text));
     return this.internBytes(textBytes);
@@ -554,6 +569,7 @@ export struct Runtime {
     if (isNumber(value)) return this.numberProto;
     if (isBoolean(value)) return this.booleanProto;
     if (this.isStringValue(value)) return this.stringProto;
+    if (this.isSymbolValue(value)) return this.symbolProto;
     return 0;
   }
 
@@ -568,6 +584,11 @@ export struct Runtime {
     }
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
+    if (tag == TAG_SYMBOL) {
+      const symbolProto = this.symbolProto;
+      const atom = this.propertyKey(key);
+      return this.lookupProperty(symbolProto, atom, object);
+    }
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
       const found = this.lookupProperty(handle, atom, object);
@@ -622,7 +643,7 @@ export struct Runtime {
         const own = this.lookupProperty(bag, atom, object);
         if (!isUndefined(own)) return own;
       }
-      if (atom == this.atomPrototype && this.isConstructorValue(object)) return cellValue(this.prototypeOf(handle));
+      if (atom == this.atomPrototype && this.functionHasPrototype(object)) return cellValue(this.prototypeOf(handle));
       if (!this.functionVirtualDeleted(handle, atom)) {
         if (tag == TAG_HOST_FUNCTION) {
           if (atom == this.atomLength) return this.heap.slot(handle, 1);
@@ -849,7 +870,7 @@ export struct Runtime {
       }
       if (this.functionVirtualDeleted(handle, atom)) return absentProperty();
       if (atom == this.atomPrototype) {
-        if (!this.isConstructorValue(object)) return absentProperty();
+        if (!this.functionHasPrototype(object)) return absentProperty();
         const attr: u8 = tag == TAG_HOST_FUNCTION ? PROP_NONE : PROP_WRITABLE;
         return dataProperty(cellValue(this.prototypeOf(handle)), attr);
       }
@@ -1096,7 +1117,7 @@ export struct Runtime {
       const bag = this.functionBag(handle);
       if (!this.functionBagHas(handle, this.atomLength) && !this.functionVirtualDeleted(handle, this.atomLength)) keys.push(cellValue(this.atomLength));
       if (!this.functionBagHas(handle, this.atomName) && !this.functionVirtualDeleted(handle, this.atomName)) keys.push(cellValue(this.atomName));
-      if (this.isConstructorValue(object) && !this.functionBagHas(handle, this.atomPrototype)) keys.push(cellValue(this.atomPrototype));
+      if (this.functionHasPrototype(object) && !this.functionBagHas(handle, this.atomPrototype)) keys.push(cellValue(this.atomPrototype));
       if (bag != 0) this.pushObjectKeys(inout keys, bag, false);
       return keys;
     }
@@ -1158,6 +1179,22 @@ export struct Runtime {
       }
       i = i + 1;
     }
+    // Symbol keys last, in insertion order.
+    let classId = this.heap.objectClass(object);
+    let symbolNames = Array<u32>();
+    while (classId != 0) {
+      const name = this.heap.classes[usize(classId)].transitionName;
+      if (this.isSymbolKeyAtom(name)) {
+        const slot = this.heap.classes[usize(classId)].transitionSlot;
+        if (!isDeleted(this.heap.slot(object, slot))) symbolNames.push(name);
+      }
+      classId = this.heap.classes[usize(classId)].parent;
+    }
+    let s = symbolNames.length;
+    while (s > 0) {
+      s = s - 1;
+      keys.push(this.symbolOfKeyAtom(symbolNames[s]));
+    }
   }
 
   // The `in` operator's lookup: whether `object` or its prototype chain
@@ -1193,7 +1230,7 @@ export struct Runtime {
     // named properties, then Function.prototype.
     const atom = this.propertyKey(key);
     if (this.functionBagHas(handle, atom)) return true;
-    if (atom == this.atomPrototype && !this.functionVirtualDeleted(handle, atom)) return this.isConstructorValue(object);
+    if (atom == this.atomPrototype && !this.functionVirtualDeleted(handle, atom)) return this.functionHasPrototype(object);
     if ((atom == this.atomLength || atom == this.atomName) && !this.functionVirtualDeleted(handle, atom)) return true;
     const bag = this.functionBag(handle);
     if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
@@ -1238,8 +1275,21 @@ export struct Runtime {
       const atom = this.propertyKey(key);
       if (this.functionBagHas(handle, atom)) return true;
       if (this.functionVirtualDeleted(handle, atom)) return false;
-      if (atom == this.atomPrototype) return this.isConstructorValue(object);
+      if (atom == this.atomPrototype) return this.functionHasPrototype(object);
       return atom == this.atomLength || atom == this.atomName;
+    }
+    return false;
+  }
+
+  // OrdinaryHasInstance: whether ctor.prototype is on value's chain.
+  function ordinaryHasInstance(inout this, ctor: Value, value: Value): boolean {
+    if (!this.isCallable(ctor)) return false;
+    if (!this.isObjectLike(value)) return false;
+    const target = this.prototypeOf(asCell(ctor));
+    let current = this.protoOfValue(value);
+    while (current != 0) {
+      if (current == target) return true;
+      current = this.heap.objectProto(current);
     }
     return false;
   }
@@ -1318,6 +1368,55 @@ export struct Runtime {
   // Whether an atom is one of the engine's hidden keys.
   function isHiddenAtom(atom: u32): boolean {
     return this.heap.stringLength(atom) > 0 && this.heap.stringByte(atom, 0) == 255;
+  }
+
+  function isSymbolValue(value: Value): boolean {
+    return isCell(value) && asCell(value) != 0 && this.heap.isSymbol(asCell(value));
+  }
+
+  // A new symbol with a fresh key atom, 0xFF 's' and a counter, the atom
+  // linked back to the symbol.
+  function newSymbol(inout this, description: Value): Value {
+    const symbol = this.heap.allocateSymbol(description);
+    this.symbolCounter = this.symbolCounter + 1;
+    const number = this.symbolCounter;
+    let bytes = Array<u8>();
+    bytes.push(255);
+    bytes.push(115);
+    bytes.push(u8((number >> 24) & 255));
+    bytes.push(u8((number >> 16) & 255));
+    bytes.push(u8((number >> 8) & 255));
+    bytes.push(u8(number & 255));
+    const atom = this.internBytes(move bytes);
+    this.heap.setSlot(symbol, 1, cellValue(atom));
+    this.heap.setLink(atom, symbol);
+    return cellValue(symbol);
+  }
+
+  // Whether a hidden atom stands for a symbol, and which.
+  function isSymbolKeyAtom(atom: u32): boolean {
+    return this.heap.stringLength(atom) == 6 && this.heap.stringByte(atom, 0) == 255 && this.heap.stringByte(atom, 1) == 115;
+  }
+
+  function symbolOfKeyAtom(atom: u32): Value {
+    return cellValue(this.heap.linkOf(atom));
+  }
+
+  // "Symbol(description)"
+  function symbolDescriptiveString(inout this, symbol: u32): Value {
+    const head: String = "Symbol(";
+    let text = bytesOf(in head);
+    const description = this.heap.symbolDescription(symbol);
+    if (this.isStringValue(description)) appendBytes(inout text, this.heap.stringBytes(asCell(description)));
+    text.push(41);
+    return this.newString(move text);
+  }
+
+  function symbolTypeError(inout this, in what: String): Value {
+    const head: String = "Cannot convert a Symbol value to a ";
+    let message = bytesOf(in head);
+    appendBytes(inout message, bytesOf(in what));
+    return this.makeError(ERROR_KIND_TYPE, move message);
   }
 
   // The names an object's own class holds, in slot order, hidden keys
@@ -1443,6 +1542,8 @@ export struct Runtime {
       label = "number";
     } else if (this.isStringValue(value)) {
       label = "string";
+    } else if (this.isSymbolValue(value)) {
+      label = "symbol";
     } else if (this.isCallable(value)) {
       label = "function";
     }
@@ -1472,6 +1573,13 @@ export struct Runtime {
     const handle = this.defineHostFunction(fn, bound, length, in name);
     this.heap.setSlot(handle, 4, booleanValue(true));
     return handle;
+  }
+
+  // Whether a function value exposes `prototype`: constructors, and host
+  // functions given one explicitly (Symbol).
+  function functionHasPrototype(value: Value): boolean {
+    if (this.isConstructorValue(value)) return true;
+    return this.isHostFunctionValue(value) && this.heap.linkOf(asCell(value)) != 0;
   }
 
   function isConstructorValue(value: Value): boolean {
@@ -1640,10 +1748,43 @@ export struct Runtime {
     return this.isObjectLike(outcome) ? outcome : created;
   }
 
-  // ToPrimitive: an object's valueOf / toString, in the order the hint
-  // asks for; the first that yields a primitive wins.
+  // ToPrimitive with the string or number hint.
   function toPrimitive(inout this, value: Value, preferString: boolean): Value {
+    return this.toPrimitiveWithHint(value, preferString ? HINT_STRING : HINT_NUMBER);
+  }
+
+  // ToPrimitive: an @@toPrimitive method decides first, else valueOf and
+  // toString in the order the hint asks for (default counts as number);
+  // the first that yields a primitive wins.
+  function toPrimitiveWithHint(inout this, value: Value, hint: u32): Value {
     if (!this.isObjectLike(value)) return value;
+    const preferString = hint == HINT_STRING;
+    // An object's own @@toPrimitive decides first.
+    const toPrimitiveKey = this.symbolToPrimitive;
+    const exotic = this.getProperty(value, toPrimitiveKey);
+    if (this.pendingThrow) return undefinedValue();
+    if (!isUndefined(exotic) && !isNull(exotic)) {
+      if (!this.isCallable(exotic)) {
+        const message: String = "Symbol.toPrimitive is not a function";
+        const error = this.typeError(in message);
+        this.raise(error);
+        return undefinedValue();
+      }
+      let hintText: String = "default";
+      if (hint == HINT_STRING) hintText = "string";
+      if (hint == HINT_NUMBER) hintText = "number";
+      let args = Array<Value>();
+      args.push(this.internText(in hintText));
+      const produced = this.callValue(exotic, value, move args);
+      if (this.pendingThrow) return undefinedValue();
+      if (this.isObjectLike(produced)) {
+        const message: String = "Cannot convert object to primitive value";
+        const error = this.typeError(in message);
+        this.raise(error);
+        return undefinedValue();
+      }
+      return produced;
+    }
     const valueOfText: String = "valueOf";
     const toStringText: String = "toString";
     let first = undefinedValue();
@@ -1713,7 +1854,16 @@ export struct Runtime {
     this.stringProto = this.heap.allocateObject(objectProto);
     this.numberProto = this.heap.allocateObject(objectProto);
     this.booleanProto = this.heap.allocateObject(objectProto);
+    this.symbolProto = this.heap.allocateObject(objectProto);
     this.globalObject = this.heap.allocateObject(objectProto);
+    const iteratorText: String = "Symbol.iterator";
+    this.symbolIterator = this.newSymbol(this.internText(in iteratorText));
+    const toPrimitiveText: String = "Symbol.toPrimitive";
+    this.symbolToPrimitive = this.newSymbol(this.internText(in toPrimitiveText));
+    const toStringTagText: String = "Symbol.toStringTag";
+    this.symbolToStringTag = this.newSymbol(this.internText(in toStringTagText));
+    const hasInstanceText: String = "Symbol.hasInstance";
+    this.symbolHasInstance = this.newSymbol(this.internText(in hasInstanceText));
     // Value properties of the global object.
     this.setGlobalAttr("NaN", doubleValue(nativeNan()), PROP_NONE);
     this.setGlobalAttr("Infinity", doubleValue(1.0 / 0.0), PROP_NONE);
@@ -1773,10 +1923,26 @@ export struct Runtime {
     this.heap.markHandle(numberProto);
     const booleanProto = this.booleanProto;
     this.heap.markHandle(booleanProto);
+    const symbolProto = this.symbolProto;
+    this.heap.markHandle(symbolProto);
     const atomPrimitive = this.atomPrimitive;
     this.heap.markHandle(atomPrimitive);
     const atomArgumentsMarker = this.atomArgumentsMarker;
     this.heap.markHandle(atomArgumentsMarker);
+    const symbolIterator = this.symbolIterator;
+    this.heap.markValue(symbolIterator);
+    const symbolToPrimitive = this.symbolToPrimitive;
+    this.heap.markValue(symbolToPrimitive);
+    const symbolToStringTag = this.symbolToStringTag;
+    this.heap.markValue(symbolToStringTag);
+    const symbolHasInstance = this.symbolHasInstance;
+    this.heap.markValue(symbolHasInstance);
+    index = 0;
+    while (index < this.symbolRegistry.length) {
+      const registered = this.symbolRegistry[index];
+      this.heap.markValue(registered);
+      index = index + 1;
+    }
     index = 0;
     while (index < this.tempRootCount) {
       const rooted = this.tempRoots[index];
@@ -1868,6 +2034,12 @@ export struct Runtime {
       const bytes = this.heap.stringBytes(asCell(value));
       return stringToNumber(in bytes);
     }
+    if (this.isSymbolValue(value)) {
+      const what: String = "number";
+      const error = this.symbolTypeError(in what);
+      this.raise(error);
+      return nativeNan();
+    }
     if (this.isObjectLike(value)) {
       const primitive = this.toPrimitive(value, false);
       if (this.pendingThrow) return nativeNan();
@@ -1886,6 +2058,12 @@ export struct Runtime {
   // a throw there is left pending and the result is the empty string.
   function toStringValue(inout this, value: Value): Value {
     if (this.isStringValue(value)) return value;
+    if (this.isSymbolValue(value)) {
+      const what: String = "string";
+      const error = this.symbolTypeError(in what);
+      this.raise(error);
+      return this.internValue(Array<u8>());
+    }
     if (this.isObjectLike(value)) {
       const primitive = this.toPrimitive(value, true);
       if (this.pendingThrow) return this.internValue(Array<u8>());
@@ -1978,12 +2156,12 @@ export struct Runtime {
     const bObject = this.isObjectLike(b);
     if (aObject && bObject) return a.bits == b.bits;
     if (aObject) {
-      const primitive = this.toPrimitive(a, false);
+      const primitive = this.toPrimitiveWithHint(a, HINT_DEFAULT);
       if (this.pendingThrow) return false;
       return this.looseEquals(primitive, b);
     }
     if (bObject) {
-      const primitive = this.toPrimitive(b, false);
+      const primitive = this.toPrimitiveWithHint(b, HINT_DEFAULT);
       if (this.pendingThrow) return false;
       return this.looseEquals(a, primitive);
     }
@@ -2197,8 +2375,8 @@ export struct Runtime {
             const sum = numericAdd(rawLeft, rawRight);
             this.setReg(base, inst.a, sum);
           } else {
-            const left = this.toPrimitive(rawLeft, false);
-            const right = this.toPrimitive(rawRight, false);
+            const left = this.toPrimitiveWithHint(rawLeft, HINT_DEFAULT);
+            const right = this.toPrimitiveWithHint(rawRight, HINT_DEFAULT);
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
@@ -2213,8 +2391,13 @@ export struct Runtime {
             } else {
               const leftNumber = this.numericOperand(left);
               const rightNumber = this.numericOperand(right);
-              const sum = numericAdd(leftNumber, rightNumber);
-              this.setReg(base, inst.a, sum);
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+              } else {
+                const sum = numericAdd(leftNumber, rightNumber);
+                this.setReg(base, inst.a, sum);
+              }
             }
           }
         } else if (op == Op.cmpEq || op == Op.cmpNe) {
@@ -2590,18 +2773,27 @@ export struct Runtime {
         } else if (op == Op.instanceofOp) {
           const value = this.reg(base, inst.b);
           const ctor = this.reg(base, inst.c);
-          if (!this.isCallable(ctor)) {
+          const hasInstanceKey = this.symbolHasInstance;
+          const handler = this.isObjectLike(ctor) ? this.getProperty(ctor, hasInstanceKey) : undefinedValue();
+          if (this.pendingThrow) {
+            thrown = this.takePending();
+            throwing = true;
+          } else if (!isUndefined(handler) && !isNull(handler)) {
+            let args = Array<Value>();
+            args.push(value);
+            const verdict = this.callValue(handler, ctor, move args);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, booleanValue(this.toBooleanValue(verdict)));
+            }
+          } else if (!this.isCallable(ctor)) {
             const message: String = "Right-hand side of 'instanceof' is not callable";
             thrown = this.typeError(in message);
             throwing = true;
           } else {
-            const target = this.prototypeOf(asCell(ctor));
-            let current = this.protoOfValue(value);
-            let found = false;
-            while (current != 0 && !found) {
-              if (current == target) found = true;
-              current = this.heap.objectProto(current);
-            }
+            const found = this.ordinaryHasInstance(ctor, value);
             this.setReg(base, inst.a, booleanValue(found));
           }
         } else if (op == Op.deleteElem) {
@@ -2699,6 +2891,12 @@ export struct Runtime {
           thrown = this.typeError(in message);
           throwing = true;
         }
+        // A coercion inside any handler may have raised (a Symbol in
+        // arithmetic, a throwing valueOf); it surfaces here.
+        if (this.pendingThrow && !throwing) {
+          thrown = this.takePending();
+          throwing = true;
+        }
       }
       if (throwing) {
         // Unwind to the nearest handler, popping frames as needed. The
@@ -2788,11 +2986,12 @@ export function createRuntime(): Runtime {
     hadError: false, lastError: undefinedValue(),
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
-    objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0,
+    objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
     randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(), tempRootCount: 0,
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
-    atomArgumentsMarker: 0,
+    atomArgumentsMarker: 0, symbolCounter: 0, symbolRegistry: Array<Value>(),
+    symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(),
   });
   runtime.installIntrinsics();
   return runtime;

@@ -2,7 +2,7 @@
 import { Value, undefinedValue, cellValue, int32Value, booleanValue, asCell, isCell, isUndefined, isNull } from "../value.zs";
 import { thread } from "std/thread";
 import { Runtime, bytesToString } from "../runtime.zs";
-import { bytesOf, PROP_METHOD } from "../heap.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 import { parseProgram } from "../parser.zs";
 import { compileProgram } from "../compiler.zs";
 
@@ -189,9 +189,15 @@ function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u
   return outcome.value;
 }
 
+// Function.prototype[Symbol.hasInstance]: OrdinaryHasInstance.
+function functionHasInstance(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return booleanValue(runtime.ordinaryHasInstance(thisValue, runtime.argument(argsBase, argc, 0)));
+}
+
 function functionToString(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "function () { [native code] }";
-  return runtime.internText(in text);
+  const textValue = runtime.internText(in text);
+  return textValue;
 }
 
 export function installFunction(inout runtime: Runtime): void {
@@ -210,4 +216,9 @@ export function installFunction(inout runtime: Runtime): void {
   runtime.defineMethod(functionProto, in applyText, functionApply, 2);
   const toStringText: String = "toString";
   runtime.defineMethod(functionProto, in toStringText, functionToString, 0);
+  const hasInstanceName: String = "[Symbol.hasInstance]";
+  const hasInstanceFn = runtime.defineHostFunction(functionHasInstance, undefinedValue(), 1, in hasInstanceName);
+  const symbolHasInstanceBound = runtime.symbolHasInstance;
+  const hasInstanceKey = runtime.propertyKey(symbolHasInstanceBound);
+  runtime.heap.objectDefine(functionProto, hasInstanceKey, cellValue(hasInstanceFn), PROP_NONE);
 }

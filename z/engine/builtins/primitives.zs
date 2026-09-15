@@ -285,8 +285,13 @@ function numberIsSafeInteger(inout runtime: Runtime, thisValue: Value, argsBase:
 function constructString(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   let value = runtime.internValue(Array<u8>());
   if (argc > 0) {
-    value = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
-    if (runtime.pendingThrow) return undefinedValue();
+    const first = runtime.argument(argsBase, argc, 0);
+    if (runtime.isSymbolValue(first) && !runtime.isObjectLike(thisValue)) {
+      value = runtime.symbolDescriptiveString(asCell(first));
+    } else {
+      value = runtime.toStringValue(first);
+      if (runtime.pendingThrow) return undefinedValue();
+    }
   }
   if (runtime.isObjectLike(thisValue)) {
     const atomPrimitive = runtime.atomPrimitive;

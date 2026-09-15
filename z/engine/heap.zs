@@ -37,6 +37,7 @@ export const TAG_CLOSURE: u8 = 6;
 export const TAG_ACCESSOR: u8 = 7;
 export const TAG_PROMISE: u8 = 8;
 export const TAG_REGEXP: u8 = 9;
+export const TAG_SYMBOL: u8 = 15;
 
 // Beyond the reference's tags: an environment is its own cell here, where
 // the reference keeps captured bindings in a property bag.
@@ -486,6 +487,30 @@ export struct Heap {
 
   function isClosure(handle: u32): boolean {
     return this.headers[usize(handle)].tag == TAG_CLOSURE;
+  }
+
+  // --- Symbols ---
+
+  // A symbol: slot 0 its description (a string or undefined), slot 1 the
+  // hidden atom that stands for it as a property key. That atom's `link`
+  // points back at the symbol, so a key found on an object resolves to
+  // its symbol.
+  function allocateSymbol(inout this, description: Value): u32 {
+    const handle = this.allocate(TAG_SYMBOL, 2);
+    this.setSlot(handle, 0, description);
+    return handle;
+  }
+
+  function isSymbol(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_SYMBOL;
+  }
+
+  function symbolKeyAtom(handle: u32): u32 {
+    return asCell(this.slot(handle, 1));
+  }
+
+  function symbolDescription(handle: u32): Value {
+    return this.slot(handle, 0);
   }
 
   // --- Host functions ---

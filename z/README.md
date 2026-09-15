@@ -68,7 +68,12 @@ strict-mode rejection of read-only writes; `Object`'s statics and `Reflect`;
 `Function` compiled from source, `bind`, and host functions that are not
 constructors. The `arguments` object (an array tagged for
 `Object.prototype.toString`, shared with arrows through the environment)
-and rest parameters read the frame's actual arguments.
+and rest parameters read the frame's actual arguments. `Symbol`: a symbol
+is a cell whose property key is a hidden atom (0xFF, a counter) linked
+back to it, so the property machinery is unchanged and the key is
+unforgeable; the registry, the well-known symbols, `@@toPrimitive` with
+the default hint for `+` and `==`, `@@toStringTag`, `@@hasInstance`, and
+symbol keys last in `Reflect.ownKeys`.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated
@@ -76,10 +81,11 @@ subset, classification) against both engines through matching command
 lines, `z/build/zjs-ref` (public ABI) and `z/build/zjsz` (Z), and reports
 the gap with the tests the reference passes and Z does not. Needs
 `vendor/test262`. Measurements so far: `language/statements/if` 117 of the
-reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5604 of
-6244; `built-ins/Number` 528 of 582 -- with Z passing 18, 211, and 60
-tests respectively that the reference fails. The largest remaining gaps
-are the missing `Symbol`, `JSON`, `Date`, and `RegExp`.
+reference's 121; `built-ins/Math` 614 of 618; `built-ins/Object` 5714 of
+6244; `built-ins/Number` 578 of 582; `built-ins/Symbol` 130 against the
+reference's 90 -- with Z passing 18, 230, 64, and 50 tests respectively
+that the reference fails. The largest remaining gaps are the missing
+`JSON`, `Date`, and `RegExp`, and the iteration protocol.
 
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
@@ -104,8 +110,9 @@ UTF-16 code units is an open design question; the oracle needs parity with
 the reference for now.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `Symbol` / `JSON` / `Date` / `RegExp`, direct `eval`
-seeing the caller's locals,
+sees one binding), `JSON` / `Date` / `RegExp`, the iteration protocol
+(`for`-`of` over anything but an array, spread, destructuring), direct
+`eval` seeing the caller's locals,
 `for`-`of` over anything but an array, `return` and `break` through a
 `finally`, and the remaining builtins. The collector is stop-the-world and
 non-generational; the reference's nursery is a later refinement.
