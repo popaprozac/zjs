@@ -606,9 +606,16 @@ apart from user names. Probe `self-parameter-name` (`BACKEND-REJECTED`).
 
 ## G28 — No truncating conversion from `f64` to an integer
 
-**Status:** `proposed` · **Size:** small · **Priority:** high
-**Confirmed:** z-lang `3f96e759` · **Blocks:** no (worked around)
+**Status:** `consumer-verified` — z-lang `6d1f72cd` (`math.trunc` in `std/math`), ZJS `ca3272b`
+**Confirmed:** z-lang `3f96e759` · **Blocks:** no
 **Found:** Phase 7, the builtins' index and length arguments.
+
+`math.trunc` rounds toward zero while keeping the floating type and
+composes with the checked conversion. Probe `truncating-conversion`
+`LANDED`; the engine's `truncateDouble` calls it and the `raw c`
+`__builtin_trunc` is gone. Still open from the same finding: a checked
+conversion that names the offending value when it traps (G15), and a
+wrapping ToInt32-style narrowing, which stays in `raw c` for now.
 
 `i32(value)` and `u32(value)` on an `f64` are checked and trap on a
 fractional value -- and on NaN -- with no diagnostic (G15), so
@@ -838,6 +845,29 @@ onto a public pointer ABI is a deliberate follow-up design decision rather than
 an oversight — worth doing properly rather than fast. An opaque-handle export
 form (`ZjsContext*` as a named opaque pointer type in the generated header)
 would remove the shim without opening the general pointer-ABI question.
+
+---
+
+## G30 — A C export cannot receive bytes without validating them as text
+
+**Status:** `proposed` · **Size:** small · **Priority:** medium
+**Confirmed:** z-lang `6d1f72cd` · **Blocks:** no (worked around)
+**Found:** Phase 7, the engine's C API taking JavaScript source.
+
+The C-export tier accepts scalars, owned `String`, and checked C-layout
+values. A `cstring` parameter is rejected (`Z0830`), and a `String`
+parameter is marshalled through the validating conversion, which aborts the
+process on malformed UTF-8. JavaScript source and string values are bytes,
+so an engine entry point typed `String` turns a script that is not UTF-8
+into a host crash. The engine's `zjs_z_eval` now takes the source pointer
+as a `usize` and copies bytes through a `raw c` reader, with the shim
+casting the pointer; that keeps the host safe but puts the boundary contract
+in C rather than in Z.
+
+The ask: a borrowed byte input at the C boundary -- `cstring` accepted as
+an export parameter, or a pointer-plus-length `Slice<u8>` view -- so a Z
+library can accept bytes from C without asserting they are text. Related:
+G21 (bytes out to native) and G26 (bytes to String, now landed).
 
 ---
 
