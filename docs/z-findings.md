@@ -895,7 +895,8 @@ asserts the invariant -- `array.at_unchecked(i)`, an `unsafe` index
 expression, or a release-mode elision behind a per-function attribute --
 with the check kept in debug builds. The register file (`regStack[base +
 index]`, base and window both validated at frame push) and the code
-segment fetch are the two sites that want it.
+segment fetch are the two sites that want it. Probe `unchecked-index`
+(`COMPILER-REJECTED`: `Array has no method "atUnchecked"`).
 
 ---
 
@@ -917,7 +918,9 @@ still not expressible.
 The ask: a way to hold an `in` view of a field (or an element) of `this`
 for the extent of a loop that only mutates *other* fields -- a
 field-disjointness borrow -- so an interpreter's code pointer, register
-window, and constant table can each be a local view.
+window, and constant table can each be a local view. Probe
+`field-view-borrow` (`COMPILER-REJECTED`: `in` is only valid for an
+imported C record-pointer parameter).
 
 ---
 
