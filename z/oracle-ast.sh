@@ -24,14 +24,16 @@ Z_DUMP="$HERE/tools/astdump-z/.z-cache/run/$(ls -t "$HERE/tools/astdump-z/.z-cac
 targets=("$@"); [ ${#targets[@]} -gt 0 ] || targets=("$ROOT/src/stdlib" "$ROOT/tests/wintercg")
 files=()
 for t in "${targets[@]}"; do
-  if [ -d "$t" ]; then while IFS= read -r f; do files+=("$f"); done < <(find "$t" -name '*.js' | sort); else files+=("$t"); fi
+  if [ -d "$t" ]; then while IFS= read -r f; do files+=("$f"); done < <(find "$t" \( -name '*.js' -o -name '*.mjs' \) | sort); else files+=("$t"); fi
 done
 
 same=0; differ=0
 for f in "${files[@]}"; do
   name="$(basename "$f")"
-  "$HERE/build/astdump-ref" "$f" > "$OUT/$name.ref" 2>/dev/null
-  "$Z_DUMP" "$f" > "$OUT/$name.z" 2>/dev/null
+  # .mjs files are parsed as modules by both engines.
+  flag=""; case "$f" in *.mjs) flag="--module";; esac
+  "$HERE/build/astdump-ref" "$f" $flag > "$OUT/$name.ref" 2>/dev/null
+  "$Z_DUMP" "$f" $flag > "$OUT/$name.z" 2>/dev/null
   if cmp -s "$OUT/$name.ref" "$OUT/$name.z"; then
     same=$((same+1))
   else

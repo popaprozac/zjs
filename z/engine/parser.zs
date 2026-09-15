@@ -349,18 +349,10 @@ export struct Parser {
     // `import.meta` are expressions and fall through.
     if (this.isModule && k == TokenKind.kwImport
         && this.peekKind2() != TokenKind.lParen && this.peekKind2() != TokenKind.dot) {
-      this.hadError = true;
-      return NO_NODE;
+      return this.parseImportDecl();
     }
-    if (this.isModule && k == TokenKind.kwExport) {
-      this.hadError = true;
-      return NO_NODE;
-    }
-    if (k == TokenKind.kwClass) {
-      // Classes are not yet ported.
-      this.hadError = true;
-      return NO_NODE;
-    }
+    if (this.isModule && k == TokenKind.kwExport) return this.parseExportDecl();
+    if (k == TokenKind.kwClass) return this.parseClassDecl();
     if (k == TokenKind.kwIf) return this.parseIf();
     if (k == TokenKind.kwReturn) return this.parseReturn();
     if (k == TokenKind.kwWhile) return this.parseWhile();
@@ -1156,10 +1148,38 @@ export struct Parser {
       this.hadError = true;
       return NO_NODE;
     }
-    // Not yet ported: class expressions, import() / import.meta.
-    if (k == TokenKind.kwClass || k == TokenKind.kwImport) {
-      this.hadError = true;
-      return NO_NODE;
+    if (k == TokenKind.kwClass) return this.parseClassExpr();
+    // Dynamic `import(specifier [, options])` and `import.meta`.
+    if (k == TokenKind.kwImport) {
+      const keyword = this.advance();
+      if (this.peekKind() == TokenKind.dot) {
+        this.advance();
+        const property = this.peek();
+        const isMeta = property.length == 4 && this.sliceEquals(property.start, 4, "meta");
+        if (!isMeta) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        this.advance();
+        return this.ast.newNode(NodeKind.importMetaExpr, keyword.start, property.start + property.length);
+      }
+      if (!this.expectKind(TokenKind.lParen)) return NO_NODE;
+      const specifier = this.parseAssignment();
+      if (specifier == NO_NODE) return NO_NODE;
+      // Import attributes are parsed and discarded.
+      if (this.peekKind() == TokenKind.comma) {
+        this.advance();
+        if (this.peekKind() != TokenKind.rParen) {
+          const options = this.parseAssignment();
+          if (options == NO_NODE) return NO_NODE;
+          if (this.peekKind() == TokenKind.comma) this.advance();
+        }
+      }
+      const close = this.peek();
+      if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
+      const call = this.ast.newNode(NodeKind.importCall, keyword.start, close.start + close.length);
+      this.ast.setLeft(call, specifier);
+      return call;
     }
 
     if (k == TokenKind.numberLit) {
@@ -2797,6 +2817,752 @@ export struct Parser {
     }
   }
 
+
+  // ======================================================================
+  // Classes
+  // ======================================================================
+
+  // Strict-mode reserved identifiers that may not name a class or function.
+  function isStrictReservedName(start: u32, length: u32): boolean {
+    if (length == 3) return this.sliceEquals(start, 3, "let");
+    if (length == 5) return this.sliceEquals(start, 5, "yield");
+    if (length == 6) return this.sliceEquals(start, 6, "static") || this.sliceEquals(start, 6, "public");
+    if (length == 7) return this.sliceEquals(start, 7, "package") || this.sliceEquals(start, 7, "private");
+    if (length == 9) return this.sliceEquals(start, 9, "interface") || this.sliceEquals(start, 9, "protected");
+    if (length == 10) return this.sliceEquals(start, 10, "implements");
+    return false;
+  }
+
+  // ContainsArguments for a class field initializer: recurses through
+  // arrows, stops at functions and methods (which have their own).
+  function exprContainsArguments(index: u32): boolean {
+    if (index == NO_NODE) return false;
+    const n = this.node(index);
+    if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.methodDef) return false;
+    if (n.kind == NodeKind.identExpr) {
+      return n.end - n.start == 9 && this.sliceEquals(n.start, 9, "arguments");
+    }
+    if (n.left != NO_NODE && this.exprContainsArguments(n.left)) return true;
+    if (n.right != NO_NODE && this.exprContainsArguments(n.right)) return true;
+    if (n.third != NO_NODE && this.exprContainsArguments(n.third)) return true;
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (this.exprContainsArguments(this.ast.child(index, i))) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // ContainsArguments for a static block body: escape-aware, and only the
+  // computed keys of nested members are in the block's scope.
+  function staticBlockUsesArguments(index: u32): boolean {
+    if (index == NO_NODE) return false;
+    const n = this.node(index);
+    if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr) return false;
+    if (n.kind == NodeKind.identExpr) return this.identMatches(n.start, n.end - n.start, "arguments");
+    if (n.kind == NodeKind.methodDef) {
+      if (n.third != NO_NODE && this.staticBlockUsesArguments(n.third)) return true;
+      return false;
+    }
+    if (n.left != NO_NODE && this.staticBlockUsesArguments(n.left)) return true;
+    if (n.right != NO_NODE && this.staticBlockUsesArguments(n.right)) return true;
+    if (n.third != NO_NODE && this.staticBlockUsesArguments(n.third)) return true;
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (this.staticBlockUsesArguments(this.ast.child(index, i))) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // Duplicate lexical declarations, or a lexical/var clash, among a static
+  // block's direct statements.
+  function staticBlockDupBinding(body: u32): boolean {
+    if (body == NO_NODE) return false;
+    const b = this.node(body);
+    if (b.childrenCount == 0) return false;
+    let starts = Array<u32>();
+    let lengths = Array<u32>();
+    let lexical = Array<boolean>();
+    let ci: u32 = 0;
+    while (ci < b.childrenCount && starts.length < 128) {
+      const statement = this.ast.child(body, ci);
+      const st = this.node(statement);
+      if (st.kind == NodeKind.varDecl) {
+        const isLexical = st.op != TokenKind.kwVar;
+        let di: u32 = 0;
+        while (di < st.childrenCount && starts.length < 128) {
+          const decl = this.node(this.ast.child(statement, di));
+          if (decl.nameLength > 0) {
+            starts.push(decl.nameStart);
+            lengths.push(decl.nameLength);
+            lexical.push(isLexical);
+          }
+          di = di + 1;
+        }
+      } else if (st.kind == NodeKind.classDecl) {
+        if (st.nameLength > 0) {
+          starts.push(st.nameStart);
+          lengths.push(st.nameLength);
+          lexical.push(true);
+        }
+      }
+      ci = ci + 1;
+    }
+    let i: usize = 0;
+    while (i < starts.length) {
+      let j: usize = i + 1;
+      while (j < starts.length) {
+        if (lengths[i] == lengths[j] && (lexical[i] || lexical[j])
+            && this.slicesEqual(starts[i], lengths[i], starts[j], lengths[j])) return true;
+        j = j + 1;
+      }
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // Pure lookahead: is the upcoming element a plain, non-static
+  // `constructor(...)`? Gates `super(...)` for exactly that body.
+  function nextMethodIsConstructor(): boolean {
+    let i = this.pos;
+    let sawStatic = false;
+    let sawAsync = false;
+    let sawGenerator = false;
+    let sawAccessor = false;
+    while (i < this.tokenLimit) {
+      const t = this.tokens[i];
+      if (t.kind == TokenKind.identifier && t.length == 6 && this.sliceEquals(t.start, 6, "static")) {
+        sawStatic = true;
+        i = i + 1;
+        continue;
+      }
+      if (t.kind == TokenKind.kwAsync) {
+        sawAsync = true;
+        i = i + 1;
+        continue;
+      }
+      if (t.kind == TokenKind.star) {
+        sawGenerator = true;
+        i = i + 1;
+        continue;
+      }
+      if (t.kind == TokenKind.identifier && t.length == 3
+          && (this.sliceEquals(t.start, 3, "get") || this.sliceEquals(t.start, 3, "set"))) {
+        sawAccessor = true;
+        i = i + 1;
+        continue;
+      }
+      if (sawStatic || sawAsync || sawGenerator || sawAccessor) return false;
+      if (t.kind == TokenKind.identifier && t.length == 11 && this.sliceEquals(t.start, 11, "constructor")) {
+        return this.peekAtIndex(i + 1).kind == TokenKind.lParen;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  // The unquoted span of a class element name token: string literals drop
+  // their quotes for the "constructor" / "prototype" checks.
+  function elementNameSpan(token: Token): u32 {
+    if (token.kind == TokenKind.stringLit && token.length >= 2) return token.length - 2;
+    return token.length;
+  }
+
+  function elementNameStart(token: Token): u32 {
+    if (token.kind == TokenKind.stringLit && token.length >= 2) return token.start + 1;
+    return token.start;
+  }
+
+  // One class element: static block, field, method, or accessor.
+  function parseClassElement(inout this): u32 {
+    const elementStart = this.peek().start;
+    let isStatic = false;
+    const first = this.peek();
+    if (first.kind == TokenKind.identifier && first.length == 6 && this.sliceEquals(first.start, 6, "static")) {
+      // `static { ... }` -- a static initialization block.
+      if (this.peekKind2() == TokenKind.lBrace) {
+        this.advance();
+        const savedAsync = this.inAsync;
+        const savedGenerator = this.inGenerator;
+        const savedInBlock = this.inStaticBlock;
+        const savedDepth = this.staticBlockDepth;
+        this.inAsync = false;
+        this.inGenerator = false;
+        this.functionDepth = this.functionDepth + 1;
+        this.inStaticBlock = true;
+        this.staticBlockDepth = this.functionDepth;
+        const body = this.parseBlock();
+        this.functionDepth = this.functionDepth - 1;
+        this.inAsync = savedAsync;
+        this.inGenerator = savedGenerator;
+        this.inStaticBlock = savedInBlock;
+        this.staticBlockDepth = savedDepth;
+        if (body == NO_NODE) return NO_NODE;
+        if (this.staticBlockUsesArguments(body)) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        if (this.staticBlockDupBinding(body)) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        const block = this.ast.newNode(NodeKind.staticBlock, elementStart, this.endOf(body));
+        this.ast.setLeft(block, body);
+        this.ast.setBool(block, true);
+        return block;
+      }
+      const after = this.peekKind2();
+      if (this.isPropertyNameStart(after) || after == TokenKind.lBracket || after == TokenKind.star || after == TokenKind.privateName) {
+        this.advance();
+        isStatic = true;
+      }
+    }
+    let isAsyncMethod = false;
+    if (this.peekKind() == TokenKind.kwAsync) {
+      const after = this.peekKind2();
+      if (this.isPropertyNameStart(after) || after == TokenKind.lBracket || after == TokenKind.privateName || after == TokenKind.star) {
+        this.advance();
+        isAsyncMethod = true;
+      }
+    }
+    let isGeneratorMethod = false;
+    if (this.peekKind() == TokenKind.star) {
+      this.advance();
+      isGeneratorMethod = true;
+    }
+    // `Eq` is the sentinel for a regular method; accessors carry get/set.
+    let accessorKind = TokenKind.eq;
+    if (!isAsyncMethod) {
+      const id = this.peek();
+      if (id.kind == TokenKind.identifier && id.length == 3) {
+        const isGet = this.sliceEquals(id.start, 3, "get");
+        const isSet = this.sliceEquals(id.start, 3, "set");
+        const after = this.peekKind2();
+        if ((isGet || isSet) && (this.isPropertyNameStart(after) || after == TokenKind.lBracket || after == TokenKind.privateName)) {
+          this.advance();
+          accessorKind = isGet ? TokenKind.kwGet : TokenKind.kwSet;
+        }
+      }
+    }
+    let computedKey: u32 = NO_NODE;
+    const nameToken = this.peek();
+    if (nameToken.kind == TokenKind.lBracket) {
+      this.advance();
+      computedKey = this.parseAssignment();
+      if (computedKey == NO_NODE) return NO_NODE;
+      if (!this.expectKind(TokenKind.rBracket)) return NO_NODE;
+    } else {
+      if (!this.isPropertyNameStart(nameToken.kind) && nameToken.kind != TokenKind.privateName) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      if (nameToken.kind == TokenKind.privateName && nameToken.length == 12
+          && this.sliceEquals(nameToken.start, 12, "#constructor")) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      this.advance();
+    }
+
+    // Field: no `(` and no method prefixes.
+    if (this.peekKind() != TokenKind.lParen && accessorKind == TokenKind.eq && !isAsyncMethod && !isGeneratorMethod) {
+      if (computedKey == NO_NODE && nameToken.length > 0) {
+        const nameStart = this.elementNameStart(nameToken);
+        const nameSpan = this.elementNameSpan(nameToken);
+        if (nameSpan == 11 && this.sliceEquals(nameStart, 11, "constructor")) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        if (isStatic && nameSpan == 9 && this.sliceEquals(nameStart, 9, "prototype")) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+      }
+      let init: u32 = NO_NODE;
+      if (this.peekKind() == TokenKind.eq) {
+        this.advance();
+        init = this.parseAssignment();
+        if (init == NO_NODE) return NO_NODE;
+        if (this.exprContainsArguments(init)) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+      }
+      let fieldEnd: u32 = nameToken.start + nameToken.length;
+      if (init != NO_NODE) {
+        fieldEnd = this.endOf(init);
+      } else if (computedKey != NO_NODE) {
+        fieldEnd = this.endOf(computedKey);
+      }
+      // Terminator: `;`, or ASI before `}` / EOF / a newline.
+      if (!this.matchKind(TokenKind.semicolon)) {
+        const next = this.peek();
+        if (next.kind != TokenKind.rBrace && next.kind != TokenKind.eof && !this.hasNewlineBetween(fieldEnd, next.start)) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+      }
+      const field = this.ast.newNode(NodeKind.classField, elementStart, fieldEnd);
+      if (computedKey != NO_NODE) {
+        this.ast.setThird(field, computedKey);
+      } else if (nameToken.kind == TokenKind.stringLit && nameToken.length >= 2) {
+        // A string-literal field name is stored unquoted.
+        this.ast.setName(field, nameToken.start + 1, nameToken.length - 2);
+      } else {
+        this.ast.setName(field, nameToken.start, nameToken.length);
+      }
+      this.ast.setBool(field, isStatic);
+      this.ast.setLeft(field, init);
+      return field;
+    }
+
+    // Method early errors: a non-static special method may not be named
+    // "constructor"; a static method may not be named "prototype".
+    if (computedKey == NO_NODE && nameToken.length > 0) {
+      const nameStart = this.elementNameStart(nameToken);
+      const nameSpan = this.elementNameSpan(nameToken);
+      if (nameSpan == 11 && this.sliceEquals(nameStart, 11, "constructor")) {
+        const isSpecial = isAsyncMethod || isGeneratorMethod || accessorKind == TokenKind.kwGet || accessorKind == TokenKind.kwSet;
+        if (!isStatic && isSpecial) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+      }
+      if (isStatic && nameSpan == 9 && this.sliceEquals(nameStart, 9, "prototype")) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+    }
+
+    // Parameters of async / generator methods are parsed in [+Await] /
+    // [+Yield]; toggle before the list, restore after the body.
+    const savedAsync = this.inAsync;
+    const savedGenerator = this.inGenerator;
+    this.inAsync = isAsyncMethod;
+    this.inGenerator = isGeneratorMethod;
+    if (!this.expectKind(TokenKind.lParen)) {
+      this.inAsync = savedAsync;
+      this.inGenerator = savedGenerator;
+      return NO_NODE;
+    }
+    const params = this.parseParamList();
+    if (!this.expectKind(TokenKind.rParen)) {
+      this.inAsync = savedAsync;
+      this.inGenerator = savedGenerator;
+      return NO_NODE;
+    }
+    if (this.peekKind() != TokenKind.lBrace) {
+      this.inAsync = savedAsync;
+      this.inGenerator = savedGenerator;
+      this.hadError = true;
+      return NO_NODE;
+    }
+    this.functionDepth = this.functionDepth + 1;
+    const body = this.parseBlock();
+    this.functionDepth = this.functionDepth - 1;
+    this.inAsync = savedAsync;
+    this.inGenerator = savedGenerator;
+    if (body == NO_NODE) return NO_NODE;
+    if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    if (!this.paramsAreSimple(in params) && this.paramsHaveDuplicateBinding(in params)) {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    const method = this.ast.newNode(NodeKind.methodDef, elementStart, this.endOf(body));
+    if (computedKey != NO_NODE) {
+      this.ast.setThird(method, computedKey);
+    } else {
+      this.ast.setName(method, nameToken.start, nameToken.length);
+    }
+    this.ast.setBool(method, isStatic);
+    this.ast.setOp(method, accessorKind);
+    this.ast.setLeft(method, body);
+    this.ast.setChildren(method, in params);
+    // `num` carries the function kind: 1 async, 4 generator, 5 both.
+    if (isAsyncMethod && isGeneratorMethod) {
+      this.ast.setNum(method, 5.0);
+    } else if (isAsyncMethod) {
+      this.ast.setNum(method, 1.0);
+    } else if (isGeneratorMethod) {
+      this.ast.setNum(method, 4.0);
+    }
+    return method;
+  }
+
+  // Is this element the class's own (non-static) constructor method?
+  function isConstructorMethod(element: u32): boolean {
+    const m = this.node(element);
+    return m.kind == NodeKind.methodDef && m.nameLength == 11 && !m.boolValue
+      && this.sliceEquals(m.nameStart, 11, "constructor");
+  }
+
+  function isInstanceField(element: u32): boolean {
+    const f = this.node(element);
+    return f.kind == NodeKind.classField && !f.boolValue;
+  }
+
+  // Class body: elements, then instance-field initializers desugared into
+  // the constructor (synthesizing one if needed).
+  function parseClassBody(inout this, isDerived: boolean): Array<u32> {
+    let elements = Array<u32>();
+    if (!this.expectKind(TokenKind.lBrace)) return elements;
+    // Class bodies are strict code.
+    const savedStrict = this.strictMode;
+    this.strictMode = true;
+    const savedDerived = this.inDerivedConstructor;
+
+    while (this.peekKind() != TokenKind.rBrace && this.peekKind() != TokenKind.eof) {
+      if (this.peekKind() == TokenKind.semicolon) {
+        this.advance();
+        continue;
+      }
+      this.inDerivedConstructor = isDerived && this.nextMethodIsConstructor();
+      const element = this.parseClassElement();
+      if (element == NO_NODE) {
+        this.hadError = true;
+        break;
+      }
+      elements.push(element);
+    }
+    this.expectKind(TokenKind.rBrace);
+
+    let constructorIndex: i32 = -1;
+    let anyInstanceField = false;
+    let scan: usize = 0;
+    while (scan < elements.length) {
+      if (this.isInstanceField(elements[scan])) anyInstanceField = true;
+      if (this.isConstructorMethod(elements[scan])) {
+        // At most one non-static "constructor".
+        if (constructorIndex < 0) {
+          constructorIndex = i32(scan);
+        } else {
+          this.hadError = true;
+        }
+      }
+      scan = scan + 1;
+    }
+    // Fields but no constructor: synthesize an empty one (calling super()
+    // when derived), recognized by the compiler through num = 2.
+    if (anyInstanceField && constructorIndex < 0) {
+      const zero: u32 = 0;
+      const anchor: u32 = elements.length > 0 ? this.startOf(elements[0]) : zero;
+      const block = this.ast.newNode(NodeKind.blockStmt, anchor, anchor);
+      if (isDerived) {
+        const superExpr = this.ast.newNode(NodeKind.superExpr, anchor, anchor);
+        const superCall = this.ast.newNode(NodeKind.call, anchor, anchor);
+        this.ast.setLeft(superCall, superExpr);
+        let statements = Array<u32>();
+        statements.push(superCall);
+        this.ast.setChildren(block, in statements);
+      }
+      const synthesized = this.ast.newNode(NodeKind.methodDef, anchor, anchor);
+      this.ast.setName(synthesized, anchor, 0);
+      this.ast.setOp(synthesized, TokenKind.eq);
+      this.ast.setNum(synthesized, 2.0);
+      this.ast.setLeft(synthesized, block);
+      elements.push(synthesized);
+      constructorIndex = i32(elements.length - 1);
+    }
+    if (anyInstanceField && constructorIndex >= 0) {
+      const constructorElement = elements[usize(constructorIndex)];
+      const block = this.node(constructorElement).left;
+      if (block != NO_NODE && this.kindOf(block) == NodeKind.blockStmt) {
+        // `this.<name> = <init>` (or `this[<key>] = <init>`) for each
+        // instance field, prepended to the constructor body.
+        let statements = Array<u32>();
+        let s3: usize = 0;
+        while (s3 < elements.length) {
+          const element = elements[s3];
+          if (this.isInstanceField(element)) {
+            const f = this.node(element);
+            const thisExpr = this.ast.newNode(NodeKind.thisExpr, f.start, f.start);
+            let target: u32 = NO_NODE;
+            if (f.nameLength == 0 && f.third != NO_NODE) {
+              target = this.ast.newNode(NodeKind.computed, f.start, f.end);
+              this.ast.setLeft(target, thisExpr);
+              this.ast.setRight(target, f.third);
+            } else {
+              target = this.ast.newNode(NodeKind.member, f.start, f.end);
+              this.ast.setLeft(target, thisExpr);
+              this.ast.setName(target, f.nameStart, f.nameLength);
+              // A private-field DEFINE skips the presence check a SET does.
+              this.ast.setNum(target, 1.0);
+            }
+            let init = f.left;
+            if (init == NO_NODE) init = this.ast.newNode(NodeKind.undefinedExpr, f.start, f.start);
+            const assignment = this.ast.newNode(NodeKind.assignment, f.start, this.endOf(init));
+            this.ast.setOp(assignment, TokenKind.eq);
+            this.ast.setLeft(assignment, target);
+            this.ast.setRight(assignment, init);
+            statements.push(assignment);
+          }
+          s3 = s3 + 1;
+        }
+        const existing = this.node(block).childrenCount;
+        let bi: u32 = 0;
+        while (bi < existing) {
+          statements.push(this.ast.child(block, bi));
+          bi = bi + 1;
+        }
+        this.ast.setChildren(block, in statements);
+      }
+    }
+
+    this.strictMode = savedStrict;
+    this.inDerivedConstructor = savedDerived;
+    return elements;
+  }
+
+  function parseClassDecl(inout this): u32 {
+    const keyword = this.advance();
+    const nameToken = this.peek();
+    if (!this.isBindingIdentTok(nameToken)) {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    if (this.isStrictReservedName(nameToken.start, nameToken.length)) {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    // A class definition is always strict code: never eval / arguments.
+    if (this.nameIsArgumentsOrEval(nameToken.start, nameToken.length)) {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    this.advance();
+    let parent: u32 = NO_NODE;
+    if (this.peekKind() == TokenKind.kwExtends) {
+      this.advance();
+      parent = this.parseCallMember();
+      if (parent == NO_NODE) return NO_NODE;
+    }
+    const elements = this.parseClassBody(parent != NO_NODE);
+    const end: u32 = elements.length > 0 ? this.endOf(elements[elements.length - 1]) : this.peek().start;
+    const declaration = this.ast.newNode(NodeKind.classDecl, keyword.start, end);
+    this.ast.setName(declaration, nameToken.start, nameToken.length);
+    this.ast.setRight(declaration, parent);
+    this.ast.setChildren(declaration, in elements);
+    return declaration;
+  }
+
+  function parseClassExpr(inout this): u32 {
+    const keyword = this.advance();
+    let nameStart: u32 = 0;
+    let nameLength: u32 = 0;
+    if (this.peekKind() == TokenKind.identifier) {
+      const nameToken = this.advance();
+      nameStart = nameToken.start;
+      nameLength = nameToken.length;
+    }
+    let parent: u32 = NO_NODE;
+    if (this.peekKind() == TokenKind.kwExtends) {
+      this.advance();
+      parent = this.parseCallMember();
+      if (parent == NO_NODE) return NO_NODE;
+    }
+    const elements = this.parseClassBody(parent != NO_NODE);
+    const end: u32 = elements.length > 0 ? this.endOf(elements[elements.length - 1]) : this.peek().start;
+    const expression = this.ast.newNode(NodeKind.classExpr, keyword.start, end);
+    this.ast.setName(expression, nameStart, nameLength);
+    this.ast.setRight(expression, parent);
+    this.ast.setChildren(expression, in elements);
+    return expression;
+  }
+
+  // ======================================================================
+  // Modules
+  // ======================================================================
+
+  function parseImportDecl(inout this): u32 {
+    const keyword = this.advance();
+    let clauses = Array<u32>();
+    // `import 'mod'` -- side effect only.
+    if (this.peekKind() == TokenKind.stringLit) {
+      const specifier = this.advance();
+      this.matchKind(TokenKind.semicolon);
+      const declaration = this.ast.newNode(NodeKind.importDecl, keyword.start, specifier.start + specifier.length);
+      this.ast.setName(declaration, specifier.start, specifier.length);
+      return declaration;
+    }
+    // Default binding.
+    if (this.peekKind() == TokenKind.identifier) {
+      const nameToken = this.advance();
+      const clause = this.ast.newNode(NodeKind.importClause, nameToken.start, nameToken.start + nameToken.length);
+      this.ast.setOp(clause, TokenKind.kwDefault);
+      this.ast.setName(clause, nameToken.start, nameToken.length);
+      clauses.push(clause);
+      if (this.peekKind() == TokenKind.comma) this.advance();
+    }
+    if (this.peekKind() == TokenKind.star) {
+      // `* as ns`
+      const star = this.advance();
+      if (this.peekKind() != TokenKind.kwAs) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      this.advance();
+      const nameToken = this.peek();
+      if (!this.isBindingIdentTok(nameToken)) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      this.advance();
+      const clause = this.ast.newNode(NodeKind.importClause, star.start, nameToken.start + nameToken.length);
+      this.ast.setOp(clause, TokenKind.star);
+      this.ast.setName(clause, nameToken.start, nameToken.length);
+      clauses.push(clause);
+    } else if (this.peekKind() == TokenKind.lBrace) {
+      // `{ a, b as c }`
+      this.advance();
+      while (this.peekKind() != TokenKind.rBrace && this.peekKind() != TokenKind.eof) {
+        const sourceToken = this.peek();
+        if (!this.isBindingIdentTok(sourceToken) && !this.isKeywordToken(sourceToken.kind)) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        this.advance();
+        let localStart = sourceToken.start;
+        let localLength = sourceToken.length;
+        if (this.peekKind() == TokenKind.kwAs) {
+          this.advance();
+          const localToken = this.peek();
+          if (!this.isBindingIdentTok(localToken)) {
+            this.hadError = true;
+            return NO_NODE;
+          }
+          this.advance();
+          localStart = localToken.start;
+          localLength = localToken.length;
+        }
+        const clause = this.ast.newNode(NodeKind.importClause, sourceToken.start, localStart + localLength);
+        this.ast.setOp(clause, TokenKind.eq);
+        this.ast.setName(clause, localStart, localLength);
+        // The source export name rides on a synthetic IdentExpr in `third`.
+        const sourceName = this.identNode(sourceToken);
+        this.ast.setThird(clause, sourceName);
+        clauses.push(clause);
+        if (!this.matchKind(TokenKind.comma)) break;
+      }
+      if (!this.expectKind(TokenKind.rBrace)) return NO_NODE;
+    }
+    if (this.peekKind() != TokenKind.kwFrom) {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    this.advance();
+    const specifier = this.peek();
+    if (specifier.kind != TokenKind.stringLit) {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    this.advance();
+    this.matchKind(TokenKind.semicolon);
+    const declaration = this.ast.newNode(NodeKind.importDecl, keyword.start, specifier.start + specifier.length);
+    this.ast.setName(declaration, specifier.start, specifier.length);
+    this.ast.setChildren(declaration, in clauses);
+    return declaration;
+  }
+
+  function parseExportDecl(inout this): u32 {
+    const keyword = this.advance();
+    if (this.peekKind() == TokenKind.kwDefault) {
+      this.advance();
+      let value: u32 = NO_NODE;
+      const k = this.peekKind();
+      if (k == TokenKind.kwFunction) {
+        value = this.parseFunctionExpr(false);
+      } else if (k == TokenKind.kwAsync && this.peekKind2() == TokenKind.kwFunction) {
+        this.advance();
+        value = this.parseFunctionExpr(true);
+      } else if (k == TokenKind.kwClass) {
+        value = this.parseClassExpr();
+      } else {
+        value = this.parseAssignment();
+        this.matchKind(TokenKind.semicolon);
+      }
+      if (value == NO_NODE) return NO_NODE;
+      const declaration = this.ast.newNode(NodeKind.exportDecl, keyword.start, this.endOf(value));
+      this.ast.setBool(declaration, true);
+      this.ast.setLeft(declaration, value);
+      return declaration;
+    }
+    if (this.peekKind() == TokenKind.lBrace) {
+      this.advance();
+      let clauses = Array<u32>();
+      while (this.peekKind() != TokenKind.rBrace && this.peekKind() != TokenKind.eof) {
+        const localToken = this.peek();
+        if (!this.isBindingIdentTok(localToken) && !this.isKeywordToken(localToken.kind)) {
+          this.hadError = true;
+          break;
+        }
+        this.advance();
+        let exportStart = localToken.start;
+        let exportLength = localToken.length;
+        if (this.peekKind() == TokenKind.kwAs) {
+          this.advance();
+          const exportToken = this.peek();
+          if (!this.isBindingIdentTok(exportToken) && !this.isKeywordToken(exportToken.kind)) {
+            this.hadError = true;
+            break;
+          }
+          this.advance();
+          exportStart = exportToken.start;
+          exportLength = exportToken.length;
+        }
+        const clause = this.ast.newNode(NodeKind.exportClause, localToken.start, exportStart + exportLength);
+        this.ast.setName(clause, localToken.start, localToken.length);
+        const exportedName = this.ast.newNode(NodeKind.identExpr, exportStart, exportStart + exportLength);
+        this.ast.setName(exportedName, exportStart, exportLength);
+        this.ast.setThird(clause, exportedName);
+        clauses.push(clause);
+        if (!this.matchKind(TokenKind.comma)) break;
+      }
+      if (!this.expectKind(TokenKind.rBrace)) return NO_NODE;
+      let fromStart: u32 = 0;
+      let fromLength: u32 = 0;
+      if (this.peekKind() == TokenKind.kwFrom) {
+        this.advance();
+        const specifier = this.peek();
+        if (specifier.kind != TokenKind.stringLit) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        this.advance();
+        fromStart = specifier.start;
+        fromLength = specifier.length;
+      }
+      this.matchKind(TokenKind.semicolon);
+      const declaration = this.ast.newNode(NodeKind.exportDecl, keyword.start, this.peek().start);
+      this.ast.setChildren(declaration, in clauses);
+      this.ast.setName(declaration, fromStart, fromLength);
+      return declaration;
+    }
+    // `export <declaration>`
+    let declared: u32 = NO_NODE;
+    const k = this.peekKind();
+    if (k == TokenKind.kwVar || k == TokenKind.kwLet || k == TokenKind.kwConst) {
+      declared = this.parseVarDecl(true);
+    } else if (k == TokenKind.kwFunction) {
+      declared = this.parseFunctionDecl(false);
+    } else if (k == TokenKind.kwClass) {
+      declared = this.parseClassDecl();
+    } else if (k == TokenKind.kwAsync && this.peekKind2() == TokenKind.kwFunction) {
+      this.advance();
+      declared = this.parseFunctionDecl(true);
+    } else {
+      this.hadError = true;
+      return NO_NODE;
+    }
+    if (declared == NO_NODE) return NO_NODE;
+    const declaration = this.ast.newNode(NodeKind.exportDecl, keyword.start, this.endOf(declared));
+    this.ast.setLeft(declaration, declared);
+    return declaration;
+  }
+
   // --- Number literals ---
 
   function parseNumberLiteral(start: u32, length: u32): f64 {
@@ -2914,7 +3680,20 @@ test "number literals decode radix and separators" {
   expect(result.parser.ast.node(result.parser.ast.child(result.root, 3)).num).toEqual(10005.0);
 }
 
-test "unported constructs report an error rather than mis-parse" {
-  const result = parseProgram("class C {}", false);
+test "a class with fields gains a synthesized constructor" {
+  const result = parseProgram("class C { x = 1; static y = 2; m() {} }", false);
+  expect(result.hadError).toEqual(false);
+  const classNode = result.parser.ast.node(result.parser.ast.child(result.root, 0));
+  expect(classNode.kind == NodeKind.classDecl).toEqual(true);
+  // x, y, m, plus the synthesized constructor.
+  const four: u32 = 4;
+  expect(classNode.childrenCount).toEqual(four);
+  const synthesized = result.parser.ast.node(result.parser.ast.child(result.parser.ast.child(result.root, 0), 3));
+  expect(synthesized.kind == NodeKind.methodDef).toEqual(true);
+  expect(synthesized.num).toEqual(2.0);
+}
+
+test "a private name outside any class is rejected" {
+  const result = parseProgram("#x in obj;", false);
   expect(result.hadError).toEqual(true);
 }
