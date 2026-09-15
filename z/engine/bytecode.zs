@@ -366,6 +366,10 @@ export function opCode(op: Op): i32 {
 export struct FunctionCode {
   code: Array<Inst>;
   constants: Array<Value>;
+  // Interned names for LoadProp / StoreProp, indexed by the instruction's
+  // name operand. This is the reference's inline-cache slot table; the
+  // cache itself is a performance-phase addition.
+  propertyNames: Array<u32>;
   registerCount: u32;
   fixedRegs: u32;
   paramCount: u32;
@@ -379,7 +383,7 @@ export struct FunctionCode {
 
 export function createFunctionCode(): FunctionCode {
   return FunctionCode({
-    code: Array<Inst>(), constants: Array<Value>(), registerCount: 0, fixedRegs: 0,
+    code: Array<Inst>(), constants: Array<Value>(), propertyNames: Array<u32>(), registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
   });

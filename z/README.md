@@ -31,9 +31,22 @@ rendering of the completion value or uncaught throw): numbers with the
 reference's int32 fast paths, strings as byte arrays with interning,
 concatenation, number/string coercions and formatting, equality and ordering,
 logical operators, `var`/`let`/`const`, assignment in all forms, `++`/`--`,
-`if`/`while`/`do`/`for`/`break`/`continue`. **14 of 15** corpus files
-identical; the one that differs needs Error objects. Functions and objects
-next.
+`if`/`while`/`do`/`for`/`break`/`continue`; functions, calls, recursion,
+defaults, hoisting, the conditional operator; objects on hidden classes with
+prototype chains, arrays with holes, property access in every form, method
+calls with `this`, `new` with `prototype`/`constructor`, `typeof`; the Error
+family as Z builtins, `throw`, `try`/`catch`/`finally` with unwinding across
+frames. **27 of 27** corpus files identical.
+
+Two places the corpus deliberately steps around, where the reference is
+wrong and the Z engine follows the specification: a property write to
+`undefined` throws a TypeError (the reference drops it), and
+`Error.prototype.message` is `""` (the reference has no such property).
+
+Not yet: closures (a reference to an enclosing function's binding is
+reported as unsupported rather than mis-resolved as a global), a global
+object (top-level and sloppy-call `this` are undefined), accessors, `return`
+and `break` through a `finally`, the remaining builtins, and a collector.
 
 ```
 $ ./z/oracle.sh

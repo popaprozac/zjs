@@ -39,8 +39,12 @@ int main(void) {
     if (ca != 2) { printf("FAIL: context a eval count %llu, want 2\n", (unsigned long long)ca); failures++; }
     if (cb != 3) { printf("FAIL: context b eval count %llu, want 3\n", (unsigned long long)cb); failures++; }
 
-    /* Each context owns a heap; numeric programs allocate no cells. */
-    if (zjs_z_heap_cells((uintptr_t)a) != 0) { printf("FAIL: numeric eval allocated cells\n"); failures++; }
+    /* Each context owns a heap. A fresh context holds only its intrinsics
+     * (prototypes, builtin constructors, atoms); numeric programs add no
+     * cells to that. */
+    uintptr_t fresh = zjs_z_new_context();
+    if (zjs_z_heap_cells((uintptr_t)a) != zjs_z_heap_cells(fresh)) { printf("FAIL: numeric eval allocated cells\n"); failures++; }
+    zjs_z_free_context(fresh);
 
     zjs_free_context(a);
     zjs_free_context(b);

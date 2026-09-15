@@ -49,6 +49,12 @@ function render(in runtime: Runtime, value: Value): String {
   if (isBoolean(value)) return isTrue(value) ? "true" : "false";
   if (isInt32(value)) return `int32 ${asInt32(value)}`;
   if (isDouble(value)) return `double ${asDouble(value).toBits()}`;
+  if (isCell(value) && asCell(value) != 0) {
+    const handle = asCell(value);
+    if (runtime.heap.isArray(handle)) return "array";
+    if (runtime.heap.isFunction(handle) || runtime.heap.isHostFunction(handle)) return "function";
+    if (runtime.heap.isObject(handle)) return "object";
+  }
   return "cell";
 }
 

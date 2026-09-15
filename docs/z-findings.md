@@ -546,6 +546,28 @@ feature. Probe `lock-callback-ownership`.
 
 ---
 
+## G26 — A String cannot be built from bytes the program holds
+
+**Status:** `proposed` · **Size:** small · **Priority:** medium
+**Confirmed:** z-lang `3f96e759` · **Blocks:** no (worked around)
+**Found:** Phase 5, error messages in the interpreter.
+
+JavaScript strings are `Array<u8>` in the engine (byte length, byte
+indexing, embedded NULs). Assembling `Cannot read properties of undefined
+(reading 'name')` from those pieces is easy as bytes; turning the result
+into a `String` is impossible. `String.from` takes a borrowed `cstring` from
+native code and nothing accepts an `Array<u8>`, so engine text can never
+reach a template literal, `console`, or any String-typed API. The engine
+assembles messages as byte arrays throughout instead.
+
+Probe `string-from-bytes` proposes `String.fromBytes(bytes)`; an owned
+String from a byte array, with either a caller-guaranteed or a checked UTF-8
+contract, is the ask. The inverse direction (G21) and this one together
+would let the engine move text across the boundary in both directions
+without a native detour.
+
+---
+
 # Wave 2 — substantive language design
 
 These need agreement on direction before implementation. Each has a real

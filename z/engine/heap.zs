@@ -19,7 +19,7 @@
 // over `headers`, which is why the mark bit already exists here.
 
 import { expect } from "std/test";
-import { Value, undefinedValue, cellValue, asCell, isCell, int32Value } from "./value.zs";
+import { Value, undefinedValue, deletedValue, isDeleted, cellValue, asCell, isCell, int32Value, asInt32 } from "./value.zs";
 
 // Tags mirror the reference engine (src/value.zc) so the two implementations
 // stay legible against each other during the migration.
@@ -42,9 +42,28 @@ struct CellHeader {
   marked: boolean;
   slotStart: u32;
   slotCount: u32;
-  // Tag-specific extra: for a string cell, the index of its bytes in
-  // `strings`. Zero-initialized and unused by other tags.
+  // Tag-specific words. `payload`: a string's index into `strings`, a
+  // function's index into the runtime's function table, an object's hidden
+  // class, an array's length, a host function's builtin id. `link`: a
+  // second cell handle -- an object's prototype, a function's `prototype`
+  // object, an array's bag of named properties; 0 for none.
   payload: u32;
+  link: u32;
+}
+
+// A hidden class describes the property layout shared by every object that
+// acquired the same names in the same order: `parent` plus one added name
+// at slot `transitionSlot`. Lookup walks the parent chain comparing atom
+// handles; interned names make that a pointer comparison. Class 0 is the
+// empty root. The reference builds a hash table for wide classes; that is a
+// performance-phase addition.
+struct HiddenClass {
+  parent: u32;
+  transitionName: u32;
+  transitionSlot: u32;
+  propCount: u32;
+  transitionNames: Array<u32>;
+  transitionChildren: Array<u32>;
 }
 
 // String cells keep their bytes in a Z-owned Array<u8>, held in a side
@@ -55,6 +74,7 @@ export struct Heap {
   headers: Array<CellHeader>;
   slots: Array<Value>;
   strings: Array<Array<u8>>;
+  classes: Array<HiddenClass>;
 
   // These are methods rather than free functions for a concrete reason.
   // Z rejects `inout` on a place expression -- `allocate(inout
@@ -75,8 +95,206 @@ export struct Heap {
       slotStart: start,
       slotCount: slotCount,
       payload: 0,
+      link: 0,
     }));
     return u32(this.headers.length - 1);
+  }
+
+  // Move a cell's slots to a fresh, larger range. The old range is
+  // abandoned until the collector compacts.
+  function growSlots(inout this, handle: u32, newCount: u32): void {
+    const oldStart = this.headers[usize(handle)].slotStart;
+    const oldCount = this.headers[usize(handle)].slotCount;
+    const start = u32(this.slots.length);
+    let index: u32 = 0;
+    while (index < oldCount) {
+      const kept = this.slots[usize(oldStart + index)];
+      this.slots.push(kept);
+      index = index + 1;
+    }
+    while (index < newCount) {
+      this.slots.push(undefinedValue());
+      index = index + 1;
+    }
+    this.headers[usize(handle)].slotStart = start;
+    this.headers[usize(handle)].slotCount = newCount;
+  }
+
+  function linkOf(handle: u32): u32 {
+    return this.headers[usize(handle)].link;
+  }
+
+  function setLink(inout this, handle: u32, link: u32): void {
+    this.headers[usize(handle)].link = link;
+  }
+
+  // --- Hidden classes ---
+
+  function classPropCount(classId: u32): u32 {
+    return this.classes[usize(classId)].propCount;
+  }
+
+  // The slot holding `atom` under `classId`, or -1.
+  function classFindSlot(classId: u32, atom: u32): i32 {
+    let current = classId;
+    while (current != 0) {
+      if (this.classes[usize(current)].transitionName == atom) return i32(this.classes[usize(current)].transitionSlot);
+      current = this.classes[usize(current)].parent;
+    }
+    return -1;
+  }
+
+  // The class reached by adding `atom` to `classId`, created on first use.
+  function classTransition(inout this, classId: u32, atom: u32): u32 {
+    const count = this.classes[usize(classId)].transitionNames.length;
+    let index: usize = 0;
+    while (index < count) {
+      if (this.classes[usize(classId)].transitionNames[index] == atom) return this.classes[usize(classId)].transitionChildren[index];
+      index = index + 1;
+    }
+    const propCount = this.classes[usize(classId)].propCount;
+    this.classes.push(HiddenClass({
+      parent: classId, transitionName: atom, transitionSlot: propCount, propCount: propCount + 1,
+      transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
+    }));
+    const child = u32(this.classes.length - 1);
+    this.classes[usize(classId)].transitionNames.push(atom);
+    this.classes[usize(classId)].transitionChildren.push(child);
+    return child;
+  }
+
+  // --- Objects ---
+
+  // An empty object whose prototype is `proto` (0 for none), with room
+  // for a few properties before its slots move.
+  function allocateObject(inout this, proto: u32): u32 {
+    const handle = this.allocate(TAG_OBJECT, 4);
+    this.headers[usize(handle)].link = proto;
+    return handle;
+  }
+
+  function isObject(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_OBJECT;
+  }
+
+  function objectClass(handle: u32): u32 {
+    return this.headers[usize(handle)].payload;
+  }
+
+  function objectProto(handle: u32): u32 {
+    return this.headers[usize(handle)].link;
+  }
+
+  function setObjectProto(inout this, handle: u32, proto: u32): void {
+    this.headers[usize(handle)].link = proto;
+  }
+
+  // The object's own slot for `atom`, or -1.
+  function objectFindSlot(handle: u32, atom: u32): i32 {
+    return this.classFindSlot(this.headers[usize(handle)].payload, atom);
+  }
+
+  // Write an own property, adding it (and transitioning the class) when
+  // the object does not have it yet.
+  function objectSet(inout this, handle: u32, atom: u32, value: Value): void {
+    const existing = this.objectFindSlot(handle, atom);
+    if (existing >= 0) {
+      this.setSlot(handle, u32(existing), value);
+      return;
+    }
+    const parentClass = this.headers[usize(handle)].payload;
+    const child = this.classTransition(parentClass, atom);
+    const slotIndex = this.classes[usize(child)].transitionSlot;
+    if (slotIndex >= this.headers[usize(handle)].slotCount) {
+      const grown: u32 = this.headers[usize(handle)].slotCount * 2;
+      const needed: u32 = slotIndex + 1;
+      this.growSlots(handle, grown > needed ? grown : needed);
+    }
+    this.headers[usize(handle)].payload = child;
+    this.setSlot(handle, slotIndex, value);
+  }
+
+  // --- Arrays ---
+
+  // Elements live in the slots; `payload` is the length and the slot count
+  // is the capacity. A slot past the length, or holding the deleted
+  // marker, is a hole.
+  function allocateArray(inout this, length: u32): u32 {
+    const capacity: u32 = length < 4 ? 4 : length;
+    const handle = this.allocate(TAG_ARRAY, capacity);
+    this.headers[usize(handle)].payload = length;
+    // Capacity past the length is holes, not undefined.
+    let hole = length;
+    while (hole < capacity) {
+      this.setSlot(handle, hole, deletedValue());
+      hole = hole + 1;
+    }
+    return handle;
+  }
+
+  function isArray(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_ARRAY;
+  }
+
+  function arrayLength(handle: u32): u32 {
+    return this.headers[usize(handle)].payload;
+  }
+
+  function arrayHasIndex(handle: u32, index: u32): boolean {
+    if (index >= this.headers[usize(handle)].payload) return false;
+    if (index >= this.headers[usize(handle)].slotCount) return false;
+    return !isDeleted(this.slot(handle, index));
+  }
+
+  function arrayGet(handle: u32, index: u32): Value {
+    if (!this.arrayHasIndex(handle, index)) return undefinedValue();
+    return this.slot(handle, index);
+  }
+
+  function arraySet(inout this, handle: u32, index: u32, value: Value): void {
+    if (index >= this.headers[usize(handle)].slotCount) {
+      let capacity = this.headers[usize(handle)].slotCount;
+      while (capacity <= index) { capacity = capacity * 2; }
+      const oldCount = this.headers[usize(handle)].slotCount;
+      this.growSlots(handle, capacity);
+      // Fresh capacity is holes, not undefined.
+      let hole = oldCount;
+      while (hole < capacity) {
+        this.setSlot(handle, hole, deletedValue());
+        hole = hole + 1;
+      }
+    }
+    this.setSlot(handle, index, value);
+    if (index >= this.headers[usize(handle)].payload) this.headers[usize(handle)].payload = index + 1;
+  }
+
+  // Shrinking drops elements; growing exposes holes.
+  function setArrayLength(inout this, handle: u32, length: u32): void {
+    const old = this.headers[usize(handle)].payload;
+    let index = length;
+    while (index < old && index < this.headers[usize(handle)].slotCount) {
+      this.setSlot(handle, index, deletedValue());
+      index = index + 1;
+    }
+    this.headers[usize(handle)].payload = length;
+  }
+
+  // --- Host functions ---
+
+  // A builtin implemented in Z; `payload` selects it in the runtime's
+  // dispatch, `link` is its `prototype` object once created.
+  function allocateHostFunction(inout this, builtinId: u32): u32 {
+    const handle = this.allocate(TAG_HOST_FUNCTION, 0);
+    this.headers[usize(handle)].payload = builtinId;
+    return handle;
+  }
+
+  function isHostFunction(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_HOST_FUNCTION;
+  }
+
+  function hostFunctionId(handle: u32): u32 {
+    return this.headers[usize(handle)].payload;
   }
 
   // A string cell owning `bytes`.
@@ -207,8 +425,14 @@ export struct Heap {
 export function createHeap(): Heap {
   let headers = Array<CellHeader>();
   // Handle 0 is reserved; push a sentinel so live handles start at 1.
-  headers.push(CellHeader({ tag: TAG_RESERVED, marked: false, slotStart: 0, slotCount: 0, payload: 0 }));
-  return Heap({ headers: move headers, slots: Array<Value>(), strings: Array<Array<u8>>() });
+  headers.push(CellHeader({ tag: TAG_RESERVED, marked: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 }));
+  let classes = Array<HiddenClass>();
+  // Class 0 is the empty root every object starts from.
+  classes.push(HiddenClass({
+    parent: 0, transitionName: 0, transitionSlot: 0, propCount: 0,
+    transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
+  }));
+  return Heap({ headers: move headers, slots: Array<Value>(), strings: Array<Array<u8>>(), classes: move classes });
 }
 
 // The bytes of a Z String as an owned byte array.
@@ -321,4 +545,58 @@ test "string cells keep their bytes and compare bytewise" {
   const copied = heap.stringBytes(hello);
   expect(copied.length).toEqual(five);
   expect(copied[4]).toEqual(111);
+}
+
+test "objects add properties through shared class transitions" {
+  let heap = createHeap();
+  const textA: String = "a";
+  const textB: String = "b";
+  const nameA = heap.allocateString(bytesOf(in textA));
+  const nameB = heap.allocateString(bytesOf(in textB));
+  const first = heap.allocateObject(0);
+  const second = heap.allocateObject(0);
+  heap.objectSet(first, nameA, int32Value(1));
+  heap.objectSet(first, nameB, int32Value(2));
+  heap.objectSet(second, nameA, int32Value(10));
+  heap.objectSet(second, nameB, int32Value(20));
+  expect(heap.objectClass(first)).toEqual(heap.objectClass(second));
+  expect(heap.objectFindSlot(first, nameA)).toEqual(0);
+  expect(heap.objectFindSlot(first, nameB)).toEqual(1);
+  expect(asInt32(heap.slot(second, 1))).toEqual(20);
+  heap.objectSet(first, nameA, int32Value(7));
+  expect(asInt32(heap.slot(first, 0))).toEqual(7);
+  expect(heap.objectFindSlot(first, 12345)).toEqual(-1);
+}
+
+test "an object outgrows its initial slots" {
+  let heap = createHeap();
+  const object = heap.allocateObject(0);
+  let i: i32 = 0;
+  while (i < 10) {
+    const text: String = `p${i}`;
+    const name = heap.allocateString(bytesOf(in text));
+    heap.objectSet(object, name, int32Value(i));
+    i = i + 1;
+  }
+  expect(heap.classPropCount(heap.objectClass(object))).toEqual(10);
+  const textP9: String = "p9";
+  const p9 = heap.allocateString(bytesOf(in textP9));
+  // Names are compared by handle; a different cell with the same bytes
+  // is a different atom. The runtime interns before it asks the heap.
+  expect(heap.objectFindSlot(object, p9)).toEqual(-1);
+  expect(asInt32(heap.slot(object, 9))).toEqual(9);
+}
+
+test "arrays grow, keep holes, and shrink" {
+  let heap = createHeap();
+  const array = heap.allocateArray(0);
+  expect(heap.arrayLength(array)).toEqual(0);
+  heap.arraySet(array, 0, int32Value(5));
+  heap.arraySet(array, 6, int32Value(6));
+  expect(heap.arrayLength(array)).toEqual(7);
+  expect(heap.arrayHasIndex(array, 3)).toEqual(false);
+  expect(asInt32(heap.arrayGet(array, 6))).toEqual(6);
+  heap.setArrayLength(array, 1);
+  expect(heap.arrayHasIndex(array, 6)).toEqual(false);
+  expect(asInt32(heap.arrayGet(array, 0))).toEqual(5);
 }

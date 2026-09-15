@@ -14,5 +14,6 @@ lock-callback-ownership COMPILER-REJECTED
 module-const-string-method LANDED
 numeric-literals LANDED
 replace-array-field-inference BACKEND-REJECTED
+string-from-bytes COMPILER-REJECTED
 string-to-native COMPILER-REJECTED
 while-true-diverges COMPILER-REJECTED
