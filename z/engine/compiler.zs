@@ -113,6 +113,12 @@ struct Local {
   // The name as a constant, for the hole check's message; -1 when no
   // check can apply.
   nameConst: i32;
+  // A function declaration inside a block: the block's binding, created
+  // when the block opens.
+  blockFunction: boolean;
+  // Declared by let, const, class, or a block's function declaration (as
+  // opposed to var, a parameter, or a catch parameter).
+  lexical: boolean;
 }
 
 // What a scope records when it opens, to close it again.
@@ -536,6 +542,7 @@ export struct Compiler {
   function declareLexical(inout this, in parser: Parser, inout runtime: Runtime, nameStart: u32, nameLength: u32, key: u32, isConst: boolean, alwaysCheck: boolean, extent: u32, limit: u32): void {
     const unusedReg = this.addLocalKeyed(nameStart, nameLength, key);
     const index = this.locals.length - 1;
+    this.locals[index].lexical = true;
     this.locals[index].isConst = isConst;
     this.locals[index].initialized = false;
     this.locals[index].alwaysCheck = alwaysCheck;
@@ -569,8 +576,18 @@ export struct Compiler {
 
   // The lexical declarations directly in one statement of a scope. A
   // script's top-level classes are globals, not lexical bindings.
-  function declareStatementLexicals(inout this, in parser: Parser, inout runtime: Runtime, statement: u32, alwaysCheck: boolean, extent: u32, skipClasses: boolean): void {
+  function declareStatementLexicals(inout this, in parser: Parser, inout runtime: Runtime, statement: u32, alwaysCheck: boolean, extent: u32, skipClasses: boolean, inBlock: boolean): void {
     const st = parser.ast.node(statement);
+    if (st.kind == NodeKind.functionDecl && inBlock && st.nameLength > 0) {
+      // Initialized when the block opens, before anything can read it:
+      // no hole, no check.
+      this.declareLexical(in parser, inout runtime, st.nameStart, st.nameLength, st.nameStart, false, false, extent, st.end);
+      const index = this.locals.length - 1;
+      this.locals[index].needsHole = false;
+      this.locals[index].nameConst = -1;
+      this.locals[index].blockFunction = true;
+      return;
+    }
     if (st.kind == NodeKind.varDecl && st.op != TokenKind.kwVar) {
       const isConst = st.op == TokenKind.kwConst;
       let d: u32 = 0;
@@ -590,13 +607,59 @@ export struct Compiler {
     }
   }
 
-  function declareBlockLexicals(inout this, in parser: Parser, inout runtime: Runtime, block: u32, alwaysCheck: boolean, skipClasses: boolean): void {
+  function declareBlockLexicals(inout this, in parser: Parser, inout runtime: Runtime, block: u32, alwaysCheck: boolean, skipClasses: boolean, inBlock: boolean): void {
     const n = parser.ast.node(block);
     let i: u32 = 0;
     while (i < n.childrenCount) {
-      this.declareStatementLexicals(in parser, inout runtime, parser.ast.child(block, i), alwaysCheck, block, skipClasses);
+      this.declareStatementLexicals(in parser, inout runtime, parser.ast.child(block, i), alwaysCheck, block, skipClasses, inBlock);
       i = i + 1;
     }
+  }
+
+  // Create a block's function declarations as it opens, so they are
+  // callable before their statements (hoisted within the block).
+  function hoistBlockFunctions(inout this, in parser: Parser, inout runtime: Runtime, in statements: Array<u32>): void {
+    let i: usize = 0;
+    while (i < statements.length) {
+      const statement = statements[i];
+      const st = parser.ast.node(statement);
+      if (st.kind == NodeKind.functionDecl && st.nameLength > 0) {
+        const local = this.findLocal(in parser, st.nameStart, st.nameLength);
+        if (local >= 0 && this.locals[usize(local)].blockFunction) {
+          const r = this.allocReg();
+          this.emitFunctionValue(in parser, inout runtime, statement, r, 0, 0, 0);
+          if (this.hadError) return;
+          this.initLocal(usize(local), r);
+          this.resetTemps();
+        }
+      }
+      i = i + 1;
+    }
+  }
+
+  // The function-scoped binding of a name (a var, parameter, or
+  // body-level function), the oldest such local, or -1.
+  function findVarLocal(in parser: Parser, nameStart: u32, nameLength: u32): i32 {
+    let index: usize = 0;
+    while (index < this.locals.length) {
+      const local = this.locals[index];
+      if (!local.lexical && local.nameLength == nameLength && this.nameMatches(in parser, local.nameStart, local.nameLength, nameStart, nameLength)) return i32(index);
+      index = index + 1;
+    }
+    return -1;
+  }
+
+  // Whether a lexical binding of the name other than `except` is in
+  // scope: then a var of that name would be an early error, and sloppy
+  // code makes no var for a block's function declaration (Annex B).
+  function hasLexicalConflict(in parser: Parser, nameStart: u32, nameLength: u32, except: usize): boolean {
+    let index: usize = 0;
+    while (index < this.locals.length) {
+      const local = this.locals[index];
+      if (index != except && local.lexical && local.nameLength == nameLength && this.nameMatches(in parser, local.nameStart, local.nameLength, nameStart, nameLength)) return true;
+      index = index + 1;
+    }
+    return false;
   }
 
   // Whether a block declares anything lexical, so a scope is worth opening.
@@ -607,6 +670,7 @@ export struct Compiler {
       const st = parser.ast.node(parser.ast.child(block, i));
       if (st.kind == NodeKind.varDecl && st.op != TokenKind.kwVar) return true;
       if (st.kind == NodeKind.classDecl) return true;
+      if (st.kind == NodeKind.functionDecl) return true;
       i = i + 1;
     }
     return false;
@@ -696,7 +760,7 @@ export struct Compiler {
   // registers, declared ahead of everything else in the body.
   function declareBodyLexicals(inout this, in parser: Parser, inout runtime: Runtime, body: u32, skipClasses: boolean): void {
     const since = this.locals.length;
-    this.declareBlockLexicals(in parser, inout runtime, body, false, skipClasses);
+    this.declareBlockLexicals(in parser, inout runtime, body, false, skipClasses, false);
     this.fixedRegs = this.nextReg;
     this.emitHoles(since);
   }
@@ -898,7 +962,7 @@ export struct Compiler {
     if (envSlot == BLOCK_SLOT) envSlot = -1;
     let reg: u8 = 0;
     if (!captured) reg = this.allocReg();
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
     return reg;
   }
 
@@ -996,7 +1060,7 @@ export struct Compiler {
         // The slot is on record for the binding's own statement too, so
         // a let / const bound later lands in the same slot the function
         // declarations compiled before it were resolved against.
-        this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+        this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
         this.envSize = this.envSize + 1;
       }
       index = index + 1;
@@ -1036,7 +1100,7 @@ export struct Compiler {
         if (captured) {
           const envSlot = i32(this.envSize);
           this.locals[index].envSlot = envSlot;
-          this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+          this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
           this.envSize = this.envSize + 1;
         }
       }
@@ -1053,7 +1117,7 @@ export struct Compiler {
       envSlot = i32(this.envSize);
       this.envSize = this.envSize + 1;
     }
-    this.capturedNames.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+    this.capturedNames.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
   }
 
   // The identifiers of a lexical pattern that nested functions capture.
@@ -1091,7 +1155,7 @@ export struct Compiler {
     // apart from the block-level binding the declaration creates.
     if (n.nameLength > 0 && capturedBy(in parser, node, n.nameStart, n.nameLength, false)) {
       const key = n.kind == NodeKind.classExpr ? n.nameStart : n.start;
-      this.capturedNames.push(Local({ nameStart: key, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+      this.capturedNames.push(Local({ nameStart: key, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
       this.envSize = this.envSize + 1;
     }
     let i: u32 = 0;
@@ -1100,14 +1164,14 @@ export struct Compiler {
       const member = parser.ast.node(memberIndex);
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength)) {
         if (this.capturedSlotByText(in parser, member.nameStart, member.nameLength) < 0) {
-          this.capturedNames.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+          this.capturedNames.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
           this.envSize = this.envSize + 1;
         }
       } else if (member.kind == NodeKind.classField && !member.boolValue && member.nameLength == 0 && member.third != NO_NODE) {
         // Named by the source from its opening bracket, so the binding
         // can never shadow an identifier the key expression reads.
         const key = parser.ast.node(member.third);
-        this.capturedNames.push(Local({ nameStart: key.start - 1, nameLength: key.end - key.start + 1, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+        this.capturedNames.push(Local({ nameStart: key.start - 1, nameLength: key.end - key.start + 1, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
         this.envSize = this.envSize + 1;
       }
       // Static initializers and computed keys run in this function.
@@ -1380,7 +1444,7 @@ export struct Compiler {
     let innerSlot: i32 = -1;
     if (n.nameLength > 0) {
       innerSlot = this.capturedSlot(n.kind == NodeKind.classExpr ? n.nameStart : n.start);
-      this.locals.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+      this.locals.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
     }
     let fieldCount: u32 = 0;
     let ctorNode: u32 = NO_NODE;
@@ -1402,7 +1466,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
       }
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength) && this.findLocal(in parser, member.nameStart, member.nameLength) < 0) {
         const slot = this.capturedSlotByText(in parser, member.nameStart, member.nameLength);
@@ -1410,7 +1474,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+        this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
         const description = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(member.nameStart), usize(member.nameStart + member.nameLength))));
         const key = this.allocReg();
         this.emit(instAU16(Op.newPrivateName, key, description));
@@ -1571,7 +1635,13 @@ export struct Compiler {
     if (node == NO_NODE) return;
     const n = parser.ast.node(node);
     const k = n.kind;
-    if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef || k == NodeKind.staticBlock) return;
+    if (k == NodeKind.functionDecl) {
+      if (nested && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, extent, n.nameStart, n.nameLength, false)) {
+        this.recordCapture(n.nameStart, n.nameLength, true);
+      }
+      return;
+    }
+    if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef || k == NodeKind.staticBlock) return;
     if (k == NodeKind.classDecl || k == NodeKind.classExpr) {
       if (k == NodeKind.classDecl && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, extent, n.nameStart, n.nameLength, false)) {
         this.recordCapture(n.nameStart, n.nameLength, nested);
@@ -1616,11 +1686,29 @@ export struct Compiler {
   // Function-scoped bindings of a body: var and nested function
   // declarations, all as registers. Lexical declarations belong to their
   // scopes. Nested functions are not entered; their bindings are their own.
-  function collectLocals(inout this, in parser: Parser, node: u32): void {
+  function collectBodyLocals(inout this, in parser: Parser, body: u32): void {
+    const n = parser.ast.node(body);
+    if (n.kind != NodeKind.blockStmt) {
+      this.collectLocals(in parser, body, true);
+      return;
+    }
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      this.collectLocals(in parser, parser.ast.child(body, i), false);
+      i = i + 1;
+    }
+  }
+
+  // `nested`: inside a block rather than at the body's top level. A
+  // function declaration there is the block's own binding; sloppy code
+  // also gives it a function-scoped var (assigned when the declaration
+  // is evaluated), strict code does not.
+  function collectLocals(inout this, in parser: Parser, node: u32, nested: boolean): void {
     if (node == NO_NODE) return;
     const n = parser.ast.node(node);
     const k = n.kind;
     if (k == NodeKind.functionDecl) {
+      if (nested && this.strict) return;
       if (this.findLocal(in parser, n.nameStart, n.nameLength) < 0) this.addLocal(n.nameStart, n.nameLength);
       return;
     }
@@ -1634,17 +1722,17 @@ export struct Compiler {
           this.addLocal(decl.nameStart, decl.nameLength);
         }
         if (decl.nameLength == 0 && decl.third != NO_NODE) this.collectPatternLocals(in parser, decl.third);
-        if (decl.left != NO_NODE) this.collectLocals(in parser, decl.left);
+        if (decl.left != NO_NODE) this.collectLocals(in parser, decl.left, true);
         i = i + 1;
       }
       return;
     }
-    if (n.left != NO_NODE) this.collectLocals(in parser, n.left);
-    if (n.right != NO_NODE) this.collectLocals(in parser, n.right);
-    if (n.third != NO_NODE) this.collectLocals(in parser, n.third);
+    if (n.left != NO_NODE) this.collectLocals(in parser, n.left, true);
+    if (n.right != NO_NODE) this.collectLocals(in parser, n.right, true);
+    if (n.third != NO_NODE) this.collectLocals(in parser, n.third, true);
     let i: u32 = 0;
     while (i < n.childrenCount) {
-      this.collectLocals(in parser, parser.ast.child(node, i));
+      this.collectLocals(in parser, parser.ast.child(node, i), true);
       i = i + 1;
     }
   }
@@ -1707,7 +1795,7 @@ export struct Compiler {
     let envSlot = this.capturedSlot(nameStart);
     const captured = envSlot != -1;
     if (envSlot == BLOCK_SLOT) envSlot = -1;
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
     return this.locals.length - 1;
   }
 
@@ -2776,13 +2864,15 @@ export struct Compiler {
       while (statement < clause.childrenCount) {
         const statementIndex = parser.ast.child(clauseIndex, statement);
         caseStatements.push(statementIndex);
-        this.declareStatementLexicals(in parser, inout runtime, statementIndex, true, node, false);
+        this.declareStatementLexicals(in parser, inout runtime, statementIndex, true, node, false, true);
         statement = statement + 1;
       }
       c = c + 1;
     }
     this.checkBlockRedeclarations(in parser, node, in caseStatements);
     this.enterScope(inout mark);
+    this.hoistBlockFunctions(in parser, inout runtime, in caseStatements);
+    if (this.hadError) return;
     let casePatches = Array<u32>();
     let defaultIndex: i32 = -1;
     let i: u32 = 0;
@@ -3359,6 +3449,24 @@ export struct Compiler {
     }
     if (k == NodeKind.emptyStmt) return;
     if (k == NodeKind.functionDecl) {
+      const blockLocal = this.findLocal(in parser, n.nameStart, n.nameLength);
+      if (blockLocal >= 0 && this.locals[usize(blockLocal)].blockFunction) {
+        // Created when its block opened. Sloppy code also assigns the
+        // function-scoped binding (or global) of the name here.
+        if (this.strict) return;
+        if (this.hasLexicalConflict(in parser, n.nameStart, n.nameLength, usize(blockLocal))) return;
+        const value = this.allocReg();
+        this.loadLocal(usize(blockLocal), value);
+        if (this.isFunction) {
+          const varLocal = this.findVarLocal(in parser, n.nameStart, n.nameLength);
+          if (varLocal >= 0) this.storeLocal(usize(varLocal), value);
+        } else {
+          const slot = runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+          this.emit(instAU16(Op.defineGlobal, value, slot));
+        }
+        this.resetTemps();
+        return;
+      }
       const r = this.allocReg();
       this.emitFunctionValue(in parser, inout runtime, node, r, 0, 0, 0);
       if (this.hadError) return;
@@ -3605,8 +3713,10 @@ export struct Compiler {
       const scoped = this.hasLexicalDeclarations(in parser, node);
       let mark = this.openScope();
       if (scoped) {
-        this.declareBlockLexicals(in parser, inout runtime, node, false, false);
+        this.declareBlockLexicals(in parser, inout runtime, node, false, false, true);
         this.enterScope(inout mark);
+        this.hoistBlockFunctions(in parser, inout runtime, in statements);
+        if (this.hadError) return;
       }
       let i: u32 = 0;
       while (i < n.childrenCount) {
@@ -3899,7 +4009,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       // A pattern parameter: the argument lands in a register with no
       // name; the pattern's own names are locals bound at entry.
       const reg = compiler.allocReg();
-      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
       paramCount = paramCount + 1;
       p = p + 1;
       continue;
@@ -3908,7 +4018,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     // Parameters arrive in the first registers; a captured one is copied
     // into the environment once it exists.
     const reg = compiler.allocReg();
-    compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+    compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
     paramCount = paramCount + 1;
     p = p + 1;
   }
@@ -3929,7 +4039,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     selfReg = i32(compiler.addLocal(n.nameStart, n.nameLength));
     selfLocal = i32(compiler.locals.length - 1);
   }
-  if (n.left != NO_NODE) compiler.collectLocals(in parser, n.left);
+  if (n.left != NO_NODE) compiler.collectBodyLocals(in parser, n.left);
   if (n.left != NO_NODE && bodyUsesThis(in parser, n.left)) compiler.thisReg = i32(compiler.allocReg());
   // `arguments`, when the body (or an arrow inside it) reads it and no
   // parameter or declaration takes the name, is a local built at entry.
@@ -4604,13 +4714,46 @@ function bodyUsesThis(in parser: Parser, node: u32): boolean {
 
 // Script-level hoisting: var and function declarations are global bindings
 // that exist before the first statement runs.
-function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32): void {
+// `enclosing` carries the lexical names of the scopes on the way down:
+// a block's function declaration gets a global (sloppy code, Annex B)
+// only when no enclosing scope but its own declares its name lexically.
+function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32, nested: boolean, inout enclosing: Array<NameRef>): void {
   if (node == NO_NODE) return;
   const n = parser.ast.node(node);
   const k = n.kind;
-  if (k == NodeKind.functionDecl || k == NodeKind.classDecl) {
-    runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+  if (k == NodeKind.classDecl) {
+    if (!nested) runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
     return;
+  }
+  if (k == NodeKind.functionDecl) {
+    if (!nested) {
+      runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+    } else if (!parser.strictMode && !enclosingDeclares(in parser, in enclosing, n.nameStart, n.nameLength)) {
+      runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+    }
+    return;
+  }
+  const childNested = nested || k != NodeKind.program;
+  // A scope's own lexical names are in force for everything inside it.
+  const before = enclosing.length;
+  if (k == NodeKind.program || k == NodeKind.blockStmt) {
+    let c: u32 = 0;
+    while (c < n.childrenCount) {
+      pushLexicalNames(in parser, parser.ast.child(node, c), k == NodeKind.blockStmt, inout enclosing);
+      c = c + 1;
+    }
+  } else if (k == NodeKind.switchStmt) {
+    let c: u32 = 0;
+    while (c < n.childrenCount) {
+      const clauseIndex = parser.ast.child(node, c);
+      const clause = parser.ast.node(clauseIndex);
+      let statement: u32 = 0;
+      while (statement < clause.childrenCount) {
+        pushLexicalNames(in parser, parser.ast.child(clauseIndex, statement), true, inout enclosing);
+        statement = statement + 1;
+      }
+      c = c + 1;
+    }
   }
   if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classExpr) return;
   if (k == NodeKind.varDecl) {
@@ -4624,14 +4767,28 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32)
     }
     return;
   }
-  if (n.left != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.left);
-  if (n.right != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.right);
-  if (n.third != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.third);
+  if (n.left != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.left, childNested, inout enclosing);
+  if (n.right != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.right, childNested, inout enclosing);
+  if (n.third != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.third, childNested, inout enclosing);
   let i: u32 = 0;
   while (i < n.childrenCount) {
-    hoistProgramDecls(in parser, inout runtime, parser.ast.child(node, i));
+    hoistProgramDecls(in parser, inout runtime, parser.ast.child(node, i), childNested, inout enclosing);
     i = i + 1;
   }
+  while (enclosing.length > before) {
+    const dropped = enclosing.pop();
+  }
+}
+
+// Whether the names carry `name` declared somewhere other than at
+// `nameStart` itself.
+function enclosingDeclares(in parser: Parser, in enclosing: Array<NameRef>, nameStart: u32, nameLength: u32): boolean {
+  let i: usize = 0;
+  while (i < enclosing.length) {
+    if (enclosing[i].start != nameStart && enclosing[i].length == nameLength && parser.slicesEqual(enclosing[i].start, enclosing[i].length, nameStart, nameLength)) return true;
+    i = i + 1;
+  }
+  return false;
 }
 
 // Every identifier a script-level var pattern declares is a global.
@@ -4674,7 +4831,8 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   compiler.lastExprReg = i32(resultReg);
 
   const program = parser.ast.node(root);
-  hoistProgramDecls(in parser, inout runtime, root);
+  let enclosingLexicals = Array<NameRef>();
+  hoistProgramDecls(in parser, inout runtime, root, false, inout enclosingLexicals);
   // Top-level let / const that functions refer to live in an environment;
   // var and function declarations are globals and need none.
   compiler.scanCaptures(in parser, root);
