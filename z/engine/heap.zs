@@ -878,7 +878,7 @@ export struct Heap {
   // A string of these units, stored narrow when it can be.
   function allocateUnits(inout this, units: Array<u16>): u32 {
     if (isNarrowUnits(in units)) return this.allocateStorage(unitsToLatin1(in units), false);
-    let bytes = Array<u8>();
+    let bytes = Array<u8>.withCapacity(units.length * 2);
     let i: usize = 0;
     while (i < units.length) {
       bytes.push(u8(units[i] & 0xFF));
@@ -943,7 +943,9 @@ export struct Heap {
   // units[start, end) copied; the caller keeps end in range.
   function stringUnitsSlice(handle: u32, start: usize, end: usize): Array<u16> {
     const at = usize(this.headers[usize(handle)].payload);
-    let copied = Array<u16>();
+    let count: usize = 0;
+    if (end > start) count = end - start;
+    let copied = Array<u16>.withCapacity(count);
     let index = start;
     if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
       while (index < end) {
@@ -965,7 +967,9 @@ export struct Heap {
     const at = usize(this.headers[usize(handle)].payload);
     const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
     if (!wide) {
-      let bytes = Array<u8>();
+      let count: usize = 0;
+      if (end > start) count = end - start;
+      let bytes = Array<u8>.withCapacity(count);
       let index = start;
       while (index < end) {
         bytes.push(this.strings[at][index]);
@@ -995,9 +999,9 @@ export struct Heap {
   // fast paths' working form), or the wide string's byte pairs.
   function stringStorageBytes(handle: u32): Array<u8> {
     const at = usize(this.headers[usize(handle)].payload);
-    let copied = Array<u8>();
-    let index: usize = 0;
     const length = this.strings[at].length;
+    let copied = Array<u8>.withCapacity(length);
+    let index: usize = 0;
     while (index < length) {
       copied.push(this.strings[at][index]);
       index = index + 1;
@@ -1012,9 +1016,9 @@ export struct Heap {
       const units = this.stringUnits(handle);
       return unitsToUtf8(in units);
     }
-    let bytes = Array<u8>();
-    let index: usize = 0;
     const length = this.strings[at].length;
+    let bytes = Array<u8>.withCapacity(length);
+    let index: usize = 0;
     while (index < length) {
       const byte = this.strings[at][index];
       if (byte < 0x80) {
@@ -1189,7 +1193,9 @@ export const DICT_THRESHOLD: u32 = 64;
 // The bytes of a Z String as an owned byte array.
 // An owned copy of the byte range [start, end).
 export function sliceBytes(in bytes: Array<u8>, start: usize, end: usize): Array<u8> {
-  let copied = Array<u8>();
+  let count: usize = 0;
+  if (end > start) count = end - start;
+  let copied = Array<u8>.withCapacity(count);
   let index = start;
   while (index < end) {
     copied.push(bytes[index]);
@@ -1199,9 +1205,9 @@ export function sliceBytes(in bytes: Array<u8>, start: usize, end: usize): Array
 }
 
 export function bytesOf(in text: String): Array<u8> {
-  let bytes = Array<u8>();
-  let index: usize = 0;
   const length = text.byteLength;
+  let bytes = Array<u8>.withCapacity(length);
+  let index: usize = 0;
   while (index < length) {
     bytes.push(text.byteAt(index));
     index = index + 1;

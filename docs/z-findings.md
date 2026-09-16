@@ -1045,8 +1045,8 @@ binding (`let step: usize = 1; if (wide) step = 2;`). Probe
 
 ## G35 — No capacity reservation for an array being built
 
-**Status:** `proposed` · **Size:** small · **Priority:** medium
-**Confirmed:** z-lang `69397510` · **Blocks:** no
+**Status:** `consumer-verified` — z-lang `ca09a9c4` (pin `ca09a9c4`); probe `array-capacity` `LANDED`; every engine builder whose size is known reserves it (`Array<T>.withCapacity`, `reserveCapacity` on append): the ASCII string loop 0.615 to 0.463 s median with reallocations 9.0M to 1.2M, the regex loop 1.29 to 1.14 s with reallocations 16.7M to 5.7M, ten runs each. · **Size:** small · **Priority:** medium
+**Confirmed:** z-lang `69397510` · **Fixed:** z-lang `ca09a9c4` · **Blocks:** no
 **Found:** the string-representation slice, profiling.
 
 Every string the engine builds is an `Array<u8>` or `Array<u16>` grown by

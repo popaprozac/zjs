@@ -758,7 +758,7 @@ export struct Runtime {
   // trims like a space; any other unit above ASCII makes it NaN.
   function stringValueToNumber(handle: u32): f64 {
     const length = this.heap.stringLength(handle);
-    let bytes = Array<u8>();
+    let bytes = Array<u8>.withCapacity(length);
     let index: usize = 0;
     while (index < length) {
       const unit = this.heap.stringUnit(handle, index);
@@ -3624,14 +3624,14 @@ export struct Runtime {
     // Two narrow strings stay narrow by joining storage; anything else
     // goes through units.
     if (!this.heap.isWideString(leftHandle) && !this.heap.isWideString(rightHandle)) {
-      let joined = Array<u8>();
       const leftLength = this.heap.stringStorageLength(leftHandle);
+      const rightLength = this.heap.stringStorageLength(rightHandle);
+      let joined = Array<u8>.withCapacity(leftLength + rightLength);
       let i: usize = 0;
       while (i < leftLength) {
         joined.push(this.heap.stringStorageByte(leftHandle, i));
         i = i + 1;
       }
-      const rightLength = this.heap.stringStorageLength(rightHandle);
       i = 0;
       while (i < rightLength) {
         joined.push(this.heap.stringStorageByte(rightHandle, i));

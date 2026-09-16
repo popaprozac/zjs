@@ -12,7 +12,7 @@
 // consumer that decodes generalized UTF-8).
 
 export function textBytes(in text: String): Array<u8> {
-  let bytes = Array<u8>();
+  let bytes = Array<u8>.withCapacity(text.byteLength);
   let index: usize = 0;
   const length = text.byteLength;
   while (index < length) {
@@ -101,7 +101,7 @@ export function pushCodePoint(inout units: Array<u16>, codePoint: u32): void {
 }
 
 export function utf8ToUnits(in bytes: Array<u8>): Array<u16> {
-  let units = Array<u16>();
+  let units = Array<u16>.withCapacity(bytes.length);
   let at: usize = 0;
   while (at < bytes.length) {
     const length = utf8Length(in bytes, at);
@@ -160,7 +160,7 @@ export function codePointAt(in units: Array<u16>, index: usize): u32 {
 // UTF-8, with `keepSurrogates` choosing between U+FFFD and the
 // generalized three-byte form for a lone surrogate.
 function encodeUnits(in units: Array<u16>, keepSurrogates: boolean): Array<u8> {
-  let bytes = Array<u8>();
+  let bytes = Array<u8>.withCapacity(units.length);
   let index: usize = 0;
   while (index < units.length) {
     const unit = units[index];
@@ -204,7 +204,7 @@ export function isNarrowUnits(in units: Array<u16>): boolean {
 // Latin-1 bytes as units, and back (the caller keeps every unit under
 // 0x100).
 export function latin1Units(in bytes: Array<u8>): Array<u16> {
-  let units = Array<u16>();
+  let units = Array<u16>.withCapacity(bytes.length);
   let i: usize = 0;
   while (i < bytes.length) {
     units.push(u16(bytes[i]));
@@ -214,7 +214,7 @@ export function latin1Units(in bytes: Array<u8>): Array<u16> {
 }
 
 export function unitsToLatin1(in units: Array<u16>): Array<u8> {
-  let bytes = Array<u8>();
+  let bytes = Array<u8>.withCapacity(units.length);
   let i: usize = 0;
   while (i < units.length) {
     bytes.push(u8(units[i]));
@@ -224,7 +224,9 @@ export function unitsToLatin1(in units: Array<u16>): Array<u8> {
 }
 
 export function sliceUnits(in units: Array<u16>, start: usize, end: usize): Array<u16> {
-  let copy = Array<u16>();
+  let count: usize = 0;
+  if (end > start) count = end - start;
+  let copy = Array<u16>.withCapacity(count);
   let i = start;
   while (i < end) {
     copy.push(units[i]);
@@ -239,6 +241,7 @@ export function copyUnits(in units: Array<u16>): Array<u16> {
 }
 
 export function appendUnits(inout target: Array<u16>, source: Array<u16>): void {
+  target.reserveCapacity(target.length + source.length);
   let i: usize = 0;
   while (i < source.length) {
     target.push(source[i]);

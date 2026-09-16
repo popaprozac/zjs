@@ -193,7 +193,7 @@ export c function zjs_z_eval(handle: usize, source: Slice<u8>): void {
 }
 
 export function sliceToBytes(source: Slice<u8>): Array<u8> {
-  let bytes = Array<u8>();
+  let bytes = Array<u8>.withCapacity(source.length);
   let index: usize = 0;
   const count = source.length;
   while (index < count) {

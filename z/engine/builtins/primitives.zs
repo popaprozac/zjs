@@ -800,8 +800,16 @@ function stringEndsWith(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   return booleanValue(true);
 }
 
+// The capacity to reserve for `count` copies of `length` units: the
+// product, unless it is past what any result could be.
+function repeatCapacity(length: usize, count: u32): usize {
+  const total = length * usize(count);
+  if (total > 268435456) return 0;
+  return total;
+}
+
 function copyAll(in bytes: Array<u16>): Array<u16> {
-  let copied = Array<u16>();
+  let copied = Array<u16>.withCapacity(bytes.length);
   let index: usize = 0;
   while (index < bytes.length) {
     copied.push(bytes[index]);
@@ -811,7 +819,9 @@ function copyAll(in bytes: Array<u16>): Array<u16> {
 }
 
 function sliceFrom(in bytes: Array<u16>, start: usize): Array<u16> {
-  let copied = Array<u16>();
+  let count: usize = 0;
+  if (bytes.length > start) count = bytes.length - start;
+  let copied = Array<u16>.withCapacity(count);
   let index = start;
   while (index < bytes.length) {
     copied.push(bytes[index]);
@@ -821,7 +831,9 @@ function sliceFrom(in bytes: Array<u16>, start: usize): Array<u16> {
 }
 
 function sliceBytes(in bytes: Array<u16>, start: usize, end: usize): Array<u16> {
-  let joined = Array<u16>();
+  let count: usize = 0;
+  if (end > start) count = end - start;
+  let joined = Array<u16>.withCapacity(count);
   let index = start;
   while (index < end) {
     joined.push(bytes[index]);
@@ -1022,7 +1034,7 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
     const key = runtime.heap.stringStorageBytes(patternHandle);
     const template = runtime.heap.stringStorageBytes(replacementHandle);
     const step: usize = key.length == 0 ? 1 : key.length;
-    let joined = Array<u8>();
+    let joined = Array<u8>.withCapacity(hay.length);
     let copied: usize = 0;
     let searchFrom: usize = 0;
     while (searchFrom <= hay.length) {
@@ -1057,7 +1069,7 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
     positions.push(usize(found));
     searchFrom = usize(found) + advance;
   }
-  let joined = Array<u16>();
+  let joined = Array<u16>.withCapacity(bytes.length);
   let copied: usize = 0;
   let i: usize = 0;
   while (i < positions.length) {
@@ -1146,7 +1158,7 @@ function stringToWellFormed(inout runtime: Runtime, thisValue: Value, argsBase: 
   const text: String = "toWellFormed";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  let joined = Array<u16>();
+  let joined = Array<u16>.withCapacity(bytes.length);
   let index: usize = 0;
   while (index < bytes.length) {
     const unit = bytes[index];
@@ -1204,7 +1216,7 @@ function stringToUpperCase(inout runtime: Runtime, thisValue: Value, argsBase: u
     if (simple) return runtime.newStringLatin1(move bytes);
   }
   const units = runtime.heap.stringUnits(handle);
-  let joined = Array<u16>();
+  let joined = Array<u16>.withCapacity(units.length);
   let index: usize = 0;
   while (index < units.length) {
     const unit = units[index];
@@ -1259,7 +1271,7 @@ function stringRepeat(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   const count: u32 = countNumber != countNumber ? 0 : u32(truncateDouble(countNumber));
   if (narrow(in runtime, handle)) {
     const bytes = runtime.heap.stringStorageBytes(handle);
-    let joined = Array<u8>();
+    let joined = Array<u8>.withCapacity(repeatCapacity(bytes.length, count));
     let repeat: u32 = 0;
     while (repeat < count) {
       appendAll(inout joined, in bytes);
@@ -1268,7 +1280,7 @@ function stringRepeat(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     return runtime.newStringLatin1(move joined);
   }
   const units = runtime.heap.stringUnits(handle);
-  let joined = Array<u16>();
+  let joined = Array<u16>.withCapacity(repeatCapacity(units.length, count));
   let repeat: u32 = 0;
   while (repeat < count) {
     appendAll(inout joined, in units);
@@ -1309,7 +1321,7 @@ function padBytes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
       filler = runtime.heap.stringStorageBytes(fillerHandle);
     }
     const bytes = runtime.heap.stringStorageBytes(handle);
-    let joined = Array<u8>();
+    let joined = Array<u8>.withCapacity(usize(target));
     if (!atStart) appendAll(inout joined, in bytes);
     let k: usize = 0;
     while (k < missing) {
@@ -1326,7 +1338,7 @@ function padBytes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
     filler = runtime.heap.stringUnits(fillerHandle);
   }
   const units = runtime.heap.stringUnits(handle);
-  let joined = Array<u16>();
+  let joined = Array<u16>.withCapacity(usize(target));
   if (!atStart) appendAll(inout joined, in units);
   let k: usize = 0;
   while (k < missing) {
@@ -1490,7 +1502,7 @@ function stringReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     if (found < 0) return cellValue(handle);
     const template = runtime.heap.stringStorageBytes(replacementHandle);
     const replacement = expandReplacement(in template, in pattern, usize(found), in bytes);
-    let joined = Array<u8>();
+    let joined = Array<u8>.withCapacity(bytes.length + replacement.length);
     let k: usize = 0;
     while (k < usize(found)) {
       joined.push(bytes[k]);

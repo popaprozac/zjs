@@ -421,7 +421,7 @@ function appendAll(inout text: Array<u16>, in more: Array<u16>): void {
 }
 
 function copyBytes(in bytes: Array<u16>): Array<u16> {
-  let copied = Array<u16>();
+  let copied = Array<u16>.withCapacity(bytes.length);
   let index: usize = 0;
   while (index < bytes.length) {
     copied.push(bytes[index]);
