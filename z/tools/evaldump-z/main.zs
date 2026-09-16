@@ -32,12 +32,15 @@ function writeBytes(in bytes: Array<u8>): void {
 
 // `<prefix> string <length> <bytes>\n`, entirely through one output path.
 function writeStringLine(in runtime: Runtime, in prefix: String, handle: u32): void {
-  const head: String = `${prefix} string ${runtime.heap.stringLength(handle)} `;
+  // The rendering is UTF-8 (a lone surrogate as U+FFFD) with its byte
+  // length, so well-formed text renders as the byte-based reference
+  // renders it; the code-unit length is the engine's own business.
+  const bytes = runtime.heap.stringUtf8(handle);
+  const head: String = `${prefix} string ${bytes.length} `;
   let line = bytesOf(in head);
-  const length = runtime.heap.stringLength(handle);
   let index: usize = 0;
-  while (index < length) {
-    line.push(runtime.heap.stringByte(handle, index));
+  while (index < bytes.length) {
+    line.push(bytes[index]);
     index = index + 1;
   }
   line.push(10);

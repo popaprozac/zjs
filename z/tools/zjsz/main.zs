@@ -32,11 +32,11 @@ function writeError(in bytes: Array<u8>): void {
 
 function appendString(inout line: Array<u8>, in runtime: Runtime, value: Value): void {
   if (!runtime.isStringValue(value)) return;
-  const handle = asCell(value);
-  const length = runtime.heap.stringLength(handle);
+  // The host boundary: UTF-8 out, a lone surrogate as U+FFFD.
+  const bytes = runtime.heap.stringUtf8(asCell(value));
   let index: usize = 0;
-  while (index < length) {
-    line.push(runtime.heap.stringByte(handle, index));
+  while (index < bytes.length) {
+    line.push(bytes[index]);
     index = index + 1;
   }
 }

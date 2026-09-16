@@ -22,6 +22,7 @@
 // the heap has to be updated: a handle never changes, only the slot range
 // behind it.
 
+import { utf8ToUnits, unitsToUtf8, unitsToWtf8, isAsciiBytes, isNarrowUnits, unitsToLatin1 } from "./text.zs";
 import { expect } from "std/test";
 import { Value, undefinedValue, deletedValue, isDeleted, cellValue, asCell, isCell, int32Value, asInt32 } from "./value.zs";
 
@@ -65,6 +66,12 @@ export const FLAG_LENGTH_READONLY: u8 = 2;
 export const FLAG_PRIVATE_NAME: u8 = 4;
 // A string cell that is the runtime's atom for its bytes.
 export const FLAG_INTERNED: u8 = 8;
+// A string cell whose units are stored two bytes each (some unit is above
+// 0xFF); otherwise one byte per unit.
+export const FLAG_WIDE: u8 = 16;
+// A string cell used as an engine-internal key: never interned by
+// content, so no program string can name it.
+export const FLAG_HIDDEN: u8 = 32;
 
 struct CellHeader {
   tag: u8;
@@ -557,8 +564,13 @@ export struct Heap {
     return this.headers[usize(handle)].payload;
   }
 
-  // A string cell owning `bytes`.
-  function allocateString(inout this, bytes: Array<u8>): u32 {
+  // --- Strings ---
+  //
+  // A string cell's content is UTF-16 code units. Storage is one byte per
+  // unit when every unit is at most 0xFF (Latin-1), else two bytes per
+  // unit, little-endian, with FLAG_WIDE on the cell. The narrow form is
+  // canonical, so equal content always has equal storage.
+  function allocateStorage(inout this, bytes: Array<u8>, wide: boolean): u32 {
     let stringIndex: u32 = 0;
     if (this.freeStringCount > 0) {
       this.freeStringCount = this.freeStringCount - 1;
@@ -570,12 +582,41 @@ export struct Heap {
     }
     const handle = this.allocate(TAG_STRING, 0);
     this.headers[usize(handle)].payload = stringIndex;
+    if (wide) this.setFlags(handle, FLAG_WIDE);
     return handle;
   }
 
-  // A string cell holding a copy of a Z String's bytes.
+  // A string whose units are these bytes' values (ASCII or Latin-1).
+  function allocateLatin1(inout this, bytes: Array<u8>): u32 {
+    return this.allocateStorage(move bytes, false);
+  }
+
+  // A string of these units, stored narrow when it can be.
+  function allocateUnits(inout this, units: Array<u16>): u32 {
+    if (isNarrowUnits(in units)) return this.allocateStorage(unitsToLatin1(in units), false);
+    let bytes = Array<u8>();
+    let i: usize = 0;
+    while (i < units.length) {
+      bytes.push(u8(units[i] & 0xFF));
+      bytes.push(u8(units[i] >> 8));
+      i = i + 1;
+    }
+    return this.allocateStorage(move bytes, true);
+  }
+
+  // A string decoded from UTF-8 text (the source and host boundary).
+  function allocateUtf8(inout this, bytes: Array<u8>): u32 {
+    if (isAsciiBytes(in bytes)) return this.allocateStorage(move bytes, false);
+    return this.allocateUnits(utf8ToUnits(in bytes));
+  }
+
+  // A string cell holding a Z String's text.
   function allocateText(inout this, in text: String): u32 {
-    return this.allocateString(bytesOf(in text));
+    return this.allocateUtf8(bytesOf(in text));
+  }
+
+  function isWideString(handle: u32): boolean {
+    return (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
   }
 
   function isString(handle: u32): boolean {
@@ -600,61 +641,143 @@ export struct Heap {
     return this.headers[usize(handle)].payload;
   }
 
+  // The length in code units.
   function stringLength(handle: u32): usize {
+    const bytes = this.strings[usize(this.headers[usize(handle)].payload)].length;
+    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) return bytes / 2;
+    return bytes;
+  }
+
+  function stringUnit(handle: u32, index: usize): u16 {
+    const at = usize(this.headers[usize(handle)].payload);
+    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
+      return u16(this.strings[at][index * 2]) | (u16(this.strings[at][index * 2 + 1]) << 8);
+    }
+    return u16(this.strings[at][index]);
+  }
+
+  // units[start, end) copied; the caller keeps end in range.
+  function stringUnitsSlice(handle: u32, start: usize, end: usize): Array<u16> {
+    const at = usize(this.headers[usize(handle)].payload);
+    let copied = Array<u16>();
+    let index = start;
+    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
+      while (index < end) {
+        copied.push(u16(this.strings[at][index * 2]) | (u16(this.strings[at][index * 2 + 1]) << 8));
+        index = index + 1;
+      }
+      return copied;
+    }
+    while (index < end) {
+      copied.push(u16(this.strings[at][index]));
+      index = index + 1;
+    }
+    return copied;
+  }
+
+  // A fresh string cell holding units[start, end) of another, copied in
+  // storage form (no unit round trip).
+  function allocateSubstring(inout this, handle: u32, start: usize, end: usize): u32 {
+    const at = usize(this.headers[usize(handle)].payload);
+    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
+    if (!wide) {
+      let bytes = Array<u8>();
+      let index = start;
+      while (index < end) {
+        bytes.push(this.strings[at][index]);
+        index = index + 1;
+      }
+      return this.allocateStorage(move bytes, false);
+    }
+    // A wide slice may fit narrow; allocateUnits decides.
+    return this.allocateUnits(this.stringUnitsSlice(handle, start, end));
+  }
+
+  function stringUnits(handle: u32): Array<u16> {
+    const length = this.stringLength(handle);
+    return this.stringUnitsSlice(handle, 0, length);
+  }
+
+  // The raw storage: Latin-1 bytes, or two bytes per unit when wide.
+  function stringStorageLength(handle: u32): usize {
     return this.strings[usize(this.headers[usize(handle)].payload)].length;
   }
 
-  function stringByte(handle: u32, index: usize): u8 {
+  function stringStorageByte(handle: u32, index: usize): u8 {
     return this.strings[usize(this.headers[usize(handle)].payload)][index];
   }
 
-  // An owned copy of a string cell's bytes.
-  // bytes[start, end) of a string, copied; the caller keeps end in range.
-  function stringSlice(handle: u32, start: usize, end: usize): Array<u8> {
+  // The content as UTF-8 for the host (a lone surrogate becomes U+FFFD).
+  function stringUtf8(handle: u32): Array<u8> {
     const at = usize(this.headers[usize(handle)].payload);
-    let copied = Array<u8>();
-    let index = start;
-    while (index < end) {
-      copied.push(this.strings[at][index]);
-      index = index + 1;
+    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
+      const units = this.stringUnits(handle);
+      return unitsToUtf8(in units);
     }
-    return copied;
-  }
-
-  function stringBytes(handle: u32): Array<u8> {
-    const at = usize(this.headers[usize(handle)].payload);
-    let copied = Array<u8>();
+    let bytes = Array<u8>();
     let index: usize = 0;
     const length = this.strings[at].length;
     while (index < length) {
-      copied.push(this.strings[at][index]);
+      const byte = this.strings[at][index];
+      if (byte < 0x80) {
+        bytes.push(byte);
+      } else {
+        bytes.push(u8(0xC0 | (byte >> 6)));
+        bytes.push(u8(0x80 | (byte & 0x3F)));
+      }
       index = index + 1;
     }
-    return copied;
+    return bytes;
   }
 
+  // The content as generalized UTF-8, a lone surrogate in its three-byte
+  // form: for the parser, so a string handed back as source keeps it.
+  function stringWtf8(handle: u32): Array<u8> {
+    if ((this.headers[usize(handle)].flags & FLAG_WIDE) == 0) return this.stringUtf8(handle);
+    const units = this.stringUnits(handle);
+    return unitsToWtf8(in units);
+  }
+
+  // Equal content: equal width (the narrow form is canonical) and equal
+  // storage.
   function stringsEqual(a: u32, b: u32): boolean {
     if (a == b) return true;
-    const length = this.stringLength(a);
-    if (length != this.stringLength(b)) return false;
+    if (this.isWideString(a) != this.isWideString(b)) return false;
+    const at = usize(this.headers[usize(a)].payload);
+    const bt = usize(this.headers[usize(b)].payload);
+    const length = this.strings[at].length;
+    if (length != this.strings[bt].length) return false;
     let index: usize = 0;
     while (index < length) {
-      if (this.stringByte(a, index) != this.stringByte(b, index)) return false;
+      if (this.strings[at][index] != this.strings[bt][index]) return false;
       index = index + 1;
     }
     return true;
   }
 
-  // Byte-wise ordering, the reference's memcmp-then-length rule:
-  // negative, zero, or positive.
+  // Ordering by code units, then by length: negative, zero, or positive.
   function compareStrings(a: u32, b: u32): i32 {
     const aLength = this.stringLength(a);
     const bLength = this.stringLength(b);
     const shorter = aLength < bLength ? aLength : bLength;
     let index: usize = 0;
+    if (!this.isWideString(a) && !this.isWideString(b)) {
+      const at = usize(this.headers[usize(a)].payload);
+      const bt = usize(this.headers[usize(b)].payload);
+      while (index < shorter) {
+        const ab = this.strings[at][index];
+        const bb = this.strings[bt][index];
+        if (ab < bb) return -1;
+        if (ab > bb) return 1;
+        index = index + 1;
+      }
+      if (aLength < bLength) return -1;
+      if (aLength > bLength) return 1;
+      return 0;
+    }
     while (index < shorter) {
-      const ab = this.stringByte(a, index);
-      const bb = this.stringByte(b, index);
+      const ab = this.stringUnit(a, index);
+      const bb = this.stringUnit(b, index);
       if (ab < bb) return -1;
       if (ab > bb) return 1;
       index = index + 1;
@@ -871,14 +994,14 @@ test "string cells keep their bytes and compare bytewise" {
   expect(heap.isString(hello)).toEqual(true);
   const five: usize = 5;
   expect(heap.stringLength(hello)).toEqual(five);
-  expect(heap.stringByte(hello, 1)).toEqual(101);
+  expect(heap.stringUnit(hello, 1)).toEqual(101);
   expect(heap.stringsEqual(hello, helloAgain)).toEqual(true);
   expect(heap.stringsEqual(hello, help)).toEqual(false);
   expect(heap.compareStrings(hello, help) < 0).toEqual(true);
   expect(heap.compareStrings(help, hello) > 0).toEqual(true);
   const prefix = heap.allocateText("hel");
   expect(heap.compareStrings(prefix, hello) < 0).toEqual(true);
-  const copied = heap.stringBytes(hello);
+  const copied = heap.stringUtf8(hello);
   expect(copied.length).toEqual(five);
   expect(copied[4]).toEqual(111);
 }
@@ -887,8 +1010,8 @@ test "objects add properties through shared class transitions" {
   let heap = createHeap();
   const textA: String = "a";
   const textB: String = "b";
-  const nameA = heap.allocateString(bytesOf(in textA));
-  const nameB = heap.allocateString(bytesOf(in textB));
+  const nameA = heap.allocateUtf8(bytesOf(in textA));
+  const nameB = heap.allocateUtf8(bytesOf(in textB));
   const first = heap.allocateObject(0);
   const second = heap.allocateObject(0);
   heap.objectSet(first, nameA, int32Value(1));
@@ -910,13 +1033,13 @@ test "an object outgrows its initial slots" {
   let i: i32 = 0;
   while (i < 10) {
     const text: String = `p${i}`;
-    const name = heap.allocateString(bytesOf(in text));
+    const name = heap.allocateUtf8(bytesOf(in text));
     heap.objectSet(object, name, int32Value(i));
     i = i + 1;
   }
   expect(heap.classPropCount(heap.objectClass(object))).toEqual(10);
   const textP9: String = "p9";
-  const p9 = heap.allocateString(bytesOf(in textP9));
+  const p9 = heap.allocateUtf8(bytesOf(in textP9));
   // Names are compared by handle; a different cell with the same bytes
   // is a different atom. The runtime interns before it asks the heap.
   expect(heap.objectFindSlot(object, p9)).toEqual(-1);
@@ -943,8 +1066,8 @@ test "a sweep frees unmarked cells, compacts slots, and reuses handles" {
   const dropped = heap.allocateObject(0);
   const textKept: String = "kept";
   const textDropped: String = "dropped";
-  const keptString = heap.allocateString(bytesOf(in textKept));
-  const droppedString = heap.allocateString(bytesOf(in textDropped));
+  const keptString = heap.allocateUtf8(bytesOf(in textKept));
+  const droppedString = heap.allocateUtf8(bytesOf(in textDropped));
   const child = heap.allocateArray(2);
   heap.setSlot(kept, 0, cellValue(child));
   heap.setSlot(child, 0, cellValue(keptString));
@@ -961,7 +1084,7 @@ test "a sweep frees unmarked cells, compacts slots, and reuses handles" {
   expect(asCell(heap.slot(child, 0))).toEqual(keptString);
   // The freed handle and string index come back before the arrays grow.
   const headersBefore = heap.headers.length;
-  const reused = heap.allocateString(bytesOf(in textDropped));
+  const reused = heap.allocateUtf8(bytesOf(in textDropped));
   expect(reused == dropped || reused == droppedString).toEqual(true);
   expect(heap.headers.length).toEqual(headersBefore);
   expect(heap.stringLength(reused)).toEqual(7);

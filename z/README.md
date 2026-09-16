@@ -156,7 +156,21 @@ gains `codePointAt`, `replaceAll`, `normalize`, `isWellFormed` /
 `toWellFormed`, the locale case methods, `$`-pattern substitution in
 `replace` / `replaceAll`, Unicode whitespace in `trim`, and spec position
 clamping in `includes` / `startsWith` / `endsWith`; `String.raw` and
-`String.fromCodePoint`. `Date`: the time value lives in a hidden slot,
+`String.fromCodePoint`. Strings are UTF-16 code units, as the
+specification says: `length`, every index, `charCodeAt`, slicing, the
+iterator (by code point), regular-expression captures and `lastIndex`,
+JSON, and property keys all count units, and a lone surrogate is kept
+as itself. Storage is one byte per unit when every unit fits in Latin-1
+(so ASCII text costs what it did) and two bytes per unit otherwise,
+with the narrow form canonical. The boundaries are explicit: source
+text and host text come in as UTF-8 (a byte that is not UTF-8 becomes
+the unit with its value; a string handed back to the parser by `eval`
+or `Function` travels as generalized UTF-8 so a lone surrogate returns
+as itself); host output goes out as UTF-8 with a lone surrogate written
+as U+FFFD; the regex backend receives the storage as libregexp's 8-bit
+or 16-bit mode, nothing transcoded. Case mapping covers ASCII and
+Latin-1 plus the sharp s expansion; the full Unicode tables are not
+here. `Date`: the time value lives in a hidden slot,
 the arithmetic is the specification's over `f64`, the wall clock and the
 local zone's offset and abbreviation come from libc through a three-
 function C header the Z module imports directly, the Date Time String
@@ -257,7 +271,13 @@ prints `Invalid Date` (the reference prints ISO or `[object]`), a
 six-digit year carries its sign in `toISOString`, `2026-13-01` and
 `T24:00:01` do not parse, a `+02:00` offset and a negative six-digit
 year parse to the right instant, and the `toString` / `toUTCString`
-forms parse at all (the reference differs on each); a RegExp's `toString`
+forms parse at all (the reference differs on each); `"é".length` is 1
+and every index, slice, and capture offset counts code units, `eval` of
+a lone surrogate returns it, and `toUpperCase` maps Latin-1 letters and
+expands the sharp s (the reference counts bytes and maps ASCII only);
+the oracle's dump renders a string as UTF-8 with its byte length, so
+well-formed text still compares, and the corpus keeps only cases whose
+values agree with node; a RegExp's `toString`
 gives `/source/flags` (the reference gives `[object]`), `source` escapes
 `/` and is `(?:)` when empty, a bad pattern or flag string throws a
 SyntaxError (the reference swallows it and never matches), `RegExp(re)`

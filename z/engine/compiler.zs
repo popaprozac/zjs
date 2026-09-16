@@ -9,6 +9,7 @@
 // temporaries are allocated above a fixed watermark (params, locals, and the
 // program's result register) and reset after each statement.
 
+import { wtf8Length, pushCodePoint } from "./text.zs";
 import { expect } from "std/test";
 import { Value, int32Value, doubleValue, isInt32, asInt32 } from "./value.zs";
 import { TokenKind } from "./token.zs";
@@ -841,7 +842,7 @@ export struct Compiler {
           return ctorReg;
         }
         this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot }));
-        const description = this.addConst(runtime.internValue(sliceBytes(in parser.source, usize(member.nameStart), usize(member.nameStart + member.nameLength))));
+        const description = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(member.nameStart), usize(member.nameStart + member.nameLength))));
         const key = this.allocReg();
         this.emit(instAU16(Op.newPrivateName, key, description));
         this.emit(instABC(Op.storeEnvSlot, key, 0, u8(slot)));
@@ -1126,7 +1127,7 @@ export struct Compiler {
   // --- Property names ---
 
   function atomOfSlice(in parser: Parser, inout runtime: Runtime, start: u32, length: u32): u32 {
-    return runtime.internBytes(sliceBytes(in parser.source, usize(start), usize(start + length)));
+    return runtime.internUtf8(sliceBytes(in parser.source, usize(start), usize(start + length)));
   }
 
   // The name operand of LoadProp / StoreProp: an index into the
@@ -1166,7 +1167,7 @@ export struct Compiler {
         this.hadError = true;
         return 0;
       }
-      return runtime.internBytes(decodeStringBody(in parser, nameStart + 1, nameStart + nameLength - 1));
+      return runtime.internUnits(decodeStringBody(in parser, nameStart + 1, nameStart + nameLength - 1));
     }
     if (first == 35) {
       this.hadError = true;
@@ -1181,7 +1182,7 @@ export struct Compiler {
     // property by its decoded characters.
     let i: u32 = 0;
     while (i < nameLength) {
-      if (parser.source[usize(nameStart + i)] == 92) return runtime.internBytes(decodeIdentifierName(in parser, nameStart, nameLength));
+      if (parser.source[usize(nameStart + i)] == 92) return runtime.internUnits(decodeIdentifierName(in parser, nameStart, nameLength));
       i = i + 1;
     }
     return this.atomOfSlice(in parser, inout runtime, nameStart, nameLength);
@@ -1304,8 +1305,8 @@ export struct Compiler {
       // every evaluation.
       let lastSlash = n.end - 1;
       while (lastSlash > n.start && parser.source[usize(lastSlash)] != 47) { lastSlash = lastSlash - 1; }
-      const sourceIndex = this.addConst(runtime.internValue(sliceBytes(in parser.source, usize(n.start + 1), usize(lastSlash))));
-      const flagsIndex = this.addConst(runtime.internValue(sliceBytes(in parser.source, usize(lastSlash + 1), usize(n.end))));
+      const sourceIndex = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(n.start + 1), usize(lastSlash))));
+      const flagsIndex = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(lastSlash + 1), usize(n.end))));
       const dst = this.allocReg();
       if (sourceIndex < 256 && flagsIndex < 256) {
         this.emit(instABC(Op.newRegex, dst, u8(sourceIndex), u8(flagsIndex)));
@@ -1321,7 +1322,7 @@ export struct Compiler {
     }
     if (k == NodeKind.stringExpr) {
       const decoded = decodeStringBody(in parser, n.start + 1, n.end > 0 ? n.end - 1 : n.start + 1);
-      const index = this.addConst(runtime.internValue(move decoded));
+      const index = this.addConst(runtime.internUnitsValue(move decoded));
       const dst = this.allocReg();
       this.emit(instAU16(Op.loadConst, dst, index));
       return dst;
@@ -1380,7 +1381,7 @@ export struct Compiler {
     }
     if (k == NodeKind.templatePartExpr) {
       const decoded = decodeStringBody(in parser, n.start, n.end);
-      const index = this.addConst(runtime.internValue(move decoded));
+      const index = this.addConst(runtime.internUnitsValue(move decoded));
       const dst = this.allocReg();
       this.emit(instAU16(Op.loadConst, dst, index));
       return dst;
@@ -1388,7 +1389,7 @@ export struct Compiler {
     if (k == NodeKind.templateExpr) {
       // Literal segments and substitutions, concatenated left to right.
       if (n.childrenCount == 0) {
-        const index = this.addConst(runtime.internValue(Array<u8>()));
+        const index = this.addConst(runtime.internLatin1Value(Array<u8>()));
         const dst = this.allocReg();
         this.emit(instAU16(Op.loadConst, dst, index));
         return dst;
@@ -1417,8 +1418,8 @@ export struct Compiler {
         const partIndex = parser.ast.child(n.right, i);
         const part = parser.ast.node(partIndex);
         if (part.kind == NodeKind.templatePartExpr) {
-          cooked.push(runtime.internValue(decodeStringBody(in parser, part.start, part.end)));
-          raw.push(runtime.internValue(sliceBytes(in parser.source, usize(part.start), usize(part.end))));
+          cooked.push(runtime.internUnitsValue(decodeStringBody(in parser, part.start, part.end)));
+          raw.push(runtime.internUtf8Value(sliceBytes(in parser.source, usize(part.start), usize(part.end))));
         } else {
           substitutions.push(partIndex);
         }
@@ -1426,8 +1427,8 @@ export struct Compiler {
       }
       // A template with no literal text still has one empty string.
       if (cooked.length == 0) {
-        cooked.push(runtime.internValue(Array<u8>()));
-        raw.push(runtime.internValue(Array<u8>()));
+        cooked.push(runtime.internLatin1Value(Array<u8>()));
+        raw.push(runtime.internLatin1Value(Array<u8>()));
       }
       const templateObject = runtime.newTemplateObject(move cooked, move raw);
       const constant = this.addConst(templateObject);
@@ -3016,9 +3017,12 @@ function pushUtf8(inout bytes: Array<u8>, codePoint: u32): void {
   }
 }
 
-function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<u8> {
+// The units of a string literal's body: escapes decoded (a \u escape may
+// name a lone surrogate), source text decoded from UTF-8, a byte that is
+// not UTF-8 kept as the unit with its value.
+function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<u16> {
   const rawLength: u32 = rawEnd > rawStart ? rawEnd - rawStart : 0;
-  let bytes = Array<u8>();
+  let bytes = Array<u16>();
   let i: u32 = 0;
   while (i < rawLength) {
     const ch = parser.source[usize(rawStart + i)];
@@ -3040,7 +3044,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
         const h1 = hexValue(parser.source[usize(rawStart + i + 2)]);
         const h2 = hexValue(parser.source[usize(rawStart + i + 3)]);
         if (h1 >= 0 && h2 >= 0) {
-          bytes.push(u8((h1 << 4) | h2));
+          bytes.push(u16((h1 << 4) | h2));
           i = i + 4;
           continue;
         }
@@ -3076,7 +3080,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
           }
         }
         if (consumed > 0) {
-          pushUtf8(inout bytes, codePoint);
+          pushCodePoint(inout bytes, codePoint);
           i = i + consumed;
           continue;
         }
@@ -3097,11 +3101,27 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
       } else if (next == 48) {
         mapped = 0;
       }
-      bytes.push(mapped);
+      bytes.push(u16(mapped));
       i = i + 2;
-    } else {
-      bytes.push(ch);
+    } else if (ch < 0x80) {
+      bytes.push(u16(ch));
       i = i + 1;
+    } else {
+      const at = usize(rawStart + i);
+      let sequence = wtf8Length(in parser.source, at);
+      if (sequence == 0 || usize(rawStart + rawLength) < at + sequence) {
+        bytes.push(u16(ch));
+        i = i + 1;
+      } else {
+        let value: u32 = u32(ch) & u32(0x3F >> (sequence - 1));
+        let k: usize = 1;
+        while (k < sequence) {
+          value = (value << 6) | u32(parser.source[at + k] & 0x3F);
+          k = k + 1;
+        }
+        pushCodePoint(inout bytes, value);
+        i = i + u32(sequence);
+      }
     }
   }
   return bytes;
@@ -3399,7 +3419,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       nameBytes.push(textBytes[b]);
       b = b + 1;
     }
-    compiled.nameAtom = runtime.internBytes(move nameBytes);
+    compiled.nameAtom = runtime.internUtf8(move nameBytes);
   }
   const propertyNames = replace(inout compiler.propertyNames, Array<u32>());
   compiled.propertyNames = move propertyNames;
@@ -3476,8 +3496,10 @@ function parameterPattern(in parser: Parser, param: u32): u32 {
 
 // An identifier name with its `\uXXXX` / `\u{...}` escapes decoded to
 // UTF-8; other bytes copied through.
-function decodeIdentifierName(in parser: Parser, start: u32, length: u32): Array<u8> {
-  let bytes = Array<u8>();
+// The units of an identifier written with escapes (source UTF-8 kept as
+// its bytes' code points).
+function decodeIdentifierName(in parser: Parser, start: u32, length: u32): Array<u16> {
+  let bytes = Array<u16>();
   let i: u32 = 0;
   while (i < length) {
     const byte = parser.source[usize(start + i)];
@@ -3499,11 +3521,27 @@ function decodeIdentifierName(in parser: Parser, start: u32, length: u32): Array
           digits = digits + 1;
         }
       }
-      appendUtf8(inout bytes, codePoint);
+      pushCodePoint(inout bytes, codePoint);
       i = j;
-    } else {
-      bytes.push(byte);
+    } else if (byte < 0x80) {
+      bytes.push(u16(byte));
       i = i + 1;
+    } else {
+      const at = usize(start + i);
+      const sequence = wtf8Length(in parser.source, at);
+      if (sequence == 0 || usize(start + length) < at + sequence) {
+        bytes.push(u16(byte));
+        i = i + 1;
+      } else {
+        let value: u32 = u32(byte) & u32(0x3F >> (sequence - 1));
+        let k: usize = 1;
+        while (k < sequence) {
+          value = (value << 6) | u32(parser.source[at + k] & 0x3F);
+          k = k + 1;
+        }
+        pushCodePoint(inout bytes, value);
+        i = i + u32(sequence);
+      }
     }
   }
   return bytes;

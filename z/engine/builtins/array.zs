@@ -1075,12 +1075,12 @@ function arrayFlatMap(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   return result;
 }
 
-function appendStringBytes(inout runtime: Runtime, inout joined: Array<u8>, text: Value): void {
+function appendStringBytes(inout runtime: Runtime, inout joined: Array<u16>, text: Value): void {
   const handle = asCell(text);
   const count = runtime.heap.stringLength(handle);
   let i: usize = 0;
   while (i < count) {
-    joined.push(runtime.heap.stringByte(handle, i));
+    joined.push(runtime.heap.stringUnit(handle, i));
     i = i + 1;
   }
 }
@@ -1092,15 +1092,15 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
   runtime.pushTempRoot(object);
   const length = lengthOf(inout runtime, object);
   if (length < 0.0) { runtime.popTempRoot(); return undefinedValue(); }
-  let separator = Array<u8>();
+  let separator = Array<u16>();
   if (isUndefined(separatorGiven)) {
     separator.push(44);
   } else {
     const text = runtime.toStringValue(separatorGiven);
     if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
-    separator = runtime.heap.stringBytes(asCell(text));
+    separator = runtime.heap.stringUnits(asCell(text));
   }
-  let joined = Array<u8>();
+  let joined = Array<u16>();
   let k = 0.0;
   while (k < length) {
     if (k > 0.0) {
@@ -1141,7 +1141,7 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
   }
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 function arrayJoin(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1201,8 +1201,8 @@ function sortCompare(inout runtime: Runtime, comparator: Value, x: Value, y: Val
   const ys = runtime.toStringValue(y);
   runtime.popTempRoot();
   if (runtime.pendingThrow) return 0.0;
-  const xb = runtime.heap.stringBytes(asCell(xs));
-  const yb = runtime.heap.stringBytes(asCell(ys));
+  const xb = runtime.heap.stringUnits(asCell(xs));
+  const yb = runtime.heap.stringUnits(asCell(ys));
   let i: usize = 0;
   while (i < xb.length && i < yb.length) {
     if (xb[i] != yb[i]) return xb[i] < yb[i] ? -1.0 : 1.0;

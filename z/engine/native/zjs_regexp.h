@@ -4,8 +4,8 @@
  * The matcher is QuickJS-NG's libregexp (vendored under
  * src/third-party/qjs-regex, shared with the reference engine). Everything
  * the Z side sees is here: scalars and opaque handles, no structs, no
- * pointers to Z memory. Patterns and inputs are UTF-8 bytes copied into a
- * buffer the backend owns; results are byte offsets into the input.
+ * pointers to Z memory. Patterns and inputs are copied into a buffer the
+ * backend owns; results are code-unit offsets into the input.
  *
  * All mutable state -- the scratch buffer, the last exec's captures, the
  * last failure and its message, the limits, the accounting -- belongs to a
@@ -14,14 +14,11 @@
  * callbacks. Compiled patterns are separate objects; the context that
  * compiled one need not be the one that runs it.
  *
- * Text semantics: an all-ASCII input is matched as 8-bit code units, one
- * per byte, which is exactly what the specification's UTF-16 code units
- * would be. Any other input is transcoded to UTF-16 (a four-byte sequence
- * becomes a surrogate pair) so classes, case folding, dot, and the `u`
- * flag see code units and code points as the specification defines them;
- * offsets map back to the byte where a unit starts, and a boundary that
- * falls inside a surrogate pair rounds to the pair's sequence. Invalid
- * bytes are one unit each, valued as in Latin-1.
+ * Text: inputs arrive as the engine stores them, Latin-1 bytes or UTF-16
+ * units, which are exactly libregexp's 8-bit and 16-bit modes, so nothing
+ * is transcoded and offsets are code-unit indices as the specification
+ * defines them. Patterns arrive as UTF-8 (generalized: a lone surrogate
+ * is its three-byte form), which is what libregexp's parser reads.
  */
 #ifndef ZJS_REGEXP_H
 #define ZJS_REGEXP_H
@@ -60,7 +57,8 @@ static inline void zjs_re_buffer_store(uintptr_t buffer, uintptr_t index, uint8_
   ((uint8_t *)buffer)[index] = byte;
 }
 
-/* Compile a pattern (UTF-8 bytes in the scratch buffer) with flags: a
+/* Compile a pattern (UTF-8 bytes in the scratch buffer, a lone surrogate
+   in its generalized three-byte form) with flags: a
    handle, or zero with the failure category in zjs_re_failure and, for a
    syntax failure, libregexp's message readable byte by byte. */
 uintptr_t zjs_re_compile(uintptr_t context, uintptr_t pattern, uintptr_t length, int flags);
@@ -74,10 +72,12 @@ int zjs_re_capture_count(uintptr_t handle);
 int zjs_re_has_names(uintptr_t handle);
 int zjs_re_name_byte(uintptr_t handle, int index);
 
-/* Match the pattern against an input (UTF-8 bytes in the scratch buffer)
-   from a byte offset. Returns a ZJS_RE_* result; on a match, the capture
-   offsets are readable from the context until its next exec. */
-int zjs_re_exec(uintptr_t context, uintptr_t handle, uintptr_t input, uintptr_t length, uintptr_t start);
+/* Match the pattern against an input of `length` code units in the
+   scratch buffer -- one byte per unit (Latin-1) or, with `wide`, two
+   bytes per unit little-endian (UTF-16) -- from a unit offset. Returns a
+   ZJS_RE_* result; on a match, the capture offsets (in units) are
+   readable from the context until its next exec. */
+int zjs_re_exec(uintptr_t context, uintptr_t handle, uintptr_t input, uintptr_t length, uintptr_t start, int wide);
 int zjs_re_capture_start(uintptr_t context, int group);
 int zjs_re_capture_end(uintptr_t context, int group);
 

@@ -1,11 +1,12 @@
 // Boolean, Number, and String: constructors, wrappers, and prototypes.
 //
-// Strings are byte strings, as in the reference: `length`, indexing, and
-// every method here count bytes.
+// Strings are UTF-16 code units, as the specification says: `length`,
+// indexing, and every method here count units.
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isNumber, isBoolean, isTrue, isInt32, asInt32, asDouble } from "../value.zs";
-import { Runtime, ERROR_KIND_RANGE, toNumber, toInt32, isIntegralDouble, truncateDouble, int32ToString, doubleToString, stringToNumber, utf8SequenceLength } from "../runtime.zs";
+import { Runtime, ERROR_KIND_RANGE, toNumber, toInt32, isIntegralDouble, truncateDouble, int32ToString, doubleToString, stringToNumber } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
+import { unitsOf, pushCodePoint, codePointAt, isJsSpace, isHighSurrogate, isLowSurrogate, upperUnit, lowerUnit, sliceUnits, copyUnits } from "../text.zs";
 
 function nativeAlloc(count: usize): usize = raw c { return (uintptr_t)calloc(count, 1); }
 function nativeFree(buffer: usize): void = raw c { free((void *)buffer); }
@@ -19,15 +20,15 @@ function nativeFormatExponent(buffer: usize, value: f64, digits: i32): i32 = raw
 function nativeFloor(value: f64): f64 = raw c { return __builtin_floor(value); }
 function nativeNan(): f64 = raw c { return __builtin_nan(""); }
 
-function bytesOfText(in text: String): Array<u8> {
-  return bytesOf(in text);
+function bytesOfText(in text: String): Array<u16> {
+  return unitsOf(in text);
 }
 
 function textValue(inout runtime: Runtime, in text: String): Value {
-  return runtime.newString(bytesOf(in text));
+  return runtime.newStringUtf8(bytesOf(in text));
 }
 
-// Read a formatted native buffer back as bytes.
+// Read a formatted native buffer back as ASCII bytes.
 function bufferBytes(buffer: usize, count: i32): Array<u8> {
   let bytes = Array<u8>();
   let index: usize = 0;
@@ -69,18 +70,34 @@ function thisBoolean(inout runtime: Runtime, thisValue: Value, in method: String
 
 // String.prototype methods accept any coercible this; null and undefined
 // throw.
-function thisString(inout runtime: Runtime, thisValue: Value, in method: String): Array<u8> {
+function thisString(inout runtime: Runtime, thisValue: Value, in method: String): Array<u16> {
   if (isUndefined(thisValue) || isNull(thisValue)) {
     const message: String = `String.prototype.${method} called on null or undefined`;
     const error = runtime.typeError(in message);
     runtime.raise(error);
-    return Array<u8>();
+    return Array<u16>();
   }
   const primitive = thisPrimitive(in runtime, thisValue);
   const source = isDeleted(primitive) ? thisValue : primitive;
   const text = runtime.toStringValue(source);
-  if (runtime.pendingThrow) return Array<u8>();
-  return runtime.heap.stringBytes(asCell(text));
+  if (runtime.pendingThrow) return Array<u16>();
+  return runtime.heap.stringUnits(asCell(text));
+}
+
+// The same, as the string cell itself (0 after a throw), for methods
+// that can read units in place instead of copying them all.
+function thisStringHandle(inout runtime: Runtime, thisValue: Value, in method: String): u32 {
+  if (isUndefined(thisValue) || isNull(thisValue)) {
+    const message: String = `String.prototype.${method} called on null or undefined`;
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return 0;
+  }
+  const primitive = thisPrimitive(in runtime, thisValue);
+  const source = isDeleted(primitive) ? thisValue : primitive;
+  const text = runtime.toStringValue(source);
+  if (runtime.pendingThrow) return 0;
+  return asCell(text);
 }
 
 // An integer argument: ToIntegerOrInfinity clamped to i32, `fallback`
@@ -196,11 +213,11 @@ function numberToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   const magnitude = negative ? -number : number;
   let integerPart = nativeFloor(magnitude);
   let fraction = magnitude - integerPart;
-  let digits = Array<u8>();
+  let digits = Array<u16>();
   if (integerPart == 0.0) {
     digits.push(48);
   } else {
-    let reversed = Array<u8>();
+    let reversed = Array<u16>();
     let n = integerPart;
     while (n >= 1.0) {
       const quotient = nativeFloor(n / f64(radix));
@@ -225,19 +242,19 @@ function numberToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
       count = count + 1;
     }
   }
-  let joined = Array<u8>();
+  let joined = Array<u16>();
   if (negative) joined.push(45);
   let i: usize = 0;
   while (i < digits.length) {
     joined.push(digits[i]);
     i = i + 1;
   }
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
-function digitChar(digit: i32): u8 {
-  if (digit < 10) return u8(48 + digit);
-  return u8(87 + digit);
+function digitChar(digit: i32): u16 {
+  if (digit < 10) return u16(48 + digit);
+  return u16(87 + digit);
 }
 
 function numberToFixed(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -257,7 +274,7 @@ function numberToFixed(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const count = nativeFormatFixed(buffer, number, digits);
   const bytes = bufferBytes(buffer, count);
   nativeFree(buffer);
-  return runtime.newString(move bytes);
+  return runtime.newStringLatin1(move bytes);
 }
 
 function numberIsNaN(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -289,7 +306,7 @@ function numberIsSafeInteger(inout runtime: Runtime, thisValue: Value, argsBase:
 // --- String ---
 
 function constructString(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  let value = runtime.internValue(Array<u8>());
+  let value = runtime.internLatin1Value(Array<u8>());
   if (argc > 0) {
     const first = runtime.argument(argsBase, argc, 0);
     if (runtime.isSymbolValue(first) && !runtime.isObjectLike(thisValue)) {
@@ -308,40 +325,22 @@ function constructString(inout runtime: Runtime, thisValue: Value, argsBase: u32
 }
 
 function stringFromCharCode(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  let bytes = Array<u8>();
+  let bytes = Array<u16>();
   let index: u32 = 0;
   while (index < argc) {
     const number = runtime.toNumberValue(runtime.argument(argsBase, argc, index));
     if (runtime.pendingThrow) return undefinedValue();
     const unit = u32(toInt32(doubleValue(number)).toBits() & 0xFFFF);
-    pushUtf8(inout bytes, unit);
+    bytes.push(u16(unit));
     index = index + 1;
   }
-  return runtime.newString(move bytes);
-}
-
-function pushUtf8(inout bytes: Array<u8>, codePoint: u32): void {
-  if (codePoint < 0x80) {
-    bytes.push(u8(codePoint));
-  } else if (codePoint < 0x800) {
-    bytes.push(u8(0xC0 | (codePoint >> 6)));
-    bytes.push(u8(0x80 | (codePoint & 0x3F)));
-  } else if (codePoint < 0x10000) {
-    bytes.push(u8(0xE0 | (codePoint >> 12)));
-    bytes.push(u8(0x80 | ((codePoint >> 6) & 0x3F)));
-    bytes.push(u8(0x80 | (codePoint & 0x3F)));
-  } else {
-    bytes.push(u8(0xF0 | (codePoint >> 18)));
-    bytes.push(u8(0x80 | ((codePoint >> 12) & 0x3F)));
-    bytes.push(u8(0x80 | ((codePoint >> 6) & 0x3F)));
-    bytes.push(u8(0x80 | (codePoint & 0x3F)));
-  }
+  return runtime.newStringUnits(move bytes);
 }
 
 // String.fromCodePoint: each argument an integral code point, else a
 // RangeError.
 function stringFromCodePoint(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  let bytes = Array<u8>();
+  let bytes = Array<u16>();
   let index: u32 = 0;
   while (index < argc) {
     const number = runtime.toNumberValue(runtime.argument(argsBase, argc, index));
@@ -352,14 +351,13 @@ function stringFromCodePoint(inout runtime: Runtime, thisValue: Value, argsBase:
       runtime.raise(error);
       return undefinedValue();
     }
-    pushUtf8(inout bytes, u32(number));
+    pushCodePoint(inout bytes, u32(number));
     index = index + 1;
   }
-  return runtime.newString(move bytes);
+  return runtime.newStringUnits(move bytes);
 }
 
-// codePointAt(position): the code point whose encoding starts at the
-// byte position, else that byte's value.
+// codePointAt(position): a surrogate pair combined, else the unit.
 function stringCodePointAt(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "codePointAt";
   const bytes = thisString(inout runtime, thisValue, in text);
@@ -367,18 +365,7 @@ function stringCodePointAt(inout runtime: Runtime, thisValue: Value, argsBase: u
   const index = integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0);
   if (runtime.pendingThrow) return undefinedValue();
   if (index < 0 || usize(index) >= bytes.length) return undefinedValue();
-  const at = usize(index);
-  const length = utf8SequenceLength(in bytes, at);
-  if (length <= 1) return int32Value(i32(bytes[at]));
-  let codePoint: u32 = 0;
-  if (length == 2) {
-    codePoint = (u32(bytes[at]) & 0x1F) << 6 | (u32(bytes[at + 1]) & 0x3F);
-  } else if (length == 3) {
-    codePoint = (u32(bytes[at]) & 0x0F) << 12 | (u32(bytes[at + 1]) & 0x3F) << 6 | (u32(bytes[at + 2]) & 0x3F);
-  } else {
-    codePoint = (u32(bytes[at]) & 0x07) << 18 | (u32(bytes[at + 1]) & 0x3F) << 12 | (u32(bytes[at + 2]) & 0x3F) << 6 | (u32(bytes[at + 3]) & 0x3F);
-  }
-  return int32Value(i32(codePoint));
+  return int32Value(i32(codePointAt(in bytes, usize(index))));
 }
 
 // String.raw(template, ...substitutions): the template's raw strings
@@ -396,7 +383,7 @@ function stringRaw(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   runtime.pushTempRoot(raw);
   const atomLength = runtime.atomLength;
   const lengthValue = runtime.getProperty(raw, cellValue(atomLength));
-  let joined = Array<u8>();
+  let joined = Array<u16>();
   let failed = runtime.pendingThrow;
   if (!failed) {
     const count = runtime.toLength(lengthValue);
@@ -407,7 +394,7 @@ function stringRaw(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
       if (runtime.pendingThrow) { failed = true; break; }
       const segmentText = runtime.toStringValue(segment);
       if (runtime.pendingThrow) { failed = true; break; }
-      const segmentBytes = runtime.heap.stringBytes(asCell(segmentText));
+      const segmentBytes = runtime.heap.stringUnits(asCell(segmentText));
       let k: usize = 0;
       while (k < segmentBytes.length) {
         joined.push(segmentBytes[k]);
@@ -416,7 +403,7 @@ function stringRaw(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
       if (index + 1 < count && index + 1 < argc) {
         const substitution = runtime.toStringValue(runtime.argument(argsBase, argc, index + 1));
         if (runtime.pendingThrow) { failed = true; break; }
-        const substitutionBytes = runtime.heap.stringBytes(asCell(substitution));
+        const substitutionBytes = runtime.heap.stringUnits(asCell(substitution));
         k = 0;
         while (k < substitutionBytes.length) {
           joined.push(substitutionBytes[k]);
@@ -429,7 +416,7 @@ function stringRaw(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   runtime.popTempRoot();
   runtime.popTempRoot();
   if (failed) return undefinedValue();
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 function stringToStringMethod(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -443,40 +430,40 @@ function stringToStringMethod(inout runtime: Runtime, thisValue: Value, argsBase
 
 function stringCharAt(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "charAt";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   const index = integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0);
   if (runtime.pendingThrow) return undefinedValue();
-  let joined = Array<u8>();
-  if (index >= 0 && usize(index) < bytes.length) joined.push(bytes[usize(index)]);
-  return runtime.newString(move joined);
+  const length = runtime.heap.stringLength(handle);
+  if (index < 0 || usize(index) >= length) return runtime.internLatin1Value(Array<u8>());
+  return runtime.substringValue(handle, usize(index), usize(index) + 1);
 }
 
 function stringCharCodeAt(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "charCodeAt";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   const index = integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0);
   if (runtime.pendingThrow) return undefinedValue();
-  if (index < 0 || usize(index) >= bytes.length) return doubleValue(nativeNan());
-  return int32Value(i32(bytes[usize(index)]));
+  const length = runtime.heap.stringLength(handle);
+  if (index < 0 || usize(index) >= length) return doubleValue(nativeNan());
+  return int32Value(i32(runtime.heap.stringUnit(handle, usize(index))));
 }
 
 function stringAt(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "at";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   let index = integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0);
   if (runtime.pendingThrow) return undefinedValue();
-  if (index < 0) index = index + i32(bytes.length);
-  if (index < 0 || usize(index) >= bytes.length) return undefinedValue();
-  let joined = Array<u8>();
-  joined.push(bytes[usize(index)]);
-  return runtime.newString(move joined);
+  const length = runtime.heap.stringLength(handle);
+  if (index < 0) index = index + i32(length);
+  if (index < 0 || usize(index) >= length) return undefinedValue();
+  return runtime.substringValue(handle, usize(index), usize(index) + 1);
 }
 
 // The byte offset of `needle` in `haystack` at or after `startAt`, or -1.
-function findBytes(in haystack: Array<u8>, in needle: Array<u8>, startAt: usize): i32 {
+function findBytes(in haystack: Array<u16>, in needle: Array<u16>, startAt: usize): i32 {
   if (needle.length == 0) return startAt <= haystack.length ? i32(startAt) : i32(haystack.length);
   if (needle.length > haystack.length) return -1;
   let start = startAt;
@@ -493,10 +480,10 @@ function findBytes(in haystack: Array<u8>, in needle: Array<u8>, startAt: usize)
   return -1;
 }
 
-function argumentBytes(inout runtime: Runtime, value: Value): Array<u8> {
+function argumentBytes(inout runtime: Runtime, value: Value): Array<u16> {
   const text = runtime.toStringValue(value);
-  if (runtime.pendingThrow) return Array<u8>();
-  return runtime.heap.stringBytes(asCell(text));
+  if (runtime.pendingThrow) return Array<u16>();
+  return runtime.heap.stringUnits(asCell(text));
 }
 
 function stringIndexOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -596,7 +583,7 @@ function requireGlobalFlag(inout runtime: Runtime, value: Value, in method: Stri
   }
   const flagsString = runtime.toStringValue(flags);
   if (runtime.pendingThrow) return false;
-  const flagBytes = runtime.heap.stringBytes(asCell(flagsString));
+  const flagBytes = runtime.heap.stringUnits(asCell(flagsString));
   let i: usize = 0;
   while (i < flagBytes.length) {
     if (flagBytes[i] == 103) return true;
@@ -723,8 +710,8 @@ function stringEndsWith(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   return booleanValue(true);
 }
 
-function copyAll(in bytes: Array<u8>): Array<u8> {
-  let copied = Array<u8>();
+function copyAll(in bytes: Array<u16>): Array<u16> {
+  let copied = Array<u16>();
   let index: usize = 0;
   while (index < bytes.length) {
     copied.push(bytes[index]);
@@ -733,8 +720,8 @@ function copyAll(in bytes: Array<u8>): Array<u8> {
   return copied;
 }
 
-function sliceFrom(in bytes: Array<u8>, start: usize): Array<u8> {
-  let copied = Array<u8>();
+function sliceFrom(in bytes: Array<u16>, start: usize): Array<u16> {
+  let copied = Array<u16>();
   let index = start;
   while (index < bytes.length) {
     copied.push(bytes[index]);
@@ -743,8 +730,8 @@ function sliceFrom(in bytes: Array<u8>, start: usize): Array<u8> {
   return copied;
 }
 
-function sliceBytes(in bytes: Array<u8>, start: usize, end: usize): Array<u8> {
-  let joined = Array<u8>();
+function sliceBytes(in bytes: Array<u16>, start: usize, end: usize): Array<u16> {
+  let joined = Array<u16>();
   let index = start;
   while (index < end) {
     joined.push(bytes[index]);
@@ -755,22 +742,22 @@ function sliceBytes(in bytes: Array<u8>, start: usize, end: usize): Array<u8> {
 
 function stringSlice(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "slice";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  const length = i32(bytes.length);
+  const length = i32(runtime.heap.stringLength(handle));
   const start = clampIndex(integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0), length);
   if (runtime.pendingThrow) return undefinedValue();
   const end = clampIndex(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), length), length);
   if (runtime.pendingThrow) return undefinedValue();
-  if (end <= start) return runtime.internValue(Array<u8>());
-  return runtime.newString(sliceBytes(in bytes, usize(start), usize(end)));
+  if (end <= start) return runtime.internLatin1Value(Array<u8>());
+  return runtime.substringValue(handle, usize(start), usize(end));
 }
 
 function stringSubstring(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "substring";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  const length = i32(bytes.length);
+  const length = i32(runtime.heap.stringLength(handle));
   let start = integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0);
   if (runtime.pendingThrow) return undefinedValue();
   let end = integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), length);
@@ -784,14 +771,14 @@ function stringSubstring(inout runtime: Runtime, thisValue: Value, argsBase: u32
     start = end;
     end = swapped;
   }
-  return runtime.newString(sliceBytes(in bytes, usize(start), usize(end)));
+  return runtime.substringValue(handle, usize(start), usize(end));
 }
 
 function stringSubstr(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "substr";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  const length = i32(bytes.length);
+  const length = i32(runtime.heap.stringLength(handle));
   const start = clampIndex(integerArgument(inout runtime, runtime.argument(argsBase, argc, 0), 0), length);
   if (runtime.pendingThrow) return undefinedValue();
   let count = integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), length - start);
@@ -799,7 +786,7 @@ function stringSubstr(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   if (count < 0) count = 0;
   let end = start + count;
   if (end > length) end = length;
-  return runtime.newString(sliceBytes(in bytes, usize(start), usize(end)));
+  return runtime.substringValue(handle, usize(start), usize(end));
 }
 
 function stringConcat(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -817,61 +804,25 @@ function stringConcat(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     }
     index = index + 1;
   }
-  return runtime.newString(move bytes);
+  return runtime.newStringUnits(move bytes);
 }
 
-// The byte length of the WhiteSpace or LineTerminator encoded at
-// `index`, or 0: the ASCII set, NBSP, U+1680, U+2000-U+200A, U+2028,
-// U+2029, U+202F, U+205F, U+3000, and the BOM.
-function spaceLengthAt(in bytes: Array<u8>, index: usize, end: usize): usize {
-  const byte = bytes[index];
-  if (byte == 32 || byte == 9 || byte == 10 || byte == 13 || byte == 11 || byte == 12) return 1;
-  if (byte < 0x80 || index + 1 >= end) return 0;
-  const second = bytes[index + 1];
-  if (byte == 0xC2 && second == 0xA0) return 2;
-  if (index + 2 >= end) return 0;
-  const third = bytes[index + 2];
-  if (byte == 0xE1 && second == 0x9A && third == 0x80) return 3;
-  if (byte == 0xE2 && second == 0x80 && (third >= 0x80 && third <= 0x8A || third == 0xA8 || third == 0xA9 || third == 0xAF)) return 3;
-  if (byte == 0xE2 && second == 0x81 && third == 0x9F) return 3;
-  if (byte == 0xE3 && second == 0x80 && third == 0x80) return 3;
-  if (byte == 0xEF && second == 0xBB && third == 0xBF) return 3;
-  return 0;
-}
-
-function trimBytes(in bytes: Array<u8>, leading: boolean, trailing: boolean): Array<u8> {
+function trimBytes(in bytes: Array<u16>, leading: boolean, trailing: boolean): Array<u16> {
   let start: usize = 0;
   let end = bytes.length;
   if (leading) {
-    while (start < end) {
-      const length = spaceLengthAt(in bytes, start, end);
-      if (length == 0) break;
-      start = start + length;
-    }
+    while (start < end && isJsSpace(bytes[start])) { start = start + 1; }
   }
   if (trailing) {
-    while (end > start) {
-      // A space ending at `end` starts one to three bytes before it.
-      let stepped = false;
-      let back: usize = 1;
-      while (back <= 3 && end >= start + back) {
-        if (spaceLengthAt(in bytes, end - back, end) == back) {
-          end = end - back;
-          stepped = true;
-          break;
-        }
-        back = back + 1;
-      }
-      if (!stepped) break;
-    }
+    while (end > start && isJsSpace(bytes[end - 1])) { end = end - 1; }
   }
   return sliceBytes(in bytes, start, end);
 }
 
 // GetSubstitution for a string pattern: $$, $&, $` and $' expand; other
 // dollar forms stay as written.
-function expandReplacement(in replacement: Array<u8>, in matched: Array<u8>, position: usize, in subject: Array<u8>): Array<u8> {
-  let joined = Array<u8>();
+function expandReplacement(in replacement: Array<u16>, in matched: Array<u16>, position: usize, in subject: Array<u16>): Array<u16> {
+  let joined = Array<u16>();
   let k: usize = 0;
   while (k < replacement.length) {
     const byte = replacement[k];
@@ -909,18 +860,18 @@ function expandReplacement(in replacement: Array<u8>, in matched: Array<u8>, pos
 
 // The replacement for one match: the function's result, or the
 // replacement string expanded.
-function replacementFor(inout runtime: Runtime, replaceValue: Value, in matched: Array<u8>, position: usize, in subject: Array<u8>): Array<u8> {
+function replacementFor(inout runtime: Runtime, replaceValue: Value, in matched: Array<u16>, position: usize, in subject: Array<u16>): Array<u16> {
   if (runtime.isCallable(replaceValue)) {
     let args = Array<Value>();
-    args.push(runtime.newString(copyAll(in matched)));
+    args.push(runtime.newStringUnits(copyAll(in matched)));
     args.push(int32Value(i32(position)));
-    args.push(runtime.newString(copyAll(in subject)));
+    args.push(runtime.newStringUnits(copyAll(in subject)));
     const produced = runtime.callValue(replaceValue, undefinedValue(), move args);
-    if (runtime.pendingThrow) return Array<u8>();
+    if (runtime.pendingThrow) return Array<u16>();
     return argumentBytes(inout runtime, produced);
   }
   const replacement = argumentBytes(inout runtime, replaceValue);
-  if (runtime.pendingThrow) return Array<u8>();
+  if (runtime.pendingThrow) return Array<u16>();
   return expandReplacement(in replacement, in matched, position, in subject);
 }
 
@@ -948,7 +899,7 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
   if (runtime.pendingThrow) return undefinedValue();
   const replaceValue = runtime.argument(argsBase, argc, 1);
   // The replacement string converts once, before any match.
-  let fixedReplacement = Array<u8>();
+  let fixedReplacement = Array<u16>();
   const isFunction = runtime.isCallable(replaceValue);
   if (!isFunction) {
     fixedReplacement = argumentBytes(inout runtime, replaceValue);
@@ -963,7 +914,7 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
     positions.push(usize(found));
     searchFrom = usize(found) + advance;
   }
-  let joined = Array<u8>();
+  let joined = Array<u16>();
   let copied: usize = 0;
   let i: usize = 0;
   while (i < positions.length) {
@@ -972,7 +923,7 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
       joined.push(bytes[copied]);
       copied = copied + 1;
     }
-    let replacement = Array<u8>();
+    let replacement = Array<u16>();
     if (isFunction) {
       replacement = replacementFor(inout runtime, replaceValue, in pattern, position, in bytes);
       if (runtime.pendingThrow) return undefinedValue();
@@ -991,7 +942,7 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
     joined.push(bytes[copied]);
     copied = copied + 1;
   }
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 // normalize(form): the bytes as they are; the form must be a known one.
@@ -1015,10 +966,10 @@ function stringNormalize(inout runtime: Runtime, thisValue: Value, argsBase: u32
       return undefinedValue();
     }
   }
-  return runtime.newString(copyAll(in bytes));
+  return runtime.newStringUnits(copyAll(in bytes));
 }
 
-function sameBytes(in a: Array<u8>, b: Array<u8>): boolean {
+function sameBytes(in a: Array<u16>, b: Array<u16>): boolean {
   if (a.length != b.length) return false;
   let i: usize = 0;
   while (i < a.length) {
@@ -1028,17 +979,22 @@ function sameBytes(in a: Array<u8>, b: Array<u8>): boolean {
   return true;
 }
 
-// isWellFormed / toWellFormed: whether the bytes are well-formed UTF-8,
-// and a copy with each malformed subpart replaced by U+FFFD.
+// isWellFormed / toWellFormed: whether every surrogate is paired, and a
+// copy with each lone surrogate replaced by U+FFFD.
 function stringIsWellFormed(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "isWellFormed";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   let index: usize = 0;
   while (index < bytes.length) {
-    const length = utf8SequenceLength(in bytes, index);
-    if (length <= 0) return booleanValue(false);
-    index = index + usize(length);
+    const unit = bytes[index];
+    if (isHighSurrogate(unit)) {
+      if (index + 1 >= bytes.length || !isLowSurrogate(bytes[index + 1])) return booleanValue(false);
+      index = index + 2;
+      continue;
+    }
+    if (isLowSurrogate(unit)) return booleanValue(false);
+    index = index + 1;
   }
   return booleanValue(true);
 }
@@ -1047,58 +1003,65 @@ function stringToWellFormed(inout runtime: Runtime, thisValue: Value, argsBase: 
   const text: String = "toWellFormed";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  let joined = Array<u8>();
+  let joined = Array<u16>();
   let index: usize = 0;
   while (index < bytes.length) {
-    const length = utf8SequenceLength(in bytes, index);
-    if (length > 0) {
-      let k: usize = 0;
-      while (k < usize(length)) {
-        joined.push(bytes[index + k]);
-        k = k + 1;
-      }
-      index = index + usize(length);
-    } else {
-      joined.push(0xEF);
-      joined.push(0xBF);
-      joined.push(0xBD);
-      index = index + usize(0 - length);
+    const unit = bytes[index];
+    if (isHighSurrogate(unit) && index + 1 < bytes.length && isLowSurrogate(bytes[index + 1])) {
+      joined.push(unit);
+      joined.push(bytes[index + 1]);
+      index = index + 2;
+      continue;
     }
+    if (isHighSurrogate(unit) || isLowSurrogate(unit)) {
+      joined.push(0xFFFD);
+    } else {
+      joined.push(unit);
+    }
+    index = index + 1;
   }
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 function stringTrim(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "trim";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newString(trimBytes(in bytes, true, true));
+  return runtime.newStringUnits(trimBytes(in bytes, true, true));
 }
 
 function stringTrimStart(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "trimStart";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newString(trimBytes(in bytes, true, false));
+  return runtime.newStringUnits(trimBytes(in bytes, true, false));
 }
 
 function stringTrimEnd(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "trimEnd";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newString(trimBytes(in bytes, false, true));
+  return runtime.newStringUnits(trimBytes(in bytes, false, true));
 }
 
 function stringToUpperCase(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "toUpperCase";
   let bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
+  // Simple mappings in place, plus the one common expansion (sharp s).
+  let joined = Array<u16>();
   let index: usize = 0;
   while (index < bytes.length) {
-    if (bytes[index] >= 97 && bytes[index] <= 122) bytes[index] = bytes[index] - 32;
+    const unit = bytes[index];
+    if (unit == 0xDF) {
+      joined.push(83);
+      joined.push(83);
+    } else {
+      joined.push(upperUnit(unit));
+    }
     index = index + 1;
   }
-  return runtime.newString(move bytes);
+  return runtime.newStringUnits(move joined);
 }
 
 function stringToLowerCase(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1107,10 +1070,10 @@ function stringToLowerCase(inout runtime: Runtime, thisValue: Value, argsBase: u
   if (runtime.pendingThrow) return undefinedValue();
   let index: usize = 0;
   while (index < bytes.length) {
-    if (bytes[index] >= 65 && bytes[index] <= 90) bytes[index] = bytes[index] + 32;
+    bytes[index] = lowerUnit(bytes[index]);
     index = index + 1;
   }
-  return runtime.newString(move bytes);
+  return runtime.newStringUnits(move bytes);
 }
 
 function stringRepeat(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1126,7 +1089,7 @@ function stringRepeat(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     return undefinedValue();
   }
   const count: u32 = countNumber != countNumber ? 0 : u32(truncateDouble(countNumber));
-  let joined = Array<u8>();
+  let joined = Array<u16>();
   let repeat: u32 = 0;
   while (repeat < count) {
     let k: usize = 0;
@@ -1136,7 +1099,7 @@ function stringRepeat(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     }
     repeat = repeat + 1;
   }
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 function padBytes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, atStart: boolean, in method: String): Value {
@@ -1144,7 +1107,7 @@ function padBytes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
   if (runtime.pendingThrow) return undefinedValue();
   const target = runtime.toLength(runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  let filler = Array<u8>();
+  let filler = Array<u16>();
   const given = runtime.argument(argsBase, argc, 1);
   if (isUndefined(given)) {
     filler.push(32);
@@ -1152,13 +1115,13 @@ function padBytes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
     filler = argumentBytes(inout runtime, given);
     if (runtime.pendingThrow) return undefinedValue();
   }
-  if (usize(target) <= bytes.length || filler.length == 0) return runtime.newString(copyAll(in bytes));
+  if (usize(target) <= bytes.length || filler.length == 0) return runtime.newStringUnits(copyAll(in bytes));
   const missing = usize(target) - bytes.length;
-  let padding = Array<u8>();
+  let padding = Array<u16>();
   while (padding.length < missing) {
     padding.push(filler[padding.length % filler.length]);
   }
-  let joined = Array<u8>();
+  let joined = Array<u16>();
   if (atStart) {
     let k: usize = 0;
     while (k < padding.length) { joined.push(padding[k]); k = k + 1; }
@@ -1170,7 +1133,7 @@ function padBytes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
     k = 0;
     while (k < padding.length) { joined.push(padding[k]); k = k + 1; }
   }
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 function stringPadStart(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1207,7 +1170,7 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   if (runtime.pendingThrow) return undefinedValue();
   if (limit == 0) return cellValue(result);
   if (isUndefined(separatorValue)) {
-    runtime.heap.arraySet(result, 0, runtime.newString(copyAll(in bytes)));
+    runtime.heap.arraySet(result, 0, runtime.newStringUnits(copyAll(in bytes)));
     return cellValue(result);
   }
   const separator = argumentBytes(inout runtime, separatorValue);
@@ -1215,10 +1178,10 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   if (separator.length == 0) {
     let index: usize = 0;
     while (index < bytes.length && runtime.heap.arrayLength(result) < limit) {
-      let one = Array<u8>();
+      let one = Array<u16>();
       one.push(bytes[index]);
       const count = runtime.heap.arrayLength(result);
-      runtime.heap.arraySet(result, count, runtime.newString(move one));
+      runtime.heap.arraySet(result, count, runtime.newStringUnits(move one));
       index = index + 1;
     }
     return cellValue(result);
@@ -1228,11 +1191,11 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
     const found = findBytes(in bytes, in separator, start);
     if (found < 0) {
       const count = runtime.heap.arrayLength(result);
-      runtime.heap.arraySet(result, count, runtime.newString(sliceFrom(in bytes, start)));
+      runtime.heap.arraySet(result, count, runtime.newStringUnits(sliceFrom(in bytes, start)));
       return cellValue(result);
     }
     const count = runtime.heap.arrayLength(result);
-    runtime.heap.arraySet(result, count, runtime.newString(sliceBytes(in bytes, start, usize(found))));
+    runtime.heap.arraySet(result, count, runtime.newStringUnits(sliceBytes(in bytes, start, usize(found))));
     start = usize(found) + separator.length;
   }
   return cellValue(result);
@@ -1257,7 +1220,7 @@ function stringReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const pattern = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
   const found = findBytes(in bytes, in pattern, 0);
-  if (found < 0) return runtime.newString(copyAll(in bytes));
+  if (found < 0) return runtime.newStringUnits(copyAll(in bytes));
   const replacementValue = runtime.argument(argsBase, argc, 1);
   const replacement = replacementFor(inout runtime, replacementValue, in pattern, usize(found), in bytes);
   if (runtime.pendingThrow) return undefinedValue();
@@ -1273,7 +1236,7 @@ function stringReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     joined.push(rest[k]);
     k = k + 1;
   }
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 function stringLocaleCompare(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1366,7 +1329,7 @@ export function installPrimitives(inout runtime: Runtime): void {
   const stringCtor = runtime.defineConstructor(constructString, undefinedValue(), 1, in stringText);
   runtime.heap.setLink(stringCtor, stringProto);
   runtime.defineOwnAttr(stringProto, atomConstructor, cellValue(stringCtor), PROP_METHOD);
-  runtime.defineOwnAttr(stringProto, atomPrimitive, runtime.internValue(Array<u8>()), PROP_NONE);
+  runtime.defineOwnAttr(stringProto, atomPrimitive, runtime.internLatin1Value(Array<u8>()), PROP_NONE);
   runtime.setGlobal("String", cellValue(stringCtor));
   const fromCharCodeText: String = "fromCharCode";
   runtime.defineMethod(stringCtor, in fromCharCodeText, stringFromCharCode, 1);

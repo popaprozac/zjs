@@ -1,8 +1,9 @@
 // The regular-expression backend boundary on the Z side. The matcher is
 // libregexp behind native/zjs_regexp.h; this module owns the cache of
-// compiled patterns (by source and flags), copies patterns and inputs
-// into buffers the backend owns, and hands back byte offsets and codes.
-// Nothing else in the engine names the backend.
+// compiled patterns (by source and flags), copies patterns (UTF-8) and
+// inputs (the heap's Latin-1 or UTF-16 storage) into a buffer the
+// backend owns, and hands back code-unit offsets and codes. Nothing else
+// in the engine names the backend.
 import native from "./native/zjs_regexp.h";
 import { bytesOf } from "./heap.zs";
 import { expect } from "std/test";
@@ -215,11 +216,12 @@ export struct RegexBackend {
     native.zjs_re_buffer_store(buffer, index, byte);
   }
 
-  // Run a compiled pattern over the loaded buffer from a byte offset; a
-  // REGEX_* code. The captures are readable until the next exec.
-  function execLoaded(inout this, entry: i32, buffer: usize, length: usize, start: usize): i32 {
+  // Run a compiled pattern over the loaded buffer -- `length` units, one
+  // byte each or two when `wide` -- from a unit offset; a REGEX_* code.
+  // The captures are readable until the next exec.
+  function execLoaded(inout this, entry: i32, buffer: usize, length: usize, start: usize, wide: boolean): i32 {
     const handle = this.entries[usize(entry)].handle;
-    const result = native.zjs_re_exec(this.context, handle, buffer, length, start);
+    const result = native.zjs_re_exec(this.context, handle, buffer, length, start, wide ? 1 : 0);
     this.clock = this.clock + 1;
     this.entries[usize(entry)].lastUse = this.clock;
     return result;
@@ -296,12 +298,12 @@ test "two backends keep independent captures, scratch, and accounting" {
   const bufferA = first.reserve(bytesA.length);
   let i: usize = 0;
   while (i < bytesA.length) { first.store(bufferA, i, bytesA[i]); i = i + 1; }
-  expect(first.execLoaded(entryA, bufferA, bytesA.length, 0)).toEqual(REGEX_MATCH);
+  expect(first.execLoaded(entryA, bufferA, bytesA.length, 0, false)).toEqual(REGEX_MATCH);
   // The second context's exec must not disturb the first's captures.
   const bufferB = second.reserve(bytesB.length);
   i = 0;
   while (i < bytesB.length) { second.store(bufferB, i, bytesB[i]); i = i + 1; }
-  expect(second.execLoaded(entryB, bufferB, bytesB.length, 0)).toEqual(REGEX_MATCH);
+  expect(second.execLoaded(entryB, bufferB, bytesB.length, 0, false)).toEqual(REGEX_MATCH);
   expect(first.captureStart(0)).toEqual(1);
   expect(first.captureEnd(0)).toEqual(5);
   expect(first.captureStart(1)).toEqual(1);

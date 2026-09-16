@@ -1,4 +1,5 @@
 # probe status at z-lang 69397510 (clean). Written by run.sh --record.
+array-capacity COMPILER-REJECTED
 array-pop LANDED
 byte-literal COMPILER-REJECTED
 enum-integer-code COMPILER-REJECTED
@@ -18,6 +19,7 @@ replace-array-field-inference LANDED
 self-parameter-name LANDED
 string-from-bytes LANDED
 string-to-native COMPILER-REJECTED
+ternary-in-arithmetic COMPILER-REJECTED
 truncating-conversion LANDED
 unchecked-index COMPILER-REJECTED
 while-true-diverges COMPILER-REJECTED

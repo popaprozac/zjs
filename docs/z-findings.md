@@ -1027,6 +1027,39 @@ raw body. Until then the per-byte copy stands.
 
 ---
 
+## G34 — A ternary of literals does not take its operand context's integer type
+
+**Status:** `proposed` · **Size:** small · **Priority:** low
+**Confirmed:** z-lang `69397510` · **Blocks:** no
+**Found:** the string-representation slice (advancing a unit index by one
+or two).
+
+`index = index + (wide ? 2 : 1)` with `index: usize` is rejected:
+"operator + requires matching numeric operands". The bare literal in
+`index + 2` takes `usize` from its context; the same literals inside a
+conditional expression default to `i32`. The workaround is a typed
+binding (`let step: usize = 1; if (wide) step = 2;`). Probe
+`ternary-in-arithmetic`.
+
+---
+
+## G35 — No capacity reservation for an array being built
+
+**Status:** `proposed` · **Size:** small · **Priority:** medium
+**Confirmed:** z-lang `69397510` · **Blocks:** no
+**Found:** the string-representation slice, profiling.
+
+Every string the engine builds is an `Array<u8>` or `Array<u16>` grown by
+`push`, so a result of known length regrows several times; with strings
+as code units a narrow result is built twice (units, then Latin-1
+storage), and the profile of a string-method loop is half `malloc` /
+`realloc` / `free`. The language reference says arrays do not reserve
+capacity and a future operation will have an explicit name. The ask is
+that operation: `Array<T>.withCapacity(n)` or `array.reserve(n)`, so a
+builder of known size allocates once. Probe `array-capacity`.
+
+---
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

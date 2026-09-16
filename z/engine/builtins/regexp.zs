@@ -5,8 +5,9 @@
 // regexpExecRaw over the backend; this file is the specification's
 // algorithms around it, over byte offsets.
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isNumber, asInt32, isInt32 } from "../value.zs";
-import { bytesOf, sliceBytes, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT } from "../heap.zs";
-import { Runtime, HostFunction, toNumber, truncateDouble, utf8SequenceLength, appendBytes } from "../runtime.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT } from "../heap.zs";
+import { unitsOf, sliceUnits, copyUnits, appendUnits, isHighSurrogate, isLowSurrogate } from "../text.zs";
+import { Runtime, HostFunction, toNumber, truncateDouble, appendBytes } from "../runtime.zs";
 import { REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH } from "../regex.zs";
 import { thread } from "std/thread";
 
@@ -42,25 +43,26 @@ function textKey(inout runtime: Runtime, in text: String): Value {
   return runtime.internText(in text);
 }
 
-function stringBytesOf(inout runtime: Runtime, value: Value): Array<u8> {
-  return runtime.heap.stringBytes(asCell(value));
+// A string's units.
+function stringBytesOf(inout runtime: Runtime, value: Value): Array<u16> {
+  return runtime.heap.stringUnits(asCell(value));
 }
 
-function substring(inout runtime: Runtime, in bytes: Array<u8>, start: usize, end: usize): Value {
+function substring(inout runtime: Runtime, in bytes: Array<u16>, start: usize, end: usize): Value {
   let begin = start;
   let finish = end;
   if (finish > bytes.length) finish = bytes.length;
   if (begin > finish) begin = finish;
-  return runtime.newString(sliceBytes(in bytes, begin, finish));
+  return runtime.newStringUnits(sliceUnits(in bytes, begin, finish));
 }
 
-// bytes[start..], the end bound taken before the borrow.
-function sliceFrom(in bytes: Array<u8>, start: usize): Array<u8> {
+// units[start..], the end bound taken before the borrow.
+function sliceFrom(in bytes: Array<u16>, start: usize): Array<u16> {
   const end = bytes.length;
-  return sliceBytes(in bytes, start, end);
+  return sliceUnits(in bytes, start, end);
 }
 
-function hasFlag(in flags: Array<u8>, letter: u8): boolean {
+function hasFlag(in flags: Array<u16>, letter: u16): boolean {
   let i: usize = 0;
   while (i < flags.length) {
     if (flags[i] == letter) return true;
@@ -74,13 +76,12 @@ function lengthOf(inout runtime: Runtime, value: Value): usize {
   return usize(runtime.toLength(value));
 }
 
-// AdvanceStringIndex over bytes: one byte, or one UTF-8 sequence when
-// matching by code point.
-function advanceIndex(in bytes: Array<u8>, index: usize, unicode: boolean): usize {
+// AdvanceStringIndex: one unit, or a whole surrogate pair when matching
+// by code point.
+function advanceIndex(in bytes: Array<u16>, index: usize, unicode: boolean): usize {
   if (!unicode || index + 1 >= bytes.length) return index + 1;
-  const length = utf8SequenceLength(in bytes, index);
-  if (length <= 1) return index + 1;
-  return index + usize(length);
+  if (isHighSurrogate(bytes[index]) && isLowSurrogate(bytes[index + 1])) return index + 2;
+  return index + 1;
 }
 
 // Get(rx, "lastIndex") as a length.
@@ -104,12 +105,12 @@ function setLastIndex(inout runtime: Runtime, rx: Value, value: usize): boolean 
   return true;
 }
 
-function flagsStringOf(inout runtime: Runtime, rx: Value): Array<u8> {
+function flagsStringOf(inout runtime: Runtime, rx: Value): Array<u16> {
   const atomFlags = runtime.atomFlags;
   const held = runtime.getProperty(rx, cellValue(atomFlags));
-  if (runtime.pendingThrow) return Array<u8>();
+  if (runtime.pendingThrow) return Array<u16>();
   const text = runtime.toStringValue(held);
-  if (runtime.pendingThrow) return Array<u8>();
+  if (runtime.pendingThrow) return Array<u16>();
   return stringBytesOf(inout runtime, text);
 }
 
@@ -189,7 +190,7 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
   g = 0;
   while (g < count) {
     let captured = undefinedValue();
-    if (starts[usize(g)] >= 0) captured = runtime.newString(runtime.heap.stringSlice(inputHandle, usize(starts[usize(g)]), usize(ends[usize(g)])));
+    if (starts[usize(g)] >= 0) captured = runtime.substringValue(inputHandle, usize(starts[usize(g)]), usize(ends[usize(g)]));
     runtime.heap.arraySet(array, u32(g), captured);
     g = g + 1;
   }
@@ -211,10 +212,10 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
       }
       at = at + 1;
       if (name.length > 0) {
-        const nameAtom = runtime.internValue(move name);
+        const nameAtom = runtime.internUtf8Value(move name);
         const existing = runtime.heap.objectFindSlot(groupsObject, asCell(nameAtom));
         let captured = undefinedValue();
-        if (starts[usize(group)] >= 0) captured = runtime.newString(runtime.heap.stringSlice(inputHandle, usize(starts[usize(group)]), usize(ends[usize(group)])));
+        if (starts[usize(group)] >= 0) captured = runtime.substringValue(inputHandle, usize(starts[usize(group)]), usize(ends[usize(group)]));
         // A duplicated name keeps the group that took part.
         if (existing < 0 || starts[usize(group)] >= 0) runtime.heap.objectDefine(groupsObject, asCell(nameAtom), captured, PROP_DEFAULT);
       }
@@ -256,7 +257,7 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
         }
         at = at + 1;
         if (name.length > 0) {
-          const nameAtom = runtime.internValue(move name);
+          const nameAtom = runtime.internUtf8Value(move name);
           const existing = runtime.heap.objectFindSlot(indexGroupsObject, asCell(nameAtom));
           const pair = runtime.heap.arrayHasIndex(indices, u32(group)) ? runtime.heap.arrayGet(indices, u32(group)) : undefinedValue();
           if (existing < 0 || starts[usize(group)] >= 0) runtime.heap.objectDefine(indexGroupsObject, asCell(nameAtom), pair, PROP_DEFAULT);
@@ -350,9 +351,9 @@ function constructRegExp(inout runtime: Runtime, thisValue: Value, argsBase: u32
   }
   runtime.pushTempRoot(cellValue(object));
   let patternText = p;
-  if (isUndefined(p)) patternText = runtime.internValue(Array<u8>());
+  if (isUndefined(p)) patternText = runtime.internLatin1Value(Array<u8>());
   let flagsText2 = f;
-  if (isUndefined(f)) flagsText2 = runtime.internValue(Array<u8>());
+  if (isUndefined(f)) flagsText2 = runtime.internLatin1Value(Array<u8>());
   const patternString = runtime.toStringValue(patternText);
   if (runtime.pendingThrow) {
     runtime.popTempRoot();
@@ -418,21 +419,21 @@ function regexpToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   const flagsString = runtime.toStringValue(flags);
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  let text = Array<u8>();
+  let text = Array<u16>();
   text.push(47);
-  appendBytes(inout text, stringBytesOf(inout runtime, sourceString));
+  appendUnits(inout text, stringBytesOf(inout runtime, sourceString));
   text.push(47);
-  appendBytes(inout text, stringBytesOf(inout runtime, flagsString));
-  return runtime.newString(move text);
+  appendUnits(inout text, stringBytesOf(inout runtime, flagsString));
+  return runtime.newStringUnits(move text);
 }
 
 // EscapeRegExpPattern: "/" and line terminators escaped, "(?:)" when
 // empty, so the result reads back as the same pattern.
-function escapedSource(in source: Array<u8>): Array<u8> {
-  let result = Array<u8>();
+function escapedSource(in source: Array<u16>): Array<u16> {
+  let result = Array<u16>();
   if (source.length == 0) {
     const empty: String = "(?:)";
-    return bytesOf(in empty);
+    return unitsOf(in empty);
   }
   let inClass = false;
   let i: usize = 0;
@@ -465,8 +466,8 @@ function escapedSource(in source: Array<u8>): Array<u8> {
 
 function regexpSourceGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   if (runtime.isRegExpObject(thisValue)) {
-    const source = runtime.regexpSource(asCell(thisValue));
-    return runtime.newString(escapedSource(in source));
+    const source = runtime.heap.stringUnits(asCell(runtime.regexpSourceValue(asCell(thisValue))));
+    return runtime.newStringUnits(escapedSource(in source));
   }
   const regexProto = runtime.regexProto;
   if (isCell(thisValue) && asCell(thisValue) == regexProto) {
@@ -493,25 +494,25 @@ function regexpFlagsGetter(inout runtime: Runtime, thisValue: Value, argsBase: u
   if (!thisObject(inout runtime, thisValue, in what)) return undefinedValue();
   const names: String = "hasIndices,global,ignoreCase,multiline,dotAll,unicode,unicodeSets,sticky";
   const letters: String = "dgimsuvy";
-  const nameBytes = bytesOf(in names);
-  const letterBytes = bytesOf(in letters);
-  let result = Array<u8>();
+  const nameBytes = unitsOf(in names);
+  const letterBytes = unitsOf(in letters);
+  let result = Array<u16>();
   let at: usize = 0;
   let which: usize = 0;
   while (at <= nameBytes.length) {
-    let name = Array<u8>();
+    let name = Array<u16>();
     while (at < nameBytes.length && nameBytes[at] != 44) {
       name.push(nameBytes[at]);
       at = at + 1;
     }
     at = at + 1;
-    const key = runtime.internValue(move name);
+    const key = runtime.internUnitsValue(move name);
     const held = runtime.getProperty(thisValue, key);
     if (runtime.pendingThrow) return undefinedValue();
     if (runtime.toBooleanValue(held)) result.push(letterBytes[which]);
     which = which + 1;
   }
-  return runtime.newString(move result);
+  return runtime.newStringUnits(move result);
 }
 
 // --- @@match ---
@@ -614,8 +615,8 @@ function regexpSearch(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 // --- @@replace ---
 
 // GetSubstitution over bytes: $$ $& $` $' $n $nn $<name>.
-function substitution(inout runtime: Runtime, in matched: Array<u8>, in text: Array<u8>, position: usize, in captures: Array<Value>, namedCaptures: Value, in template: Array<u8>): Array<u8> {
-  let result = Array<u8>();
+function substitution(inout runtime: Runtime, in matched: Array<u16>, in text: Array<u16>, position: usize, in captures: Array<Value>, namedCaptures: Value, in template: Array<u16>): Array<u16> {
+  let result = Array<u16>();
   const m = captures.length;
   let i: usize = 0;
   while (i < template.length) {
@@ -630,14 +631,14 @@ function substitution(inout runtime: Runtime, in matched: Array<u8>, in text: Ar
       result.push(36);
       i = i + 2;
     } else if (next == 38) {
-      appendBytes(inout result, sliceFrom(in matched, 0));
+      appendUnits(inout result, sliceFrom(in matched, 0));
       i = i + 2;
     } else if (next == 96) {
-      appendBytes(inout result, sliceBytes(in text, 0, position));
+      appendUnits(inout result, sliceUnits(in text, 0, position));
       i = i + 2;
     } else if (next == 39) {
       const tailStart = position + matched.length;
-      if (tailStart < text.length) appendBytes(inout result, sliceFrom(in text, tailStart));
+      if (tailStart < text.length) appendUnits(inout result, sliceFrom(in text, tailStart));
       i = i + 2;
     } else if (next >= 48 && next <= 57) {
       let digits: usize = 1;
@@ -653,8 +654,8 @@ function substitution(inout runtime: Runtime, in matched: Array<u8>, in text: Ar
         const capture = captures[index - 1];
         if (!isUndefined(capture)) {
           const captureText = runtime.toStringValue(capture);
-          if (runtime.pendingThrow) return Array<u8>();
-          appendBytes(inout result, stringBytesOf(inout runtime, captureText));
+          if (runtime.pendingThrow) return Array<u16>();
+          appendUnits(inout result, stringBytesOf(inout runtime, captureText));
         }
         i = i + 1 + digits;
       } else {
@@ -676,13 +677,13 @@ function substitution(inout runtime: Runtime, in matched: Array<u8>, in text: Ar
         i = i + 2;
         continue;
       }
-      const groupName = runtime.newString(sliceBytes(in template, i + 2, close));
+      const groupName = runtime.newStringUnits(sliceUnits(in template, i + 2, close));
       const capture = runtime.getProperty(namedCaptures, groupName);
-      if (runtime.pendingThrow) return Array<u8>();
+      if (runtime.pendingThrow) return Array<u16>();
       if (!isUndefined(capture)) {
         const captureText = runtime.toStringValue(capture);
-        if (runtime.pendingThrow) return Array<u8>();
-        appendBytes(inout result, stringBytesOf(inout runtime, captureText));
+        if (runtime.pendingThrow) return Array<u16>();
+        appendUnits(inout result, stringBytesOf(inout runtime, captureText));
       }
       i = close + 1;
     } else {
@@ -702,7 +703,7 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const bytes = stringBytesOf(inout runtime, input);
   let replaceValue = runtime.argument(argsBase, argc, 1);
   const functional = runtime.isCallable(replaceValue);
-  let template = Array<u8>();
+  let template = Array<u16>();
   if (!functional) {
     const replaceText = runtime.toStringValue(replaceValue);
     if (runtime.pendingThrow) {
@@ -750,7 +751,7 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
       if (!setLastIndex(inout runtime, thisValue, advanceIndex(in bytes, thisIndex, unicode))) break;
     }
   }
-  let accumulated = Array<u8>();
+  let accumulated = Array<u16>();
   let nextSourcePosition: usize = 0;
   let r: u32 = 0;
   while (!runtime.pendingThrow && r < resultCount) {
@@ -811,7 +812,7 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
       runtime.popTempRoot();
       break;
     }
-    let replacement = Array<u8>();
+    let replacement = Array<u16>();
     if (functional) {
       let args = Array<Value>();
       args.push(matchedString);
@@ -855,8 +856,8 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     runtime.popTempRoot();
     runtime.popTempRoot();
     if (position >= nextSourcePosition) {
-      appendBytes(inout accumulated, sliceBytes(in bytes, nextSourcePosition, position));
-      appendBytes(inout accumulated, move replacement);
+      appendUnits(inout accumulated, sliceUnits(in bytes, nextSourcePosition, position));
+      appendUnits(inout accumulated, move replacement);
       nextSourcePosition = position + matched.length;
     }
   }
@@ -864,8 +865,8 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   runtime.popTempRoot();
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  if (nextSourcePosition < bytes.length) appendBytes(inout accumulated, sliceFrom(in bytes, nextSourcePosition));
-  return runtime.newString(move accumulated);
+  if (nextSourcePosition < bytes.length) appendUnits(inout accumulated, sliceFrom(in bytes, nextSourcePosition));
+  return runtime.newStringUnits(move accumulated);
 }
 
 // --- @@split ---
@@ -893,7 +894,7 @@ function regexpSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   if (!hasFlag(in flags, 121)) flags.push(121);
   let ctorArgs = Array<Value>();
   ctorArgs.push(thisValue);
-  ctorArgs.push(runtime.newString(move flags));
+  ctorArgs.push(runtime.newStringUnits(move flags));
   const splitter = runtime.constructValue(ctor, move ctorArgs, ctor);
   if (runtime.pendingThrow) {
     runtime.popTempRoot();
@@ -1013,7 +1014,7 @@ function regexpMatchAll(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   const unicode = hasFlag(in flags, 117) || hasFlag(in flags, 118);
   let ctorArgs = Array<Value>();
   ctorArgs.push(thisValue);
-  ctorArgs.push(runtime.newString(sliceFrom(in flags, 0)));
+  ctorArgs.push(runtime.newStringUnits(copyUnits(in flags)));
   const matcher = runtime.constructValue(ctor, move ctorArgs, ctor);
   if (runtime.pendingThrow) {
     runtime.popTempRoot();

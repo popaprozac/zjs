@@ -328,7 +328,7 @@ function formatDate(inout runtime: Runtime, t: f64, format: i32): Value {
   let bytes = Array<u8>();
   if (format == FORMAT_ISO) {
     pushIso(inout bytes, t);
-    return runtime.newString(move bytes);
+    return runtime.newStringLatin1(move bytes);
   }
   if (format == FORMAT_UTC) {
     pushDayName(inout bytes, u32(math.trunc(weekDay(t))));
@@ -343,12 +343,12 @@ function formatDate(inout runtime: Runtime, t: f64, format: i32): Value {
     pushTimePart(inout bytes, t);
     const gmt: String = " GMT";
     pushText(inout bytes, in gmt);
-    return runtime.newString(move bytes);
+    return runtime.newStringLatin1(move bytes);
   }
   const local = localTime(t);
   if (format == FORMAT_DATE) {
     pushDatePart(inout bytes, local);
-    return runtime.newString(move bytes);
+    return runtime.newStringLatin1(move bytes);
   }
   if (format == FORMAT_STRING) {
     pushDatePart(inout bytes, local);
@@ -357,7 +357,7 @@ function formatDate(inout runtime: Runtime, t: f64, format: i32): Value {
   pushTimePart(inout bytes, local);
   bytes.push(32);
   pushZonePart(inout bytes, t);
-  return runtime.newString(move bytes);
+  return runtime.newStringLatin1(move bytes);
 }
 
 // --- Parsing ---
@@ -645,6 +645,22 @@ function parseDate(in bytes: Array<u8>): f64 {
   return parseLoose(in trimmed);
 }
 
+// The units of a string as ASCII bytes for the parsers; a unit beyond
+// ASCII becomes 0xFF, which no date form contains.
+function asciiBytes(inout runtime: Runtime, handle: u32): Array<u8> {
+  const length = runtime.heap.stringLength(handle);
+  let bytes = Array<u8>();
+  let i: usize = 0;
+  while (i < length) {
+    const unit = runtime.heap.stringUnit(handle, i);
+    let byte: u8 = 0xFF;
+    if (unit < 0x80) byte = u8(unit);
+    bytes.push(byte);
+    i = i + 1;
+  }
+  return bytes;
+}
+
 // --- The builtin ---
 
 function thisTimeValue(inout runtime: Runtime, thisValue: Value): f64 {
@@ -720,7 +736,7 @@ function constructDate(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
       const primitive = runtime.toPrimitiveWithHint(value, HINT_DEFAULT);
       if (runtime.pendingThrow) return undefinedValue();
       if (runtime.isStringValue(primitive)) {
-        const text = runtime.heap.stringBytes(asCell(primitive));
+        const text = asciiBytes(inout runtime, asCell(primitive));
         tv = parseDate(in text);
       } else {
         const number = runtime.toNumberValue(primitive);
@@ -743,7 +759,7 @@ function dateNow(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: 
 function dateParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  const bytes = runtime.heap.stringBytes(asCell(text));
+  const bytes = asciiBytes(inout runtime, asCell(text));
   return doubleValue(parseDate(in bytes));
 }
 
@@ -961,7 +977,7 @@ function dateToPrimitive(inout runtime: Runtime, thisValue: Value, argsBase: u32
   let preferString = false;
   let valid = false;
   if (runtime.isStringValue(hint)) {
-    const hintBytes = runtime.heap.stringBytes(asCell(hint));
+    const hintBytes = asciiBytes(inout runtime, asCell(hint));
     const stringText: String = "string";
     const defaultText: String = "default";
     const numberText: String = "number";

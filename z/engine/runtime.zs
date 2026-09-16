@@ -12,7 +12,8 @@ import { thread } from "std/thread";
 import math from "std/math";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN } from "./heap.zs";
+import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
@@ -484,7 +485,7 @@ export struct Runtime {
   // Global slot for a name, allocating one on first sight. Names are
   // interned; the slot is found by atom. Linear for now.
   function globalSlotBytes(inout this, bytes: Array<u8>): u16 {
-    const atom = this.internBytes(move bytes);
+    const atom = this.internUtf8(move bytes);
     const found = this.findGlobalByAtom(atom);
     if (found >= 0) return u16(found);
     this.globals.push(Global({ value: undefinedValue(), defined: false, atom: atom, attr: PROP_WRITABLE | PROP_ENUMERABLE }));
@@ -498,7 +499,7 @@ export struct Runtime {
     bytes.push(255);
     bytes.push(first);
     bytes.push(second);
-    return this.internBytes(move bytes);
+    return this.hiddenAtomBytes(move bytes);
   }
 
   // A hidden value kept on a function-like cell's bag; undefined if none.
@@ -548,6 +549,8 @@ export struct Runtime {
     return isCell(value) && asCell(value) != 0 && this.heap.isString(asCell(value));
   }
 
+  // Atoms hash by unit value, so Latin-1 bytes and the units they stand
+  // for hash alike.
   function hashBytes(in bytes: Array<u8>): u32 {
     let hash: u32 = 2166136261;
     let index: usize = 0;
@@ -559,12 +562,59 @@ export struct Runtime {
     return hash;
   }
 
+  function hashUnits(in units: Array<u16>): u32 {
+    let hash: u32 = 2166136261;
+    let index: usize = 0;
+    const length = units.length;
+    while (index < length) {
+      hash = (hash ^ u32(units[index])).wrappingMultiply(16777619);
+      index = index + 1;
+    }
+    return hash;
+  }
+
+  function hashStorage(handle: u32): u32 {
+    let hash: u32 = 2166136261;
+    let index: usize = 0;
+    if (!this.heap.isWideString(handle)) {
+      const length = this.heap.stringStorageLength(handle);
+      while (index < length) {
+        hash = (hash ^ u32(this.heap.stringStorageByte(handle, index))).wrappingMultiply(16777619);
+        index = index + 1;
+      }
+      return hash;
+    }
+    const units = this.heap.stringLength(handle);
+    while (index < units) {
+      hash = (hash ^ u32(this.heap.stringUnit(handle, index))).wrappingMultiply(16777619);
+      index = index + 1;
+    }
+    return hash;
+  }
+
+  // A fresh string holding units[start, end) of another.
+  function substringValue(inout this, handle: u32, start: usize, end: usize): Value {
+    return cellValue(this.heap.allocateSubstring(handle, start, end));
+  }
+
   function atomMatches(handle: u32, in bytes: Array<u8>): boolean {
+    if (this.heap.isWideString(handle)) return false;
     const length = bytes.length;
+    if (this.heap.stringStorageLength(handle) != length) return false;
+    let index: usize = 0;
+    while (index < length) {
+      if (this.heap.stringStorageByte(handle, index) != bytes[index]) return false;
+      index = index + 1;
+    }
+    return true;
+  }
+
+  function atomMatchesUnits(handle: u32, in units: Array<u16>): boolean {
+    const length = units.length;
     if (this.heap.stringLength(handle) != length) return false;
     let index: usize = 0;
     while (index < length) {
-      if (this.heap.stringByte(handle, index) != bytes[index]) return false;
+      if (this.heap.stringUnit(handle, index) != units[index]) return false;
       index = index + 1;
     }
     return true;
@@ -584,8 +634,7 @@ export struct Runtime {
     while (index < oldSize) {
       const handle = this.atoms[index];
       if (handle != 0) {
-        const bytes = this.heap.stringBytes(handle);
-        let slot = usize(this.hashBytes(in bytes)) & (newSize - 1);
+        let slot = usize(this.hashStorage(handle)) & (newSize - 1);
         while (rebuilt[slot] != 0) { slot = (slot + 1) & (newSize - 1); }
         rebuilt[slot] = handle;
       }
@@ -594,8 +643,13 @@ export struct Runtime {
     this.atoms = move rebuilt;
   }
 
-  // The unique string cell for these bytes.
-  function internBytes(inout this, bytes: Array<u8>): u32 {
+  function markInterned(inout this, handle: u32): void {
+    const flags = this.heap.flagsOf(handle);
+    this.heap.setFlags(handle, flags | FLAG_INTERNED);
+  }
+
+  // The unique string cell whose units are these Latin-1 bytes.
+  function internLatin1(inout this, bytes: Array<u8>): u32 {
     if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
     const mask = this.atoms.length - 1;
     let slot = usize(this.hashBytes(in bytes)) & mask;
@@ -605,24 +659,113 @@ export struct Runtime {
       if (this.atomMatches(existing, in bytes)) return existing;
       slot = (slot + 1) & mask;
     }
-    const handle = this.heap.allocateString(move bytes);
-    this.heap.setFlags(handle, FLAG_INTERNED);
+    const handle = this.heap.allocateLatin1(move bytes);
+    this.markInterned(handle);
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
     return handle;
   }
 
-  function internValue(inout this, bytes: Array<u8>): Value {
-    return cellValue(this.internBytes(move bytes));
+  // The unique string cell with these units.
+  function internUnits(inout this, units: Array<u16>): u32 {
+    if (isNarrowUnits(in units)) return this.internLatin1(unitsToLatin1(in units));
+    if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
+    const mask = this.atoms.length - 1;
+    let slot = usize(this.hashUnits(in units)) & mask;
+    while (true) {
+      const existing = this.atoms[slot];
+      if (existing == 0) break;
+      if (this.atomMatchesUnits(existing, in units)) return existing;
+      slot = (slot + 1) & mask;
+    }
+    const handle = this.heap.allocateUnits(move units);
+    this.markInterned(handle);
+    this.atoms[slot] = handle;
+    this.atomCount = this.atomCount + 1;
+    return handle;
+  }
+
+  // The unique string cell for UTF-8 text (source names, host text).
+  function internUtf8(inout this, bytes: Array<u8>): u32 {
+    if (isAsciiBytes(in bytes)) return this.internLatin1(move bytes);
+    return this.internUnits(utf8ToUnits(in bytes));
+  }
+
+  // The atom with an existing string cell's content: the cell itself
+  // once registered, so a computed key costs no copy.
+  function internExisting(inout this, handle: u32): u32 {
+    if ((this.heap.flagsOf(handle) & FLAG_INTERNED) != 0) return handle;
+    if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
+    const mask = this.atoms.length - 1;
+    let slot = usize(this.hashStorage(handle)) & mask;
+    while (true) {
+      const existing = this.atoms[slot];
+      if (existing == 0) break;
+      if (this.heap.stringsEqual(existing, handle)) return existing;
+      slot = (slot + 1) & mask;
+    }
+    this.markInterned(handle);
+    this.atoms[slot] = handle;
+    this.atomCount = this.atomCount + 1;
+    return handle;
+  }
+
+  function internLatin1Value(inout this, bytes: Array<u8>): Value {
+    return cellValue(this.internLatin1(move bytes));
+  }
+
+  function internUnitsValue(inout this, units: Array<u16>): Value {
+    return cellValue(this.internUnits(move units));
+  }
+
+  function internUtf8Value(inout this, bytes: Array<u8>): Value {
+    return cellValue(this.internUtf8(move bytes));
   }
 
   function internText(inout this, in text: String): Value {
-    return cellValue(this.internBytes(bytesOf(in text)));
+    return cellValue(this.internUtf8(bytesOf(in text)));
   }
 
-  // A fresh (non-interned) string cell.
-  function newString(inout this, bytes: Array<u8>): Value {
-    return cellValue(this.heap.allocateString(move bytes));
+  // Fresh (non-interned) string cells: from Latin-1 bytes (ASCII output
+  // such as numbers), from units, from UTF-8 text.
+  function newStringLatin1(inout this, bytes: Array<u8>): Value {
+    return cellValue(this.heap.allocateLatin1(move bytes));
+  }
+
+  function newStringUnits(inout this, units: Array<u16>): Value {
+    return cellValue(this.heap.allocateUnits(move units));
+  }
+
+  function newStringUtf8(inout this, bytes: Array<u8>): Value {
+    return cellValue(this.heap.allocateUtf8(move bytes));
+  }
+
+  // An engine-internal key: a string cell no program can reach by
+  // content, since it is never in the atom table.
+  function hiddenAtomBytes(inout this, bytes: Array<u8>): u32 {
+    const handle = this.heap.allocateLatin1(move bytes);
+    this.heap.setFlags(handle, FLAG_HIDDEN);
+    return handle;
+  }
+
+  // ToNumber of a string: the specification's whitespace beyond ASCII
+  // trims like a space; any other unit above ASCII makes it NaN.
+  function stringValueToNumber(handle: u32): f64 {
+    const length = this.heap.stringLength(handle);
+    let bytes = Array<u8>();
+    let index: usize = 0;
+    while (index < length) {
+      const unit = this.heap.stringUnit(handle, index);
+      if (unit < 0x80) {
+        bytes.push(u8(unit));
+      } else if (isJsSpace(unit)) {
+        bytes.push(32);
+      } else {
+        return nativeNan();
+      }
+      index = index + 1;
+    }
+    return stringToNumber(in bytes);
   }
 
   // --- Objects and properties ---
@@ -651,7 +794,7 @@ export struct Runtime {
   }
 
   function atomOf(inout this, in text: String): u32 {
-    return this.internBytes(bytesOf(in text));
+    return this.internUtf8(bytesOf(in text));
   }
 
   // Raise from a helper; the dispatch loop consumes it after the call.
@@ -685,7 +828,7 @@ export struct Runtime {
     const nameValue = this.internText(in kindName);
     const atomName = this.atomName;
     this.heap.objectSet(object, atomName, nameValue);
-    const messageValue = this.newString(move message);
+    const messageValue = this.newStringUtf8(move message);
     const atomMessage = this.atomMessage;
     this.heap.objectSet(object, atomMessage, messageValue);
     return cellValue(object);
@@ -734,8 +877,10 @@ export struct Runtime {
     return this.heap.slot(handle, u32(slot));
   }
 
+  // The pattern for the backend: UTF-8 with lone surrogates kept.
   function regexpSource(handle: u32): Array<u8> {
-    return this.heap.stringBytes(asCell(this.regexpSourceValue(handle)));
+    const units = this.heap.stringUnits(asCell(this.regexpSourceValue(handle)));
+    return unitsToWtf8(in units);
   }
 
   function regexpFlagBits(handle: u32): i32 {
@@ -754,7 +899,7 @@ export struct Runtime {
   }
 
   // A flags string to bits; -1 for an unknown or repeated flag.
-  function regexpFlagBitsOf(in flags: Array<u8>): i32 {
+  function regexpFlagBitsOf(in flags: Array<u16>): i32 {
     let bits: i32 = 0;
     let i: usize = 0;
     while (i < flags.length) {
@@ -789,18 +934,19 @@ export struct Runtime {
   // flags parse, the pattern compiles (a SyntaxError names the backend's
   // complaint), the slots fill, and lastIndex is set to 0 through Set.
   function regexpInitialize(inout this, object: u32, pattern: Value, flags: Value): boolean {
-    const flagBytes = this.heap.stringBytes(asCell(flags));
-    const bits = this.regexpFlagBitsOf(in flagBytes);
+    const flagUnits = this.heap.stringUnits(asCell(flags));
+    const bits = this.regexpFlagBitsOf(in flagUnits);
     if (bits < 0) {
       const head: String = "Invalid flags supplied to RegExp constructor '";
       let message = bytesOf(in head);
-      appendBytes(inout message, this.heap.stringBytes(asCell(flags)));
+      appendBytes(inout message, this.heap.stringUtf8(asCell(flags)));
       message.push(39);
       const error = this.makeError(ERROR_KIND_SYNTAX, move message);
       this.raise(error);
       return false;
     }
-    const sourceBytes = this.heap.stringBytes(asCell(pattern));
+    const sourceUnits = this.heap.stringUnits(asCell(pattern));
+    const sourceBytes = unitsToWtf8(in sourceUnits);
     const entry = this.regexBackend.compile(in sourceBytes, bits);
     if (entry < 0) {
       // A resource failure is not a syntax error.
@@ -819,9 +965,9 @@ export struct Runtime {
       }
       const head: String = "Invalid regular expression: /";
       let message = bytesOf(in head);
-      appendBytes(inout message, this.heap.stringBytes(asCell(pattern)));
+      appendBytes(inout message, this.heap.stringUtf8(asCell(pattern)));
       message.push(47);
-      appendBytes(inout message, this.heap.stringBytes(asCell(flags)));
+      appendBytes(inout message, this.heap.stringUtf8(asCell(flags)));
       const separator: String = ": ";
       appendBytes(inout message, bytesOf(in separator));
       const detail = this.regexBackend.errorMessage();
@@ -858,9 +1004,9 @@ export struct Runtime {
   // RegExpCreate from strings (undefined for either means empty).
   function regexpCreate(inout this, pattern: Value, flags: Value, proto: u32): Value {
     let patternText = pattern;
-    if (isUndefined(pattern)) patternText = this.internValue(Array<u8>());
+    if (isUndefined(pattern)) patternText = this.internLatin1Value(Array<u8>());
     let flagsText = flags;
-    if (isUndefined(flags)) flagsText = this.internValue(Array<u8>());
+    if (isUndefined(flags)) flagsText = this.internLatin1Value(Array<u8>());
     const patternString = this.toStringValue(patternText);
     if (this.pendingThrow) return undefinedValue();
     this.pushTempRoot(patternString);
@@ -905,23 +1051,27 @@ export struct Runtime {
     return entry;
   }
 
-  // Run a RegExp against a string from a byte offset: REGEX_MATCH or
+  // Run a RegExp against a string from a unit offset: REGEX_MATCH or
   // REGEX_NO_MATCH, or a raised error for the backend's failures. The
-  // string's bytes go straight from the heap into the backend's buffer.
+  // string's storage goes straight from the heap into the backend's
+  // buffer: Latin-1 bytes are its 8-bit units, wide storage its 16-bit
+  // units, so nothing is transcoded.
   function regexpExecRaw(inout this, handle: u32, input: u32, start: usize): i32 {
     const entry = this.regexpEntry(handle);
     if (this.pendingThrow) return REGEX_NO_MATCH;
     const length = this.heap.stringLength(input);
-    const buffer = this.regexBackend.reserve(length);
+    const storageLength = this.heap.stringStorageLength(input);
+    const wide = this.heap.isWideString(input);
+    const buffer = this.regexBackend.reserve(storageLength);
     let result = REGEX_OUT_OF_MEMORY;
     if (buffer != 0) {
       let i: usize = 0;
-      while (i < length) {
-        const byte = this.heap.stringByte(input, i);
+      while (i < storageLength) {
+        const byte = this.heap.stringStorageByte(input, i);
         this.regexBackend.store(buffer, i, byte);
         i = i + 1;
       }
-      result = this.regexBackend.execLoaded(entry, buffer, length, start);
+      result = this.regexBackend.execLoaded(entry, buffer, length, start, wide);
     }
     if (result >= 0) return result;
     if (result == REGEX_OUT_OF_MEMORY) {
@@ -973,16 +1123,11 @@ export struct Runtime {
   // A property key as an atom handle: strings intern their bytes; anything
   // else goes through ToString first.
   function propertyKey(inout this, key: Value): u32 {
-    if (this.isStringValue(key)) {
-      // An atom names itself; any other string is interned by its bytes.
-      const handle = asCell(key);
-      if ((this.heap.flagsOf(handle) & FLAG_INTERNED) != 0) return handle;
-      return this.internBytes(this.heap.stringBytes(handle));
-    }
+    // An atom names itself; any other string registers as one.
+    if (this.isStringValue(key)) return this.internExisting(asCell(key));
     if (this.isSymbolValue(key)) return this.heap.symbolKeyAtom(asCell(key));
     const text = this.toStringValue(key);
-    const textBytes = this.heap.stringBytes(asCell(text));
-    return this.internBytes(textBytes);
+    return this.internExisting(asCell(text));
   }
 
   // A key that names an array element: a non-negative int32, an integral
@@ -998,11 +1143,11 @@ export struct Runtime {
     const handle = asCell(key);
     const length = this.heap.stringLength(handle);
     if (length == 0 || length > 10) return -1;
-    if (length > 1 && this.heap.stringByte(handle, 0) == 48) return -1;
+    if (length > 1 && this.heap.stringUnit(handle, 0) == 48) return -1;
     let value: i64 = 0;
     let index: usize = 0;
     while (index < length) {
-      const byte = this.heap.stringByte(handle, index);
+      const byte = this.heap.stringUnit(handle, index);
       if (byte < 48 || byte > 57) return -1;
       value = value * 10 + i64(byte - 48);
       index = index + 1;
@@ -1231,9 +1376,9 @@ export struct Runtime {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
         if (usize(index) >= this.heap.stringLength(handle)) return undefinedValue();
-        let one = Array<u8>();
-        one.push(this.heap.stringByte(handle, usize(index)));
-        return this.internValue(move one);
+        let one = Array<u16>();
+        one.push(this.heap.stringUnit(handle, usize(index)));
+        return this.internUnitsValue(move one);
       }
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) return int32Value(i32(this.heap.stringLength(handle)));
@@ -1507,7 +1652,7 @@ export struct Runtime {
   // A compiled function's name: the declared one, or the empty string.
   function functionName(inout this, code: u32): Value {
     const atom = this.functions[usize(code)].nameAtom;
-    if (atom == 0) return this.internValue(Array<u8>());
+    if (atom == 0) return this.internLatin1Value(Array<u8>());
     return cellValue(atom);
   }
 
@@ -1515,9 +1660,9 @@ export struct Runtime {
     const index = this.arrayIndexOf(key);
     if (index >= 0) {
       if (usize(index) >= this.heap.stringLength(handle)) return absentProperty();
-      let one = Array<u8>();
-      one.push(this.heap.stringByte(handle, usize(index)));
-      return dataProperty(this.internValue(move one), PROP_ENUMERABLE);
+      let one = Array<u16>();
+      one.push(this.heap.stringUnit(handle, usize(index)));
+      return dataProperty(this.internUnitsValue(move one), PROP_ENUMERABLE);
     }
     const atom = this.propertyKey(key);
     if (atom == this.atomLength) return dataProperty(int32Value(i32(this.heap.stringLength(handle))), PROP_NONE);
@@ -1681,8 +1826,7 @@ export struct Runtime {
       return u32(mixed & 0xFFFFFFFF);
     }
     if (this.isStringValue(value)) {
-      const bytes = this.heap.stringBytes(asCell(value));
-      return this.hashBytes(in bytes);
+      return this.hashStorage(asCell(value));
     }
     const mixed = (value.bits ^ (value.bits >> 29)).wrappingMultiply(0x9E3779B1);
     return u32(mixed & 0xFFFFFFFF);
@@ -2036,7 +2180,7 @@ export struct Runtime {
 
   // Whether an atom is one of the engine's hidden keys.
   function isHiddenAtom(atom: u32): boolean {
-    return this.heap.stringLength(atom) > 0 && this.heap.stringByte(atom, 0) == 255;
+    return (this.heap.flagsOf(atom) & FLAG_HIDDEN) != 0;
   }
 
   function isSymbolValue(value: Value): boolean {
@@ -2056,7 +2200,7 @@ export struct Runtime {
     bytes.push(u8((number >> 16) & 255));
     bytes.push(u8((number >> 8) & 255));
     bytes.push(u8(number & 255));
-    const atom = this.internBytes(move bytes);
+    const atom = this.hiddenAtomBytes(move bytes);
     this.heap.setSlot(symbol, 1, cellValue(atom));
     this.heap.setLink(atom, symbol);
     return cellValue(symbol);
@@ -2064,7 +2208,7 @@ export struct Runtime {
 
   // Whether a hidden atom stands for a symbol, and which.
   function isSymbolKeyAtom(atom: u32): boolean {
-    return this.heap.stringLength(atom) == 6 && this.heap.stringByte(atom, 0) == 255 && this.heap.stringByte(atom, 1) == 115;
+    return this.heap.stringLength(atom) == 6 && this.heap.stringUnit(atom, 0) == 255 && this.heap.stringUnit(atom, 1) == 115;
   }
 
   function symbolOfKeyAtom(atom: u32): Value {
@@ -2076,9 +2220,9 @@ export struct Runtime {
     const head: String = "Symbol(";
     let text = bytesOf(in head);
     const description = this.heap.symbolDescription(symbol);
-    if (this.isStringValue(description)) appendBytes(inout text, this.heap.stringBytes(asCell(description)));
+    if (this.isStringValue(description)) appendBytes(inout text, this.heap.stringUtf8(asCell(description)));
     text.push(41);
-    return this.newString(move text);
+    return this.newStringUtf8(move text);
   }
 
   function symbolTypeError(inout this, in what: String): Value {
@@ -2280,6 +2424,18 @@ export struct Runtime {
     if (index >= length) {
       this.heap.setSlot(iterator, u32(sourceSlot), undefinedValue());
       return deletedValue();
+    }
+    // A string iterates by code point: a surrogate pair is one element.
+    if (kind == 0 && this.isStringValue(source)) {
+      const handle = asCell(source);
+      const unit = this.heap.stringUnit(handle, usize(index));
+      let step: u32 = 1;
+      if (unit >= 0xD800 && unit <= 0xDBFF && index + 1 < length) {
+        const next = this.heap.stringUnit(handle, usize(index + 1));
+        if (next >= 0xDC00 && next <= 0xDFFF) step = 2;
+      }
+      this.heap.setSlot(iterator, u32(indexSlot), int32Value(i32(index + step)));
+      return this.newStringUnits(this.heap.stringUnitsSlice(handle, usize(index), usize(index + step)));
     }
     this.heap.setSlot(iterator, u32(indexSlot), int32Value(i32(index + 1)));
     if (kind == 1) return int32Value(i32(index));
@@ -2685,7 +2841,20 @@ export struct Runtime {
     const handle = this.heap.allocateHostFunction(id);
     this.heap.setSlot(handle, 0, bound);
     this.heap.setSlot(handle, 1, int32Value(i32(length)));
-    const nameValue = this.internValue(move nameBytes);
+    const nameValue = this.internUtf8Value(move nameBytes);
+    this.heap.setSlot(handle, 2, nameValue);
+    this.heap.setSlot(handle, 4, booleanValue(false));
+    return handle;
+  }
+
+  // A host function named from units assembled at run time.
+  function defineHostFunctionUnits(inout this, fn: HostFunction, bound: Value, length: u32, nameUnits: Array<u16>): u32 {
+    this.hostTable.push(fn);
+    const id = u32(this.hostTable.length - 1);
+    const handle = this.heap.allocateHostFunction(id);
+    this.heap.setSlot(handle, 0, bound);
+    this.heap.setSlot(handle, 1, int32Value(i32(length)));
+    const nameValue = this.internUnitsValue(move nameUnits);
     this.heap.setSlot(handle, 2, nameValue);
     this.heap.setSlot(handle, 4, booleanValue(false));
     return handle;
@@ -2974,43 +3143,43 @@ export struct Runtime {
     hidden.push(114);
     hidden.push(105);
     hidden.push(109);
-    this.atomPrimitive = this.internBytes(move hidden);
+    this.atomPrimitive = this.hiddenAtomBytes(move hidden);
     let marker = Array<u8>();
     marker.push(255);
     marker.push(97);
     marker.push(114);
     marker.push(103);
-    this.atomArgumentsMarker = this.internBytes(move marker);
+    this.atomArgumentsMarker = this.hiddenAtomBytes(move marker);
     let iterSource = Array<u8>();
     iterSource.push(255);
     iterSource.push(105);
     iterSource.push(115);
-    this.atomIterSource = this.internBytes(move iterSource);
+    this.atomIterSource = this.hiddenAtomBytes(move iterSource);
     let iterIndex = Array<u8>();
     iterIndex.push(255);
     iterIndex.push(105);
     iterIndex.push(120);
-    this.atomIterIndex = this.internBytes(move iterIndex);
+    this.atomIterIndex = this.hiddenAtomBytes(move iterIndex);
     let iterKind = Array<u8>();
     iterKind.push(255);
     iterKind.push(105);
     iterKind.push(107);
-    this.atomIterKind = this.internBytes(move iterKind);
+    this.atomIterKind = this.hiddenAtomBytes(move iterKind);
     let genRecord = Array<u8>();
     genRecord.push(255);
     genRecord.push(103);
     genRecord.push(114);
-    this.atomGenRecord = this.internBytes(move genRecord);
+    this.atomGenRecord = this.hiddenAtomBytes(move genRecord);
     let mapRecord = Array<u8>();
     mapRecord.push(255);
     mapRecord.push(109);
     mapRecord.push(114);
-    this.atomMapRecord = this.internBytes(move mapRecord);
+    this.atomMapRecord = this.hiddenAtomBytes(move mapRecord);
     let mapIter = Array<u8>();
     mapIter.push(255);
     mapIter.push(109);
     mapIter.push(105);
-    this.atomMapIter = this.internBytes(move mapIter);
+    this.atomMapIter = this.hiddenAtomBytes(move mapIter);
     this.atomClassParent = this.hiddenAtom(99, 112);
     this.atomHome = this.hiddenAtom(104, 111);
     this.atomNewTarget = this.hiddenAtom(110, 116);
@@ -3339,9 +3508,8 @@ export struct Runtime {
 
   // Place an existing string cell in the atom table by its bytes' hash.
   function insertAtom(inout this, handle: u32): void {
-    const bytes = this.heap.stringBytes(handle);
     const mask = this.atoms.length - 1;
-    let slot = usize(this.hashBytes(in bytes)) & mask;
+    let slot = usize(this.hashStorage(handle)) & mask;
     while (this.atoms[slot] != 0) { slot = (slot + 1) & mask; }
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
@@ -3358,8 +3526,7 @@ export struct Runtime {
 
   function toNumberValue(inout this, value: Value): f64 {
     if (this.isStringValue(value)) {
-      const bytes = this.heap.stringBytes(asCell(value));
-      return stringToNumber(in bytes);
+      return this.stringValueToNumber(asCell(value));
     }
     if (this.isSymbolValue(value)) {
       const what: String = "number";
@@ -3389,20 +3556,20 @@ export struct Runtime {
       const what: String = "string";
       const error = this.symbolTypeError(in what);
       this.raise(error);
-      return this.internValue(Array<u8>());
+      return this.internLatin1Value(Array<u8>());
     }
     if (this.isObjectLike(value)) {
       const primitive = this.toPrimitive(value, true);
-      if (this.pendingThrow) return this.internValue(Array<u8>());
+      if (this.pendingThrow) return this.internLatin1Value(Array<u8>());
       return this.toStringValue(primitive);
     }
     if (isInt32(value)) {
       const text = int32ToString(asInt32(value));
-      return this.newString(bytesOf(in text));
+      return this.newStringLatin1(bytesOf(in text));
     }
     if (isDouble(value)) {
       const text = doubleToString(asDouble(value));
-      return this.newString(bytesOf(in text));
+      return this.newStringLatin1(bytesOf(in text));
     }
     if (isBoolean(value)) {
       const text: String = isTrue(value) ? "true" : "false";
@@ -3419,7 +3586,7 @@ export struct Runtime {
   // Array.prototype.join with the default separator: holes, null, and
   // undefined are empty.
   function joinArray(inout this, array: u32): Value {
-    let joined = Array<u8>();
+    let joined = Array<u16>();
     const length = this.heap.arrayLength(array);
     let index: u32 = 0;
     while (index < length) {
@@ -3431,13 +3598,13 @@ export struct Runtime {
         const count = this.heap.stringLength(handle);
         let i: usize = 0;
         while (i < count) {
-          joined.push(this.heap.stringByte(handle, i));
+          joined.push(this.heap.stringUnit(handle, i));
           i = i + 1;
         }
       }
       index = index + 1;
     }
-    return this.newString(move joined);
+    return this.newStringUnits(move joined);
   }
 
   function concatStrings(inout this, a: Value, b: Value): Value {
@@ -3447,14 +3614,27 @@ export struct Runtime {
     const rightHandle = asCell(right);
     if (this.heap.stringLength(leftHandle) == 0) return right;
     if (this.heap.stringLength(rightHandle) == 0) return left;
-    let joined = this.heap.stringBytes(leftHandle);
-    const rightLength = this.heap.stringLength(rightHandle);
-    let index: usize = 0;
-    while (index < rightLength) {
-      joined.push(this.heap.stringByte(rightHandle, index));
-      index = index + 1;
+    // Two narrow strings stay narrow by joining storage; anything else
+    // goes through units.
+    if (!this.heap.isWideString(leftHandle) && !this.heap.isWideString(rightHandle)) {
+      let joined = Array<u8>();
+      const leftLength = this.heap.stringStorageLength(leftHandle);
+      let i: usize = 0;
+      while (i < leftLength) {
+        joined.push(this.heap.stringStorageByte(leftHandle, i));
+        i = i + 1;
+      }
+      const rightLength = this.heap.stringStorageLength(rightHandle);
+      i = 0;
+      while (i < rightLength) {
+        joined.push(this.heap.stringStorageByte(rightHandle, i));
+        i = i + 1;
+      }
+      return this.newStringLatin1(move joined);
     }
-    return this.newString(move joined);
+    let units = this.heap.stringUnits(leftHandle);
+    appendUnits(inout units, this.heap.stringUnits(rightHandle));
+    return this.newStringUnits(move units);
   }
 
   // --- Equality and ordering ---
@@ -3665,16 +3845,16 @@ export struct Runtime {
       const isPrivate = (this.heap.flagsOf(asCell(key)) & FLAG_PRIVATE_NAME) != 0;
       if (this.isStringValue(description)) {
         if (!isPrivate) name.push(91);
-        appendBytes(inout name, this.heap.stringBytes(asCell(description)));
+        appendBytes(inout name, this.heap.stringUtf8(asCell(description)));
         if (!isPrivate) name.push(93);
       }
     } else {
       const text = this.toStringValue(key);
       if (this.pendingThrow) return;
-      appendBytes(inout name, this.heap.stringBytes(asCell(text)));
+      appendBytes(inout name, this.heap.stringUtf8(asCell(text)));
     }
     const atomName = this.atomName;
-    this.defineOwnAttr(asCell(fn), atomName, this.newString(move name), PROP_CONFIGURABLE);
+    this.defineOwnAttr(asCell(fn), atomName, this.newStringUtf8(move name), PROP_CONFIGURABLE);
   }
 
   // Push a call to a compiled function: arguments from the caller's
@@ -4269,7 +4449,7 @@ export struct Runtime {
                 const operand3 = this.heap.slot(globalObject, u32(own));
                 this.setReg(base, inst.a, operand3);
               } else {
-                let message = this.heap.stringBytes(atom);
+                let message = this.heap.stringUtf8(atom);
                 const notDefined: String = " is not defined";
                 appendBytes(inout message, bytesOf(in notDefined));
                 thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
@@ -5457,7 +5637,7 @@ export struct Runtime {
     const head: String = "Cannot assign to read only property '";
     const tail: String = "'";
     let message = bytesOf(in head);
-    appendBytes(inout message, this.heap.stringBytes(atom));
+    appendBytes(inout message, this.heap.stringUtf8(atom));
     appendBytes(inout message, bytesOf(in tail));
     return this.makeError(ERROR_KIND_TYPE, move message);
   }
@@ -5467,7 +5647,7 @@ export struct Runtime {
     let message = Array<u8>();
     if (this.isHostFunctionValue(callee)) {
       const name = this.heap.slot(asCell(callee), 2);
-      if (this.isStringValue(name)) message = this.heap.stringBytes(asCell(name));
+      if (this.isStringValue(name)) message = this.heap.stringUtf8(asCell(name));
     }
     if (message.length == 0) {
       const generic: String = "value";
@@ -5487,7 +5667,7 @@ export struct Runtime {
     let message = bytesOf(in head);
     appendBytes(inout message, bytesOf(in which));
     appendBytes(inout message, bytesOf(in action));
-    appendBytes(inout message, this.heap.stringBytes(atom));
+    appendBytes(inout message, this.heap.stringUtf8(atom));
     appendBytes(inout message, bytesOf(in tail));
     return this.makeError(ERROR_KIND_TYPE, move message);
   }

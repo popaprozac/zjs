@@ -9,6 +9,7 @@ import { Value, undefinedValue, booleanValue, cellValue, asCell, isCell, isUndef
 import { thread } from "std/thread";
 import { Runtime, ERROR_KIND_ERROR, ERROR_KIND_AGGREGATE, ERROR_KIND_COUNT, errorKindName } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE, PROP_DEFAULT, PROP_WRITABLE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
+import { unitsOf, appendText } from "../text.zs";
 
 // new Error(message) / Error(message): the object under construction
 // arrives as `this`; a plain call makes its own.
@@ -72,23 +73,23 @@ function errorToString(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const messageKey = cellValue(runtime.atomMessage);
   let message = runtime.getProperty(thisValue, messageKey);
   if (runtime.pendingThrow) return undefinedValue();
-  let nameBytes = Array<u8>();
+  let nameBytes = Array<u16>();
   if (isUndefined(name)) {
     const fallback: String = "Error";
-    nameBytes = bytesOf(in fallback);
+    nameBytes = unitsOf(in fallback);
   } else {
     const text = runtime.toStringValue(name);
     if (runtime.pendingThrow) return undefinedValue();
-    nameBytes = runtime.heap.stringBytes(asCell(text));
+    nameBytes = runtime.heap.stringUnits(asCell(text));
   }
-  let messageBytes = Array<u8>();
+  let messageBytes = Array<u16>();
   if (!isUndefined(message)) {
     const text = runtime.toStringValue(message);
     if (runtime.pendingThrow) return undefinedValue();
-    messageBytes = runtime.heap.stringBytes(asCell(text));
+    messageBytes = runtime.heap.stringUnits(asCell(text));
   }
-  if (nameBytes.length == 0) return runtime.newString(move messageBytes);
-  if (messageBytes.length == 0) return runtime.newString(move nameBytes);
+  if (nameBytes.length == 0) return runtime.newStringUnits(move messageBytes);
+  if (messageBytes.length == 0) return runtime.newStringUnits(move nameBytes);
   let joined = move nameBytes;
   joined.push(58);
   joined.push(32);
@@ -97,7 +98,7 @@ function errorToString(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     joined.push(messageBytes[index]);
     index = index + 1;
   }
-  return runtime.newString(move joined);
+  return runtime.newStringUnits(move joined);
 }
 
 // Object(value): the value itself when it is already an object, a
@@ -154,22 +155,22 @@ function objectToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     }
   }
   // An own or inherited @@toStringTag string overrides the builtin tag.
-  let tagBytes = bytesOf(in tag);
+  let tagBytes = unitsOf(in tag);
   if (runtime.isObjectLike(thisValue) || runtime.isSymbolValue(thisValue) || isNumber(thisValue) || runtime.isStringValue(thisValue) || thisValue.bits == 6 || thisValue.bits == 7) {
     const tagKey = runtime.symbolToStringTag;
     const custom = runtime.getProperty(thisValue, tagKey);
     if (runtime.pendingThrow) return undefinedValue();
-    if (runtime.isStringValue(custom)) tagBytes = runtime.heap.stringBytes(asCell(custom));
+    if (runtime.isStringValue(custom)) tagBytes = runtime.heap.stringUnits(asCell(custom));
   }
   const head: String = "[object ";
-  let text = bytesOf(in head);
+  let text = unitsOf(in head);
   let index: usize = 0;
   while (index < tagBytes.length) {
     text.push(tagBytes[index]);
     index = index + 1;
   }
   text.push(93);
-  return runtime.newString(move text);
+  return runtime.newStringUnits(move text);
 }
 
 function objectValueOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -225,15 +226,10 @@ function errorStackGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   if (!runtime.hasErrorData(thisValue)) return undefinedValue();
   const head = errorToString(inout runtime, thisValue, argsBase, argc, callee);
   if (runtime.pendingThrow) return undefinedValue();
-  let text = runtime.heap.stringBytes(asCell(head));
+  let text = runtime.heap.stringUnits(asCell(head));
   const frame: String = "\n    at <anonymous>";
-  const frameBytes = bytesOf(in frame);
-  let k: usize = 0;
-  while (k < frameBytes.length) {
-    text.push(frameBytes[k]);
-    k = k + 1;
-  }
-  return runtime.newString(move text);
+  appendText(inout text, in frame);
+  return runtime.newStringUnits(move text);
 }
 
 function errorStackSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -342,7 +338,7 @@ export function installErrors(inout runtime: Runtime): void {
     const nameValue = runtime.internText(in kindName);
     const atomName = runtime.atomName;
     runtime.defineOwnAttr(proto, atomName, nameValue, PROP_METHOD);
-    const emptyMessage = runtime.internValue(Array<u8>());
+    const emptyMessage = runtime.internLatin1Value(Array<u8>());
     const atomMessage = runtime.atomMessage;
     runtime.defineOwnAttr(proto, atomMessage, emptyMessage, PROP_METHOD);
     runtime.defineOwnAttr(proto, atomConstructor, cellValue(ctor), PROP_METHOD);

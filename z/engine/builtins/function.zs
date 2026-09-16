@@ -1,4 +1,5 @@
 // Function.prototype: call and apply.
+import { unitsOf } from "../text.zs";
 import { Value, undefinedValue, cellValue, int32Value, booleanValue, asCell, isCell, isUndefined, isNull } from "../value.zs";
 import { thread } from "std/thread";
 import { Runtime } from "../runtime.zs";
@@ -86,16 +87,16 @@ function functionBind(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   const targetName = runtime.getProperty(thisValue, nameKey);
   if (runtime.pendingThrow) return undefinedValue();
   const prefix: String = "bound ";
-  let nameBytes = bytesOf(in prefix);
+  let nameBytes = unitsOf(in prefix);
   if (runtime.isStringValue(targetName)) {
-    const more = runtime.heap.stringBytes(asCell(targetName));
+    const more = runtime.heap.stringUnits(asCell(targetName));
     let k: usize = 0;
     while (k < more.length) {
       nameBytes.push(more[k]);
       k = k + 1;
     }
   }
-  const bound = runtime.defineHostFunctionBytes(boundTrampoline, cellValue(record), remaining, move nameBytes);
+  const bound = runtime.defineHostFunctionUnits(boundTrampoline, cellValue(record), remaining, move nameBytes);
   if (runtime.isConstructorValue(thisValue)) runtime.heap.setSlot(bound, 4, booleanValue(true));
   return cellValue(bound);
 }
@@ -133,7 +134,7 @@ function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u
     if (index > 0) source.push(44);
     const parameter = runtime.toStringValue(runtime.argument(argsBase, argc, index));
     if (runtime.pendingThrow) return undefinedValue();
-    const bytes = runtime.heap.stringBytes(asCell(parameter));
+    const bytes = runtime.heap.stringWtf8(asCell(parameter));
     let k: usize = 0;
     while (k < bytes.length) {
       source.push(bytes[k]);
@@ -151,7 +152,7 @@ function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u
   if (argc > 0) {
     const body = runtime.toStringValue(runtime.argument(argsBase, argc, argc - 1));
     if (runtime.pendingThrow) return undefinedValue();
-    const bytes = runtime.heap.stringBytes(asCell(body));
+    const bytes = runtime.heap.stringWtf8(asCell(body));
     let k: usize = 0;
     while (k < bytes.length) {
       source.push(bytes[k]);
