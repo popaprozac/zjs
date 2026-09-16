@@ -57,8 +57,14 @@ bind in order, each a hole until its turn, so a default that reads a later
 parameter or itself throws; a function declaration in a block is the
 block's own binding, created as the block opens (sloppy code also assigns
 the function-scoped var, or global, when the declaration is reached, and
-not at all when a lexical declaration of the name would conflict); template
-literals, `switch`, labeled
+not at all when a lexical declaration of the name would conflict); a derived
+constructor's `this` is uninitialized until `super()` returns: reading it
+before that throws a ReferenceError (`typeof this` included, and through an
+arrow created earlier, which sees the bound value afterwards), a second
+`super()` runs the parent and then throws, fields initialize right after
+the first, and a derived constructor's return follows the specification
+(an object; else `this`, a ReferenceError if unbound, a TypeError for any
+other primitive); template literals, `switch`, labeled
 `break`/`continue`, `for`-`in` (keys in insertion order across the prototype
 chain) and `for`-`of` over arrays, `in`/`instanceof`/`delete`, `++`/`--` and
 logical assignment on properties, and `Object`. **34 of 34** corpus files
@@ -365,8 +371,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: `this` before `super()` in a derived
-constructor is not a ReferenceError, `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
+Not yet: `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
 delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
@@ -457,6 +462,7 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
 ./z/oracle-tokens.sh              # lexer oracle: diff token dumps, both engines
 ./z/oracle-ast.sh                 # parser oracle: diff AST dumps, both engines
 ./z/oracle-eval.sh                # behavioral oracle: diff eval results, both engines
+./z/expect.sh                     # expectation cases recorded from node (z/tests/expect)
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 ./z/spike/run.sh                  # Phase 0 measurements
 ./z/build/zjsz run [--dict-threshold N] [--stats] file.js

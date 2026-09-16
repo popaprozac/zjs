@@ -179,6 +179,7 @@ export enum Op {
   renewEnv,        // a = env register, bc = slot count: a fresh environment with the same parent and copied slots replaces it (per-iteration bindings).
   exitEnv,         // a = env register: the frame's environment becomes that environment's parent.
   throwConstAssign, // throws a TypeError: assignment to a constant binding.
+  checkThis,       // a = register: throws a ReferenceError when it holds an uninitialized `this` (a derived constructor before super() returns).
 }
 
 export struct Inst {
@@ -391,6 +392,7 @@ export function opCode(op: Op): i32 {
     renewEnv => 157;
     exitEnv => 158;
     throwConstAssign => 159;
+    checkThis => 160;
   };
 }
 

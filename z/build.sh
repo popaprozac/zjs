@@ -45,6 +45,8 @@ if ! (cd "$Z_LANG" && bun run z build "$HERE/tools/zjsz" --release) >"$OUT/zjsz-
   cat "$OUT/zjsz-build.log"; exit 1
 fi
 cp "$HERE/tools/zjsz/build/zjsz" "$OUT/zjsz"
+echo "[5b/6] expectation cases (z/tests/expect, recorded from node)"
+"$HERE/expect.sh"
 
 echo "[6/6] zjs-ref command line (reference engine, public ABI)"
 clang -std=c11 -O2 -I "$ROOT/include" \

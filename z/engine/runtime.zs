@@ -3818,15 +3818,16 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
+    const newTarget = this.frames[frameIndex].newTarget;
+    const result = this.constructValue(parent, move args, newTarget);
+    if (this.pendingThrow) return undefinedValue();
+    // The parent runs first; binding `this` a second time is the error.
     if (!isDeleted(this.frames[frameIndex].constructThis)) {
       const message: String = "Super constructor may only be called once";
       const error = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
       this.raise(error);
       return undefinedValue();
     }
-    const newTarget = this.frames[frameIndex].newTarget;
-    const result = this.constructValue(parent, move args, newTarget);
-    if (this.pendingThrow) return undefinedValue();
     this.frames[frameIndex].constructThis = result;
     this.hostThis = result;
     const thisReg = this.functions[usize(code)].thisReg;
@@ -5400,6 +5401,14 @@ export struct Runtime {
               const after: String = "' before initialization";
               appendBytes(inout message, bytesOf(in after));
               thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
+              throwing = true;
+            }
+          }
+          checkThis => {
+            const held = this.reg(base, inst.a);
+            if (isDeleted(held) || isHole(held)) {
+              const text: String = "Must call super constructor in derived class before accessing 'this' or returning from derived constructor";
+              thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in text));
               throwing = true;
             }
           }

@@ -137,6 +137,11 @@ struct Scope {
   // Nested environments open in that function where the nested function
   // was created: each is one more hop to its bindings.
   openEnvs: u32;
+  // An arrow function, which has no `this` of its own.
+  isArrow: boolean;
+  // A derived constructor's environment slot holding `this` for the
+  // arrows inside it; -1 when it has none.
+  thisSlot: i32;
 }
 
 // Where an identifier resolved outside the current function.
@@ -210,6 +215,14 @@ export struct Compiler {
   pendingNamePrefix: u32;
   // The register holding `this` in a function that reads it, or -1.
   thisReg: i32;
+  // An arrow function; a derived class constructor. A derived
+  // constructor's `this` is uninitialized until super() returns, so its
+  // reads are checked; with arrows reading it, it also lives in an
+  // environment slot the arrows read (the current value, not the one at
+  // their creation).
+  isArrow: boolean;
+  derivedCtor: boolean;
+  thisEnvSlot: i32;
   // A class constructor's instance field statements (the first `fieldCount`
   // statements of its body, injected by the parser), compiled with define
   // semantics: inline at the top of a base constructor, after each super()
@@ -1223,15 +1236,68 @@ export struct Compiler {
   // `this` into dst: a static initializer's constructor register, a
   // function's this register, or the top level's.
   function emitThis(inout this, dst: u8): void {
+    const source = this.thisSource();
+    if (this.hadError) return;
+    if (source != dst) this.emit(instAB(Op.mov, dst, source));
+  }
+
+  // The register holding `this`. In a derived constructor it is checked
+  // (uninitialized until super() returns); in an arrow inside one it is
+  // read from the constructor's environment, so the arrow sees the
+  // value bound after its creation.
+  function thisSource(inout this): u8 {
+    if (this.isArrow && this.thisReg >= 0) {
+      const found = this.findConstructorThis();
+      if (found.found) {
+        const dst = this.allocReg();
+        this.emit(instABC(Op.loadEnvSlot, dst, found.hops, u8(found.slot)));
+        this.emit(instA(Op.checkThis, dst));
+        return dst;
+      }
+    }
     if (this.thisReg >= 0) {
-      this.emit(instAB(Op.mov, dst, u8(this.thisReg)));
-      return;
+      const reg = u8(this.thisReg);
+      if (this.derivedCtor) this.emit(instA(Op.checkThis, reg));
+      return reg;
     }
     if (this.isFunction) {
       this.hadError = true;
-      return;
+      return 0;
     }
+    const dst = this.allocReg();
     this.emit(instA(Op.loadThis, dst));
+    return dst;
+  }
+
+  // From an arrow: the nearest enclosing non-arrow function's `this`
+  // slot, with the hops to its environment, when it is a derived
+  // constructor keeping `this` there.
+  function findConstructorThis(inout this): OuterRef {
+    let hops: u32 = this.openEnvs;
+    if (this.hasEnv) hops = hops + 1;
+    let level: usize = this.outerScopes.length;
+    while (level > 0) {
+      level = level - 1;
+      if (!this.outerScopes[level].isArrow) {
+        const slot = this.outerScopes[level].thisSlot;
+        if (slot < 0) return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false });
+        hops = hops + this.outerScopes[level].openEnvs;
+        if (level < this.minOuterScope) this.minOuterScope = level;
+        return OuterRef({ found: true, hops: u8(hops), slot: slot, scopeIndex: level, needsCheck: false, isConst: false });
+      }
+      hops = hops + this.outerScopes[level].openEnvs;
+      if (this.outerScopes[level].hasEnv) hops = hops + 1;
+    }
+    return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false });
+  }
+
+  // After super() binds `this`: the environment copy for the arrows.
+  function emitThisToEnv(inout this): void {
+    if (this.thisEnvSlot < 0 || this.thisReg < 0) return;
+    const reg = u8(this.thisReg);
+    const hops = u8(this.openEnvs);
+    const slot = u8(this.thisEnvSlot);
+    this.emit(instABC(Op.storeEnvSlot, reg, hops, slot));
   }
 
   // The callee of a method call into base and its receiver into base +
@@ -1613,7 +1679,7 @@ export struct Compiler {
   function emitClassFunction(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32, role: u32, fieldCount: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, strict, nameStart, nameLength, namePrefix, role, fieldCount);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -1908,7 +1974,7 @@ export struct Compiler {
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, strict, nameStart, nameLength, namePrefix, 0, 0);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, strict, nameStart, nameLength, namePrefix, 0, 0);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2234,17 +2300,7 @@ export struct Compiler {
         return dst;
       }
       // A static initializer routes `this` to the constructor's register.
-      if (this.thisReg >= 0) return u8(this.thisReg);
-      if (this.isFunction) {
-        if (this.thisReg < 0) {
-          this.hadError = true;
-          return 0;
-        }
-        return u8(this.thisReg);
-      }
-      const dst = this.allocReg();
-      this.emit(instA(Op.loadThis, dst));
-      return dst;
+      return this.thisSource();
     }
     if ((k == NodeKind.member || k == NodeKind.computed || k == NodeKind.call || k == NodeKind.optionalMember || k == NodeKind.optionalComputed || k == NodeKind.optionalCall)
         && chainHasOptional(in parser, node)) {
@@ -2719,6 +2775,7 @@ export struct Compiler {
         this.compileArgumentsArray(in parser, inout runtime, node, argsReg);
         const dst = this.allocReg();
         this.emit(instAB(Op.spreadSuperCall, dst, argsReg));
+        this.emitThisToEnv();
         this.emitFieldInitializers(in parser, inout runtime);
         return dst;
       }
@@ -2767,6 +2824,7 @@ export struct Compiler {
         }
         this.emit(instABC(Op.superCall, base, base + 1, u8(argCount)));
         this.nextReg = base + 1;
+        this.emitThisToEnv();
         this.emitFieldInitializers(in parser, inout runtime);
         return base;
       }
@@ -3951,7 +4009,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
   // name the parser attached to a method or accessor does not.
@@ -3966,7 +4024,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       names.push(enclosingScopes[i].names[j]);
       j = j + 1;
     }
-    scopes.push(Scope({ names: move names, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs }));
+    scopes.push(Scope({ names: move names, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs, isArrow: enclosingScopes[i].isArrow, thisSlot: enclosingScopes[i].thisSlot }));
     i = i + 1;
   }
   let parentNames = Array<Local>();
@@ -3975,7 +4033,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     parentNames.push(enclosingLocals[i]);
     i = i + 1;
   }
-  scopes.push(Scope({ names: move parentNames, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs }));
+  scopes.push(Scope({ names: move parentNames, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs, isArrow: enclosingIsArrow, thisSlot: enclosingThisSlot }));
   const scopeCount = scopes.length;
   const failed = CompiledFunction({ index: -1, minOuterScope: scopeCount });
   let compiler = Compiler({
@@ -3984,9 +4042,11 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
+  compiler.isArrow = n.kind == NodeKind.arrowFunc;
+  compiler.derivedCtor = role == 2;
 
   // Parameters: plain identifiers only for now (patterns and rest need
   // objects and arrays).
@@ -4073,6 +4133,13 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       named = named + 1;
     }
   }
+  // A derived constructor whose arrows read `this` keeps it in the
+  // environment as well, so those arrows see it once super() binds it.
+  if (role == 2 && n.left != NO_NODE && arrowsUseThis(in parser, n.left)) {
+    compiler.thisEnvSlot = i32(compiler.envSize);
+    compiler.envSize = compiler.envSize + 1;
+    compiler.hasEnv = true;
+  }
   compiler.fixedRegs = compiler.nextReg;
 
   // The environment first, then the captured parameters into it (in
@@ -4085,6 +4152,12 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       if (slot >= 0 && !orderedParams) compiler.emit(instABC(Op.storeEnvSlot, u8(p), 0, u8(slot)));
       p = p + 1;
     }
+  }
+  if (compiler.thisEnvSlot >= 0) {
+    const uninitialized = compiler.allocReg();
+    compiler.emit(instA(Op.loadHole, uninitialized));
+    compiler.emit(instABC(Op.storeEnvSlot, uninitialized, 0, u8(compiler.thisEnvSlot)));
+    compiler.resetTemps();
   }
   if (orderedParams) compiler.emitHoles(0);
   // A named function expression's own name is the value it was called
@@ -4694,6 +4767,25 @@ function argumentsUsage(in parser: Parser, node: u32): u32 {
 }
 
 // Whether a body reads `this` outside any nested non-arrow function.
+// Whether an arrow function somewhere in `node` (not inside another kind
+// of function) reads `this` or `super`.
+function arrowsUseThis(in parser: Parser, node: u32): boolean {
+  if (node == NO_NODE) return false;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.methodDef || k == NodeKind.staticBlock) return false;
+  if (k == NodeKind.arrowFunc) return bodyUsesThis(in parser, node);
+  if (arrowsUseThis(in parser, n.left)) return true;
+  if (arrowsUseThis(in parser, n.right)) return true;
+  if (arrowsUseThis(in parser, n.third)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (arrowsUseThis(in parser, parser.ast.child(node, i))) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
 function bodyUsesThis(in parser: Parser, node: u32): boolean {
   if (node == NO_NODE) return false;
   const n = parser.ast.node(node);
@@ -4823,7 +4915,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));
