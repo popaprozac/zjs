@@ -1060,6 +1060,34 @@ builder of known size allocates once. Probe `array-capacity`.
 
 ---
 
+## G36 — A library root must be main-bound, so an embedded engine cannot be shareable
+
+**Status:** `proposed` · **Size:** medium · **Priority:** high
+**Confirmed:** z-lang `69397510` · **Blocks:** yes (the embedding lifecycle
+checkpoint)
+**Found:** designing context ownership for the C ABI.
+
+The engine library's root -- the object that owns the context registry --
+is published through `Once<T>` and retained by the generated runtime
+(`target.runtime.initialize`). `Once<T>` rejects a class that is not
+main-bound (Z0604: "requires a class whose lifecycle belongs to
+thread.main in the first tier"), even when the class is shareable by
+construction (its only field a `Mutex<Registry>`), and the generated
+header then sets `REQUIRES_MAIN_THREAD` and demands `is_main_thread` and
+`enqueue_release` hooks. The engine today carries a field it never reads
+(`publicationEpoch: i32 on thread.main`) to satisfy the check, and its shim
+answers "main" for every thread -- a lie the checkpoint is meant to remove.
+
+An embeddable engine's contexts are created, evaluated, and destroyed from
+whatever host thread the embedder chooses (independent contexts
+concurrently); nothing about the root is main-affine. The ask: let
+`Once<T>` (or a sibling) publish a class the compiler has already proven
+shareable, with the generated runtime then not requiring a main-thread
+proof or an executor hook for it. Probe `shareable-once-root`
+(`COMPILER-REJECTED`, Z0604).
+
+---
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

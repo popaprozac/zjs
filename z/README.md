@@ -352,6 +352,12 @@ $ ./z/oracle.sh
 reference passed: 5   z passed: 0   gap: 5
 ```
 
+## Embedding lifecycle
+
+The ownership model for contexts, locks, destruction, and the shim's
+hooks is proposed in `docs/lifecycle.md`, with the Z block it waits on and
+the ABI placeholders it tracks.
+
 ## Layout
 
 | Path | What |
