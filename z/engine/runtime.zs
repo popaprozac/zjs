@@ -1100,8 +1100,9 @@ export struct Runtime {
     return REGEX_NO_MATCH;
   }
 
-  // Native resources held by this runtime, released at teardown.
-  function releaseNative(inout this): void {
+  // Native resources held by this runtime go back when it is destroyed,
+  // on whatever thread drops the last reference to its context.
+  deinit on thread.any {
     this.regexBackend.release();
   }
 

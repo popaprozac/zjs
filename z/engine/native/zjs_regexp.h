@@ -48,9 +48,11 @@
 #define ZJS_RE_SIZE_LIMIT (-6)
 
 /* A context: created once per runtime, freed at its teardown (which
-   releases the scratch buffer and capture storage, not the patterns). */
+   releases the scratch buffer and capture storage, not the patterns).
+   Both may be called from any thread; the live count is process-wide. */
 uintptr_t zjs_re_context_new(void);
 void zjs_re_context_free(uintptr_t context);
+uintptr_t zjs_re_live_contexts(void);
 
 /* The context's scratch buffer, grown to hold at least `length` bytes and
    kept for the next call; zero when memory is out. Z fills it byte by

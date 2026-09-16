@@ -241,9 +241,7 @@ function uriEncode(inout runtime: Runtime, argsBase: u32, argc: u32, keepReserve
     if (isHighSurrogate(unit) && (index + 1 >= units.length || !isLowSurrogate(units[index + 1]))) return malformed(inout runtime);
     const codePoint = codePointAt(in units, index);
     pushEscapedUtf8(inout encoded, codePoint);
-    let step: usize = 1;
-    if (codePoint >= 0x10000) step = 2;
-    index = index + step;
+    index = index + (codePoint >= 0x10000 ? 2 : 1);
   }
   return runtime.newStringLatin1(move encoded);
 }

@@ -1029,7 +1029,7 @@ raw body. Until then the per-byte copy stands.
 
 ## G34 — A ternary of literals does not take its operand context's integer type
 
-**Status:** `proposed` · **Size:** small · **Priority:** low
+**Status:** `consumer-verified` — z-lang `8f9f8b55` (pin `8f9f8b55`); probe `ternary-in-arithmetic` `LANDED`; the engine's URI encoder advances its unit index with the direct spelling. · **Size:** small · **Priority:** low
 **Confirmed:** z-lang `69397510` · **Blocks:** no
 **Found:** the string-representation slice (advancing a unit index by one
 or two).
@@ -1085,6 +1085,31 @@ concurrently); nothing about the root is main-affine. The ask: let
 shareable, with the generated runtime then not requiring a main-thread
 proof or an executor hook for it. Probe `shareable-once-root`
 (`COMPILER-REJECTED`, Z0604).
+
+---
+
+## G37 — A class reference captured by a lock callback is never released
+
+**Status:** `proposed` · **Size:** medium · **Priority:** high
+**Confirmed:** z-lang `8f9f8b55`, measured · **Blocks:** no (worked around)
+**Found:** the embedding lifecycle: contexts freed from the registry were
+never destroyed.
+
+When an ARC class instance is created outside a `Mutex.withLock` callback
+and the callback stores a copy of it into the protected state, the
+instance is never destroyed afterward, even once the stored copy is
+removed and every named owner has dropped: its native resources and heap
+stay allocated for the life of the process. Creating the instance inside
+the callback destroys it correctly. The capture the callback takes of the
+outer reference is retained and not released. Measured in the engine:
+a thousand create / free cycles leaked a thousand runtimes (149 MB, every
+native regex context alive) until construction moved under the lock.
+Probe `lock-callback-capture-release` (a `weak` reference still upgrades
+after the last owner drops).
+
+Workaround in the engine: build the context inside the registry lock
+callback (`lib.zs`, `zjs_z_new_context`), which holds the global lock for
+the runtime's construction.
 
 ---
 

@@ -29,6 +29,11 @@ cp "$HERE/engine/build/libzjsz.a" "$OUT/libzjs.a"
 ar r "$OUT/libzjs.a" "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/zjs_regexp.o"
 ranlib "$OUT/libzjs.a"
 
+echo "[3b/6] lifecycle test"
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" -I "$HERE/engine/build" -I "$HERE/engine/native" \
+  -o "$OUT/lifecycle_test" "$HERE/tests/lifecycle_test.c" "$OUT/libzjs.a"
+"$OUT/lifecycle_test"
+
 echo "[4/6] test262 runner (unmodified)"
 clang -std=c11 -O2 -I "$ROOT/include" \
   -o "$OUT/test262_runner" "$ROOT/tests/test262_runner.c" "$OUT/libzjs.a"

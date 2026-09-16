@@ -354,9 +354,12 @@ reference passed: 5   z passed: 0   gap: 5
 
 ## Embedding lifecycle
 
-The ownership model for contexts, locks, destruction, and the shim's
-hooks is proposed in `docs/lifecycle.md`, with the Z block it waits on and
-the ABI placeholders it tracks.
+A context is an ARC class behind its own lock; the registry lock covers
+lookup only, so independent contexts evaluate concurrently and freeing a
+context destroys its runtime and native state once the last reference
+drops. `docs/lifecycle.md` states the admission, destruction,
+reentrancy, and initialization rules, the ABI placeholders, and the
+evidence `z/tests/lifecycle_test.c` produces on every build.
 
 ## Layout
 

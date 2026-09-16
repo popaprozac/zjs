@@ -1,6 +1,7 @@
 /* See zjs_regexp.h. */
 #include "zjs_regexp.h"
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -107,10 +108,13 @@ static void leave(Context *context) {
 
 /* --- Contexts --- */
 
+static atomic_uintptr_t live_contexts = 0;
+
 uintptr_t zjs_re_context_new(void) {
   Context *context = (Context *)calloc(1, sizeof(Context));
   if (context == NULL) return 0;
   context->stack_budget = 256 * 1024;
+  atomic_fetch_add(&live_contexts, 1);
   return (uintptr_t)context;
 }
 
@@ -120,6 +124,11 @@ void zjs_re_context_free(uintptr_t handle) {
   free(context->scratch);
   free(context->captures);
   free(context);
+  atomic_fetch_sub(&live_contexts, 1);
+}
+
+uintptr_t zjs_re_live_contexts(void) {
+  return atomic_load(&live_contexts);
 }
 
 void zjs_re_set_stack_budget(uintptr_t handle, uintptr_t bytes) {
