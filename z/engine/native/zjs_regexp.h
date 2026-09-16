@@ -43,6 +43,9 @@
 #define ZJS_RE_BAD_BYTECODE (-3)
 #define ZJS_RE_STACK_LIMIT (-4)
 #define ZJS_RE_SYNTAX (-5)
+/* libregexp's own bytecode size limit (64 MiB), a resource limit that is
+   not an allocator refusal. */
+#define ZJS_RE_SIZE_LIMIT (-6)
 
 /* A context: created once per runtime, freed at its teardown (which
    releases the scratch buffer and capture storage, not the patterns). */

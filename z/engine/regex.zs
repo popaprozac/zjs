@@ -26,6 +26,7 @@ export const REGEX_STEP_LIMIT: i32 = -2;
 export const REGEX_BAD_BYTECODE: i32 = -3;
 export const REGEX_STACK_LIMIT: i32 = -4;
 export const REGEX_SYNTAX: i32 = -5;
+export const REGEX_SIZE_LIMIT: i32 = -6;
 
 const CACHE_LIMIT: usize = 256;
 

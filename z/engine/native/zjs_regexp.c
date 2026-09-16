@@ -167,12 +167,16 @@ uintptr_t zjs_re_compile(uintptr_t handle, uintptr_t pattern, uintptr_t length, 
   bool allocation_failed = context->allocation_failed;
   leave(context);
   if (bytecode == NULL) {
-    /* The category comes from what the callbacks saw, never from the
-       message: the parser writes "out of memory" as a message too. */
+    /* The category comes from what the callbacks saw. One resource limit
+       is the parser's own: past 64 MiB of bytecode it reports "out of
+       memory" without any allocation having been refused, and that exact
+       message with no refusal is the only way that limit shows. */
     if (allocation_failed) {
       context->last_failure = ZJS_RE_OUT_OF_MEMORY;
     } else if (failure != 0) {
       context->last_failure = failure;
+    } else if (strcmp(context->error_message, "out of memory") == 0) {
+      context->last_failure = ZJS_RE_SIZE_LIMIT;
     } else {
       context->last_failure = ZJS_RE_SYNTAX;
     }
