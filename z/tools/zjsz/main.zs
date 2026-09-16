@@ -132,11 +132,23 @@ function writeOut(in bytes: Array<u8>): void {
   nativeFree(buffer);
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean): i32 throws String {
+// gc(): a forced collection, exposed under --expose-gc for tests. It runs
+// where any host call runs -- a call site, the arguments and the caller's
+// registers rooted -- the same point an ordinary collection may take.
+function gcHost(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  runtime.collectGarbage();
+  return undefinedValue();
+}
+
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
   installConsole(inout runtime);
+  if (exposeGc) {
+    const gcText: String = "gc";
+    runtime.setGlobal("gc", cellValue(runtime.defineHostFunction(gcHost, undefinedValue(), 0, in gcText)));
+  }
   const outcome = evaluate(inout runtime, move source);
   if (stats) reportStats(in runtime);
   if (!outcome.isThrow) return 0;
@@ -156,6 +168,10 @@ function reportStats(in runtime: Runtime): void {
   appendDecimal(inout line, runtime.heap.dictionaryCount());
   appendText(inout line, " collections ");
   appendDecimal(inout line, runtime.heap.collections);
+  appendText(inout line, " weak-cleared ");
+  appendDecimal(inout line, runtime.heap.weakCleared);
+  appendText(inout line, " ephemeron-passes ");
+  appendDecimal(inout line, runtime.heap.ephemeronPasses);
   line.push(10);
   writeError(in line);
 }
@@ -192,29 +208,33 @@ function decimalOf(in text: String): i32 {
 
 function main(): i32 {
   // Arguments exclude the program name:
-  //   run [--dict-threshold N] [--stats] <file>
+  //   run [--dict-threshold N] [--stats] [--expose-gc] <file>
   // --dict-threshold sets the property count at which an object leaves
   // its hidden class (for measurement); --stats prints heap figures
-  // after the run.
+  // after the run; --expose-gc defines a global gc() that collects.
   const arguments = process.args();
   if (arguments.length < 2) {
-    console.error("usage: zjsz run [--dict-threshold N] [--stats] <file>");
+    console.error("usage: zjsz run [--dict-threshold N] [--stats] [--expose-gc] <file>");
     return 2;
   }
   const commandLength = arguments[0].byteLength;
   const command = arguments[0].copyBytes(0, commandLength);
   if (command != "run") {
-    console.error("usage: zjsz run [--dict-threshold N] [--stats] <file>");
+    console.error("usage: zjsz run [--dict-threshold N] [--stats] [--expose-gc] <file>");
     return 2;
   }
   let index: usize = 1;
   let dictThreshold: i32 = -1;
   let stats = false;
+  let exposeGc = false;
   while (index + 1 < arguments.length) {
     const optionLength = arguments[index].byteLength;
     const option = arguments[index].copyBytes(0, optionLength);
     if (option == "--stats") {
       stats = true;
+      index = index + 1;
+    } else if (option == "--expose-gc") {
+      exposeGc = true;
       index = index + 1;
     } else if (option == "--dict-threshold" && index + 2 < arguments.length) {
       const valueLength = arguments[index + 1].byteLength;
@@ -231,7 +251,7 @@ function main(): i32 {
   }
   const pathLength = arguments[index].byteLength;
   const path = arguments[index].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path, dictThreshold, stats);
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

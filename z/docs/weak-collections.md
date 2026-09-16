@@ -1,121 +1,117 @@
 # WeakMap / WeakSet: weak semantics in the collector
 
-Status: proposal, for review before implementation. Scope: `WeakMap` and
-`WeakSet` keys held weakly, with the specified ephemeron semantics. Not
-in scope: `WeakRef`, `FinalizationRegistry`, or any observable timing.
+Status: implemented (`heap.zs`, Weak records; `builtins/collections.zs`).
+Scope: `WeakMap` and `WeakSet` keys held weakly with ephemeron semantics.
+Not in scope: `WeakRef`, `FinalizationRegistry`, generational or
+concurrent collection, or any promise about when a collection happens.
 
-## What exists
+## Representation
 
-A collection is an ordinary object holding a record under a hidden key
-(`builtins/collections.zs`): an array cell of five slots -- the keys
-array, the values array, an open-addressed index from key hash to entry
-position, the live count, and the kind. `WeakMap` and `WeakSet` are the
-same structure with kinds of their own and a key check (objects and
-symbols; a registered symbol from `Symbol.for` is accepted today but must
-be refused, which the slice corrects).
-The collector (`heap.zs`, `markHandle` / `drainMarks` / `sweep`) traces
-every slot of every marked cell, so a weak collection keeps its keys and
-values alive as long as it is reachable. A key that the program has
-dropped stays, with its value, until the collection itself dies.
+A weak collection's record is a `TAG_WEAK_RECORD` cell of five slots: the
+keys and values arrays, an open-addressed index from key hash (the key's
+cell handle, mixed) to entry position, the live count, and the kind. The
+keys and values arrays are `TAG_WEAK_ARRAY` cells. `Map` and `Set` keep
+their `TAG_ARRAY` records and pay nothing.
 
-## Proposed model
+Private backing-storage invariant: the two weak arrays are reachable only
+from their record. The collector never traces a `TAG_WEAK_ARRAY` cell's
+elements, whatever path marked the cell, so even a stray strong reference
+to one could not retain entries; and nothing hands them out -- the
+builtins reach entries only through the heap's `weakFind` / `weakGet` /
+`weakPut` / `weakDelete`, and `recordOf` returns the record. The heap's
+`weakRecords` worklist exists only during a collection: it is filled by
+`drainMarks` as records are reached and emptied by `clearDeadWeakEntries`;
+it is never marked as a root.
 
-### Representation
+## Collection order
 
-The record of a weak collection is allocated with its own cell tag,
-`TAG_WEAK_RECORD`, instead of `TAG_ARRAY`. Slot access is unchanged (the
-record is never exposed to programs, and `recordOf` reads it by slot);
-only the collector distinguishes it. `Map` and `Set` records keep
-`TAG_ARRAY` and pay nothing.
+`Runtime.collectGarbage`:
 
-### Marking: ephemerons
+1. strong roots (registers, globals, frames, temporary roots, prototypes,
+   atoms the compiled code and hidden classes hold), each drained;
+2. `markEphemerons`: to a fixpoint over `weakRecords`, a value is marked
+   once its key is marked; marking a value can reach further keys and
+   further weak records (which `drainMarks` appends to the worklist and
+   the same fixpoint then covers);
+3. `clearDeadWeakEntries`: entries whose key is unmarked are retired,
+   each touched record compacted and its index rebuilt in place;
+4. `rebuildAtoms`: the weak atom table, after the ephemeron pass because
+   values reached through it can hold interned strings;
+5. `sweep`.
 
-When `drainMarks` pops a `TAG_WEAK_RECORD` cell it marks the index,
-size, and kind slots as usual, marks the keys and values array *cells*
-shallowly (header marked so the sweep keeps them, elements not traced),
-and appends the record to a worklist `weakRecords` held by the heap for
-the duration of the collection. Nothing reachable only through a weak
-record's entries is marked by this step.
+Clearing removes the record's references; a value with other references
+survives. Nothing allocates during steps 2 and 3.
 
-After the roots have been drained, `markEphemerons` runs to a fixpoint:
+## Storage
 
-```
-repeat
-  progressed = false
-  for each record in weakRecords
-    for each live entry (key, value)
-      if key is marked and value is a cell not yet marked
-        mark value; drain; progressed = true
-until not progressed
-```
+`weakPut` appends; a retired entry (explicit delete, or a dead key) leaves
+the deleted marker in both arrays and a tombstone in the index. When the
+index would pass three quarters full and retired entries are the larger
+part, the arrays compact in place and the index rebuilds in the same
+array; otherwise the index doubles (an allocation, only ever on
+insertion). After a collection drops entries, the record compacts and
+rebuilds at once. So a long-lived record's storage follows its live
+count: the heap tests hold one record through 200 insert-50 / collect
+cycles (keys array length back to 1 each time, index at most 128 slots,
+10,000 entries cleared) and 100 rounds of explicit inserts and deletes
+without a collection (arrays and index at most 64 slots).
 
-A key is marked only by something other than its table; a value is
-marked only once its key is. Draining a value may mark keys of this or
-other records, which is why the loop repeats until a pass marks nothing.
+## CanBeHeldWeakly
 
-- Value-to-key cycle: `wm.set(k, { back: k })` with `k` otherwise
-  unreachable. `k` is never marked, so the value is never marked, so the
-  cycle is collected. (A model that marked values whenever the table was
-  reachable would keep `k` forever.)
-- Transitive reachability: table A holds `k1 -> { k2 }`, table B holds
-  `k2 -> v2`, and only `k1` is rooted. Pass 1 marks A's value, which
-  marks `k2`; pass 2 marks `v2`; pass 3 marks nothing and ends.
-- A weak record that is itself unreachable is never discovered, so its
-  entries contribute nothing: its keys live or die by their other
-  references, exactly as if the table did not exist.
-- Keys reachable only through the values of a dead table die with it.
+A key is an object or a symbol not in the global registry; well-known
+symbols qualify, `Symbol.for` symbols do not (the registry flags them at
+creation). `set`, `add`, `getOrInsert`, `getOrInsertComputed`, and the
+constructors' iterables throw a TypeError for anything else; `get`
+returns undefined and `has` / `delete` return false.
 
-### Clearing
+## Forced collection
 
-Between marking and sweeping, `clearDeadEntries` walks `weakRecords`: an
-entry whose key cell is unmarked has its key and value slots set to the
-deleted marker and the size decremented; the index slot for it becomes a
-tombstone (the existing deletion path, so lookups already skip it). This
-runs while dead cells still have headers, so mark bits are readable; the
-values of cleared entries were never marked and the sweep frees them.
-`weakRecords` is emptied at the end of the collection.
+`zjsz --expose-gc` defines `gc()`. It is a host function, so it runs at a
+call site: the arguments and every register of the calling frames are
+roots, the same state an ordinary collection sees at a return or a loop
+back edge. Builtins that call back into the program (`getOrInsertComputed`,
+the constructors' iterables) keep their key and receiver in the call's
+registers and their iterator on the temporary-root stack, so a collection
+inside the callback finds them. One property of a register machine
+without liveness maps shows up in tests: a stale temporary in a still-open
+frame (the array a loop indexed, say) is a root until the register is
+reused, so a test that expects reclamation builds its garbage inside a
+function and calls `gc()` after it returns.
 
-### Rooting
+## Evidence
 
-Keys and values held anywhere else -- registers, globals, frames, the
-temporary-root stack, other objects -- are marked through those paths
-before the ephemeron pass, so an entry whose key the program can still
-reach always survives. The record is reached only from its collection
-object. Handle reuse is safe: a dead key's handle can be reallocated only
-after the sweep, and its entry was cleared before the sweep.
+Correctness: ten heap unit tests with explicit mark / sweep (rooted and
+dropped keys, value-to-key cycle, value rooted elsewhere, both discovery
+orders, a record discovered through a value, a 40-link reverse chain,
+shared keys across records, an unreachable record, handle reuse, storage
+across cycles); `z/tests/expect/weak-collections.js` (node-recorded) and
+`weak-upsert.js` (from the proposal text; node 25 lacks the methods);
+`z/gc-check.sh` on the engine's counters; test262 A/B for WeakMap,
+WeakSet, Map, Set, and Symbol against the previous build: 0 regressions,
+8 fixes.
 
-### Cost
+Cost, `z/tests/gc/weak-pressure.js` (400,000 keys inserted and dropped
+across a WeakMap and a WeakSet, 100 held, ordinary collections only):
 
-Only weak records take the worklist path; the fixpoint costs
-O(passes x live weak entries), with passes bounded by the length of the
-longest key-through-value dependency chain (one or two in practice) plus
-the terminating pass. No change to the hot mark loop for other tags
-beyond the tag dispatch it already does.
+| build | wall | live cells at exit | entries cleared |
+|---|---|---|---|
+| before | 0.075 s | 601,026 | (kept forever) |
+| weak | 0.042 s | 3,769 | 398,170 |
 
-## Tests (deterministic)
+The repeated scan is quadratic on an adversarial chain: record i maps key
+i to a holder of key i + 1, only key 0 rooted, records discovered in
+reverse (the natural order when they sit in an array, since marking pops
+its children last-first). Each pass frees one more link:
 
-Collection is triggered explicitly, never by allocation pressure, in two
-layers:
+| links | passes | gc() |
+|---|---|---|
+| 200 | 201 | 1 ms |
+| 1,000 | 1,001 | 5 ms |
+| 3,000 | 3,001 | 32 ms |
+| 10,000 | 10,001 | 367 ms |
+| 30,000 | 30,001 | 3.4 s |
 
-1. Heap unit tests (`heap.zs`), building records by hand and calling
-   `markHandle`, `markEphemerons`, and `sweep` directly:
-   - rooted key: entry and value survive; dropped key: entry cleared,
-     value freed (cell counts exact);
-   - value-to-key cycle collected;
-   - transitive chain across two records survives in the right order
-     (the pass count observed, not assumed);
-   - unreachable record: its keys are not kept by it;
-   - `WeakSet` (key is the value) behaves the same;
-   - a record whose entries were cleared still answers lookups for the
-     surviving keys (index tombstones).
-2. Expectation cases (`z/tests/expect`), run by `zjsz` with a `gc()`
-   global exposed only under a new `--expose-gc` flag (as node's
-   `--expose-gc`): scripts that drop keys, call `gc()`, and observe `has`
-   / `get` on keys they still hold, plus `--stats` cell counts before and
-   after for the dropped side. Recorded from node with the same flag.
-
-## Not proposed
-
-`WeakRef`, `FinalizationRegistry`, cleanup callbacks, or any promise about
-when a collection happens. Symbol keys are cells like objects and take the
-same marking path; nothing further is added for them.
+The same chain discovered in the favourable order takes 2 passes, and
+with nothing rooted every entry clears in 1. A worklist keyed by newly
+marked keys would make the adversarial case linear; it is not needed for
+any real workload seen and is left as a follow-up.

@@ -39,6 +39,10 @@ export const TAG_ACCESSOR: u8 = 7;
 export const TAG_PROMISE: u8 = 8;
 export const TAG_REGEXP: u8 = 9;
 export const TAG_SYMBOL: u8 = 15;
+// A weak collection's record, and the two arrays behind it (keys and
+// values), which the collector never traces through: see Weak records.
+export const TAG_WEAK_RECORD: u8 = 16;
+export const TAG_WEAK_ARRAY: u8 = 17;
 
 // Beyond the reference's tags: an environment is its own cell here, where
 // the reference keeps captured bindings in a property bag.
@@ -72,6 +76,8 @@ export const FLAG_WIDE: u8 = 16;
 // A string cell used as an engine-internal key: never interned by
 // content, so no program string can name it.
 export const FLAG_HIDDEN: u8 = 32;
+// A symbol from the global registry (Symbol.for): not weakly holdable.
+export const FLAG_REGISTERED_SYMBOL: u8 = 64;
 
 struct CellHeader {
   tag: u8;
@@ -115,6 +121,15 @@ struct HiddenClass {
 
 export const DICT_BIT: u32 = 2147483648;
 
+// A weak record's slots and index markers (see Weak records).
+const WEAK_KEYS: u32 = 0;
+const WEAK_VALUES: u32 = 1;
+const WEAK_INDEX: u32 = 2;
+const WEAK_SIZE: u32 = 3;
+const WEAK_KIND: u32 = 4;
+const WEAK_EMPTY: i32 = -1;
+const WEAK_TOMBSTONE: i32 = -2;
+
 // The side index of a dictionary-mode object: open addressing over pair
 // numbers plus one (0 is empty), sized to at least twice the pair
 // capacity. A removed pair stays in the index as a tombstone until the
@@ -138,6 +153,13 @@ export struct Heap {
   attrs: Array<u8>;
   strings: Array<Array<u8>>;
   classes: Array<HiddenClass>;
+  // Weak records reached during the current collection (see Weak
+  // records); emptied when the collection ends, never a root.
+  weakRecords: Array<u32>;
+  // Entries dropped for dead keys, cumulative; passes the last ephemeron
+  // fixpoint took. For the harness.
+  weakCleared: u32;
+  ephemeronPasses: u32;
   // Dictionary-mode indexes, one per such object, reused after a sweep.
   dictionaries: Array<Dictionary>;
   freeDictionaries: Array<u32>;
@@ -233,8 +255,12 @@ export struct Heap {
         this.headers[usize(link)].marked = true;
         this.pushMark(link);
       }
-      // Slots hold values for every tag but strings.
-      if (tag != TAG_STRING) {
+      // A weak record is traced like any cell (its index and counts, and
+      // the two weak arrays as cells), then queued for the ephemeron
+      // pass; a weak array's elements are never traced from here.
+      if (tag == TAG_WEAK_RECORD) this.weakRecords.push(handle);
+      // Slots hold values for every tag but strings and weak arrays.
+      if (tag != TAG_STRING && tag != TAG_WEAK_ARRAY) {
         const start = this.headers[usize(handle)].slotStart;
         const count = this.headers[usize(handle)].slotCount;
         let index: u32 = 0;
@@ -773,6 +799,281 @@ export struct Heap {
     this.headers[usize(handle)].payload = length;
   }
 
+  // --- Weak records ---
+  //
+  // A WeakMap or WeakSet keeps its entries in a record cell
+  // (TAG_WEAK_RECORD) of five slots: the keys and values arrays, an
+  // open-addressed index from key hash to entry position, the live
+  // count, and the kind. Keys are cells (objects, unregistered symbols).
+  //
+  // The keys and values arrays have their own tag, TAG_WEAK_ARRAY, and
+  // the collector never traces their elements through ordinary marking,
+  // whatever reaches them: they are private to the record (nothing else
+  // may hold them, and nothing does; `recordOf` hands out the record,
+  // not the arrays). A key is marked only by something other than its
+  // record; a value only once its key is (`markEphemerons`, run after
+  // the strong roots to a fixpoint over every record reached, including
+  // records reached through values). Entries whose key is unmarked are
+  // then dropped (`clearDeadWeakEntries`), before the atom rebuild and
+  // the sweep; the value's other references, if any, keep it. Both
+  // passes allocate nothing: the arrays compact and the index rebuilds
+  // in place, so a long-lived record's storage follows its live count.
+  //
+  // The repeated scan is worst-case quadratic: a chain of n records
+  // whose keys are reached only through the previous record's value,
+  // discovered in reverse order, takes n passes over all entries. The
+  // README records the measurement.
+
+  function allocateWeakArray(inout this): u32 {
+    const handle = this.allocate(TAG_WEAK_ARRAY, 4);
+    this.headers[usize(handle)].payload = 0;
+    let hole: u32 = 0;
+    while (hole < 4) {
+      this.setSlot(handle, hole, deletedValue());
+      hole = hole + 1;
+    }
+    return handle;
+  }
+
+  function allocateWeakRecord(inout this, kind: i32): u32 {
+    const record = this.allocate(TAG_WEAK_RECORD, 5);
+    this.setSlot(record, WEAK_KEYS, cellValue(this.allocateWeakArray()));
+    this.setSlot(record, WEAK_VALUES, cellValue(this.allocateWeakArray()));
+    const index = this.allocateArray(8);
+    let i: u32 = 0;
+    while (i < 8) {
+      this.setSlot(index, i, int32Value(WEAK_EMPTY));
+      i = i + 1;
+    }
+    this.setSlot(record, WEAK_INDEX, cellValue(index));
+    this.setSlot(record, WEAK_SIZE, int32Value(0));
+    this.setSlot(record, WEAK_KIND, int32Value(kind));
+    return record;
+  }
+
+  function isWeakRecord(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_WEAK_RECORD;
+  }
+
+  function weakKind(record: u32): i32 {
+    return asInt32(this.slot(record, WEAK_KIND));
+  }
+
+  function weakSize(record: u32): u32 {
+    return u32(asInt32(this.slot(record, WEAK_SIZE)));
+  }
+
+  function weakHash(key: u32, mask: u32): u32 {
+    let hash = key.wrappingMultiply(2654435761);
+    hash = hash ^ (hash >> 15);
+    return hash & mask;
+  }
+
+  // The entry position holding `key`, or -1.
+  function weakFind(record: u32, key: u32): i32 {
+    const index = asCell(this.slot(record, WEAK_INDEX));
+    const keys = asCell(this.slot(record, WEAK_KEYS));
+    const mask = this.arrayLength(index) - 1;
+    let probe = this.weakHash(key, mask);
+    let probes: u32 = 0;
+    while (probes <= mask) {
+      const held = asInt32(this.slot(index, probe));
+      if (held == WEAK_EMPTY) return -1;
+      if (held >= 0) {
+        const candidate = this.slot(keys, u32(held));
+        if (!isDeleted(candidate) && asCell(candidate) == key) return held;
+      }
+      probe = (probe + 1) & mask;
+      probes = probes + 1;
+    }
+    return -1;
+  }
+
+  function weakGet(record: u32, position: u32): Value {
+    return this.slot(asCell(this.slot(record, WEAK_VALUES)), position);
+  }
+
+  function weakIndexInsert(inout this, index: u32, key: u32, position: u32): void {
+    const mask = this.arrayLength(index) - 1;
+    let probe = this.weakHash(key, mask);
+    while (asInt32(this.slot(index, probe)) >= 0) {
+      probe = (probe + 1) & mask;
+    }
+    this.setSlot(index, probe, int32Value(i32(position)));
+  }
+
+  // Insert or update; the key must be weakly holdable.
+  function weakPut(inout this, record: u32, key: u32, value: Value): void {
+    const existing = this.weakFind(record, key);
+    if (existing >= 0) {
+      this.setSlot(asCell(this.slot(record, WEAK_VALUES)), u32(existing), value);
+      return;
+    }
+    const keys = asCell(this.slot(record, WEAK_KEYS));
+    const values = asCell(this.slot(record, WEAK_VALUES));
+    const live = this.weakSize(record);
+    // Room in the index for one more position (three quarters full at
+    // most): first reclaim retired entries when they are the larger
+    // part, then grow.
+    if ((this.arrayLength(keys) + 1) * 4 > this.arrayLength(asCell(this.slot(record, WEAK_INDEX))) * 3) {
+      if (live * 2 < this.arrayLength(keys)) {
+        this.weakCompact(record);
+        this.weakRebuildIndex(record);
+      }
+      if ((this.arrayLength(keys) + 1) * 4 > this.arrayLength(asCell(this.slot(record, WEAK_INDEX))) * 3) {
+        this.weakGrowIndex(record);
+      }
+    }
+    const position = this.arrayLength(keys);
+    this.arraySet(keys, position, cellValue(key));
+    this.arraySet(values, position, value);
+    const index = asCell(this.slot(record, WEAK_INDEX));
+    this.weakIndexInsert(index, key, position);
+    this.setSlot(record, WEAK_SIZE, int32Value(i32(live + 1)));
+  }
+
+  function weakDelete(inout this, record: u32, key: u32): boolean {
+    const position = this.weakFind(record, key);
+    if (position < 0) return false;
+    this.weakRetire(record, u32(position), key);
+    return true;
+  }
+
+  // Retire one entry: both slots become the deleted marker, its index
+  // slot a tombstone, the count one less.
+  function weakRetire(inout this, record: u32, position: u32, key: u32): void {
+    const keys = asCell(this.slot(record, WEAK_KEYS));
+    const values = asCell(this.slot(record, WEAK_VALUES));
+    this.setSlot(keys, position, deletedValue());
+    this.setSlot(values, position, deletedValue());
+    const index = asCell(this.slot(record, WEAK_INDEX));
+    const mask = this.arrayLength(index) - 1;
+    let probe = this.weakHash(key, mask);
+    while (asInt32(this.slot(index, probe)) != i32(position)) {
+      probe = (probe + 1) & mask;
+    }
+    this.setSlot(index, probe, int32Value(WEAK_TOMBSTONE));
+    const live = this.weakSize(record);
+    this.setSlot(record, WEAK_SIZE, int32Value(i32(live - 1)));
+  }
+
+  // Close the gaps left by retired entries, in place.
+  function weakCompact(inout this, record: u32): void {
+    const keys = asCell(this.slot(record, WEAK_KEYS));
+    const values = asCell(this.slot(record, WEAK_VALUES));
+    const count = this.arrayLength(keys);
+    let write: u32 = 0;
+    let read: u32 = 0;
+    while (read < count) {
+      const key = this.slot(keys, read);
+      if (!isDeleted(key)) {
+        if (write != read) {
+          const value = this.slot(values, read);
+          this.setSlot(keys, write, key);
+          this.setSlot(values, write, value);
+        }
+        write = write + 1;
+      }
+      read = read + 1;
+    }
+    this.setArrayLength(keys, write);
+    this.setArrayLength(values, write);
+  }
+
+  // Rebuild the index over the live entries, in the same array.
+  function weakRebuildIndex(inout this, record: u32): void {
+    const index = asCell(this.slot(record, WEAK_INDEX));
+    const capacity = this.arrayLength(index);
+    let i: u32 = 0;
+    while (i < capacity) {
+      this.setSlot(index, i, int32Value(WEAK_EMPTY));
+      i = i + 1;
+    }
+    const keys = asCell(this.slot(record, WEAK_KEYS));
+    const count = this.arrayLength(keys);
+    let position: u32 = 0;
+    while (position < count) {
+      const key = this.slot(keys, position);
+      if (!isDeleted(key)) this.weakIndexInsert(index, asCell(key), position);
+      position = position + 1;
+    }
+  }
+
+  // A doubled index (an allocation: only ever on insertion).
+  function weakGrowIndex(inout this, record: u32): void {
+    const capacity = this.arrayLength(asCell(this.slot(record, WEAK_INDEX))) * 2;
+    const index = this.allocateArray(capacity);
+    let i: u32 = 0;
+    while (i < capacity) {
+      this.setSlot(index, i, int32Value(WEAK_EMPTY));
+      i = i + 1;
+    }
+    this.setSlot(record, WEAK_INDEX, cellValue(index));
+    this.weakRebuildIndex(record);
+  }
+
+  // After the strong roots: values whose keys are marked get marked,
+  // repeatedly, until a pass marks nothing. Marking a value can reach
+  // more weak records (queued by drainMarks) and more keys.
+  function markEphemerons(inout this): void {
+    let passes: u32 = 0;
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      passes = passes + 1;
+      let r: usize = 0;
+      while (r < this.weakRecords.length) {
+        const record = this.weakRecords[r];
+        const keys = asCell(this.slot(record, WEAK_KEYS));
+        const values = asCell(this.slot(record, WEAK_VALUES));
+        const count = this.arrayLength(keys);
+        let position: u32 = 0;
+        while (position < count) {
+          const key = this.slot(keys, position);
+          if (!isDeleted(key) && this.headers[usize(asCell(key))].marked) {
+            const value = this.slot(values, position);
+            if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+              this.markHandle(asCell(value));
+              progressed = true;
+            }
+          }
+          position = position + 1;
+        }
+        r = r + 1;
+      }
+    }
+    this.ephemeronPasses = passes;
+  }
+
+  // Drop every entry whose key is unmarked, then compact each touched
+  // record in place. Runs before the sweep, while dead keys still have
+  // headers. Ends the collection's use of the worklist.
+  function clearDeadWeakEntries(inout this): void {
+    let r: usize = 0;
+    while (r < this.weakRecords.length) {
+      const record = this.weakRecords[r];
+      const keys = asCell(this.slot(record, WEAK_KEYS));
+      const count = this.arrayLength(keys);
+      let dropped: u32 = 0;
+      let position: u32 = 0;
+      while (position < count) {
+        const key = this.slot(keys, position);
+        if (!isDeleted(key) && !this.headers[usize(asCell(key))].marked) {
+          this.weakRetire(record, position, asCell(key));
+          dropped = dropped + 1;
+        }
+        position = position + 1;
+      }
+      if (dropped > 0) {
+        this.weakCleared = this.weakCleared + dropped;
+        this.weakCompact(record);
+        this.weakRebuildIndex(record);
+      }
+      r = r + 1;
+    }
+    this.weakRecords = Array<u32>();
+  }
+
   // --- Closures and environments ---
 
   // An environment: one slot per captured binding, `link` the enclosing
@@ -1177,6 +1478,7 @@ export function createHeap(): Heap {
   return Heap({
     headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), strings: Array<Array<u8>>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
+    weakRecords: Array<u32>(), weakCleared: 0, ephemeronPasses: 0,
     dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0,
@@ -1577,4 +1879,289 @@ test "a sweep releases a dead dictionary and a live one survives the compaction"
   heap.objectSet(later, names[2], int32Value(3));
   expect(heap.isDictionary(later)).toEqual(true);
   expect(heap.dictionaryCount()).toEqual(2);
+}
+
+// --- Weak records ---
+
+// A weak record holding `count` fresh object keys mapped to fresh object
+// values; the keys and values as parallel handle arrays.
+struct WeakFixture {
+  record: u32;
+  keys: Array<u32>;
+  values: Array<u32>;
+}
+
+function weakFixture(inout heap: Heap, count: u32): WeakFixture {
+  const record = heap.allocateWeakRecord(2);
+  let keys = Array<u32>();
+  let values = Array<u32>();
+  let i: u32 = 0;
+  while (i < count) {
+    const key = heap.allocateObject(0);
+    const value = heap.allocateObject(0);
+    heap.weakPut(record, key, cellValue(value));
+    keys.push(key);
+    values.push(value);
+    i = i + 1;
+  }
+  return WeakFixture({ record: record, keys: move keys, values: move values });
+}
+
+// One collection over explicit roots: the given handles are marked, the
+// ephemeron pass runs, dead entries are dropped, the sweep frees the rest.
+function collectWith(inout heap: Heap, in roots: Array<u32>): void {
+  let i: usize = 0;
+  while (i < roots.length) {
+    heap.markHandle(roots[i]);
+    i = i + 1;
+  }
+  heap.markEphemerons();
+  heap.clearDeadWeakEntries();
+  heap.sweep();
+}
+
+test "weak record: a rooted key keeps its entry and value; a dropped key loses both" {
+  let heap = createHeap();
+  const fixture = weakFixture(inout heap, 2);
+  let roots = Array<u32>();
+  roots.push(fixture.record);
+  roots.push(fixture.keys[0]);
+  collectWith(inout heap, in roots);
+  expect(heap.weakSize(fixture.record)).toEqual(1);
+  expect(heap.weakFind(fixture.record, fixture.keys[0]) >= 0).toEqual(true);
+  expect(heap.tagOf(fixture.values[0])).toEqual(TAG_OBJECT);
+  expect(heap.tagOf(fixture.keys[1])).toEqual(TAG_FREE);
+  expect(heap.tagOf(fixture.values[1])).toEqual(TAG_FREE);
+  expect(heap.weakCleared).toEqual(1);
+  expect(heap.weakRecords.length).toEqual(0);
+}
+
+test "weak record: a value referring back to its own key is collected with it" {
+  let heap = createHeap();
+  const record = heap.allocateWeakRecord(2);
+  const key = heap.allocateObject(0);
+  const value = heap.allocateObject(0);
+  heap.objectSet(value, 12345, cellValue(key));
+  heap.weakPut(record, key, cellValue(value));
+  let roots = Array<u32>();
+  roots.push(record);
+  collectWith(inout heap, in roots);
+  expect(heap.weakSize(record)).toEqual(0);
+  expect(heap.tagOf(key)).toEqual(TAG_FREE);
+  expect(heap.tagOf(value)).toEqual(TAG_FREE);
+}
+
+test "weak record: a value rooted elsewhere survives its dead key's entry" {
+  let heap = createHeap();
+  const fixture = weakFixture(inout heap, 1);
+  let roots = Array<u32>();
+  roots.push(fixture.record);
+  roots.push(fixture.values[0]);
+  collectWith(inout heap, in roots);
+  expect(heap.weakSize(fixture.record)).toEqual(0);
+  expect(heap.tagOf(fixture.keys[0])).toEqual(TAG_FREE);
+  expect(heap.tagOf(fixture.values[0])).toEqual(TAG_OBJECT);
+}
+
+test "weak record: keys reached only through another record's value, in both discovery orders" {
+  // A: k1 -> holder{k2}; B: k2 -> v2. Only k1 is rooted. Whichever
+  // record is reached first, v2 survives and the fixpoint takes the
+  // passes it needs.
+  let order: u32 = 0;
+  while (order < 2) {
+    let heap = createHeap();
+    const a = heap.allocateWeakRecord(2);
+    const b = heap.allocateWeakRecord(2);
+    const k1 = heap.allocateObject(0);
+    const k2 = heap.allocateObject(0);
+    const holder = heap.allocateObject(0);
+    heap.objectSet(holder, 777, cellValue(k2));
+    const v2 = heap.allocateObject(0);
+    heap.weakPut(a, k1, cellValue(holder));
+    heap.weakPut(b, k2, cellValue(v2));
+    let roots = Array<u32>();
+    if (order == 0) {
+      roots.push(a);
+      roots.push(b);
+    } else {
+      roots.push(b);
+      roots.push(a);
+    }
+    roots.push(k1);
+    collectWith(inout heap, in roots);
+    expect(heap.tagOf(k2)).toEqual(TAG_OBJECT);
+    expect(heap.tagOf(v2)).toEqual(TAG_OBJECT);
+    expect(heap.weakSize(b)).toEqual(1);
+    expect(heap.ephemeronPasses >= 2).toEqual(true);
+    order = order + 1;
+  }
+}
+
+test "weak record: a record discovered through a value joins the fixpoint" {
+  // Root: k1 in A; A's value holds record B (as a WeakMap would); B maps
+  // k1 -> v. B is reached only by marking A's value.
+  let heap = createHeap();
+  const a = heap.allocateWeakRecord(2);
+  const b = heap.allocateWeakRecord(2);
+  const k1 = heap.allocateObject(0);
+  const carrier = heap.allocateObject(0);
+  heap.objectSet(carrier, 555, cellValue(b));
+  const v = heap.allocateObject(0);
+  heap.weakPut(a, k1, cellValue(carrier));
+  heap.weakPut(b, k1, cellValue(v));
+  let roots = Array<u32>();
+  roots.push(a);
+  roots.push(k1);
+  collectWith(inout heap, in roots);
+  expect(heap.tagOf(b)).toEqual(TAG_WEAK_RECORD);
+  expect(heap.tagOf(v)).toEqual(TAG_OBJECT);
+  expect(heap.weakSize(b)).toEqual(1);
+}
+
+test "weak record: a long chain in reverse discovery order takes one pass per link" {
+  // Record i maps key i to a holder of key i + 1; the records are rooted
+  // last-first; only key 0 is rooted. Every key survives, and the
+  // fixpoint needs about as many passes as links.
+  let heap = createHeap();
+  const links: u32 = 40;
+  let records = Array<u32>();
+  let keys = Array<u32>();
+  let i: u32 = 0;
+  while (i <= links) {
+    keys.push(heap.allocateObject(0));
+    i = i + 1;
+  }
+  i = 0;
+  while (i < links) {
+    const record = heap.allocateWeakRecord(2);
+    const holder = heap.allocateObject(0);
+    heap.objectSet(holder, 900 + i, cellValue(keys[usize(i + 1)]));
+    heap.weakPut(record, keys[usize(i)], cellValue(holder));
+    records.push(record);
+    i = i + 1;
+  }
+  let roots = Array<u32>();
+  i = links;
+  while (i > 0) {
+    i = i - 1;
+    roots.push(records[usize(i)]);
+  }
+  roots.push(keys[0]);
+  collectWith(inout heap, in roots);
+  i = 0;
+  while (i <= links) {
+    expect(heap.tagOf(keys[usize(i)])).toEqual(TAG_OBJECT);
+    i = i + 1;
+  }
+  expect(heap.ephemeronPasses >= links).toEqual(true);
+}
+
+test "weak record: a shared key dropped clears it from every record; an unreachable record keeps nothing alive" {
+  let heap = createHeap();
+  const a = heap.allocateWeakRecord(2);
+  const b = heap.allocateWeakRecord(2);
+  const shared = heap.allocateObject(0);
+  const va = heap.allocateObject(0);
+  const vb = heap.allocateObject(0);
+  heap.weakPut(a, shared, cellValue(va));
+  heap.weakPut(b, shared, cellValue(vb));
+  const orphan = heap.allocateWeakRecord(2);
+  const orphanKey = heap.allocateObject(0);
+  const orphanValue = heap.allocateObject(0);
+  heap.weakPut(orphan, orphanKey, cellValue(orphanValue));
+  let roots = Array<u32>();
+  roots.push(a);
+  roots.push(b);
+  collectWith(inout heap, in roots);
+  expect(heap.weakSize(a)).toEqual(0);
+  expect(heap.weakSize(b)).toEqual(0);
+  expect(heap.tagOf(va)).toEqual(TAG_FREE);
+  expect(heap.tagOf(vb)).toEqual(TAG_FREE);
+  expect(heap.tagOf(orphan)).toEqual(TAG_FREE);
+  expect(heap.tagOf(orphanKey)).toEqual(TAG_FREE);
+  expect(heap.tagOf(orphanValue)).toEqual(TAG_FREE);
+}
+
+test "weak record: a reused handle is not the old key" {
+  let heap = createHeap();
+  const fixture = weakFixture(inout heap, 1);
+  const oldKey = fixture.keys[0];
+  let roots = Array<u32>();
+  roots.push(fixture.record);
+  collectWith(inout heap, in roots);
+  expect(heap.weakSize(fixture.record)).toEqual(0);
+  // The freed handles come back on allocation; whichever order, the
+  // old key's handle names a new object the record does not hold.
+  const first = heap.allocateObject(0);
+  const second = heap.allocateObject(0);
+  expect(first == oldKey || second == oldKey).toEqual(true);
+  expect(heap.weakFind(fixture.record, first)).toEqual(-1);
+  expect(heap.weakFind(fixture.record, second)).toEqual(-1);
+}
+
+test "weak record: storage follows the live count across insert, drop, collect cycles" {
+  let heap = createHeap();
+  const record = heap.allocateWeakRecord(2);
+  const kept = heap.allocateObject(0);
+  heap.weakPut(record, kept, int32Value(1));
+  let peakIndex: u32 = 0;
+  let cycle: u32 = 0;
+  while (cycle < 200) {
+    let i: u32 = 0;
+    while (i < 50) {
+      const key = heap.allocateObject(0);
+      heap.weakPut(record, key, int32Value(i32(i)));
+      i = i + 1;
+    }
+    let roots = Array<u32>();
+    roots.push(record);
+    roots.push(kept);
+    collectWith(inout heap, in roots);
+    expect(heap.weakSize(record)).toEqual(1);
+    const keys = asCell(heap.slot(record, WEAK_KEYS));
+    expect(heap.arrayLength(keys)).toEqual(1);
+    const index = asCell(heap.slot(record, WEAK_INDEX));
+    if (heap.arrayLength(index) > peakIndex) peakIndex = heap.arrayLength(index);
+    cycle = cycle + 1;
+  }
+  expect(peakIndex <= 128).toEqual(true);
+  expect(heap.weakFind(record, kept) >= 0).toEqual(true);
+  expect(heap.weakCleared).toEqual(10000);
+}
+
+test "weak record: explicit deletes and reinserts reclaim storage without a collection" {
+  let heap = createHeap();
+  const record = heap.allocateWeakRecord(2);
+  let live = Array<u32>();
+  let round: u32 = 0;
+  while (round < 100) {
+    let i: u32 = 0;
+    while (i < 20) {
+      const key = heap.allocateObject(0);
+      heap.weakPut(record, key, int32Value(i32(i)));
+      live.push(key);
+      i = i + 1;
+    }
+    // Drop all but the last four.
+    while (live.length > 4) {
+      match (live.pop()) {
+        some(key) => {
+          heap.weakDelete(record, key);
+        }
+        none => {
+        }
+      }
+    }
+    round = round + 1;
+  }
+  expect(heap.weakSize(record)).toEqual(4);
+  const keys = asCell(heap.slot(record, WEAK_KEYS));
+  expect(heap.arrayLength(keys) <= 64).toEqual(true);
+  const index = asCell(heap.slot(record, WEAK_INDEX));
+  expect(heap.arrayLength(index) <= 64).toEqual(true);
+  let i: usize = 0;
+  while (i < live.length) {
+    expect(heap.weakFind(record, live[i]) >= 0).toEqual(true);
+    i = i + 1;
+  }
 }

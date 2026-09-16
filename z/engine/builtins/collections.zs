@@ -6,8 +6,9 @@
 // index from key hash to entry position, and the live count. Iteration
 // walks the entry arrays by position, so entries added during a walk
 // are visited and deleted ones skipped, as the specification requires.
-// WeakMap and WeakSet share the structure and keep their keys alive; the
-// collector does not yet treat them weakly.
+// WeakMap and WeakSet keep theirs in the heap's weak records (see
+// heap.zs, Weak records): keys held weakly, values by ephemeron marking,
+// storage compacted as keys die.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, deletedValue, asInt32, isNumber } from "../value.zs";
 import { Runtime, toNumber, truncateDouble } from "../runtime.zs";
@@ -29,6 +30,7 @@ const SLOT_EMPTY: i32 = -1;
 const SLOT_TOMBSTONE: i32 = -2;
 
 function newRecord(inout runtime: Runtime, kind: i32): u32 {
+  if (kind == KIND_WEAK_MAP || kind == KIND_WEAK_SET) return runtime.heap.allocateWeakRecord(kind);
   const record = runtime.heap.allocateArray(5);
   runtime.heap.setSlot(record, REC_KEYS, cellValue(runtime.heap.allocateArray(0)));
   runtime.heap.setSlot(record, REC_VALUES, cellValue(runtime.heap.allocateArray(0)));
@@ -266,7 +268,7 @@ function constructWeakSet(inout runtime: Runtime, thisValue: Value, argsBase: u3
 }
 
 function requireWeakKey(inout runtime: Runtime, key: Value, in what: String): boolean {
-  if (runtime.isObjectLike(key) || runtime.isSymbolValue(key)) return true;
+  if (runtime.canBeHeldWeakly(key)) return true;
   const message: String = `Invalid value used ${what}`;
   const error = runtime.typeError(in message);
   runtime.raise(error);
@@ -405,14 +407,20 @@ function setForEach(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
 
 // --- WeakMap / WeakSet ---
 
+// The weak-record position of `key`, or -1 (a key that cannot be held
+// weakly is simply absent).
+function weakPosition(in runtime: Runtime, record: u32, key: Value): i32 {
+  if (!runtime.canBeHeldWeakly(key)) return -1;
+  return runtime.heap.weakFind(record, asCell(key));
+}
+
 function weakMapGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const what: String = "WeakMap.prototype.get";
   const record = requireRecord(inout runtime, thisValue, KIND_WEAK_MAP, in what);
   if (record == 0) return undefinedValue();
-  const position = findEntry(inout runtime, record, runtime.argument(argsBase, argc, 0));
+  const position = weakPosition(in runtime, record, runtime.argument(argsBase, argc, 0));
   if (position < 0) return undefinedValue();
-  const values = asCell(runtime.heap.slot(record, REC_VALUES));
-  return runtime.heap.slot(values, u32(position));
+  return runtime.heap.weakGet(record, u32(position));
 }
 
 function weakMapSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -422,7 +430,7 @@ function weakMapSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   const key = runtime.argument(argsBase, argc, 0);
   const keyWhat: String = "as weak map key";
   if (!requireWeakKey(inout runtime, key, in keyWhat)) return undefinedValue();
-  putEntry(inout runtime, record, key, runtime.argument(argsBase, argc, 1));
+  runtime.heap.weakPut(record, asCell(key), runtime.argument(argsBase, argc, 1));
   return thisValue;
 }
 
@@ -430,14 +438,16 @@ function weakMapHas(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   const what: String = "WeakMap.prototype.has";
   const record = requireRecord(inout runtime, thisValue, KIND_WEAK_MAP, in what);
   if (record == 0) return undefinedValue();
-  return booleanValue(findEntry(inout runtime, record, runtime.argument(argsBase, argc, 0)) >= 0);
+  return booleanValue(weakPosition(in runtime, record, runtime.argument(argsBase, argc, 0)) >= 0);
 }
 
 function weakMapDelete(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const what: String = "WeakMap.prototype.delete";
   const record = requireRecord(inout runtime, thisValue, KIND_WEAK_MAP, in what);
   if (record == 0) return undefinedValue();
-  return booleanValue(deleteEntry(inout runtime, record, runtime.argument(argsBase, argc, 0)));
+  const key = runtime.argument(argsBase, argc, 0);
+  if (!runtime.canBeHeldWeakly(key)) return booleanValue(false);
+  return booleanValue(runtime.heap.weakDelete(record, asCell(key)));
 }
 
 function weakSetAdd(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -447,7 +457,7 @@ function weakSetAdd(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   const value = runtime.argument(argsBase, argc, 0);
   const keyWhat: String = "in weak set";
   if (!requireWeakKey(inout runtime, value, in keyWhat)) return undefinedValue();
-  putEntry(inout runtime, record, value, value);
+  runtime.heap.weakPut(record, asCell(value), value);
   return thisValue;
 }
 
@@ -455,14 +465,16 @@ function weakSetHas(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   const what: String = "WeakSet.prototype.has";
   const record = requireRecord(inout runtime, thisValue, KIND_WEAK_SET, in what);
   if (record == 0) return undefinedValue();
-  return booleanValue(findEntry(inout runtime, record, runtime.argument(argsBase, argc, 0)) >= 0);
+  return booleanValue(weakPosition(in runtime, record, runtime.argument(argsBase, argc, 0)) >= 0);
 }
 
 function weakSetDelete(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const what: String = "WeakSet.prototype.delete";
   const record = requireRecord(inout runtime, thisValue, KIND_WEAK_SET, in what);
   if (record == 0) return undefinedValue();
-  return booleanValue(deleteEntry(inout runtime, record, runtime.argument(argsBase, argc, 0)));
+  const key = runtime.argument(argsBase, argc, 0);
+  if (!runtime.canBeHeldWeakly(key)) return booleanValue(false);
+  return booleanValue(runtime.heap.weakDelete(record, asCell(key)));
 }
 
 // --- iterators ---
@@ -557,12 +569,18 @@ function getOrInsert(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   } else if (isNumberZero(key)) {
     key = int32Value(0);
   }
+  const value = runtime.argument(argsBase, argc, 1);
+  if (kind == KIND_WEAK_MAP) {
+    const held = runtime.heap.weakFind(record, asCell(key));
+    if (held >= 0) return runtime.heap.weakGet(record, u32(held));
+    runtime.heap.weakPut(record, asCell(key), value);
+    return value;
+  }
   const position = findEntry(inout runtime, record, key);
   if (position >= 0) {
     const values = asCell(runtime.heap.slot(record, REC_VALUES));
     return runtime.heap.slot(values, u32(position));
   }
-  const value = runtime.argument(argsBase, argc, 1);
   putEntry(inout runtime, record, key, value);
   return value;
 }
@@ -584,16 +602,27 @@ function getOrInsertComputed(inout runtime: Runtime, thisValue: Value, argsBase:
     runtime.raise(error);
     return undefinedValue();
   }
-  const position = findEntry(inout runtime, record, key);
-  if (position >= 0) {
-    const values = asCell(runtime.heap.slot(record, REC_VALUES));
-    return runtime.heap.slot(values, u32(position));
+  if (kind == KIND_WEAK_MAP) {
+    const held = runtime.heap.weakFind(record, asCell(key));
+    if (held >= 0) return runtime.heap.weakGet(record, u32(held));
+  } else {
+    const position = findEntry(inout runtime, record, key);
+    if (position >= 0) {
+      const values = asCell(runtime.heap.slot(record, REC_VALUES));
+      return runtime.heap.slot(values, u32(position));
+    }
   }
   let args = Array<Value>();
   args.push(key);
+  // The key and the receiver stay rooted in the call's registers while
+  // the callback runs (which may collect).
   const value = runtime.callValue(callback, undefinedValue(), move args);
   if (runtime.pendingThrow) return undefinedValue();
   // The callback may have added the key itself.
+  if (kind == KIND_WEAK_MAP) {
+    runtime.heap.weakPut(record, asCell(key), value);
+    return value;
+  }
   putEntry(inout runtime, record, key, value);
   return value;
 }

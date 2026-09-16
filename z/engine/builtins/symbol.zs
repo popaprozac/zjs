@@ -3,7 +3,7 @@
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, cellValue, asCell, isCell, isUndefined } from "../value.zs";
 import { Runtime } from "../runtime.zs";
-import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
+import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR , FLAG_REGISTERED_SYMBOL } from "../heap.zs";
 
 // The symbol behind `this`: itself or a wrapper's content.
 function thisSymbol(inout runtime: Runtime, thisValue: Value, in method: String): u32 {
@@ -38,6 +38,9 @@ function symbolFor(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
     index = index + 2;
   }
   const created = runtime.newSymbol(key);
+  // A registered symbol cannot be held weakly.
+  const flags = runtime.heap.flagsOf(asCell(created));
+  runtime.heap.setFlags(asCell(created), flags | FLAG_REGISTERED_SYMBOL);
   runtime.symbolRegistry.push(key);
   runtime.symbolRegistry.push(created);
   return created;

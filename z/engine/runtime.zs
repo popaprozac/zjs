@@ -12,7 +12,7 @@ import { thread } from "std/thread";
 import math from "std/math";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -2921,6 +2921,14 @@ export struct Runtime {
     return fn(inout this, thisValue, argsBase, argc, callee);
   }
 
+  // CanBeHeldWeakly: an object, or a symbol that is not in the global
+  // registry (well-known symbols qualify).
+  function canBeHeldWeakly(value: Value): boolean {
+    if (this.isObjectLike(value)) return true;
+    if (!this.isSymbolValue(value)) return false;
+    return (this.heap.flagsOf(asCell(value)) & FLAG_REGISTERED_SYMBOL) == 0;
+  }
+
   // A builtin global: writable and configurable, not enumerable.
   function setGlobal(inout this, name: String, value: Value): void {
     this.setGlobalAttr(move name, value, PROP_METHOD);
@@ -3489,6 +3497,11 @@ export struct Runtime {
       this.heap.markHandle(nameAtom);
       index = index + 1;
     }
+    // Weak collections: values reached through marked keys, to a
+    // fixpoint, then the entries of dead keys dropped -- before the
+    // atom rebuild, since such values can hold interned strings.
+    this.heap.markEphemerons();
+    this.heap.clearDeadWeakEntries();
     // The atom table is weak: an interned string nothing else reaches is
     // dropped, and the table is rebuilt from the survivors.
     this.rebuildAtoms();

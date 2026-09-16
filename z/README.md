@@ -131,9 +131,16 @@ sees additions and deletions during the walk; `forEach`, the three
 iterators (`Map Iterator` / `Set Iterator` prototypes), `Map.groupBy` /
 `Object.groupBy`, `getOrInsert` / `getOrInsertComputed`, the Set methods
 (`union` through `isDisjointFrom` over any set-like), and
-`get [Symbol.species]` on `Map`, `Set`, and `Array`. The weak
-collections keep their keys alive; the collector does not yet treat them
-weakly. Deleting a global through the global object undefines the
+`get [Symbol.species]` on `Map`, `Set`, and `Array`. `WeakMap` and
+`WeakSet` hold their keys weakly: their entries live in the heap's weak
+records, whose keys are marked only by other references and whose values
+are marked once their key is (ephemeron marking to a fixpoint after the
+strong roots, before the atom rebuild and the sweep), entries of dead keys
+are dropped and the storage compacted in place, and a key must be an
+object or an unregistered symbol (`Symbol.for` keys are refused; `get` on
+anything else is undefined, `has` / `delete` false). See
+`docs/weak-collections.md` for the model and its measured cost. Deleting a
+global through the global object undefines the
 binding. `Array.prototype` complete and generic: every method takes any
 array-like through ToObject / LengthOfArrayLike and the property
 protocol (lengths as doubles up to 2^53 - 1, `HasProperty` through the
@@ -372,8 +379,7 @@ invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
 Not yet: `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
-delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
-`WeakSet`, subclassing `Array`, a private name shadowed by an inner
+delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and
@@ -463,12 +469,15 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
 ./z/oracle-ast.sh                 # parser oracle: diff AST dumps, both engines
 ./z/oracle-eval.sh                # behavioral oracle: diff eval results, both engines
 ./z/expect.sh                     # expectation cases recorded from node (z/tests/expect)
+./z/gc-check.sh                   # collector checks on engine counters (z/tests/gc)
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 ./z/spike/run.sh                  # Phase 0 measurements
-./z/build/zjsz run [--dict-threshold N] [--stats] file.js
+./z/build/zjsz run [--dict-threshold N] [--stats] [--expose-gc] file.js
                                   # --dict-threshold: property count at which an
                                   #   object leaves its hidden class (measurement)
-                                  # --stats: slots, cells, dictionaries, collections
+                                  # --stats: slots, cells, dictionaries, collections,
+                                  #   weak entries cleared, ephemeron passes
+                                  # --expose-gc: a global gc() that collects (tests)
 
 cd ~/code/z-lang && bun run z test ~/code/zjs/z/engine/heap.zs   # unit tests
 ```
