@@ -125,9 +125,9 @@ placeholders).
   root keeps a main-bound field; the shim stops lying instead: it reports
   the real thread through `pthread_main_np()`, so initialization must
   happen on the main thread (a stated contract), and the release hook
-  runs a finalizer inline on main or queues it for the next main-thread
-  ABI call. Everything else in the model is implementable now: the probe
-  compiles and runs with the vestigial field in place.
+  delivers a finalizer only when invoked on main, recording the miss
+  otherwise (no delivery is promised off main; see Initialization and
+  teardown). Everything else in the model is implemented.
 - Not a block, a pattern: an `Option<Context>` element cannot be returned
   from the lock callback directly (Z0204, a move out of the owner); the
   `match ... some(context) => Option<Context>.some(context)` spelling
@@ -157,22 +157,31 @@ with the library's counters as witnesses (`zjs_z_live_contexts`,
 1. A thousand create / evaluate / destroy cycles: bytes in use identical
    after the first and the last cycle (10,848), native contexts back to
    zero, detached count exact.
-2. Overlap: one long evaluation 1.37 s; two contexts on two threads
-   concurrently 1.40 s.
+2. Overlap, by synchronization: two evaluators on two contexts each
+   pause at a test gate while holding their context lock, and the test
+   observes both paused at once before resuming either. The timing line
+   (one long evaluation 1.37 s, two concurrently 1.40 s) is printed as a
+   benchmark, not asserted.
 3. Serialization: two threads evaluating on one context, 400 evaluations
    adding to one global, the total exact, every evaluation counted.
-4. Free after admission (a condition variable fixes the order): `free`
-   returns at once, the handle is stale at once, the evaluator finishes,
-   and the native context is destroyed only after it returns.
+4. Free after admission: the evaluator pauses at the gate after its
+   lookup, retain, and lock; `free` then returns at once, the handle is
+   stale at once, the native context is still alive; resumed, the
+   evaluation completes and reports its result through its own reference
+   (the stale handle cannot), and only then is the context destroyed.
 5. Free before lookup (the other order): the evaluation is refused.
 6. Stale handles: a reused slot answers only its new generation; double
    free and `NULL` are no-ops.
 7. Promise jobs drain within the evaluation that queued them; a context
    freed afterward leaves nothing alive.
 
+The gate is `engine/native/zjs_testing.h` and the test-only export
+`zjs_z_eval_gated`, neither part of the embedding ABI.
+
 Two Z findings came out of this: G36 (the main-bound root) and G37 (a
-class reference captured by a lock callback is never released; contexts
-are therefore built inside the registry lock).
+class stored through a lock callback is never destroyed, two upstream
+bugs; contexts are therefore built inside the registry lock under
+Stage 0).
 
 ## Acceptance mapping
 

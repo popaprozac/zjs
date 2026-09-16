@@ -12,6 +12,7 @@
 
 #include "zjs.h"
 #include "zjs_regexp.h"
+#include "zjs_testing.h"
 #include "zjsz.h"
 
 static int failures = 0;
@@ -45,8 +46,17 @@ static void cycles(void) {
   printf("lifecycle: 1000 cycles, %zu -> %zu bytes in use, native contexts %lu\n", used_after_first, used_after_last, (unsigned long)zjs_re_live_contexts());
 }
 
-/* 2. Independent contexts overlap: two long evaluations on two threads
-   take about as long as one. */
+/* 2. Independent contexts overlap. Proof by synchronization: each
+   evaluator pauses at its gate while holding its context lock, and the
+   test observes both paused at once before resuming either. The timing
+   of two long evaluations against one is printed as a benchmark, not
+   asserted. */
+typedef struct { ZjsContext *ctx; zjs_gate gate; int result; } Gated;
+static void *evaluate_gated(void *argument) {
+  Gated *gated = (Gated *)argument;
+  gated->result = zjs_z_eval_gated((uintptr_t)gated->ctx, (const uint8_t *)"var v = 1;", strlen("var v = 1;"), (uintptr_t)&gated->gate);
+  return NULL;
+}
 typedef struct { ZjsContext *ctx; int ok; } Worker;
 static void *evaluate_long(void *argument) {
   Worker *worker = (Worker *)argument;
@@ -55,22 +65,38 @@ static void *evaluate_long(void *argument) {
   return NULL;
 }
 static void overlap(void) {
-  Worker a = { zjs_new_context(), 0 }, b = { zjs_new_context(), 0 };
-  double t = now_seconds();
-  evaluate_long(&a);
-  double single = now_seconds() - t;
+  Gated a, b;
+  a.ctx = zjs_new_context(); zjs_gate_init(&a.gate); a.result = -2;
+  b.ctx = zjs_new_context(); zjs_gate_init(&b.gate); b.result = -2;
   pthread_t ta, tb;
+  pthread_create(&ta, NULL, evaluate_gated, &a);
+  pthread_create(&tb, NULL, evaluate_gated, &b);
+  zjs_gate_await_arrival(&a.gate);
+  zjs_gate_await_arrival(&b.gate);
+  /* Both evaluations are inside their locked work now. */
+  CHECK(a.gate.arrived && b.gate.arrived, "overlap: two contexts inside their evaluations at once");
+  zjs_gate_resume(&a.gate);
+  zjs_gate_resume(&b.gate);
+  pthread_join(ta, NULL);
+  pthread_join(tb, NULL);
+  CHECK(a.result == 0 && b.result == 0, "overlap: both gated evaluations completed without error");
+  zjs_free_context(a.ctx);
+  zjs_free_context(b.ctx);
+  /* Benchmark line: one long evaluation, then two on two threads. */
+  Worker wa = { zjs_new_context(), 0 }, wb = { zjs_new_context(), 0 };
+  double t = now_seconds();
+  evaluate_long(&wa);
+  double single = now_seconds() - t;
   t = now_seconds();
-  pthread_create(&ta, NULL, evaluate_long, &a);
-  pthread_create(&tb, NULL, evaluate_long, &b);
+  pthread_create(&ta, NULL, evaluate_long, &wa);
+  pthread_create(&tb, NULL, evaluate_long, &wb);
   pthread_join(ta, NULL);
   pthread_join(tb, NULL);
   double both = now_seconds() - t;
-  CHECK(a.ok && b.ok, "overlap: both evaluations succeed");
-  CHECK(both < single * 1.6, "overlap: two contexts in parallel take about one context's time");
-  printf("lifecycle: one context %.3fs, two concurrently %.3fs\n", single, both);
-  zjs_free_context(a.ctx);
-  zjs_free_context(b.ctx);
+  CHECK(wa.ok && wb.ok, "overlap: both long evaluations succeed");
+  printf("lifecycle: one context %.3fs, two concurrently %.3fs (benchmark, not asserted)\n", single, both);
+  zjs_free_context(wa.ctx);
+  zjs_free_context(wb.ctx);
 }
 
 /* 3. One context serializes: two threads adding to one global never
@@ -113,32 +139,32 @@ static void advance(Race *race, int stage) {
   pthread_cond_broadcast(&race->changed);
   pthread_mutex_unlock(&race->lock);
 }
-/* The evaluator holds the context lock across a long script; the freer
-   runs once the evaluator is known to be inside. The evaluator marks
-   admission by an evaluation that sets a global, then runs the long one:
-   the freer waits for the first result, so the long evaluation is either
-   admitted or queued behind an admitted call when free runs. */
+/* The evaluator is admitted (lookup and retain done, context lock
+   taken) and pauses at the gate. The freer then frees the handle: it
+   returns at once, the handle is stale, and the native context is still
+   alive because the admitted evaluation holds its reference. Resumed, the
+   evaluation completes and reports its own result through that
+   reference; only then is the context destroyed. */
 static void *free_after_admission_evaluator(void *argument) {
-  Race *race = (Race *)argument;
-  zjs_eval(race->ctx, "var admitted = 1;");
-  advance(race, 1);
-  zjs_eval(race->ctx, LONG_SCRIPT);
-  race->evaluator_error = zjs_had_error(race->ctx);
+  Gated *gated = (Gated *)argument;
+  gated->result = zjs_z_eval_gated((uintptr_t)gated->ctx, (const uint8_t *)LONG_SCRIPT, strlen(LONG_SCRIPT), (uintptr_t)&gated->gate);
   return NULL;
 }
 static void free_after_admission(void) {
-  Race race = { zjs_new_context(), PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0 };
+  Gated gated;
+  gated.ctx = zjs_new_context(); zjs_gate_init(&gated.gate); gated.result = -2;
   uintptr_t native_before = zjs_re_live_contexts();
   pthread_t evaluator;
-  pthread_create(&evaluator, NULL, free_after_admission_evaluator, &race);
-  wait_for(&race, 1);
-  zjs_free_context(race.ctx);           /* returns without waiting for the evaluation */
-  CHECK(zjs_had_error(race.ctx) == 1, "free after admission: the handle is stale at once");
+  pthread_create(&evaluator, NULL, free_after_admission_evaluator, &gated);
+  zjs_gate_await_arrival(&gated.gate);
+  zjs_free_context(gated.ctx);
+  CHECK(zjs_had_error(gated.ctx) == 1, "free after admission: the handle is stale at once");
+  CHECK(zjs_re_live_contexts() == native_before, "free after admission: the admitted evaluation keeps the context alive");
+  zjs_gate_resume(&gated.gate);
   pthread_join(evaluator, NULL);
-  /* had_error on a stale handle reports 1; the evaluator saw its own
-     result through the reference it held: no crash, no refusal. */
+  CHECK(gated.result == 0, "free after admission: the admitted evaluation completed without error");
   CHECK(zjs_re_live_contexts() == native_before - 1, "free after admission: native context destroyed once the evaluation returned");
-  printf("lifecycle: free after admission: evaluator finished with error flag %d, native contexts %lu\n", race.evaluator_error, (unsigned long)zjs_re_live_contexts());
+  printf("lifecycle: free after admission: evaluation completed (result %d), native contexts %lu\n", gated.result, (unsigned long)zjs_re_live_contexts());
 }
 static void *free_before_lookup_evaluator(void *argument) {
   Race *race = (Race *)argument;
