@@ -1,7 +1,8 @@
 # Embedding lifecycle: ownership model
 
-Status: implemented (review points incorporated); the "what exists today"
-section describes the scaffold this replaced. The public ABI
+Status: implemented (review points incorporated); the root is
+main-independent since z-lang `bdd92241`. The "what the scaffold did"
+section describes what this replaced. The public ABI
 (`include/zjs.h`) is unchanged; what changed is what the Z library does
 behind it and what the shim promises. `z/tests/lifecycle_test.c` is the
 evidence and runs on every build.
@@ -94,20 +95,22 @@ callbacks stay deferred until it does.
 
 The shim initializes the Z runtime on the first `zjs_new_context`, under
 a mutex: concurrent first callers wait; readiness is published only after
-the generated runtime reports success; a failed attempt (the wrong
-thread, an invalid configuration) leaves later attempts possible.
-Initialization must happen on the platform's main thread: the library
-root is main-bound (the open shareable-root finding below), and the shim
-reports the real thread. A first
-call elsewhere returns `NULL`, and `zjs_shim_init_status` (shim-level; the
-frozen header has no lifecycle status) says why. Z has no fallible
-allocation: an allocation failure inside the engine traps the process,
-which the contract states. Shutdown and unload are not supported through
-`zjs.h`; the generated runtime's release hook delivers a finalizer only
-when invoked on the main thread and records the miss otherwise. There is
-no drain point in the frozen ABI, so no claim is made that off-main
-release is ever delivered, and worker-first initialization is not
-supported.
+the generated runtime reports success; a failed attempt (an invalid
+configuration) leaves later attempts possible, and `zjs_shim_init_status`
+(shim-level; the frozen header has no lifecycle status) reports the last
+attempt. The first call may come from any host thread: the root is a
+compiler-proven shareable class (one `Mutex` field, contexts with
+`deinit on thread.any`), so the generated header's
+`REQUIRES_MAIN_THREAD` and `REQUIRES_ENQUEUE_RELEASE` are both zero, the
+shim provides no hooks and asserts both flags at compile time, and a
+worker-first embedding needs nothing from the main thread. Z has no
+fallible allocation: an allocation failure inside the engine traps the
+process, which the contract states. Shutdown and unload are not
+supported through `zjs.h`; the generated runtime's `zjsz_runtime_shutdown`
+closes the root on any registered thread and releases its strong
+reference after unlocking (a context still retained by a running call
+survives it), which the lifecycle test exercises directly, but nothing
+in the frozen ABI reaches it, and no claim of complete unload is made.
 
 ### Pending work
 
@@ -117,18 +120,15 @@ so destruction never discards them. There are no timers or host-driven
 queues yet (`zjs_has_pending_work` / `zjs_next_timer_ms` are
 placeholders).
 
-## What Z blocks
+## What Z blocked
 
-- **Shareable root**: `Once<T>` requires a main-bound class (Z0604), so the root
-  cannot be the shareable class above; the generated header keeps
-  `REQUIRES_MAIN_THREAD` and `REQUIRES_ENQUEUE_RELEASE`. Probe
-  `shareable-once-root`, minimal, `COMPILER-REJECTED`. Until it lands the
-  root keeps a main-bound field; the shim stops lying instead: it reports
-  the real thread through `pthread_main_np()`, so initialization must
-  happen on the main thread (a stated contract), and the release hook
-  delivers a finalizer only when invoked on main, recording the miss
-  otherwise (no delivery is promised off main; see Initialization and
-  teardown). Everything else in the model is implemented.
+- **Shareable root** (resolved at z-lang `bdd92241`): `Once<T>` used to
+  require a main-bound class (Z0604), so the root carried a main-bound
+  field it never read and the generated header demanded a main-thread
+  proof and a release hook. `Once<T>` now accepts a compiler-proven
+  shareable class; the field, the shim's hooks, and the main-thread
+  initialization contract are gone (probe `shareable-once-root`,
+  `LANDED`; evidence 0 and 8).
 - Not a block, a pattern: an `Option<Context>` element cannot be returned
   from the lock callback directly (Z0204, a move out of the owner); the
   `match ... some(context) => Option<Context>.some(context)` spelling
@@ -175,15 +175,28 @@ with the library's counters as witnesses (`zjs_z_live_contexts`,
    free and `NULL` are no-ops.
 7. Promise jobs drain within the evaluation that queued them; a context
    freed afterward leaves nothing alive.
+8. Shutdown on a worker: after 512 contexts were created and freed (the
+   registry holds their slots), `zjsz_runtime_shutdown` on a third host
+   thread returns OK, a later initialize reports shut down, bytes in use
+   drop by the registry's size, native contexts stay at zero. Exported
+   calls are only valid inside the published interval (the generated
+   entry guard traps outside it), so the test asks the runtime's own
+   status entries, never the library, before and after.
+0. (First of all) Worker-first initialization: before any call, shutdown
+   reports not initialized; the first ABI call, which initializes the
+   runtime, runs on a host thread that is not main; it succeeds, the
+   shim's status is OK, a second initialize reports already initialized.
 
 The gate is `engine/native/zjs_testing.h` and the test-only export
 `zjs_z_eval_gated`, neither part of the embedding ABI.
 
-Two Z findings came out of this, both in `docs/z-findings.md`: the root
-must be main-bound (probe `shareable-once-root`, open), and a class
-stored through a lock callback was never destroyed (probe
-`lock-callback-capture-release`; fixed upstream at z-lang `23bb4f73`,
-after which contexts are built outside the registry lock again).
+Two Z findings came out of this, both in `docs/z-findings.md` and both
+fixed upstream: the root had to be main-bound (probe
+`shareable-once-root`; fixed at z-lang `bdd92241`, after which the root
+lost its main-bound field and the shim its hooks), and a class stored
+through a lock callback was never destroyed (probe
+`lock-callback-capture-release`; fixed at `23bb4f73`, after which
+contexts are built outside the registry lock again).
 
 ## Acceptance mapping
 
@@ -192,7 +205,7 @@ after which contexts are built outside the registry lock again).
 | Free the actual Runtime | Destruction; evidence 1 and 4 |
 | Independent contexts concurrent | Admission and locking; evidence 2 |
 | Same-context rules explicit | Admission and locking, Reentrancy; evidence 3 |
-| Real init / thread registration, no lying hooks | Initialization; the main-bound field is the open shareable-root finding |
+| Real init / thread registration, no lying hooks | Initialization; evidence 0 and 8; no hooks at all since the root is shareable |
 | Init failure and partial teardown safe | Initialization; evidence 4 to 6 |
 | Cycles, contexts, jobs, callbacks exercised | Evidence 1 to 7; callbacks deferred |
 | ABI placeholders tracked | ABI placeholders |

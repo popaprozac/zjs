@@ -435,14 +435,15 @@ baseline** — faster than C, and faster than the same loop written as
 whole-function `raw c` (0.99×). Dropping to C for the hot loop is the worst
 trade available.
 
-## Known Phase 1 compromises
+## Phase 1 compromises, since removed
 
-Both are recorded in [`docs/z-findings.md`](../docs/z-findings.md) and neither
-may survive into the worker model.
+Both were recorded in [`docs/z-findings.md`](../docs/z-findings.md); neither
+survived into the embedding lifecycle (`docs/lifecycle.md`).
 
-- **`Engine` carries a vestigial `publicationEpoch` field** it never reads,
-  because `Once<T>` requires a main-bound class — and marking the whole class
-  `on thread.main` makes every field main-affine, which `export c function`
-  then rejects. A main-bound *field* threads the needle.
-- **The shim reports every thread as main and releases inline.** Correct for a
-  single-threaded harness, wrong for Zapp's workers.
+- `Engine` carried a vestigial main-bound field because `Once<T>` required a
+  main-bound class. z-lang `bdd92241` accepts a compiler-proven shareable
+  class; the field is gone and the generated header requires no main-thread
+  proof and no release hook.
+- The shim reported every thread as main and released inline. It now
+  provides no hooks at all and asserts at compile time that the library
+  needs none; the first ABI call may come from any host thread.

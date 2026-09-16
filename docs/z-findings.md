@@ -1062,9 +1062,8 @@ builder of known size allocates once. Probe `array-capacity`.
 
 ## G36 — A library root must be main-bound, so an embedded engine cannot be shareable
 
-**Status:** `proposed` · **Size:** medium · **Priority:** high
-**Confirmed:** z-lang `69397510` · **Blocks:** yes (the embedding lifecycle
-checkpoint)
+**Status:** `consumer-verified` — z-lang `bdd92241` (pin `bdd92241`); probe `shareable-once-root` `LANDED`; the engine's root lost its main-bound field, both generated requirement flags are zero, the shim provides no hooks, and the lifecycle test initializes on one worker thread and shuts down on another (memory returned, a later initialize reports shut down). · **Size:** medium · **Priority:** high
+**Confirmed:** z-lang `69397510` · **Fixed:** z-lang `bdd92241` · **Blocks:** no
 **Found:** designing context ownership for the C ABI.
 
 The engine library's root -- the object that owns the context registry --

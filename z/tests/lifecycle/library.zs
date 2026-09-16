@@ -8,7 +8,7 @@ import { Engine, initializeRuntime, retain, sliceToBytes } from "../../engine/li
 import { sliceBytes } from "../../engine/heap.zs";
 import testing from "../../engine/native/zjs_testing.h";
 
-export function initializeTestRuntime(): OnceLifetime<Engine> on thread.main {
+export function initializeTestRuntime(): OnceLifetime<Engine> on thread.any {
   return initializeRuntime();
 }
 

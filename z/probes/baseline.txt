@@ -1,4 +1,4 @@
-# probe status at z-lang 23bb4f73 (clean). Written by run.sh --record.
+# probe status at z-lang bdd92241 (clean). Written by run.sh --record.
 array-capacity COMPILER-REJECTED
 array-pop LANDED
 byte-literal COMPILER-REJECTED
@@ -18,7 +18,7 @@ module-const-string-method LANDED
 numeric-literals LANDED
 replace-array-field-inference LANDED
 self-parameter-name LANDED
-shareable-once-root COMPILER-REJECTED
+shareable-once-root LANDED
 string-from-bytes LANDED
 string-to-native COMPILER-REJECTED
 ternary-in-arithmetic LANDED

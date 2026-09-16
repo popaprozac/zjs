@@ -8,51 +8,31 @@
  * pointer and must not be dereferenced; it needs a 64-bit host word.
  *
  * Runtime lifecycle contract (see z/docs/lifecycle.md):
- * - The Z runtime is initialized by the first zjs_new_context, which must
- *   run on the platform's main thread: the library root is main-bound
- *   (ledger G36), and the generated runtime checks the thread for real.
- *   A first call on another thread returns NULL and leaves initialization
- *   possible later on main.
+ * - The Z runtime is initialized by the first zjs_new_context, on
+ *   whichever host thread makes it: the library root is a shareable
+ *   class, so the generated header requires neither a main-thread proof
+ *   nor a release hook (both requirement flags are zero, asserted below).
  * - Contexts may then be created, evaluated, and freed from any host
  *   thread; independent contexts proceed concurrently.
- * - Shutdown and unload are not supported through zjs.h: the generated
- *   runtime's release hook is provided for completeness and delivers a
- *   finalizer only when invoked on the main thread; off main it records
- *   the miss and delivers nothing.
+ * - Shutdown and unload are not supported through zjs.h; the generated
+ *   runtime's shutdown entry exists and is exercised by the lifecycle
+ *   test, but nothing in the frozen ABI reaches it.
  */
 #include <pthread.h>
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "zjs.h"
 #include "zjsz.h"
 
 _Static_assert(sizeof(uintptr_t) >= 8, "ZjsContext handles pack a slot and a generation into 64 bits");
-
-static void shim_enqueue_release(void *context, void *value,
-                                 void (*finalize)(void *value)) {
-  (void)context;
-  if (pthread_main_np() != 0) {
-    if (finalize) finalize(value);
-    return;
-  }
-  /* No drain point exists in the frozen ABI, so delivery off main is a
-     stated limitation rather than a silent inline call on the wrong
-     thread. */
-  fprintf(stderr, "zjs: runtime release requested off the main thread; not delivered\n");
-}
-
-static bool shim_is_main_thread(void *context) {
-  (void)context;
-  return pthread_main_np() != 0;
-}
+_Static_assert(ZJSZ_RUNTIME_REQUIRES_MAIN_THREAD == 0, "the library root must stay main-independent: no main-thread hook is provided");
+_Static_assert(ZJSZ_RUNTIME_REQUIRES_ENQUEUE_RELEASE == 0, "the library root must stay main-independent: no release hook is provided");
 
 /* Initialization is serialized; readiness is published only after the
-   generated runtime reports success, and a failed attempt (the wrong
-   thread, an invalid configuration) leaves later attempts possible. */
+   generated runtime reports success, and a failed attempt (an invalid
+   configuration) leaves later attempts possible. */
 static pthread_mutex_t g_init_lock = PTHREAD_MUTEX_INITIALIZER;
 static int g_runtime_ready = 0;
 static zjsz_runtime_status g_last_init_status = ZJSZ_RUNTIME_OK;
@@ -60,11 +40,7 @@ static zjsz_runtime_status g_last_init_status = ZJSZ_RUNTIME_OK;
 static int shim_ensure_runtime(void) {
   pthread_mutex_lock(&g_init_lock);
   if (!g_runtime_ready) {
-    zjsz_runtime_config config;
-    config.context = NULL;
-    config.enqueue_release = shim_enqueue_release;
-    config.is_main_thread = shim_is_main_thread;
-    zjsz_runtime_status status = zjsz_runtime_initialize(&config);
+    zjsz_runtime_status status = zjsz_runtime_initialize(NULL);
     if (status == ZJSZ_RUNTIME_OK || status == ZJSZ_RUNTIME_ALREADY_INITIALIZED) {
       g_runtime_ready = 1;
     }

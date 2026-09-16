@@ -16,9 +16,9 @@
 // drops it after; the Runtime and its native resources are destroyed by
 // whichever reference drops last, never under the registry lock.
 //
-// The root still carries a main-bound field it never reads: Once<T>
-// requires a main-bound class (probe shareable-once-root). Until that
-// lands, initialization must happen on the main thread.
+// The root is a compiler-proven shareable class (its one field a Mutex),
+// so the runtime may be initialized and shut down on any registered
+// thread; the generated header carries no main-thread requirement.
 
 import { Mutex, Once, OnceLifetime } from "std/sync";
 import { thread } from "std/thread";
@@ -64,15 +64,13 @@ struct Registry {
 
 export class Engine {
   readonly registry: Mutex<Registry>;
-  publicationEpoch: i32 on thread.main;
 }
 
 const engine = Once<Engine>();
 
-export function initializeRuntime(): OnceLifetime<Engine> on thread.main {
+export function initializeRuntime(): OnceLifetime<Engine> on thread.any {
   return engine.initialize(new Engine({
     registry: Mutex(Registry({ slots: Array<Option<Context>>(), generations: Array<u32>(), freeSlots: Array<u32>(), live: 0, created: 0, detached: 0 })),
-    publicationEpoch: 1,
   }));
 }
 

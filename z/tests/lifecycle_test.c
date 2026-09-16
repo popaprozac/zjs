@@ -1,7 +1,9 @@
 /* The embedding lifecycle, exercised through the frozen zjs.h ABI with
    the library's internal counters as witnesses. Built and run by
    build.sh. Orderings are fixed with condition variables, not sleeps;
-   overlap between independent contexts is shown by wall time. */
+   overlap between independent contexts is shown by wall time. The
+   runtime is initialized by the first ABI call on a worker thread and
+   shut down on another: the library has no main-thread requirement. */
 #include <malloc/malloc.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -14,6 +16,12 @@
 #include "zjs_regexp.h"
 #include "zjs_testing.h"
 #include "zjsz.h"
+
+/* Shim-level, not in the frozen header: the last initialization status. */
+int zjs_shim_init_status(void);
+
+_Static_assert(ZJSZ_RUNTIME_REQUIRES_MAIN_THREAD == 0, "worker-first initialization needs a main-independent library");
+_Static_assert(ZJSZ_RUNTIME_REQUIRES_ENQUEUE_RELEASE == 0, "worker-first initialization needs a main-independent library");
 
 static int failures = 0;
 #define CHECK(condition, what) do { if (!(condition)) { failures++; fprintf(stderr, "lifecycle: FAIL %s\n", what); } } while (0)
@@ -220,10 +228,61 @@ static void pending_jobs(void) {
   CHECK(zjs_z_live_contexts() == 0, "jobs: context gone");
 }
 
+/* 0. Worker-first: the first ABI call, the one that initializes the
+   runtime, runs on a host thread that is not main. */
+static void *first_context(void *unused) {
+  (void)unused;
+  ZjsContext *ctx = zjs_new_context();
+  if (ctx == NULL) return (void *)(uintptr_t)0;
+  zjs_eval(ctx, "1 + 1");
+  int ok = zjs_had_error(ctx) == 0;
+  zjs_free_context(ctx);
+  return (void *)(uintptr_t)ok;
+}
+
+static void worker_first_initialization(void) {
+  /* Nothing is published yet: the generated runtime says so without
+     entering (an exported call before initialization would trap). */
+  CHECK(zjsz_runtime_shutdown() == ZJSZ_RUNTIME_NOT_INITIALIZED, "runtime not initialized before the first call");
+  pthread_t worker;
+  void *status = NULL;
+  MUST(pthread_create(&worker, NULL, first_context, NULL), "pthread_create");
+  MUST(pthread_join(worker, &status), "pthread_join");
+  CHECK((uintptr_t)status == 1, "initialization by the first call on a worker thread");
+  CHECK(zjs_shim_init_status() == (int)ZJSZ_RUNTIME_OK, "worker initialization status ok");
+  CHECK(zjsz_runtime_initialize(NULL) == ZJSZ_RUNTIME_ALREADY_INITIALIZED, "runtime published after worker initialization");
+}
+
+/* 8. Shutdown on a worker: the generated runtime's shutdown entry (not
+   reachable through zjs.h) closes the root on a host thread that is
+   neither main nor the initializing one; the root's registry, grown to
+   hold many freed slots, is released with it. */
+static void *shut_down(void *unused) {
+  (void)unused;
+  return (void *)(uintptr_t)zjsz_runtime_shutdown();
+}
+
+static void worker_shutdown(void) {
+  enum { GROWN = 512 };
+  ZjsContext *contexts[GROWN];
+  for (int i = 0; i < GROWN; i++) contexts[i] = zjs_new_context();
+  for (int i = 0; i < GROWN; i++) zjs_free_context(contexts[i]);
+  CHECK(zjs_z_live_contexts() == 0, "shutdown: no live contexts");
+  size_t used_before = mstats().bytes_used;
+  pthread_t worker;
+  void *status = NULL;
+  MUST(pthread_create(&worker, NULL, shut_down, NULL), "pthread_create");
+  MUST(pthread_join(worker, &status), "pthread_join");
+  CHECK((uintptr_t)status == ZJSZ_RUNTIME_OK, "shutdown on a worker thread");
+  CHECK(zjsz_runtime_initialize(NULL) == ZJSZ_RUNTIME_SHUT_DOWN, "runtime reports shut down afterwards");
+  size_t used_after = mstats().bytes_used;
+  CHECK(used_after + 8 * 1024 <= used_before, "shutdown: the root's registry released");
+  CHECK(zjs_re_live_contexts() == 0, "shutdown: native contexts zero");
+  printf("lifecycle: shutdown on a worker, %zu -> %zu bytes in use\n", used_before, used_after);
+}
+
 int main(void) {
-  ZjsContext *probe = zjs_new_context();
-  CHECK(probe != NULL, "initialization on the main thread");
-  zjs_free_context(probe);
+  worker_first_initialization();
   cycles();
   overlap();
   serialization();
@@ -233,6 +292,7 @@ int main(void) {
   pending_jobs();
   printf("lifecycle: created %llu, detached %llu, live %u, native contexts %lu\n", (unsigned long long)zjs_z_created_contexts(), (unsigned long long)zjs_z_detached_contexts(), zjs_z_live_contexts(), (unsigned long)zjs_re_live_contexts());
   CHECK(zjs_z_live_contexts() == 0 && zjs_re_live_contexts() == 0, "final: nothing left alive");
+  worker_shutdown();
   if (failures != 0) { fprintf(stderr, "lifecycle: %d failures\n", failures); return 1; }
   printf("lifecycle: ok\n");
   return 0;
