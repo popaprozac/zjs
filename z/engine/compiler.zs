@@ -81,6 +81,10 @@ struct Local {
   nameLength: u32;
   reg: u8;
   envSlot: i32;
+  // For a captured binding, how many per-iteration environments sit
+  // between the function's environment and the one holding it (zero:
+  // the function's own).
+  envDepth: u32;
 }
 
 // An enclosing function's bindings, as seen from a nested one: the
@@ -88,6 +92,9 @@ struct Local {
 struct Scope {
   names: Array<Local>;
   hasEnv: boolean;
+  // Per-iteration environments open in that function where the nested
+  // function was created: each is one more hop to its bindings.
+  iterDepth: u32;
 }
 
 // Where an identifier resolved outside the current function.
@@ -123,6 +130,9 @@ export struct Compiler {
   capturedNames: Array<Local>;
   hasEnv: boolean;
   envSize: u32;
+  // Per-iteration environments currently open (loops whose lexical head
+  // bindings are captured): every environment access counts them.
+  iterEnvDepth: u32;
   // The outermost enclosing scope anything in this function refers to;
   // `outerScopes.length` for none. A function that reaches past its
   // parent makes the parent a closure too.
@@ -328,6 +338,146 @@ export struct Compiler {
     const dropped = this.loops.pop();
   }
 
+  // --- Per-iteration environments ---
+  //
+  // A loop whose lexical head bindings are captured by a closure gives
+  // each iteration its own environment holding those bindings, so a
+  // closure made in one iteration keeps that iteration's values. Those
+  // bindings are re-homed from the function's environment into the
+  // per-iteration one for the loop's extent; every other access counts
+  // the open per-iteration environments as hops.
+
+  // The locals of a lexical loop head that live in the environment.
+  function headCaptures(inout this, in parser: Parser, head: u32): Array<usize> {
+    let found = Array<usize>();
+    if (head == NO_NODE) return found;
+    const binding = parser.ast.node(head);
+    if (binding.kind != NodeKind.varDecl || binding.op == TokenKind.kwVar) return found;
+    let d: u32 = 0;
+    while (d < binding.childrenCount) {
+      const decl = parser.ast.node(parser.ast.child(head, d));
+      if (decl.nameLength > 0) {
+        this.pushCapturedLocal(in parser, decl.nameStart, decl.nameLength, inout found);
+      } else if (decl.third != NO_NODE) {
+        this.pushPatternCaptures(in parser, decl.third, inout found);
+      }
+      d = d + 1;
+    }
+    return found;
+  }
+
+  function pushCapturedLocal(inout this, in parser: Parser, nameStart: u32, nameLength: u32, inout found: Array<usize>): void {
+    const index = this.findLocal(in parser, nameStart, nameLength);
+    if (index < 0) return;
+    if (this.locals[usize(index)].envSlot >= 0) found.push(usize(index));
+  }
+
+  function pushPatternCaptures(inout this, in parser: Parser, pattern: u32, inout found: Array<usize>): void {
+    if (pattern == NO_NODE) return;
+    const n = parser.ast.node(pattern);
+    if (n.kind == NodeKind.identExpr) {
+      if (n.nameLength > 0) this.pushCapturedLocal(in parser, n.nameStart, n.nameLength, inout found);
+      return;
+    }
+    if (n.kind == NodeKind.patternEntry) {
+      this.pushPatternCaptures(in parser, n.left, inout found);
+      return;
+    }
+    if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+      let i: u32 = 0;
+      while (i < n.childrenCount) {
+        this.pushPatternCaptures(in parser, parser.ast.child(pattern, i), inout found);
+        i = i + 1;
+      }
+    }
+  }
+
+  // Declare a for head's let / const bindings ahead of their
+  // initializers, so the capture scan sees the bindings the loop uses.
+  function declareLexicalHead(inout this, in parser: Parser, head: u32): void {
+    const binding = parser.ast.node(head);
+    let d: u32 = 0;
+    while (d < binding.childrenCount) {
+      const decl = parser.ast.node(parser.ast.child(head, d));
+      if (decl.nameLength > 0) {
+        this.addLocal(decl.nameStart, decl.nameLength);
+      } else {
+        this.collectPatternLocals(in parser, decl.third);
+      }
+      d = d + 1;
+    }
+    this.fixedRegs = this.nextReg;
+  }
+
+  function initializeLexicalHead(inout this, in parser: Parser, inout runtime: Runtime, head: u32): void {
+    const binding = parser.ast.node(head);
+    let d: u32 = 0;
+    while (d < binding.childrenCount) {
+      const decl = parser.ast.node(parser.ast.child(head, d));
+      if (decl.nameLength > 0) {
+        const local = this.findLocal(in parser, decl.nameStart, decl.nameLength);
+        if (local < 0) {
+          this.hadError = true;
+          return;
+        }
+        if (decl.left != NO_NODE) {
+          this.nameNext(decl.nameStart, decl.nameLength, 0);
+          const value = this.compileExpr(in parser, inout runtime, decl.left);
+          this.storeLocal(usize(local), value);
+        } else {
+          const undefinedReg = this.allocReg();
+          this.emit(instA(Op.loadUndefined, undefinedReg));
+          this.storeLocal(usize(local), undefinedReg);
+        }
+      } else {
+        if (decl.third == NO_NODE || decl.left == NO_NODE) {
+          this.hadError = true;
+          return;
+        }
+        const value = this.compileExpr(in parser, inout runtime, decl.left);
+        this.destructure(in parser, inout runtime, decl.third, value);
+      }
+      this.resetTemps();
+      d = d + 1;
+    }
+  }
+
+  // Open a per-iteration environment for these locals: the register
+  // that tracks it, with the locals' former homes recorded in `saved`.
+  function enterIterationEnv(inout this, in captures: Array<usize>, inout saved: Array<i32>): u8 {
+    const iterReg = this.allocReg();
+    if (iterReg + 1 > this.fixedRegs) this.fixedRegs = iterReg + 1;
+    this.emit(instU16(Op.newEnv, u16(captures.length)));
+    this.emit(instA(Op.envToReg, iterReg));
+    this.iterEnvDepth = this.iterEnvDepth + 1;
+    let i: usize = 0;
+    while (i < captures.length) {
+      const index = captures[i];
+      saved.push(this.locals[index].envSlot);
+      saved.push(i32(this.locals[index].envDepth));
+      this.locals[index].envSlot = i32(i);
+      this.locals[index].envDepth = this.iterEnvDepth;
+      i = i + 1;
+    }
+    return iterReg;
+  }
+
+  function renewIterationEnv(inout this, iterReg: u8, count: usize): void {
+    this.emit(instAU16(Op.renewEnv, iterReg, u16(count)));
+  }
+
+  function leaveIterationEnv(inout this, iterReg: u8, in captures: Array<usize>, in saved: Array<i32>): void {
+    this.emit(instA(Op.exitEnv, iterReg));
+    this.iterEnvDepth = this.iterEnvDepth - 1;
+    let i: usize = 0;
+    while (i < captures.length) {
+      const index = captures[i];
+      this.locals[index].envSlot = saved[i * 2];
+      this.locals[index].envDepth = u32(saved[i * 2 + 1]);
+      i = i + 1;
+    }
+  }
+
   // The top-level completion value resets to undefined before a
   // statement that may not run its body.
   function resetCompletion(inout this): void {
@@ -367,7 +517,7 @@ export struct Compiler {
     const envSlot = this.capturedSlot(nameStart);
     let reg: u8 = 0;
     if (envSlot < 0) reg = this.allocReg();
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot }));
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0 }));
     return reg;
   }
 
@@ -375,7 +525,8 @@ export struct Compiler {
   function loadLocal(inout this, index: usize, dst: u8): void {
     const slot = this.locals[index].envSlot;
     if (slot >= 0) {
-      this.emit(instABC(Op.loadEnvSlot, dst, 0, u8(slot)));
+      const hops = u8(this.iterEnvDepth - this.locals[index].envDepth);
+      this.emit(instABC(Op.loadEnvSlot, dst, hops, u8(slot)));
     } else {
       const reg = this.locals[index].reg;
       this.emit(instAB(Op.mov, dst, reg));
@@ -386,7 +537,8 @@ export struct Compiler {
   function storeLocal(inout this, index: usize, value: u8): void {
     const slot = this.locals[index].envSlot;
     if (slot >= 0) {
-      this.emit(instABC(Op.storeEnvSlot, value, 0, u8(slot)));
+      const hops = u8(this.iterEnvDepth - this.locals[index].envDepth);
+      this.emit(instABC(Op.storeEnvSlot, value, hops, u8(slot)));
     } else {
       const reg = this.locals[index].reg;
       this.emit(instAB(Op.mov, reg, value));
@@ -395,9 +547,12 @@ export struct Compiler {
 
   // Resolve a name in the enclosing functions. `hops` counts the
   // environments between here and the one holding it: this function's
-  // own, if it has one, then one per enclosing function that has one.
+  // open per-iteration ones and its own, then, per enclosing function,
+  // the per-iteration ones open where the nested function was created
+  // and that function's own -- stopping short at the binding's depth.
   function findOuter(inout this, in parser: Parser, nameStart: u32, nameLength: u32): OuterRef {
-    let hops: u8 = this.hasEnv ? 1 : 0;
+    let hops: u32 = this.iterEnvDepth;
+    if (this.hasEnv) hops = hops + 1;
     let level: usize = this.outerScopes.length;
     while (level > 0) {
       level = level - 1;
@@ -407,9 +562,11 @@ export struct Compiler {
         const outer = this.outerScopes[level].names[index];
         if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) {
           if (level < this.minOuterScope) this.minOuterScope = level;
-          return OuterRef({ found: true, hops: hops, slot: outer.envSlot, scopeIndex: level });
+          const above = this.outerScopes[level].iterDepth - outer.envDepth;
+          return OuterRef({ found: true, hops: u8(hops + above), slot: outer.envSlot, scopeIndex: level });
         }
       }
+      hops = hops + this.outerScopes[level].iterDepth;
       if (this.outerScopes[level].hasEnv) hops = hops + 1;
     }
     return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0 });
@@ -432,7 +589,7 @@ export struct Compiler {
         // The slot is on record for the binding's own statement too, so
         // a let / const bound later lands in the same slot the function
         // declarations compiled before it were resolved against.
-        this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot }));
+        this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0 }));
         this.envSize = this.envSize + 1;
       }
       index = index + 1;
@@ -468,7 +625,7 @@ export struct Compiler {
   function prebindCaptured(inout this, nameStart: u32, nameLength: u32): void {
     const envSlot = this.capturedSlot(nameStart);
     if (envSlot < 0) return;
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: envSlot }));
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: envSlot, envDepth: 0 }));
   }
 
   function prebindPattern(inout this, in parser: Parser, pattern: u32): void {
@@ -497,7 +654,7 @@ export struct Compiler {
     const n = parser.ast.node(pattern);
     if (n.kind == NodeKind.identExpr) {
       if (n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, body, n.nameStart, n.nameLength, false)) {
-        this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize) }));
+        this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0 }));
         this.envSize = this.envSize + 1;
       }
       return;
@@ -524,7 +681,7 @@ export struct Compiler {
   function scanClassBindings(inout this, in parser: Parser, node: u32, body: u32): void {
     const n = parser.ast.node(node);
     if (n.kind == NodeKind.classExpr && n.nameLength > 0 && capturedBy(in parser, node, n.nameStart, n.nameLength, false)) {
-      this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize) }));
+      this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0 }));
       this.envSize = this.envSize + 1;
     }
     let i: u32 = 0;
@@ -533,14 +690,14 @@ export struct Compiler {
       const member = parser.ast.node(memberIndex);
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength)) {
         if (this.capturedSlotByText(in parser, member.nameStart, member.nameLength) < 0) {
-          this.capturedNames.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: i32(this.envSize) }));
+          this.capturedNames.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0 }));
           this.envSize = this.envSize + 1;
         }
       } else if (member.kind == NodeKind.classField && !member.boolValue && member.nameLength == 0 && member.third != NO_NODE) {
         // Named by the source from its opening bracket, so the binding
         // can never shadow an identifier the key expression reads.
         const key = parser.ast.node(member.third);
-        this.capturedNames.push(Local({ nameStart: key.start - 1, nameLength: key.end - key.start + 1, reg: 0, envSlot: i32(this.envSize) }));
+        this.capturedNames.push(Local({ nameStart: key.start - 1, nameLength: key.end - key.start + 1, reg: 0, envSlot: i32(this.envSize), envDepth: 0 }));
         this.envSize = this.envSize + 1;
       }
       // Static initializers and computed keys run in this function.
@@ -811,7 +968,7 @@ export struct Compiler {
     let innerSlot: i32 = -1;
     if (n.kind == NodeKind.classExpr && n.nameLength > 0) {
       innerSlot = this.capturedSlot(n.nameStart);
-      this.locals.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot }));
+      this.locals.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0 }));
     }
     let fieldCount: u32 = 0;
     let ctorNode: u32 = NO_NODE;
@@ -833,7 +990,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot }));
+        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot, envDepth: 0 }));
       }
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength) && this.findLocal(in parser, member.nameStart, member.nameLength) < 0) {
         const slot = this.capturedSlotByText(in parser, member.nameStart, member.nameLength);
@@ -841,7 +998,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot }));
+        this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot, envDepth: 0 }));
         const description = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(member.nameStart), usize(member.nameStart + member.nameLength))));
         const key = this.allocReg();
         this.emit(instAU16(Op.newPrivateName, key, description));
@@ -977,7 +1134,7 @@ export struct Compiler {
   function emitClassFunction(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32, role: u32, fieldCount: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, strict, nameStart, nameLength, namePrefix, role, fieldCount);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.iterEnvDepth, strict, nameStart, nameLength, namePrefix, role, fieldCount);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -1006,7 +1163,7 @@ export struct Compiler {
         const declIndex = parser.ast.child(node, i);
         const decl = parser.ast.node(declIndex);
         if (decl.nameLength > 0 && this.capturedSlot(decl.nameStart) < 0 && capturedBy(in parser, body, decl.nameStart, decl.nameLength, false)) {
-          this.capturedNames.push(Local({ nameStart: decl.nameStart, nameLength: decl.nameLength, reg: 0, envSlot: i32(this.envSize) }));
+          this.capturedNames.push(Local({ nameStart: decl.nameStart, nameLength: decl.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0 }));
           this.envSize = this.envSize + 1;
         }
         if (decl.nameLength == 0 && decl.third != NO_NODE) this.scanPatternCaptures(in parser, decl.third, body);
@@ -1016,7 +1173,7 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.tryStmt && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, n.right, n.nameStart, n.nameLength, false)) {
-      this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize) }));
+      this.capturedNames.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0 }));
       this.envSize = this.envSize + 1;
     }
     this.scanLateBindings(in parser, n.left, body);
@@ -1113,7 +1270,7 @@ export struct Compiler {
   // A captured one is copied on into its environment slot.
   function bindLocal(inout this, nameStart: u32, nameLength: u32, reg: u8): usize {
     const envSlot = this.capturedSlot(nameStart);
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot }));
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0 }));
     if (envSlot >= 0) this.emit(instABC(Op.storeEnvSlot, reg, 0, u8(envSlot)));
     return this.locals.length - 1;
   }
@@ -1227,7 +1384,7 @@ export struct Compiler {
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, strict, nameStart, nameLength, namePrefix, 0, 0);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.iterEnvDepth, strict, nameStart, nameLength, namePrefix, 0, 0);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2241,8 +2398,13 @@ export struct Compiler {
       }
       this.fixedRegs = this.nextReg;
     }
+    const captures = this.headCaptures(in parser, n.left);
+    let saved = Array<i32>();
+    let iterReg: u8 = 0;
+    if (captures.length > 0) iterReg = this.enterIterationEnv(in captures, inout saved);
     const loopTop = u32(this.code.length);
     this.loopPush(true);
+    if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
     this.emit(instAB(Op.arrayLength, length, sequence));
     const condition = this.allocReg();
     this.emit(instABC(Op.cmpLt, condition, index, length));
@@ -2260,6 +2422,7 @@ export struct Compiler {
     this.emitJumpBack(loopTop);
     this.patchJump(exit);
     this.loopPop();
+    if (captures.length > 0) this.leaveIterationEnv(iterReg, in captures, in saved);
   }
 
   // for-of: GetIterator once, then IteratorStep each round; the head
@@ -2289,12 +2452,17 @@ export struct Compiler {
       }
       this.fixedRegs = this.nextReg;
     }
+    const captures = this.headCaptures(in parser, n.left);
+    let saved = Array<i32>();
+    let iterReg: u8 = 0;
+    if (captures.length > 0) iterReg = this.enterIterationEnv(in captures, inout saved);
     const loopTop = u32(this.code.length);
     this.loopPush(true);
     const top = this.loops.length - 1;
     this.pushRegion(REGION_ITERATOR, NO_NODE, iterator, done);
     this.loops[top].continueRegions = this.regionDepth;
     this.loopSetContinue(loopTop);
+    if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
     if (isAwait) {
       this.emitAsyncIteratorStep(inout runtime, iterator, value, false, result);
       const doneText: String = "done";
@@ -2325,6 +2493,7 @@ export struct Compiler {
     this.patchJump(exit);
     this.popRegion();
     this.loopPop();
+    if (captures.length > 0) this.leaveIterationEnv(iterReg, in captures, in saved);
   }
 
   // Store the current element into a for-in / for-of head: a declared
@@ -2794,7 +2963,26 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.forStmt) {
-      if (n.left != NO_NODE) this.compileStmtOrExpr(in parser, inout runtime, n.left);
+      // Captured lexical head bindings get a fresh environment per
+      // iteration: one for the initializer, a copy before the first
+      // test, and a copy after each body before the update.
+      let lexicalHead = false;
+      if (n.left != NO_NODE) {
+        const head = parser.ast.node(n.left);
+        lexicalHead = head.kind == NodeKind.varDecl && head.op != TokenKind.kwVar;
+      }
+      if (lexicalHead) this.declareLexicalHead(in parser, n.left);
+      const captures = this.headCaptures(in parser, n.left);
+      let saved = Array<i32>();
+      let iterReg: u8 = 0;
+      if (captures.length > 0) iterReg = this.enterIterationEnv(in captures, inout saved);
+      if (lexicalHead) {
+        this.initializeLexicalHead(in parser, inout runtime, n.left);
+      } else if (n.left != NO_NODE) {
+        this.compileStmtOrExpr(in parser, inout runtime, n.left);
+      }
+      if (this.hadError) return;
+      if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
       this.resetCompletion();
       const loopTop = u32(this.code.length);
       this.loopPush(true);
@@ -2807,6 +2995,7 @@ export struct Compiler {
       if (n.childrenCount > 0) this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
       const bound5 = u32(this.code.length);
       this.loopSetContinue(bound5);
+      if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
       if (n.third != NO_NODE) {
         const unused = this.compileExpr(in parser, inout runtime, n.third);
         this.resetTemps();
@@ -2814,6 +3003,7 @@ export struct Compiler {
       this.emitJumpBack(loopTop);
       if (jumpExit >= 0) this.patchJump(u32(jumpExit));
       this.loopPop();
+      if (captures.length > 0) this.leaveIterationEnv(iterReg, in captures, in saved);
       return;
     }
     if (k == NodeKind.breakStmt) {
@@ -3133,7 +3323,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingIterDepth: u32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
   // name the parser attached to a method or accessor does not.
@@ -3148,7 +3338,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       names.push(enclosingScopes[i].names[j]);
       j = j + 1;
     }
-    scopes.push(Scope({ names: move names, hasEnv: enclosingScopes[i].hasEnv }));
+    scopes.push(Scope({ names: move names, hasEnv: enclosingScopes[i].hasEnv, iterDepth: enclosingScopes[i].iterDepth }));
     i = i + 1;
   }
   let parentNames = Array<Local>();
@@ -3157,11 +3347,11 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     parentNames.push(enclosingLocals[i]);
     i = i + 1;
   }
-  scopes.push(Scope({ names: move parentNames, hasEnv: enclosingHasEnv }));
+  scopes.push(Scope({ names: move parentNames, hasEnv: enclosingHasEnv, iterDepth: enclosingIterDepth }));
   const scopeCount = scopes.length;
   const failed = CompiledFunction({ index: -1, minOuterScope: scopeCount });
   let compiler = Compiler({
-    code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0,
+    code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, iterEnvDepth: 0,
     locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
@@ -3191,7 +3381,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       // A pattern parameter: the argument lands in a register with no
       // name; the pattern's own names are locals bound at entry.
       const reg = compiler.allocReg();
-      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1 }));
+      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1, envDepth: 0 }));
       paramCount = paramCount + 1;
       p = p + 1;
       continue;
@@ -3200,7 +3390,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     // Parameters arrive in the first registers; a captured one is copied
     // into the environment once it exists.
     const reg = compiler.allocReg();
-    compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1 }));
+    compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0 }));
     paramCount = paramCount + 1;
     p = p + 1;
   }
@@ -3735,7 +3925,7 @@ function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, pattern:
 // function index, or -1 on error.
 export function compileProgram(in parser: Parser, root: u32, inout runtime: Runtime): i32 {
   let compiler = Compiler({
-    code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0,
+    code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, iterEnvDepth: 0,
     locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),

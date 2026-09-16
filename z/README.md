@@ -335,8 +335,10 @@ maximal invalid subsequence with U+FFFD so the result always satisfies
 String's valid-UTF-8 invariant and is never mistaken for the original
 bytes.
 
-Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
+Not yet: block scoping of lexical declarations (a `let` or `const` in a
+block or loop head is one function-wide binding by name, so a name reused
+across blocks is one binding; a loop does give each iteration its own copy
+of a captured head binding), `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
 delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a

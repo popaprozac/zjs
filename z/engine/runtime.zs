@@ -65,6 +65,9 @@ struct TryFrame {
   frameIndex: u32;
   catchIp: usize;
   catchReg: u8;
+  // The frame's environment when the try was entered; a throw from a
+  // deeper per-iteration environment lands the handler back in it.
+  env: u32;
 }
 
 // The errors the engine itself throws, by the name of their constructor.
@@ -2766,11 +2769,12 @@ export struct Runtime {
       const tries = asCell(this.heap.slot(record, 7));
       const pairs = this.heap.arrayLength(tries);
       let t: u32 = 0;
-      while (t + 1 < pairs) {
+      while (t + 2 < pairs) {
         const catchIp = usize(asInt32(this.heap.slot(tries, t)));
         const catchReg = u8(asInt32(this.heap.slot(tries, t + 1)));
-        this.pushTry(catchIp, catchReg);
-        t = t + 2;
+        const tryEnv = u32(asInt32(this.heap.slot(tries, t + 2)));
+        this.pushTryEnv(catchIp, catchReg, tryEnv);
+        t = t + 3;
       }
       const resumeDst = u8(asInt32(this.heap.slot(record, 6)));
       if (mode == 0) {
@@ -2819,6 +2823,7 @@ export struct Runtime {
       const length = this.heap.arrayLength(tries);
       this.heap.arraySet(tries, length, int32Value(i32(this.tryStack[usize(t)].catchIp)));
       this.heap.arraySet(tries, length + 1, int32Value(i32(this.tryStack[usize(t)].catchReg)));
+      this.heap.arraySet(tries, length + 2, int32Value(i32(this.tryStack[usize(t)].env)));
       t = t + 1;
     }
     this.tryDepth = first;
@@ -3887,7 +3892,12 @@ export struct Runtime {
   }
 
   function pushTry(inout this, catchIp: usize, catchReg: u8): void {
-    const frame = TryFrame({ frameIndex: this.frameCount - 1, catchIp: catchIp, catchReg: catchReg });
+    const env = this.frames[usize(this.frameCount - 1)].env;
+    this.pushTryEnv(catchIp, catchReg, env);
+  }
+
+  function pushTryEnv(inout this, catchIp: usize, catchReg: u8, env: u32): void {
+    const frame = TryFrame({ frameIndex: this.frameCount - 1, catchIp: catchIp, catchReg: catchReg, env: env });
     if (usize(this.tryDepth) < this.tryStack.length) {
       this.tryStack[usize(this.tryDepth)] = frame;
     } else {
@@ -5382,6 +5392,30 @@ export struct Runtime {
               throwing = true;
             }
           }
+          envToReg => {
+            const env = this.frames[frameIndex].env;
+            this.setReg(base, inst.a, int32Value(i32(env)));
+          }
+          renewEnv => {
+            // A fresh environment for the next iteration: the same parent
+            // as the loop's current one, its slots copied.
+            const current = u32(asInt32(this.reg(base, inst.a)));
+            const count = u32(bcU16(inst));
+            const parent = this.heap.linkOf(current);
+            const created = this.heap.allocateEnv(parent, count);
+            let slot: u32 = 0;
+            while (slot < count) {
+              const held = this.heap.slot(current, slot);
+              this.heap.setSlot(created, slot, held);
+              slot = slot + 1;
+            }
+            this.frames[frameIndex].env = created;
+            this.setReg(base, inst.a, int32Value(i32(created)));
+          }
+          exitEnv => {
+            const current = u32(asInt32(this.reg(base, inst.a)));
+            this.frames[frameIndex].env = this.heap.linkOf(current);
+          }
           newRegex => {
             const pattern = this.functions[usize(fi)].constants[usize(inst.b)];
             const flags = this.functions[usize(fi)].constants[usize(inst.c)];
@@ -5616,6 +5650,7 @@ export struct Runtime {
           if (this.tryDepth > 0 && this.tryStack[usize(this.tryDepth - 1)].frameIndex == top) {
             const handler = this.tryStack[usize(this.tryDepth - 1)];
             this.frames[usize(top)].ip = handler.catchIp;
+            this.frames[usize(top)].env = handler.env;
             const handlerBase = this.frames[usize(top)].regsBase;
             this.setReg(handlerBase, handler.catchReg, thrown);
             this.tryDepth = this.tryDepth - 1;

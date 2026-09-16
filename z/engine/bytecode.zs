@@ -175,6 +175,9 @@ export enum Op {
   initClass,       // a = constructor, b = prototype, c = parent: wire a class with a heritage.
   initClassBase,   // a = constructor, b = prototype: wire a class without one.
   yieldRaw,        // a = dst, b = value: an async generator yields a delegate's value without awaiting it.
+  envToReg,        // a = dst: the frame's current environment, as a cell index.
+  renewEnv,        // a = env register, bc = slot count: a fresh environment with the same parent and copied slots replaces it (per-iteration bindings).
+  exitEnv,         // a = env register: the frame's environment becomes that environment's parent.
 }
 
 export struct Inst {
@@ -383,6 +386,9 @@ export function opCode(op: Op): i32 {
     initClass => 153;
     initClassBase => 154;
     yieldRaw => 155;
+    envToReg => 156;
+    renewEnv => 157;
+    exitEnv => 158;
   };
 }
 
