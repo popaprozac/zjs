@@ -516,6 +516,16 @@ export struct Compiler {
     this.checkRedeclarations(in parser, in lexical, in vars);
   }
 
+  // A parameter that binds in order starts as a hole.
+  function markOrderedParameter(inout this, in parser: Parser, inout runtime: Runtime, index: usize): void {
+    this.locals[index].initialized = false;
+    this.locals[index].needsHole = true;
+    const start = this.locals[index].nameStart;
+    const length = this.locals[index].nameLength;
+    const named = this.nameConstOf(in parser, inout runtime, start, length);
+    this.locals[index].nameConst = i32(named);
+  }
+
   function openScope(): ScopeMark {
     return ScopeMark({ locals: this.locals.length, fixedRegs: this.fixedRegs, envReg: 0, hasEnv: false });
   }
@@ -685,9 +695,10 @@ export struct Compiler {
   // function's own environment (the capture scan gave them slots) or in
   // registers, declared ahead of everything else in the body.
   function declareBodyLexicals(inout this, in parser: Parser, inout runtime: Runtime, body: u32, skipClasses: boolean): void {
+    const since = this.locals.length;
     this.declareBlockLexicals(in parser, inout runtime, body, false, skipClasses);
     this.fixedRegs = this.nextReg;
-    this.emitHoles(0);
+    this.emitHoles(since);
   }
 
   // A binding's name as a constant, for a hole check's message.
@@ -979,7 +990,7 @@ export struct Compiler {
     let index: usize = 0;
     while (index < this.locals.length) {
       const local = this.locals[index];
-      if (local.nameLength > 0 && capturedBy(in parser, body, local.nameStart, local.nameLength, false)) {
+      if (local.nameLength > 0 && local.envSlot < 0 && capturedBy(in parser, body, local.nameStart, local.nameLength, false)) {
         const envSlot = i32(this.envSize);
         this.locals[index].envSlot = envSlot;
         // The slot is on record for the binding's own statement too, so
@@ -1001,6 +1012,36 @@ export struct Compiler {
       this.scanLateBindings(in parser, body, body, false);
     }
     this.hasEnv = this.envSize > 0;
+  }
+
+  // A parameter (or a pattern parameter's name) that a closure inside a
+  // parameter default refers to lives in the environment too; the body
+  // scan does not see the defaults.
+  function scanParameterCaptures(inout this, in parser: Parser, fn: u32, upTo: usize): void {
+    const n = parser.ast.node(fn);
+    let index: usize = 0;
+    while (index < upTo) {
+      const local = this.locals[index];
+      if (local.nameLength > 0 && local.envSlot < 0) {
+        let p: u32 = 0;
+        let captured = false;
+        while (p < n.childrenCount && !captured) {
+          const paramIndex = parser.ast.child(fn, p);
+          const param = parser.ast.node(paramIndex);
+          if (param.right != NO_NODE && capturedBy(in parser, param.right, local.nameStart, local.nameLength, false)) captured = true;
+          const pattern = parameterPattern(in parser, paramIndex);
+          if (pattern != NO_NODE && capturedBy(in parser, pattern, local.nameStart, local.nameLength, false)) captured = true;
+          p = p + 1;
+        }
+        if (captured) {
+          const envSlot = i32(this.envSize);
+          this.locals[index].envSlot = envSlot;
+          this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1 }));
+          this.envSize = this.envSize + 1;
+        }
+      }
+      index = index + 1;
+    }
   }
 
   // Record a captured lexical binding: a body-level one takes a slot in
@@ -3872,12 +3913,14 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     p = p + 1;
   }
   // The names inside pattern parameters.
+  const patternNamesStart = compiler.locals.length;
   p = 0;
   while (p < n.childrenCount) {
     const pattern = parameterPattern(in parser, parser.ast.child(node, p));
     if (pattern != NO_NODE) compiler.collectPatternLocals(in parser, pattern);
     p = p + 1;
   }
+  const patternNamesEnd = compiler.locals.length;
   // A named function expression binds its own name.
   const index = runtime.reserveFunction();
   let selfReg: i32 = -1;
@@ -3898,19 +3941,42 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       argumentsIndex = i32(compiler.locals.length - 1);
     }
   }
+  compiler.scanParameterCaptures(in parser, node, patternNamesEnd);
   if (n.left != NO_NODE) compiler.scanCaptures(in parser, n.left);
+  // With a default anywhere in the list, the parameters bind in order:
+  // each is a hole until its own turn, so a default that reads a later
+  // parameter (or its own) throws. A named parameter's binding then
+  // lives apart from the register its argument arrived in.
+  const orderedParams = parametersHaveExpressions(in parser, node);
+  if (orderedParams) {
+    p = 0;
+    while (p < paramCount) {
+      if (compiler.locals[usize(p)].nameLength > 0) {
+        if (compiler.locals[usize(p)].envSlot < 0) compiler.locals[usize(p)].reg = compiler.allocReg();
+        compiler.markOrderedParameter(in parser, inout runtime, usize(p));
+      }
+      p = p + 1;
+    }
+    let named = patternNamesStart;
+    while (named < patternNamesEnd) {
+      compiler.markOrderedParameter(in parser, inout runtime, named);
+      named = named + 1;
+    }
+  }
   compiler.fixedRegs = compiler.nextReg;
 
-  // The environment first, then the captured parameters into it.
+  // The environment first, then the captured parameters into it (in
+  // order, later, when the list has expressions).
   if (compiler.hasEnv) {
     compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
     p = 0;
     while (p < paramCount) {
       const slot = compiler.locals[usize(p)].envSlot;
-      if (slot >= 0) compiler.emit(instABC(Op.storeEnvSlot, u8(p), 0, u8(slot)));
+      if (slot >= 0 && !orderedParams) compiler.emit(instABC(Op.storeEnvSlot, u8(p), 0, u8(slot)));
       p = p + 1;
     }
   }
+  if (orderedParams) compiler.emitHoles(0);
   // A named function expression's own name is the value it was called
   // through, which carries the environment when it is a closure.
   if (selfReg >= 0) {
@@ -3963,8 +4029,13 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     }
     const pattern = parameterPattern(in parser, paramIndex);
     if (pattern != NO_NODE) {
+      const wasInitializing = compiler.initializing;
+      if (orderedParams) compiler.initializing = true;
       compiler.destructure(in parser, inout runtime, pattern, paramReg);
+      compiler.initializing = wasInitializing;
       compiler.resetTemps();
+    } else if (orderedParams) {
+      compiler.initLocal(usize(p), paramReg);
     }
     p = p + 1;
   }
@@ -4292,6 +4363,37 @@ function functionBinds(in parser: Parser, fn: u32, nameStart: u32, nameLength: u
     p = p + 1;
   }
   return bodyBinds(in parser, n.left, nameStart, nameLength);
+}
+
+// Whether any parameter has a default, directly or inside a pattern.
+function parametersHaveExpressions(in parser: Parser, fn: u32): boolean {
+  const n = parser.ast.node(fn);
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    const paramIndex = parser.ast.child(fn, p);
+    const param = parser.ast.node(paramIndex);
+    if (param.right != NO_NODE) return true;
+    if (patternHasDefault(in parser, parameterPattern(in parser, paramIndex))) return true;
+    p = p + 1;
+  }
+  return false;
+}
+
+function patternHasDefault(in parser: Parser, pattern: u32): boolean {
+  if (pattern == NO_NODE) return false;
+  const n = parser.ast.node(pattern);
+  if (n.kind == NodeKind.patternEntry) {
+    if (n.right != NO_NODE) return true;
+    return patternHasDefault(in parser, n.left);
+  }
+  if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (patternHasDefault(in parser, parser.ast.child(pattern, i))) return true;
+      i = i + 1;
+    }
+  }
+  return false;
 }
 
 // The pattern a parameter node carries: the parser wraps `[a]` / `{a}`

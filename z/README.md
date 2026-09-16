@@ -52,7 +52,9 @@ a hole until its declaration runs and a read that can reach it before then
 checks and throws a ReferenceError (`typeof` included), assignment to a
 `const` throws a TypeError, and `break` / `continue` / `return` / `throw`
 out of a scope restore the environment on the way (an inlined `finally`
-runs in its own scope); template literals, `switch`, labeled
+runs in its own scope); parameters with a default anywhere in the list
+bind in order, each a hole until its turn, so a default that reads a later
+parameter or itself throws; template literals, `switch`, labeled
 `break`/`continue`, `for`-`in` (keys in insertion order across the prototype
 chain) and `for`-`of` over arrays, `in`/`instanceof`/`delete`, `++`/`--` and
 logical assignment on properties, and `Object`. **34 of 34** corpus files
@@ -359,8 +361,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: a parameter's temporal dead zone (`function f(a = b, b) {}`
-reads `b` as undefined), a function declaration in a block is
+Not yet: a function declaration in a block is
 function-scoped even in strict mode, `this` before `super()` in a derived
 constructor is not a ReferenceError, `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
 delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
