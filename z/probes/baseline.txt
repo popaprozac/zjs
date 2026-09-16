@@ -1,4 +1,4 @@
-# probe status at z-lang 8f9f8b55 (clean). Written by run.sh --record.
+# probe status at z-lang 23bb4f73 (clean). Written by run.sh --record.
 array-capacity COMPILER-REJECTED
 array-pop LANDED
 byte-literal COMPILER-REJECTED
@@ -12,7 +12,7 @@ integer-bits LANDED
 literal-in-expectation LANDED
 literal-in-shift LANDED
 literal-in-ternary LANDED
-lock-callback-capture-release RUNTIME-FAIL
+lock-callback-capture-release LANDED
 lock-callback-ownership COMPILER-REJECTED
 module-const-string-method LANDED
 numeric-literals LANDED

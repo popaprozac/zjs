@@ -17,8 +17,8 @@
 // whichever reference drops last, never under the registry lock.
 //
 // The root still carries a main-bound field it never reads: Once<T>
-// requires a main-bound class (ledger G36, probe shareable-once-root).
-// Until that lands, initialization must happen on the main thread.
+// requires a main-bound class (probe shareable-once-root). Until that
+// lands, initialization must happen on the main thread.
 
 import { Mutex, Once, OnceLifetime } from "std/sync";
 import { thread } from "std/thread";
@@ -117,12 +117,12 @@ export function retain(handle: usize): Option<Context> {
 
 export c function zjs_z_new_context(): usize {
   const current = engine.get();
+  // The runtime is built outside the registry lock; only the slot
+  // assignment holds it.
+  const context = new Context({
+    state: Mutex(ContextState({ hadError: false, evalCount: 0, runtime: createEngine(), lastResult: undefinedValue() })),
+  });
   return current.registry.withLock((inout registry): usize => {
-    // Built under the lock: a class reference captured by the lock
-    // callback from outside is never released (ledger G37).
-    const context = new Context({
-      state: Mutex(ContextState({ hadError: false, evalCount: 0, runtime: createEngine(), lastResult: undefinedValue() })),
-    });
     registry.live = registry.live + 1;
     registry.created = registry.created + 1;
     match (registry.freeSlots.pop()) {

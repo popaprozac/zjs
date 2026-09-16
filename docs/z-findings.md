@@ -1090,32 +1090,35 @@ proof or an executor hook for it. Probe `shareable-once-root`
 
 ## G37 — A class stored through a lock callback is never destroyed
 
-**Status:** `proposed` · **Size:** medium · **Priority:** high
+**Status:** `consumer-verified` — z-lang `23bb4f73` (pin `23bb4f73`); probe `lock-callback-capture-release` `LANDED` under Stage 0 and prints `ok` under the bootstrapped native compiler built from the same revision; the engine builds contexts outside the registry lock again. · **Size:** medium · **Priority:** high
 **Confirmed:** z-lang `8f9f8b55`, reproduced upstream by Codex as two
-independent bugs · **Blocks:** no (worked around under Stage 0)
+independent bugs · **Fixed:** z-lang `b9afae87` (Stage 0 borrowed-capture
+retain replay) and `23bb4f73` (native indexed replacement destruction) ·
+**Blocks:** no
 **Found:** the embedding lifecycle: contexts freed from the registry were
 never destroyed.
 
 An ARC class instance created outside a `Mutex.withLock` callback, stored
 into the protected state by that callback, removed again, and dropped by
-its last named owner stays alive: a `weak` reference to it still upgrades
-after the helper that owned every strong reference has returned. Measured
-in the engine: a thousand create / free cycles leaked a thousand runtimes
-(149 MB, every native regex context alive). Probe
-`lock-callback-capture-release` (`RUNTIME-FAIL`).
+its last named owner stayed alive: a `weak` reference to it still upgraded
+after the helper that owned every strong reference had returned. Measured
+in the engine at `8f9f8b55`: a thousand create / free cycles leaked a
+thousand runtimes (149 MB, every native regex context alive).
 
 Upstream analysis (Codex): two bugs. In Stage 0, the borrowed capture
-setup replays the first body-use retain, and the stack environment never
-releases that extra reference (isolated by removing with `clear()` instead
-of an indexed store). In the native compiler, an indexed `Option`
-replacement (`items[0] = none`) omits destruction of the old payload, and
-that reproduces even when the instance is built inside the callback.
+setup replayed the first body-use retain, and the stack environment never
+released that extra reference. In the native compiler, an indexed
+`Option` replacement (`items[0] = none`) omitted destruction of the old
+payload, and that reproduced even when the instance was built inside the
+callback.
 
-Workaround in the engine, for Stage 0: build the context inside the
-registry lock callback (`lib.zs`, `zjs_z_new_context`), which holds the
-global lock for the runtime's construction. The native compiler's bug
-would still leak the slot's old payload on free; the engine must not be
-built with it until that lands.
+Consumer verification at `23bb4f73`: `zjs_z_new_context` (`lib.zs`)
+constructs the context before taking the registry lock and the lock
+callback stores the captured reference, which is the probe's shape. The
+lifecycle test then holds 10848 bytes before and after a thousand
+create / free cycles, with 1011 contexts created, 1011 detached, 0 live,
+and 0 native regex contexts at exit. The interim workaround (construction
+inside the lock callback) is gone.
 
 ---
 

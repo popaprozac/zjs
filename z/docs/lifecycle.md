@@ -97,7 +97,8 @@ a mutex: concurrent first callers wait; readiness is published only after
 the generated runtime reports success; a failed attempt (the wrong
 thread, an invalid configuration) leaves later attempts possible.
 Initialization must happen on the platform's main thread: the library
-root is main-bound (G36), and the shim reports the real thread. A first
+root is main-bound (the open shareable-root finding below), and the shim
+reports the real thread. A first
 call elsewhere returns `NULL`, and `zjs_shim_init_status` (shim-level; the
 frozen header has no lifecycle status) says why. Z has no fallible
 allocation: an allocation failure inside the engine traps the process,
@@ -118,7 +119,7 @@ placeholders).
 
 ## What Z blocks
 
-- **G36**: `Once<T>` requires a main-bound class (Z0604), so the root
+- **Shareable root**: `Once<T>` requires a main-bound class (Z0604), so the root
   cannot be the shareable class above; the generated header keeps
   `REQUIRES_MAIN_THREAD` and `REQUIRES_ENQUEUE_RELEASE`. Probe
   `shareable-once-root`, minimal, `COMPILER-REJECTED`. Until it lands the
@@ -178,10 +179,11 @@ with the library's counters as witnesses (`zjs_z_live_contexts`,
 The gate is `engine/native/zjs_testing.h` and the test-only export
 `zjs_z_eval_gated`, neither part of the embedding ABI.
 
-Two Z findings came out of this: G36 (the main-bound root) and G37 (a
-class stored through a lock callback is never destroyed, two upstream
-bugs; contexts are therefore built inside the registry lock under
-Stage 0).
+Two Z findings came out of this, both in `docs/z-findings.md`: the root
+must be main-bound (probe `shareable-once-root`, open), and a class
+stored through a lock callback was never destroyed (probe
+`lock-callback-capture-release`; fixed upstream at z-lang `23bb4f73`,
+after which contexts are built outside the registry lock again).
 
 ## Acceptance mapping
 
@@ -190,7 +192,7 @@ Stage 0).
 | Free the actual Runtime | Destruction; evidence 1 and 4 |
 | Independent contexts concurrent | Admission and locking; evidence 2 |
 | Same-context rules explicit | Admission and locking, Reentrancy; evidence 3 |
-| Real init / thread registration, no lying hooks | Initialization; G36 for the field |
+| Real init / thread registration, no lying hooks | Initialization; the main-bound field is the open shareable-root finding |
 | Init failure and partial teardown safe | Initialization; evidence 4 to 6 |
 | Cycles, contexts, jobs, callbacks exercised | Evidence 1 to 7; callbacks deferred |
 | ABI placeholders tracked | ABI placeholders |
