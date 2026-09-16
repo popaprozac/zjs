@@ -276,6 +276,15 @@ export struct Parser {
     return this.isBindingIdent(kind);
   }
 
+  function tokenHasEscape(token: Token): boolean {
+    let i: u32 = 0;
+    while (i < token.length) {
+      if (this.source[usize(token.start + i)] == 92) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
   function isBindingIdentTok(token: Token): boolean {
     if (!this.isBindingIdentCtx(token.kind)) return false;
     if (token.kind != TokenKind.identifier) return true;
@@ -342,7 +351,9 @@ export struct Parser {
 
     if (k == TokenKind.lBrace) return this.parseBlock();
     if (k == TokenKind.kwVar) return this.parseVarDecl(true);
-    if (k == TokenKind.kwLet) return this.parseVarDecl(true);
+    // `let` written with an escape (`l\u0065t`) never opens a
+    // declaration; it is the identifier, so the line is an expression.
+    if (k == TokenKind.kwLet && !this.tokenHasEscape(this.peek())) return this.parseVarDecl(true);
     if (k == TokenKind.kwConst) return this.parseVarDecl(true);
     if (k == TokenKind.kwFunction) return this.parseFunctionDecl(false);
     // `async function f() {}`: no line terminator allowed between them.

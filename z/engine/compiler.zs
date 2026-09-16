@@ -9,7 +9,7 @@
 // temporaries are allocated above a fixed watermark (params, locals, and the
 // program's result register) and reset after each statement.
 
-import { wtf8Length, pushCodePoint } from "./text.zs";
+import { wtf8Length, pushCodePoint, unitsToUtf8 } from "./text.zs";
 import { expect } from "std/test";
 import { Value, int32Value, doubleValue, isInt32, asInt32 } from "./value.zs";
 import { TokenKind } from "./token.zs";
@@ -450,6 +450,71 @@ export struct Compiler {
   // for the hole and throw a ReferenceError. A read the compiler can
   // see follows the declaration, in this function or in a closure made
   // after it, pays nothing.
+
+  // A scope's lexical names against each other and against the names
+  // var-declared in it.
+  function checkRedeclarations(inout this, in parser: Parser, in lexical: Array<NameRef>, in vars: Array<NameRef>): void {
+    let i: usize = 0;
+    while (i < lexical.length) {
+      let j: usize = 0;
+      while (j < i) {
+        if (lexical[i].length == lexical[j].length && parser.slicesEqual(lexical[i].start, lexical[i].length, lexical[j].start, lexical[j].length)) {
+          if (this.strict || !lexical[i].plainFunction || !lexical[j].plainFunction) this.hadError = true;
+        }
+        j = j + 1;
+      }
+      let v: usize = 0;
+      while (v < vars.length) {
+        if (lexical[i].length == vars[v].length && parser.slicesEqual(lexical[i].start, lexical[i].length, vars[v].start, vars[v].length)) this.hadError = true;
+        v = v + 1;
+      }
+      i = i + 1;
+    }
+  }
+
+  // A block or switch body: its let / const / class / function names
+  // against the vars declared inside it.
+  function checkBlockRedeclarations(inout this, in parser: Parser, block: u32, in statements: Array<u32>): void {
+    let lexical = Array<NameRef>();
+    let i: usize = 0;
+    while (i < statements.length) {
+      pushLexicalNames(in parser, statements[i], true, inout lexical);
+      i = i + 1;
+    }
+    if (lexical.length == 0) return;
+    let vars = Array<NameRef>();
+    collectVarNames(in parser, block, inout vars);
+    this.checkRedeclarations(in parser, in lexical, in vars);
+  }
+
+  // A function body or script: its let / const / class names against the
+  // parameters, the body-level function declarations, and every var.
+  function checkBodyRedeclarations(inout this, in parser: Parser, fn: u32, body: u32): void {
+    const n = parser.ast.node(body);
+    let lexical = Array<NameRef>();
+    let vars = Array<NameRef>();
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      const statement = parser.ast.child(body, i);
+      pushLexicalNames(in parser, statement, false, inout lexical);
+      const st = parser.ast.node(statement);
+      if (st.kind == NodeKind.functionDecl && st.nameLength > 0) pushName(inout vars, st.nameStart, st.nameLength, false);
+      i = i + 1;
+    }
+    if (lexical.length == 0) return;
+    if (fn != NO_NODE) collectParameterNames(in parser, fn, inout vars);
+    collectVarNames(in parser, body, inout vars);
+    this.checkRedeclarations(in parser, in lexical, in vars);
+  }
+
+  // A loop head's lexical names against each other and the loop's vars.
+  function checkHeadRedeclarations(inout this, in parser: Parser, loop: u32, head: u32): void {
+    let lexical = Array<NameRef>();
+    pushLexicalNames(in parser, head, false, inout lexical);
+    let vars = Array<NameRef>();
+    collectVarNames(in parser, loop, inout vars);
+    this.checkRedeclarations(in parser, in lexical, in vars);
+  }
 
   function openScope(): ScopeMark {
     return ScopeMark({ locals: this.locals.length, fixedRegs: this.fixedRegs, envReg: 0, hasEnv: false });
@@ -1590,7 +1655,7 @@ export struct Compiler {
       this.emit(instABC(Op.storeEnvSlot, value, outer.hops, u8(outer.slot)));
       return;
     }
-    const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(target.nameStart), usize(target.nameStart + target.nameLength)));
+    const slot = runtime.globalSlotBytes(globalNameBytes(in parser, target.nameStart, target.nameLength));
     this.emit(instAU16(Op.storeGlobal, value, slot));
   }
 
@@ -1866,7 +1931,7 @@ export struct Compiler {
         }
         return dst;
       }
-      const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+      const slot = runtime.globalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
       this.emit(instAU16(Op.loadGlobal, dst, slot));
       return dst;
     }
@@ -2347,7 +2412,7 @@ export struct Compiler {
           if (target.kind == NodeKind.identExpr
               && this.findLocal(in parser, target.nameStart, target.nameLength) < 0
               && !this.findOuter(in parser, target.nameStart, target.nameLength).found) {
-            const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(target.nameStart), usize(target.nameStart + target.nameLength)));
+            const slot = runtime.globalSlotBytes(globalNameBytes(in parser, target.nameStart, target.nameLength));
             const src = this.allocReg();
             this.emit(instAU16(Op.loadGlobalOrUndefined, src, slot));
             const dst = this.allocReg();
@@ -2661,17 +2726,21 @@ export struct Compiler {
     const savedFixed = this.fixedRegs;
     if (discriminant + 1 > this.fixedRegs) this.fixedRegs = discriminant + 1;
     let mark = this.openScope();
+    let caseStatements = Array<u32>();
     let c: u32 = 0;
     while (c < count) {
       const clauseIndex = parser.ast.child(node, c);
       const clause = parser.ast.node(clauseIndex);
       let statement: u32 = 0;
       while (statement < clause.childrenCount) {
-        this.declareStatementLexicals(in parser, inout runtime, parser.ast.child(clauseIndex, statement), true, node, false);
+        const statementIndex = parser.ast.child(clauseIndex, statement);
+        caseStatements.push(statementIndex);
+        this.declareStatementLexicals(in parser, inout runtime, statementIndex, true, node, false);
         statement = statement + 1;
       }
       c = c + 1;
     }
+    this.checkBlockRedeclarations(in parser, node, in caseStatements);
     this.enterScope(inout mark);
     let casePatches = Array<u32>();
     let defaultIndex: i32 = -1;
@@ -2739,6 +2808,7 @@ export struct Compiler {
     const binding = parser.ast.node(n.left);
     let lexical: i32 = -1;
     if (binding.kind == NodeKind.varDecl && binding.op != TokenKind.kwVar) {
+      this.checkHeadRedeclarations(in parser, node, n.left);
       this.declareLexicalHead(in parser, inout runtime, n.left, n.right, 4294967295);
       const decl = parser.ast.node(parser.ast.child(n.left, 0));
       if (decl.nameLength > 0) lexical = i32(this.locals.length - 1);
@@ -2791,6 +2861,7 @@ export struct Compiler {
     const binding = parser.ast.node(n.left);
     let lexical: i32 = -1;
     if (binding.kind == NodeKind.varDecl && binding.op != TokenKind.kwVar) {
+      this.checkHeadRedeclarations(in parser, node, n.left);
       this.declareLexicalHead(in parser, inout runtime, n.left, n.right, 4294967295);
       const decl = parser.ast.node(parser.ast.child(n.left, 0));
       if (decl.nameLength > 0) lexical = i32(this.locals.length - 1);
@@ -3123,6 +3194,22 @@ export struct Compiler {
   // The catch block, with its parameter -- an identifier or a pattern --
   // bound from the catch register.
   function compileCatch(inout this, in parser: Parser, inout runtime: Runtime, n: AstNode, catchReg: u8, node: u32): void {
+    // The parameter's names: no duplicates, not redeclared lexically in
+    // the block, and (a destructured parameter) not with var either.
+    let parameterNames = Array<NameRef>();
+    if (n.nameLength > 0) pushName(inout parameterNames, n.nameStart, n.nameLength, false);
+    if (n.childrenCount > 0) pushPatternNames(in parser, parser.ast.child(node, 0), inout parameterNames);
+    let blockLexicals = Array<NameRef>();
+    const body = parser.ast.node(n.right);
+    if (body.kind == NodeKind.blockStmt) {
+      let b: u32 = 0;
+      while (b < body.childrenCount) {
+        pushLexicalNames(in parser, parser.ast.child(n.right, b), true, inout blockLexicals);
+        b = b + 1;
+      }
+    }
+    if (n.childrenCount > 0) collectVarNames(in parser, n.right, inout blockLexicals);
+    this.checkRedeclarations(in parser, in parameterNames, in blockLexicals);
     let mark = this.openScope();
     let bound: i32 = -1;
     if (n.nameLength > 0) bound = i32(this.bindLocal(n.nameStart, n.nameLength, catchReg));
@@ -3196,7 +3283,7 @@ export struct Compiler {
           }
         } else if (n.op == TokenKind.kwVar) {
           // Script-mode `var` is a global binding.
-          const slot = runtime.globalSlotBytes(sliceBytes(in parser.source, usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
+          const slot = runtime.globalSlotBytes(globalNameBytes(in parser, decl.nameStart, decl.nameLength));
           if (decl.left != NO_NODE) {
             this.nameNext(decl.nameStart, decl.nameLength, 0);
             const value = this.compileExpr(in parser, inout runtime, decl.left);
@@ -3242,7 +3329,7 @@ export struct Compiler {
         }
         this.storeLocal(usize(local), r);
       } else {
-        const slot = runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+        const slot = runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
         this.emit(instAU16(Op.defineGlobal, r, slot));
       }
       this.resetTemps();
@@ -3259,7 +3346,7 @@ export struct Compiler {
         this.hadError = true;
         return;
       } else {
-        const slot = runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+        const slot = runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
         this.emit(instAU16(Op.defineGlobal, r, slot));
       }
       this.resetTemps();
@@ -3338,7 +3425,10 @@ export struct Compiler {
         const head = parser.ast.node(n.left);
         lexicalHead = head.kind == NodeKind.varDecl && head.op != TokenKind.kwVar;
       }
-      if (lexicalHead) this.declareLexicalHead(in parser, inout runtime, n.left, n.left, 0);
+      if (lexicalHead) {
+        this.checkHeadRedeclarations(in parser, node, n.left);
+        this.declareLexicalHead(in parser, inout runtime, n.left, n.left, 0);
+      }
       const captures = this.headCaptures(in parser, n.left);
       let saved = Array<i32>();
       let iterReg: u8 = 0;
@@ -3464,6 +3554,13 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.blockStmt) {
+      let statements = Array<u32>();
+      let c: u32 = 0;
+      while (c < n.childrenCount) {
+        statements.push(parser.ast.child(node, c));
+        c = c + 1;
+      }
+      this.checkBlockRedeclarations(in parser, node, in statements);
       const scoped = this.hasLexicalDeclarations(in parser, node);
       let mark = this.openScope();
       if (scoped) {
@@ -3900,6 +3997,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   if (!forwards && n.left != NO_NODE) {
     const body = parser.ast.node(n.left);
     if (body.kind == NodeKind.blockStmt) {
+      compiler.checkBodyRedeclarations(in parser, node, n.left);
       compiler.declareBodyLexicals(in parser, inout runtime, n.left, false);
       // Function declarations first, then everything else.
       let b: u32 = 0;
@@ -3998,6 +4096,124 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   return CompiledFunction({ index: i32(index), minOuterScope: compiler.minOuterScope });
 }
 
+// --- Early errors: redeclarations ---
+//
+// A scope's lexically declared names (let, const, class, and in a block
+// or switch also function declarations) may not repeat, and may not also
+// be var-declared anywhere in the scope -- nested blocks included, nested
+// functions not. Sloppy code may repeat a plain function declaration in a
+// block. A function's parameters count as var-declared for its body; a
+// catch parameter may not be redeclared lexically in its block, and a
+// destructured one not with var either. A violation is a SyntaxError
+// reported as a compile error.
+
+struct NameRef {
+  start: u32;
+  length: u32;
+  plainFunction: boolean;
+}
+
+function pushName(inout names: Array<NameRef>, start: u32, length: u32, plainFunction: boolean): void {
+  names.push(NameRef({ start: start, length: length, plainFunction: plainFunction }));
+}
+
+function pushPatternNames(in parser: Parser, pattern: u32, inout names: Array<NameRef>): void {
+  if (pattern == NO_NODE) return;
+  const n = parser.ast.node(pattern);
+  if (n.kind == NodeKind.identExpr) {
+    if (n.nameLength > 0) pushName(inout names, n.nameStart, n.nameLength, false);
+    return;
+  }
+  if (n.kind == NodeKind.patternEntry) {
+    pushPatternNames(in parser, n.left, inout names);
+    return;
+  }
+  if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      pushPatternNames(in parser, parser.ast.child(pattern, i), inout names);
+      i = i + 1;
+    }
+  }
+}
+
+// The names a statement declares lexically in the scope holding it.
+// Function declarations are lexical inside blocks only.
+function pushLexicalNames(in parser: Parser, statement: u32, inBlock: boolean, inout names: Array<NameRef>): void {
+  const st = parser.ast.node(statement);
+  if (st.kind == NodeKind.varDecl && st.op != TokenKind.kwVar) {
+    let d: u32 = 0;
+    while (d < st.childrenCount) {
+      const decl = parser.ast.node(parser.ast.child(statement, d));
+      if (decl.nameLength > 0) {
+        pushName(inout names, decl.nameStart, decl.nameLength, false);
+      } else {
+        pushPatternNames(in parser, decl.third, inout names);
+      }
+      d = d + 1;
+    }
+    return;
+  }
+  if (st.kind == NodeKind.classDecl && st.nameLength > 0) {
+    pushName(inout names, st.nameStart, st.nameLength, false);
+    return;
+  }
+  if (st.kind == NodeKind.functionDecl && inBlock && st.nameLength > 0) {
+    const plain = st.num != 3.0 && !st.boolValue;
+    pushName(inout names, st.nameStart, st.nameLength, plain);
+  }
+}
+
+// The names var-declared within `node`, nested functions and classes
+// excluded.
+function collectVarNames(in parser: Parser, node: u32, inout names: Array<NameRef>): void {
+  if (node == NO_NODE) return;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef
+      || k == NodeKind.staticBlock || k == NodeKind.classDecl || k == NodeKind.classExpr) return;
+  if (k == NodeKind.varDecl) {
+    if (n.op != TokenKind.kwVar) return;
+    let d: u32 = 0;
+    while (d < n.childrenCount) {
+      const decl = parser.ast.node(parser.ast.child(node, d));
+      if (decl.nameLength > 0) {
+        pushName(inout names, decl.nameStart, decl.nameLength, false);
+      } else {
+        pushPatternNames(in parser, decl.third, inout names);
+      }
+      d = d + 1;
+    }
+    return;
+  }
+  collectVarNames(in parser, n.left, inout names);
+  collectVarNames(in parser, n.right, inout names);
+  collectVarNames(in parser, n.third, inout names);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    collectVarNames(in parser, parser.ast.child(node, i), inout names);
+    i = i + 1;
+  }
+}
+
+// The names a function's parameters bind.
+function collectParameterNames(in parser: Parser, fn: u32, inout names: Array<NameRef>): void {
+  const n = parser.ast.node(fn);
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    const paramIndex = parser.ast.child(fn, p);
+    const param = parser.ast.node(paramIndex);
+    if (param.kind == NodeKind.restParam) {
+      pushPatternNames(in parser, param.left, inout names);
+    } else if (param.kind == NodeKind.identExpr && param.nameLength > 0) {
+      pushName(inout names, param.nameStart, param.nameLength, false);
+    } else {
+      pushPatternNames(in parser, parameterPattern(in parser, paramIndex), inout names);
+    }
+    p = p + 1;
+  }
+}
+
 // Whether an identifier spelled like the binding appears in `node`
 // before `limit` -- or anywhere inside a function declaration, which is
 // hoisted above the declaration -- so the binding may be read before
@@ -4092,6 +4308,20 @@ function parameterPattern(in parser: Parser, param: u32): u32 {
 // UTF-8; other bytes copied through.
 // The units of an identifier written with escapes (source UTF-8 kept as
 // its bytes' code points).
+// A global's name as UTF-8: the identifier's text, with any `\u` escapes
+// decoded (`l\u0065t` names the global `let`).
+function globalNameBytes(in parser: Parser, start: u32, length: u32): Array<u8> {
+  let i: u32 = 0;
+  while (i < length) {
+    if (parser.source[usize(start + i)] == 92) {
+      const units = decodeIdentifierName(in parser, start, length);
+      return unitsToUtf8(in units);
+    }
+    i = i + 1;
+  }
+  return sliceBytes(in parser.source, usize(start), usize(start + length));
+}
+
 function decodeIdentifierName(in parser: Parser, start: u32, length: u32): Array<u16> {
   let bytes = Array<u16>();
   let i: u32 = 0;
@@ -4277,7 +4507,7 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32)
   const n = parser.ast.node(node);
   const k = n.kind;
   if (k == NodeKind.functionDecl || k == NodeKind.classDecl) {
-    runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+    runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
     return;
   }
   if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classExpr) return;
@@ -4286,7 +4516,7 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32)
     let j: u32 = 0;
     while (j < n.childrenCount) {
       const decl = parser.ast.node(parser.ast.child(node, j));
-      if (decl.nameLength > 0) runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(decl.nameStart), usize(decl.nameStart + decl.nameLength)));
+      if (decl.nameLength > 0) runtime.defineGlobalSlotBytes(globalNameBytes(in parser, decl.nameStart, decl.nameLength));
       if (decl.nameLength == 0) hoistPatternGlobals(in parser, inout runtime, decl.third);
       j = j + 1;
     }
@@ -4307,7 +4537,7 @@ function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, pattern:
   if (pattern == NO_NODE) return;
   const n = parser.ast.node(pattern);
   if (n.kind == NodeKind.identExpr) {
-    if (n.nameLength > 0) runtime.defineGlobalSlotBytes(sliceBytes(in parser.source, usize(n.nameStart), usize(n.nameStart + n.nameLength)));
+    if (n.nameLength > 0) runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
     return;
   }
   if (n.kind == NodeKind.patternEntry) {
@@ -4347,6 +4577,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   // var and function declarations are globals and need none.
   compiler.scanCaptures(in parser, root);
   if (compiler.hasEnv) compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
+  compiler.checkBodyRedeclarations(in parser, NO_NODE, root);
   compiler.declareBodyLexicals(in parser, inout runtime, root, true);
   // Function declarations first, then everything else.
   let i: u32 = 0;

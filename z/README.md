@@ -144,7 +144,8 @@ defined right after each super(); a class constructor called without
 `new` throws; methods are not constructors; a class's [[Prototype]] is
 its parent, so statics inherit. Function values of class members are
 fresh per evaluation. Anonymous class expressions take the name of what
-they initialize; identifier names with unicode escapes decode.
+they initialize; identifier names with unicode escapes decode (`l\u0065t`
+names the identifier `let` and never opens a declaration).
 Promises and async: a promise is an ordinary object holding a record
 under a hidden key (state, result, the two reaction lists, handled);
 reactions and jobs are heap arrays, and the runtime drains its job
@@ -355,9 +356,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: early errors for lexical redeclarations (`let x; var x;` and the
-like compile; the `syntax/redeclaration` test262 directories expect a
-SyntaxError), a parameter's temporal dead zone (`function f(a = b, b) {}`
+Not yet: a parameter's temporal dead zone (`function f(a = b, b) {}`
 reads `b` as undefined), a function declaration in a block is
 function-scoped even in strict mode, `this` before `super()` in a derived
 constructor is not a ReferenceError, `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
