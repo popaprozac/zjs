@@ -178,6 +178,7 @@ export enum Op {
   envToReg,        // a = dst: the frame's current environment, as a cell index.
   renewEnv,        // a = env register, bc = slot count: a fresh environment with the same parent and copied slots replaces it (per-iteration bindings).
   exitEnv,         // a = env register: the frame's environment becomes that environment's parent.
+  throwConstAssign, // throws a TypeError: assignment to a constant binding.
 }
 
 export struct Inst {
@@ -389,6 +390,7 @@ export function opCode(op: Op): i32 {
     envToReg => 156;
     renewEnv => 157;
     exitEnv => 158;
+    throwConstAssign => 159;
   };
 }
 

@@ -24,6 +24,7 @@ export struct Value {
 //   true       7   (OTHER_TAG | BOOL_TAG | 1)
 //   undefined  10  (OTHER_TAG | UNDEFINED_TAG)
 //   deleted    65538
+//   hole       131074  (an uninitialized lexical binding)
 
 export const NUMBER_TAG: u64 = 0xFFFE_0000_0000_0000;
 export const DOUBLE_ENCODE_OFFSET: u64 = 0x0002_0000_0000_0000;  // 1 << 49
@@ -35,6 +36,7 @@ export const VALUE_FALSE: u64 = 0x6;
 export const VALUE_TRUE: u64 = 0x7;
 export const VALUE_UNDEFINED: u64 = 0xA;
 export const VALUE_DELETED: u64 = 0x1_0002;
+export const VALUE_HOLE: u64 = 0x2_0002;
 
 export function numberTag(): u64 { return NUMBER_TAG; }
 export function doubleEncodeOffset(): u64 { return DOUBLE_ENCODE_OFFSET; }
@@ -86,6 +88,10 @@ export function booleanValue(value: boolean): Value {
 export function isNull(value: Value): boolean { return value.bits == VALUE_NULL; }
 export function isUndefined(value: Value): boolean { return value.bits == VALUE_UNDEFINED; }
 export function isDeleted(value: Value): boolean { return value.bits == VALUE_DELETED; }
+// The hole: what a let / const / class binding holds before its
+// declaration runs. Never a JavaScript value; a read that finds it throws.
+export function holeValue(): Value { return Value({ bits: VALUE_HOLE }); }
+export function isHole(value: Value): boolean { return value.bits == VALUE_HOLE; }
 export function isBoolean(value: Value): boolean {
   return value.bits == VALUE_TRUE || value.bits == VALUE_FALSE;
 }

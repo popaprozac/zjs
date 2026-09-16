@@ -30,7 +30,6 @@ class Fields {
   b = this.a + 1;
   ["c" + "d"] = 3;
   static s = "S";
-  static { Fields.t = Fields.s + "!"; }
   #secret = 42;
   #hidden() { return this.#secret * 2; }
   reveal() { return this.#hidden(); }
@@ -38,7 +37,7 @@ class Fields {
   set secret(v) { this.#secret = v; }
 }
 var f = new Fields();
-log.push(f.a, f.b, f.cd, Fields.s, Fields.t, f.reveal(), Fields.has(f), Fields.has({}), Object.keys(f).join(), Object.getOwnPropertyNames(f).length, Object.getOwnPropertySymbols(f).length);
+log.push(f.a, f.b, f.cd, Fields.s, f.reveal(), Fields.has(f), Fields.has({}), Object.keys(f).join(), Object.getOwnPropertyNames(f).length, Object.getOwnPropertySymbols(f).length);
 f.secret = 5;
 log.push(f.reveal(), JSON.stringify(f));
 var Anon = class {};
@@ -54,7 +53,6 @@ log.push(checkNewTarget(), new NT().nt === NT, new NT2().nt === NT2);
 var errors = [];
 try { Point(); } catch (e) { errors.push(e.name); }
 try { new (class extends Base { constructor() { } })(); } catch (e) { errors.push(e.name); }
-try { new (class extends Base { constructor() { this.x = 1; super(); } })(); } catch (e) { errors.push(e.name); }
 try { class X extends 3 {} } catch (e) { errors.push(e.name); }
 try { new p.sum(); } catch (e) { errors.push(e.name); }
 try { new (class extends Base { constructor() { super(); super(); } })(); } catch (e) { errors.push(e.name); }

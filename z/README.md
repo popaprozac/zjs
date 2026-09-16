@@ -38,7 +38,16 @@ calls with `this`, `new` with `prototype`/`constructor`, `typeof`; the Error
 family as Z builtins, `throw`, `try`/`catch`/`finally` with unwinding across
 frames; closures -- captured bindings live in environment cells addressed by
 slot, resolved at compile time through the scope chain, with arrows keeping
-the `this` of their creation; template literals, `switch`, labeled
+the `this` of their creation; block scoping -- a block, switch body, loop
+head, or catch clause declares its `let` / `const` / `class` bindings when
+it opens and drops them when it closes, an inner declaration shadows an
+outer one only inside, a captured block binding lives in an environment
+created at each entry (per iteration for a loop head), a lexical binding is
+a hole until its declaration runs and a read that can reach it before then
+checks and throws a ReferenceError (`typeof` included), assignment to a
+`const` throws a TypeError, and `break` / `continue` / `return` / `throw`
+out of a scope restore the environment on the way (an inlined `finally`
+runs in its own scope); template literals, `switch`, labeled
 `break`/`continue`, `for`-`in` (keys in insertion order across the prototype
 chain) and `for`-`of` over arrays, `in`/`instanceof`/`delete`, `++`/`--` and
 logical assignment on properties, and `Object`. **34 of 34** corpus files
@@ -265,7 +274,9 @@ a `super` property that is a getter runs with the instance as receiver
 (the reference gets NaN); statics inherit through the parent
 constructor (the reference finds nothing); a derived class's field
 initializers run after `super()` returns and see what the base
-constructor set (the reference runs them first);
+constructor set (the reference runs them first); a class declaration
+binds its name inside its own body, so a static block can refer to the
+class (the reference leaves the assignment unmade);
 `String.fromCodePoint(0x1F600)` is the four-byte encoding, equal to the
 literal (the reference produces something else); `Date` keeps local
 time (the reference has none), `Date()` called as a function returns a
@@ -335,10 +346,12 @@ maximal invalid subsequence with U+FFFD so the result always satisfies
 String's valid-UTF-8 invariant and is never mistaken for the original
 bytes.
 
-Not yet: block scoping of lexical declarations (a `let` or `const` in a
-block or loop head is one function-wide binding by name, so a name reused
-across blocks is one binding; a loop does give each iteration its own copy
-of a captured head binding), `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
+Not yet: early errors for lexical redeclarations (`let x; var x;` and the
+like compile; the `syntax/redeclaration` test262 directories expect a
+SyntaxError), a parameter's temporal dead zone (`function f(a = b, b) {}`
+reads `b` as undefined), a function declaration in a block is
+function-scoped even in strict mode, `this` before `super()` in a derived
+constructor is not a ReferenceError, `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
 delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a

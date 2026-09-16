@@ -10,7 +10,7 @@
 import { expect } from "std/test";
 import { thread } from "std/thread";
 import math from "std/math";
-import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
+import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
@@ -5391,6 +5391,27 @@ export struct Runtime {
               thrown = this.typeError(in message);
               throwing = true;
             }
+          }
+          loadHole => {
+            this.setReg(base, inst.a, holeValue());
+          }
+          throwIfHole => {
+            // A lexical binding read before its declaration ran.
+            if (isHole(this.reg(base, inst.a))) {
+              const named = this.functions[usize(fi)].constants[usize(bcU16(inst))];
+              const before: String = "Cannot access '";
+              let message = bytesOf(in before);
+              appendBytes(inout message, this.heap.stringUtf8(asCell(named)));
+              const after: String = "' before initialization";
+              appendBytes(inout message, bytesOf(in after));
+              thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
+              throwing = true;
+            }
+          }
+          throwConstAssign => {
+            const text: String = "Assignment to constant variable.";
+            thrown = this.makeError(ERROR_KIND_TYPE, bytesOf(in text));
+            throwing = true;
           }
           envToReg => {
             const env = this.frames[frameIndex].env;
