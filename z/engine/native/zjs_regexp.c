@@ -7,13 +7,44 @@
 
 #include "libregexp.h"
 
-/* --- Host callbacks libregexp requires --- */
+/* libregexp caps a pattern at 255 groups. */
+#define ZJS_RE_MAX_CAPTURES 255
 
-static uintptr_t stack_budget = 256 * 1024;
-static uintptr_t stack_floor = 0;
-static uintptr_t step_budget = 0;
-static uintptr_t steps_left = 0;
-static int last_failure = 0;
+typedef struct {
+  /* Limits and the state of the call in progress. */
+  uintptr_t stack_budget;
+  uintptr_t stack_floor;
+  uintptr_t step_budget;
+  uintptr_t steps_left;
+  int last_failure;
+  char error_message[128];
+  /* The scratch buffer Z fills. */
+  uint8_t *scratch;
+  uintptr_t scratch_capacity;
+  /* The last exec's captures. */
+  uint8_t **captures;
+  int capture_slots;
+  int capture_starts[ZJS_RE_MAX_CAPTURES];
+  int capture_ends[ZJS_RE_MAX_CAPTURES];
+  int capture_total;
+  /* Transcoding storage for non-ASCII inputs. */
+  uint16_t *units;
+  uint32_t *unit_bytes; /* unit_bytes[k] = byte where unit k starts; [count] = length */
+  uintptr_t unit_capacity;
+  /* Accounting. */
+  uintptr_t live_handles;
+  uintptr_t live_bytes;
+} Context;
+
+typedef struct {
+  uint8_t *bytecode;
+  int length;
+  int captures;
+  int flags;
+  Context *owner;
+} Pattern;
+
+/* --- Host callbacks libregexp requires; `opaque` is the context --- */
 
 void *lre_realloc(void *opaque, void *ptr, size_t size) {
   (void)opaque;
@@ -25,120 +56,142 @@ void *lre_realloc(void *opaque, void *ptr, size_t size) {
 }
 
 bool lre_check_stack_overflow(void *opaque, size_t alloca_size) {
-  (void)opaque;
+  Context *context = (Context *)opaque;
   char probe;
   uintptr_t here = (uintptr_t)&probe;
-  if (stack_floor == 0) return false;
-  if (here < alloca_size || here - alloca_size < stack_floor) {
-    last_failure = ZJS_RE_STACK_LIMIT;
+  if (context == NULL || context->stack_floor == 0) return false;
+  if (here < alloca_size || here - alloca_size < context->stack_floor) {
+    context->last_failure = ZJS_RE_STACK_LIMIT;
     return true;
   }
   return false;
 }
 
 int lre_check_timeout(void *opaque) {
-  (void)opaque;
-  if (step_budget == 0) return 0;
-  if (steps_left == 0) {
-    last_failure = ZJS_RE_STEP_LIMIT;
+  Context *context = (Context *)opaque;
+  if (context == NULL || context->step_budget == 0) return 0;
+  if (context->steps_left == 0) {
+    context->last_failure = ZJS_RE_STEP_LIMIT;
     return 1;
   }
-  steps_left -= 1;
+  context->steps_left -= 1;
   return 0;
 }
 
-static void enter(void) {
+static void enter(Context *context) {
   char probe;
   uintptr_t here = (uintptr_t)&probe;
-  stack_floor = here > stack_budget ? here - stack_budget : 1;
-  steps_left = step_budget;
-  last_failure = 0;
+  context->stack_floor = here > context->stack_budget ? here - context->stack_budget : 1;
+  context->steps_left = context->step_budget;
+  context->last_failure = 0;
 }
 
-static void leave(void) {
-  stack_floor = 0;
+static void leave(Context *context) {
+  context->stack_floor = 0;
 }
 
-void zjs_re_set_stack_budget(uintptr_t bytes) {
-  stack_budget = bytes;
+/* --- Contexts --- */
+
+uintptr_t zjs_re_context_new(void) {
+  Context *context = (Context *)calloc(1, sizeof(Context));
+  if (context == NULL) return 0;
+  context->stack_budget = 256 * 1024;
+  return (uintptr_t)context;
 }
 
-void zjs_re_set_step_budget(uintptr_t checks) {
-  step_budget = checks;
+void zjs_re_context_free(uintptr_t handle) {
+  Context *context = (Context *)handle;
+  if (context == NULL) return;
+  free(context->scratch);
+  free(context->captures);
+  free(context->units);
+  free(context->unit_bytes);
+  free(context);
 }
 
-/* --- Buffers --- */
+void zjs_re_set_stack_budget(uintptr_t handle, uintptr_t bytes) {
+  ((Context *)handle)->stack_budget = bytes;
+}
 
-static uint8_t *scratch = NULL;
-static uintptr_t scratch_capacity = 0;
+void zjs_re_set_step_budget(uintptr_t handle, uintptr_t checks) {
+  ((Context *)handle)->step_budget = checks;
+}
 
-uintptr_t zjs_re_scratch(uintptr_t length) {
-  if (length + 1 > scratch_capacity) {
-    uintptr_t wanted = scratch_capacity * 2;
+uintptr_t zjs_re_scratch(uintptr_t handle, uintptr_t length) {
+  Context *context = (Context *)handle;
+  if (length + 1 > context->scratch_capacity) {
+    uintptr_t wanted = context->scratch_capacity * 2;
     if (wanted < length + 1) wanted = length + 1;
     if (wanted < 256) wanted = 256;
-    uint8_t *grown = (uint8_t *)realloc(scratch, wanted);
+    uint8_t *grown = (uint8_t *)realloc(context->scratch, wanted);
     if (grown == NULL) return 0;
-    scratch = grown;
-    scratch_capacity = wanted;
+    context->scratch = grown;
+    context->scratch_capacity = wanted;
   }
-  return (uintptr_t)scratch;
+  return (uintptr_t)context->scratch;
 }
 
 /* --- Compiled patterns --- */
 
-typedef struct {
-  uint8_t *bytecode;
-  int length;
-  int captures;
-  int flags;
-} Pattern;
-
-static uintptr_t live_handles = 0;
-static uintptr_t live_bytes = 0;
-static char error_message[128];
-
-uintptr_t zjs_re_compile(uintptr_t pattern, uintptr_t length, int flags) {
+uintptr_t zjs_re_compile(uintptr_t handle, uintptr_t pattern, uintptr_t length, int flags) {
+  Context *context = (Context *)handle;
   int bytecode_length = 0;
+  context->error_message[0] = 0;
   /* The v flag is unicode mode with set notation. */
   if (flags & LRE_FLAG_UNICODE_SETS) flags |= LRE_FLAG_UNICODE;
   /* The parser peeks one byte past the end; the scratch has room for it. */
   ((uint8_t *)pattern)[length] = 0;
-  error_message[0] = 0;
-  enter();
-  uint8_t *bytecode = lre_compile(&bytecode_length, error_message, (int)sizeof(error_message),
-                                  (const char *)pattern, (size_t)length, flags, NULL);
-  leave();
+  enter(context);
+  uint8_t *bytecode = lre_compile(&bytecode_length, context->error_message, (int)sizeof(context->error_message),
+                                  (const char *)pattern, (size_t)length, flags, context);
+  int failure = context->last_failure;
+  leave(context);
   if (bytecode == NULL) {
-    if (error_message[0] == 0) strcpy(error_message, "out of memory");
+    /* A syntax failure carries a message; a resource failure does not. */
+    if (failure != 0) {
+      context->last_failure = failure;
+    } else if (context->error_message[0] == 0) {
+      context->last_failure = ZJS_RE_OUT_OF_MEMORY;
+    } else {
+      context->last_failure = ZJS_RE_SYNTAX;
+    }
     return 0;
   }
   Pattern *compiled = (Pattern *)malloc(sizeof(Pattern));
   if (compiled == NULL) {
     lre_realloc(NULL, bytecode, 0);
-    strcpy(error_message, "out of memory");
+    context->last_failure = ZJS_RE_OUT_OF_MEMORY;
     return 0;
   }
   compiled->bytecode = bytecode;
   compiled->length = bytecode_length;
   compiled->captures = lre_get_capture_count(bytecode);
   compiled->flags = lre_get_flags(bytecode);
-  live_handles += 1;
-  live_bytes += (uintptr_t)bytecode_length;
+  compiled->owner = context;
+  context->live_handles += 1;
+  context->live_bytes += (uintptr_t)bytecode_length;
+  context->last_failure = 0;
   return (uintptr_t)compiled;
 }
 
-int zjs_re_error_byte(int index) {
-  if (index < 0 || index >= (int)sizeof(error_message)) return -1;
-  unsigned char byte = (unsigned char)error_message[index];
+int zjs_re_failure(uintptr_t handle) {
+  return ((Context *)handle)->last_failure;
+}
+
+int zjs_re_error_byte(uintptr_t handle, int index) {
+  Context *context = (Context *)handle;
+  if (index < 0 || index >= (int)sizeof(context->error_message)) return -1;
+  unsigned char byte = (unsigned char)context->error_message[index];
   return byte == 0 ? -1 : (int)byte;
 }
 
 void zjs_re_free(uintptr_t handle) {
   Pattern *compiled = (Pattern *)handle;
   if (compiled == NULL) return;
-  live_handles -= 1;
-  live_bytes -= (uintptr_t)compiled->length;
+  if (compiled->owner != NULL) {
+    compiled->owner->live_handles -= 1;
+    compiled->owner->live_bytes -= (uintptr_t)compiled->length;
+  }
   lre_realloc(NULL, compiled->bytecode, 0);
   free(compiled);
 }
@@ -171,28 +224,16 @@ int zjs_re_name_byte(uintptr_t handle, int index) {
 
 /* --- Matching --- */
 
-/* libregexp caps a pattern at 255 groups. */
-#define ZJS_RE_MAX_CAPTURES 255
-static uint8_t **captures = NULL;
-static int capture_slots = 0;
-static int capture_starts[ZJS_RE_MAX_CAPTURES];
-static int capture_ends[ZJS_RE_MAX_CAPTURES];
-static int capture_total = 0;
-
-static uint16_t *units = NULL;
-static uint32_t *unit_bytes = NULL; /* unit_bytes[k] = byte where unit k starts; [count] = length */
-static uintptr_t unit_capacity = 0;
-
-static bool reserve_units(uintptr_t count) {
-  if (count + 1 <= unit_capacity) return true;
+static bool reserve_units(Context *context, uintptr_t count) {
+  if (count + 1 <= context->unit_capacity) return true;
   uintptr_t wanted = (count + 1) * 2;
-  uint16_t *new_units = (uint16_t *)realloc(units, wanted * sizeof(uint16_t));
+  uint16_t *new_units = (uint16_t *)realloc(context->units, wanted * sizeof(uint16_t));
   if (new_units == NULL) return false;
-  units = new_units;
-  uint32_t *new_bytes = (uint32_t *)realloc(unit_bytes, wanted * sizeof(uint32_t));
+  context->units = new_units;
+  uint32_t *new_bytes = (uint32_t *)realloc(context->unit_bytes, wanted * sizeof(uint32_t));
   if (new_bytes == NULL) return false;
-  unit_bytes = new_bytes;
-  unit_capacity = wanted;
+  context->unit_bytes = new_bytes;
+  context->unit_capacity = wanted;
   return true;
 }
 
@@ -218,7 +259,9 @@ static int sequence_length(const uint8_t *bytes, uintptr_t length, uintptr_t at)
 }
 
 /* Transcode to UTF-16 units with the byte map; the unit count. */
-static uintptr_t transcode(const uint8_t *bytes, uintptr_t length) {
+static uintptr_t transcode(Context *context, const uint8_t *bytes, uintptr_t length) {
+  uint16_t *units = context->units;
+  uint32_t *unit_bytes = context->unit_bytes;
   uintptr_t at = 0;
   uintptr_t count = 0;
   while (at < length) {
@@ -252,7 +295,7 @@ static uintptr_t transcode(const uint8_t *bytes, uintptr_t length) {
 }
 
 /* The first unit starting at or after the byte offset. */
-static uintptr_t unit_at_byte(uintptr_t count, uintptr_t byte) {
+static uintptr_t unit_at_byte(const uint32_t *unit_bytes, uintptr_t count, uintptr_t byte) {
   uintptr_t low = 0;
   uintptr_t high = count;
   while (low < high) {
@@ -262,77 +305,90 @@ static uintptr_t unit_at_byte(uintptr_t count, uintptr_t byte) {
   return low;
 }
 
-int zjs_re_exec(uintptr_t handle, uintptr_t input, uintptr_t length, uintptr_t start) {
-  Pattern *compiled = (Pattern *)handle;
+int zjs_re_exec(uintptr_t handle, uintptr_t pattern_handle, uintptr_t input, uintptr_t length, uintptr_t start) {
+  Context *context = (Context *)handle;
+  Pattern *compiled = (Pattern *)pattern_handle;
   const uint8_t *bytes = (const uint8_t *)input;
   ((uint8_t *)input)[length] = 0;
-  capture_total = compiled->captures;
-  if (capture_total > ZJS_RE_MAX_CAPTURES) return ZJS_RE_BAD_BYTECODE;
-  if (capture_total > capture_slots) {
-    uint8_t **grown = (uint8_t **)realloc(captures, sizeof(uint8_t *) * 2 * (size_t)capture_total);
+  context->capture_total = compiled->captures;
+  if (context->capture_total > ZJS_RE_MAX_CAPTURES) return ZJS_RE_BAD_BYTECODE;
+  if (context->capture_total > context->capture_slots) {
+    uint8_t **grown = (uint8_t **)realloc(context->captures, sizeof(uint8_t *) * 2 * (size_t)context->capture_total);
     if (grown == NULL) return ZJS_RE_OUT_OF_MEMORY;
-    captures = grown;
-    capture_slots = capture_total;
+    context->captures = grown;
+    context->capture_slots = context->capture_total;
   }
+  uint8_t **captures = context->captures;
   bool ascii = true;
   for (uintptr_t k = 0; k < length; k++) {
     if (bytes[k] >= 0x80) { ascii = false; break; }
   }
   if (start > length) start = length;
   int result;
-  enter();
+  enter(context);
   if (ascii) {
-    result = lre_exec(captures, compiled->bytecode, bytes, (int)start, (int)length, 0, NULL);
-    leave();
-    if (result < 0) return last_failure != 0 ? last_failure : result;
+    result = lre_exec(captures, compiled->bytecode, bytes, (int)start, (int)length, 0, context);
+    int failure = context->last_failure;
+    leave(context);
+    if (result < 0) return failure != 0 ? failure : result;
     if (result == 0) return ZJS_RE_NO_MATCH;
-    for (int g = 0; g < capture_total; g++) {
+    for (int g = 0; g < context->capture_total; g++) {
       const uint8_t *from = captures[2 * g];
       const uint8_t *to = captures[2 * g + 1];
-      capture_starts[g] = from == NULL ? -1 : (int)(from - bytes);
-      capture_ends[g] = to == NULL ? -1 : (int)(to - bytes);
+      context->capture_starts[g] = from == NULL ? -1 : (int)(from - bytes);
+      context->capture_ends[g] = to == NULL ? -1 : (int)(to - bytes);
     }
     return ZJS_RE_MATCH;
   }
-  if (!reserve_units(length)) { leave(); return ZJS_RE_OUT_OF_MEMORY; }
-  uintptr_t count = transcode(bytes, length);
-  uintptr_t start_unit = unit_at_byte(count, start);
+  if (!reserve_units(context, length)) { leave(context); return ZJS_RE_OUT_OF_MEMORY; }
+  uintptr_t count = transcode(context, bytes, length);
+  uintptr_t start_unit = unit_at_byte(context->unit_bytes, count, start);
   /* Type 1 is 16-bit units; the matcher itself reads surrogate pairs as
      code points when the bytecode was compiled in unicode mode. */
-  result = lre_exec(captures, compiled->bytecode, (const uint8_t *)units, (int)start_unit, (int)count, 1, NULL);
-  leave();
-  if (result < 0) return last_failure != 0 ? last_failure : result;
+  const uint8_t *units = (const uint8_t *)context->units;
+  result = lre_exec(captures, compiled->bytecode, units, (int)start_unit, (int)count, 1, context);
+  int failure = context->last_failure;
+  leave(context);
+  if (result < 0) return failure != 0 ? failure : result;
   if (result == 0) return ZJS_RE_NO_MATCH;
-  for (int g = 0; g < capture_total; g++) {
+  for (int g = 0; g < context->capture_total; g++) {
     const uint8_t *from = captures[2 * g];
     const uint8_t *to = captures[2 * g + 1];
     if (from == NULL || to == NULL) {
-      capture_starts[g] = -1;
-      capture_ends[g] = -1;
+      context->capture_starts[g] = -1;
+      context->capture_ends[g] = -1;
     } else {
-      uintptr_t from_unit = (uintptr_t)(from - (const uint8_t *)units) / 2;
-      uintptr_t to_unit = (uintptr_t)(to - (const uint8_t *)units) / 2;
-      capture_starts[g] = (int)unit_bytes[from_unit];
-      capture_ends[g] = (int)unit_bytes[to_unit];
+      uintptr_t from_unit = (uintptr_t)(from - units) / 2;
+      uintptr_t to_unit = (uintptr_t)(to - units) / 2;
+      context->capture_starts[g] = (int)context->unit_bytes[from_unit];
+      context->capture_ends[g] = (int)context->unit_bytes[to_unit];
     }
   }
   return ZJS_RE_MATCH;
 }
 
-int zjs_re_capture_start(int group) {
-  if (group < 0 || group >= capture_total) return -1;
-  return capture_starts[group];
+int zjs_re_capture_start(uintptr_t handle, int group) {
+  Context *context = (Context *)handle;
+  if (group < 0 || group >= context->capture_total) return -1;
+  return context->capture_starts[group];
 }
 
-int zjs_re_capture_end(int group) {
-  if (group < 0 || group >= capture_total) return -1;
-  return capture_ends[group];
+int zjs_re_capture_end(uintptr_t handle, int group) {
+  Context *context = (Context *)handle;
+  if (group < 0 || group >= context->capture_total) return -1;
+  return context->capture_ends[group];
 }
 
-uintptr_t zjs_re_live_handles(void) {
-  return live_handles;
+uintptr_t zjs_re_live_handles(uintptr_t handle) {
+  return ((Context *)handle)->live_handles;
 }
 
-uintptr_t zjs_re_live_bytes(void) {
-  return live_bytes;
+uintptr_t zjs_re_live_bytes(uintptr_t handle) {
+  return ((Context *)handle)->live_bytes;
+}
+
+uintptr_t zjs_re_retained_bytes(uintptr_t handle) {
+  Context *context = (Context *)handle;
+  return context->scratch_capacity + context->unit_capacity * (sizeof(uint16_t) + sizeof(uint32_t)) +
+         (uintptr_t)context->capture_slots * 2 * sizeof(uint8_t *);
 }

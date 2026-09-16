@@ -5,6 +5,7 @@
 // Nothing else in the engine names the backend.
 import native from "./native/zjs_regexp.h";
 import { bytesOf } from "./heap.zs";
+import { expect } from "std/test";
 
 // Flag bits, the RegExp letters d g i m s u y v.
 export const REGEX_GLOBAL: i32 = 1;
@@ -23,6 +24,7 @@ export const REGEX_OUT_OF_MEMORY: i32 = -1;
 export const REGEX_STEP_LIMIT: i32 = -2;
 export const REGEX_BAD_BYTECODE: i32 = -3;
 export const REGEX_STACK_LIMIT: i32 = -4;
+export const REGEX_SYNTAX: i32 = -5;
 
 const CACHE_LIMIT: usize = 256;
 
@@ -47,10 +49,10 @@ function copyBytes(in bytes: Array<u8>): Array<u8> {
   return copy;
 }
 
-// The backend's scratch buffer holding a copy of the bytes; zero when
+// The context's scratch buffer holding a copy of the bytes; zero when
 // memory is out.
-function loadBuffer(in bytes: Array<u8>): usize {
-  const buffer = native.zjs_re_scratch(bytes.length);
+function loadBuffer(context: usize, in bytes: Array<u8>): usize {
+  const buffer = native.zjs_re_scratch(context, bytes.length);
   if (buffer == 0) return 0;
   let i: usize = 0;
   while (i < bytes.length) {
@@ -61,10 +63,15 @@ function loadBuffer(in bytes: Array<u8>): usize {
 }
 
 export struct RegexBackend {
+  // The native context: scratch, captures, limits, and accounting, owned
+  // here and released with `release`.
+  context: usize;
   entries: Array<RegexEntry>;
   clock: u64;
   generations: f64;
   lastError: Array<u8>;
+  // The category of the last compile failure: a REGEX_* code.
+  lastFailure: i32;
 
   // Whether slot `i` holds this pattern (compared in place: an array
   // element's field cannot be lent out).
@@ -94,8 +101,9 @@ export struct RegexBackend {
     return this.slotHolds(usize(entry), in source, flags);
   }
 
-  // Compile, or find compiled; the cache slot, or -1 with `lastError`
-  // holding the backend's message.
+  // Compile, or find compiled; the cache slot, or -1 with `lastFailure`
+  // holding the category and, for a syntax failure, `lastError` the
+  // backend's message.
   function compile(inout this, in source: Array<u8>, flags: i32): i32 {
     const found = this.lookup(in source, flags);
     if (found >= 0) {
@@ -103,18 +111,20 @@ export struct RegexBackend {
       this.entries[usize(found)].lastUse = this.clock;
       return found;
     }
-    const buffer = loadBuffer(in source);
+    const context = this.context;
+    const buffer = loadBuffer(context, in source);
     if (buffer == 0) {
-      const message: String = "out of memory";
-      this.lastError = bytesOf(in message);
+      this.lastFailure = REGEX_OUT_OF_MEMORY;
+      this.lastError = Array<u8>();
       return -1;
     }
-    const handle = native.zjs_re_compile(buffer, source.length, flags);
+    const handle = native.zjs_re_compile(context, buffer, source.length, flags);
     if (handle == 0) {
+      this.lastFailure = native.zjs_re_failure(context);
       let message = Array<u8>();
       let index: i32 = 0;
       while (index < 128) {
-        const byte = native.zjs_re_error_byte(index);
+        const byte = native.zjs_re_error_byte(context, index);
         if (byte < 0) break;
         message.push(u8(byte));
         index = index + 1;
@@ -122,6 +132,7 @@ export struct RegexBackend {
       this.lastError = move message;
       return -1;
     }
+    this.lastFailure = 0;
     let names = Array<u8>();
     const hasNames = native.zjs_re_has_names(handle) != 0;
     if (hasNames) {
@@ -197,7 +208,7 @@ export struct RegexBackend {
   // The scratch buffer for an input of `length` bytes, to fill with
   // `store` before `execLoaded`; zero when memory is out.
   function reserve(length: usize): usize {
-    return native.zjs_re_scratch(length);
+    return native.zjs_re_scratch(this.context, length);
   }
 
   function store(buffer: usize, index: usize, byte: u8): void {
@@ -208,21 +219,21 @@ export struct RegexBackend {
   // REGEX_* code. The captures are readable until the next exec.
   function execLoaded(inout this, entry: i32, buffer: usize, length: usize, start: usize): i32 {
     const handle = this.entries[usize(entry)].handle;
-    const result = native.zjs_re_exec(handle, buffer, length, start);
+    const result = native.zjs_re_exec(this.context, handle, buffer, length, start);
     this.clock = this.clock + 1;
     this.entries[usize(entry)].lastUse = this.clock;
     return result;
   }
 
   function captureStart(group: i32): i32 {
-    return native.zjs_re_capture_start(group);
+    return native.zjs_re_capture_start(this.context, group);
   }
 
   function captureEnd(group: i32): i32 {
-    return native.zjs_re_capture_end(group);
+    return native.zjs_re_capture_end(this.context, group);
   }
 
-  // Free every compiled pattern (context teardown).
+  // Free every compiled pattern and the native context (teardown).
   function release(inout this): void {
     let i: usize = 0;
     while (i < this.entries.length) {
@@ -230,27 +241,87 @@ export struct RegexBackend {
       i = i + 1;
     }
     this.entries = Array<RegexEntry>();
+    if (this.context != 0) native.zjs_re_context_free(this.context);
+    this.context = 0;
   }
 
   function liveHandles(): usize {
-    return native.zjs_re_live_handles();
+    return native.zjs_re_live_handles(this.context);
   }
 
   function liveBytes(): usize {
-    return native.zjs_re_live_bytes();
+    return native.zjs_re_live_bytes(this.context);
+  }
+
+  // Scratch, transcoding, and capture memory the context keeps between
+  // calls.
+  function retainedBytes(): usize {
+    return native.zjs_re_retained_bytes(this.context);
+  }
+
+  function setStackBudget(bytes: usize): void {
+    native.zjs_re_set_stack_budget(this.context, bytes);
+  }
+
+  function setStepBudget(checks: usize): void {
+    native.zjs_re_set_step_budget(this.context, checks);
   }
 }
 
 export function createRegexBackend(): RegexBackend {
-  return RegexBackend({ entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>() });
+  return RegexBackend({ context: native.zjs_re_context_new(), entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>(), lastFailure: 0 });
 }
 
-// Limits, for the embedder: the matcher's recursion budget in bytes and
-// an optional per-exec step budget (zero for none).
-export function setRegexStackBudget(bytes: usize): void {
-  native.zjs_re_set_stack_budget(bytes);
+function asciiBytes(in text: String): Array<u8> {
+  return bytesOf(in text);
 }
 
-export function setRegexStepBudget(checks: usize): void {
-  native.zjs_re_set_step_budget(checks);
+test "two backends keep independent captures, scratch, and accounting" {
+  let first = createRegexBackend();
+  let second = createRegexBackend();
+  const patternA: String = "(b+)c";
+  const patternB: String = "x(y)?z";
+  const sourceA = asciiBytes(in patternA);
+  const sourceB = asciiBytes(in patternB);
+  const entryA = first.compile(in sourceA, 0);
+  const entryB = second.compile(in sourceB, 0);
+  expect(entryA >= 0).toEqual(true);
+  expect(entryB >= 0).toEqual(true);
+  expect(first.liveHandles()).toEqual(1);
+  expect(second.liveHandles()).toEqual(1);
+  const inputA: String = "abbbcd";
+  const inputB: String = "..xz..";
+  const bytesA = asciiBytes(in inputA);
+  const bytesB = asciiBytes(in inputB);
+  const bufferA = first.reserve(bytesA.length);
+  let i: usize = 0;
+  while (i < bytesA.length) { first.store(bufferA, i, bytesA[i]); i = i + 1; }
+  expect(first.execLoaded(entryA, bufferA, bytesA.length, 0)).toEqual(REGEX_MATCH);
+  // The second context's exec must not disturb the first's captures.
+  const bufferB = second.reserve(bytesB.length);
+  i = 0;
+  while (i < bytesB.length) { second.store(bufferB, i, bytesB[i]); i = i + 1; }
+  expect(second.execLoaded(entryB, bufferB, bytesB.length, 0)).toEqual(REGEX_MATCH);
+  expect(first.captureStart(0)).toEqual(1);
+  expect(first.captureEnd(0)).toEqual(5);
+  expect(first.captureStart(1)).toEqual(1);
+  expect(first.captureEnd(1)).toEqual(4);
+  expect(second.captureStart(0)).toEqual(2);
+  expect(second.captureEnd(0)).toEqual(4);
+  expect(second.captureStart(1)).toEqual(-1);
+  expect(first.retainedBytes() > 0).toEqual(true);
+  // A syntax failure and a limit failure are told apart.
+  const bad: String = "(";
+  const badBytes = asciiBytes(in bad);
+  expect(first.compile(in badBytes, 0)).toEqual(-1);
+  expect(first.lastFailure).toEqual(REGEX_SYNTAX);
+  expect(first.lastError.length > 0).toEqual(true);
+  second.setStackBudget(1);
+  const deep: String = "((((a))))";
+  const deepBytes = asciiBytes(in deep);
+  expect(second.compile(in deepBytes, 0)).toEqual(-1);
+  expect(second.lastFailure).toEqual(REGEX_STACK_LIMIT);
+  first.release();
+  second.release();
+  expect(first.context).toEqual(0);
 }
