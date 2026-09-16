@@ -100,6 +100,12 @@ function thisStringHandle(inout runtime: Runtime, thisValue: Value, in method: S
   return asCell(text);
 }
 
+function thisStringValue(inout runtime: Runtime, thisValue: Value, in method: String): Value {
+  const handle = thisStringHandle(inout runtime, thisValue, in method);
+  if (runtime.pendingThrow) return undefinedValue();
+  return cellValue(handle);
+}
+
 // An integer argument: ToIntegerOrInfinity clamped to i32, `fallback`
 // when undefined.
 function integerArgument(inout runtime: Runtime, value: Value, fallback: i32): i32 {
@@ -462,8 +468,15 @@ function stringAt(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
   return runtime.substringValue(handle, usize(index), usize(index) + 1);
 }
 
-// The byte offset of `needle` in `haystack` at or after `startAt`, or -1.
-function findBytes(in haystack: Array<u16>, in needle: Array<u16>, startAt: usize): i32 {
+// --- Narrow fast paths ---
+//
+// A method whose receiver and arguments are all narrow works on their
+// Latin-1 storage bytes and builds a narrow result directly; the same
+// algorithms, generic over the element, serve the units path. The
+// semantics are identical: a narrow string's bytes are its code units.
+
+// The offset of `needle` in `haystack` at or after `startAt`, or -1.
+function findBytes<T>(in haystack: Array<T>, in needle: Array<T>, startAt: usize): i32 {
   if (needle.length == 0) return startAt <= haystack.length ? i32(startAt) : i32(haystack.length);
   if (needle.length > haystack.length) return -1;
   let start = startAt;
@@ -480,50 +493,109 @@ function findBytes(in haystack: Array<u16>, in needle: Array<u16>, startAt: usiz
   return -1;
 }
 
+// The last offset at or before `from` where `needle` occurs, or -1.
+function findLastIn<T>(in haystack: Array<T>, in needle: Array<T>, limit: usize): i32 {
+  if (needle.length > haystack.length) return -1;
+  let start = limit;
+  const last = haystack.length - needle.length;
+  if (start > last) start = last;
+  while (true) {
+    let matched = true;
+    let k: usize = 0;
+    while (matched && k < needle.length) {
+      if (haystack[start + k] != needle[k]) matched = false;
+      k = k + 1;
+    }
+    if (matched) return i32(start);
+    if (start == 0) return -1;
+    start = start - 1;
+  }
+  return -1;
+}
+
+function endsWithIn<T>(in haystack: Array<T>, in needle: Array<T>, end: usize): boolean {
+  if (needle.length > end) return false;
+  const start = end - needle.length;
+  let k: usize = 0;
+  while (k < needle.length) {
+    if (haystack[start + k] != needle[k]) return false;
+    k = k + 1;
+  }
+  return true;
+}
+
+function appendAll<T>(inout target: Array<T>, in source: Array<T>): void {
+  let k: usize = 0;
+  while (k < source.length) {
+    target.push(source[k]);
+    k = k + 1;
+  }
+}
+
 function argumentBytes(inout runtime: Runtime, value: Value): Array<u16> {
   const text = runtime.toStringValue(value);
   if (runtime.pendingThrow) return Array<u16>();
   return runtime.heap.stringUnits(asCell(text));
 }
 
+// An argument as a string cell (0 after a throw).
+function argumentHandle(inout runtime: Runtime, value: Value): u32 {
+  const text = runtime.toStringValue(value);
+  if (runtime.pendingThrow) return 0;
+  return asCell(text);
+}
+
+function narrow(in runtime: Runtime, handle: u32): boolean {
+  return !runtime.heap.isWideString(handle);
+}
+
 function stringIndexOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "indexOf";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.pushTempRoot(cellValue(handle));
+  const needleHandle = argumentHandle(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  const startAt = clampIndex(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
+  if (narrow(in runtime, handle) && narrow(in runtime, needleHandle)) {
+    const hay = runtime.heap.stringStorageBytes(handle);
+    const key = runtime.heap.stringStorageBytes(needleHandle);
+    const position = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(hay.length));
+    if (runtime.pendingThrow) return undefinedValue();
+    return int32Value(findBytes(in hay, in key, usize(position)));
+  }
+  const bytes = runtime.heap.stringUnits(handle);
+  const needle = runtime.heap.stringUnits(needleHandle);
+  const startAt = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
   if (runtime.pendingThrow) return undefinedValue();
-  return int32Value(findBytes(in bytes, in needle, usize(startAt < 0 ? 0 : startAt)));
+  return int32Value(findBytes(in bytes, in needle, usize(startAt)));
 }
 
 function stringLastIndexOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "lastIndexOf";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.pushTempRoot(cellValue(handle));
+  const needleHandle = argumentHandle(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  let limit = i32(bytes.length);
+  const length = i32(runtime.heap.stringLength(handle));
+  let limit = length;
   const given = runtime.argument(argsBase, argc, 1);
   if (!isUndefined(given)) {
     const number = runtime.toNumberValue(given);
     if (runtime.pendingThrow) return undefinedValue();
     if (number == number) limit = integerArgument(inout runtime, given, limit);
   }
-  if (needle.length > bytes.length) return int32Value(-1);
-  let start = i32(bytes.length - needle.length);
-  if (limit < start) start = limit;
-  while (start >= 0) {
-    let matched = true;
-    let k: usize = 0;
-    while (matched && k < needle.length) {
-      if (bytes[usize(start) + k] != needle[k]) matched = false;
-      k = k + 1;
-    }
-    if (matched) return int32Value(start);
-    start = start - 1;
+  if (limit < 0) limit = 0;
+  if (narrow(in runtime, handle) && narrow(in runtime, needleHandle)) {
+    const hay = runtime.heap.stringStorageBytes(handle);
+    const key = runtime.heap.stringStorageBytes(needleHandle);
+    return int32Value(findLastIn(in hay, in key, usize(limit)));
   }
-  return int32Value(-1);
+  const bytes = runtime.heap.stringUnits(handle);
+  const needle = runtime.heap.stringUnits(needleHandle);
+  return int32Value(findLastIn(in bytes, in needle, usize(limit)));
 }
 
 // --- The RegExp protocol ---
@@ -663,29 +735,43 @@ function stringMatchAll(inout runtime: Runtime, thisValue: Value, argsBase: u32,
 
 function stringIncludes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "includes";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   if (rejectRegExpArgument(inout runtime, runtime.argument(argsBase, argc, 0), in text)) return undefinedValue();
-  const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.pushTempRoot(cellValue(handle));
+  const needleHandle = argumentHandle(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  const startAt = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
+  const length = i32(runtime.heap.stringLength(handle));
+  const position = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), length);
   if (runtime.pendingThrow) return undefinedValue();
-  return booleanValue(findBytes(in bytes, in needle, usize(startAt)) >= 0);
+  if (narrow(in runtime, handle) && narrow(in runtime, needleHandle)) {
+    const hay = runtime.heap.stringStorageBytes(handle);
+    const key = runtime.heap.stringStorageBytes(needleHandle);
+    return booleanValue(findBytes(in hay, in key, usize(position)) >= 0);
+  }
+  const bytes = runtime.heap.stringUnits(handle);
+  const needle = runtime.heap.stringUnits(needleHandle);
+  return booleanValue(findBytes(in bytes, in needle, usize(position)) >= 0);
 }
 
 function stringStartsWith(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "startsWith";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   if (rejectRegExpArgument(inout runtime, runtime.argument(argsBase, argc, 0), in text)) return undefinedValue();
-  const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.pushTempRoot(cellValue(handle));
+  const needleHandle = argumentHandle(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  const startAt = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
+  const length = i32(runtime.heap.stringLength(handle));
+  const position = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), length);
   if (runtime.pendingThrow) return undefinedValue();
-  if (usize(startAt) + needle.length > bytes.length) return booleanValue(false);
+  const needleLength = runtime.heap.stringLength(needleHandle);
+  if (usize(position) + needleLength > usize(length)) return booleanValue(false);
   let k: usize = 0;
-  while (k < needle.length) {
-    if (bytes[usize(startAt) + k] != needle[k]) return booleanValue(false);
+  while (k < needleLength) {
+    if (runtime.heap.stringUnit(handle, usize(position) + k) != runtime.heap.stringUnit(needleHandle, k)) return booleanValue(false);
     k = k + 1;
   }
   return booleanValue(true);
@@ -693,18 +779,22 @@ function stringStartsWith(inout runtime: Runtime, thisValue: Value, argsBase: u3
 
 function stringEndsWith(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "endsWith";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   if (rejectRegExpArgument(inout runtime, runtime.argument(argsBase, argc, 0), in text)) return undefinedValue();
-  const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.pushTempRoot(cellValue(handle));
+  const needleHandle = argumentHandle(inout runtime, runtime.argument(argsBase, argc, 0));
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  const end = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), i32(bytes.length)), i32(bytes.length));
+  const length = i32(runtime.heap.stringLength(handle));
+  const end = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), length), length);
   if (runtime.pendingThrow) return undefinedValue();
-  if (needle.length > usize(end)) return booleanValue(false);
-  const start = usize(end) - needle.length;
+  const needleLength = runtime.heap.stringLength(needleHandle);
+  if (needleLength > usize(end)) return booleanValue(false);
+  const start = usize(end) - needleLength;
   let k: usize = 0;
-  while (k < needle.length) {
-    if (bytes[start + k] != needle[k]) return booleanValue(false);
+  while (k < needleLength) {
+    if (runtime.heap.stringUnit(handle, start + k) != runtime.heap.stringUnit(needleHandle, k)) return booleanValue(false);
     k = k + 1;
   }
   return booleanValue(true);
@@ -791,38 +881,49 @@ function stringSubstr(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 
 function stringConcat(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "concat";
-  let bytes = thisString(inout runtime, thisValue, in text);
+  let result = thisStringValue(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   let index: u32 = 0;
   while (index < argc) {
-    const more = argumentBytes(inout runtime, runtime.argument(argsBase, argc, index));
+    runtime.pushTempRoot(result);
+    const more = runtime.toStringValue(runtime.argument(argsBase, argc, index));
+    runtime.popTempRoot();
     if (runtime.pendingThrow) return undefinedValue();
-    let k: usize = 0;
-    while (k < more.length) {
-      bytes.push(more[k]);
-      k = k + 1;
-    }
+    result = runtime.concatStrings(result, more);
     index = index + 1;
   }
-  return runtime.newStringUnits(move bytes);
+  return result;
 }
 
-function trimBytes(in bytes: Array<u16>, leading: boolean, trailing: boolean): Array<u16> {
+// The trimmed bounds of a string cell.
+function trimmedStart(in runtime: Runtime, handle: u32, end: usize): usize {
   let start: usize = 0;
-  let end = bytes.length;
-  if (leading) {
-    while (start < end && isJsSpace(bytes[start])) { start = start + 1; }
-  }
-  if (trailing) {
-    while (end > start && isJsSpace(bytes[end - 1])) { end = end - 1; }
-  }
-  return sliceBytes(in bytes, start, end);
+  while (start < end && isJsSpace(runtime.heap.stringUnit(handle, start))) { start = start + 1; }
+  return start;
+}
+
+function trimmedEnd(in runtime: Runtime, handle: u32, start: usize, length: usize): usize {
+  let end = length;
+  while (end > start && isJsSpace(runtime.heap.stringUnit(handle, end - 1))) { end = end - 1; }
+  return end;
+}
+
+function trimString(inout runtime: Runtime, thisValue: Value, in method: String, leading: boolean, trailing: boolean): Value {
+  const handle = thisStringHandle(inout runtime, thisValue, in method);
+  if (runtime.pendingThrow) return undefinedValue();
+  const length = runtime.heap.stringLength(handle);
+  let start: usize = 0;
+  if (leading) start = trimmedStart(in runtime, handle, length);
+  let end = length;
+  if (trailing) end = trimmedEnd(in runtime, handle, start, length);
+  if (start == 0 && end == length) return cellValue(handle);
+  return runtime.substringValue(handle, start, end);
 }
 
 // GetSubstitution for a string pattern: $$, $&, $` and $' expand; other
 // dollar forms stay as written.
-function expandReplacement(in replacement: Array<u16>, in matched: Array<u16>, position: usize, in subject: Array<u16>): Array<u16> {
-  let joined = Array<u16>();
+function expandReplacement<T>(in replacement: Array<T>, in matched: Array<T>, position: usize, in subject: Array<T>): Array<T> {
+  let joined = Array<T>();
   let k: usize = 0;
   while (k < replacement.length) {
     const byte = replacement[k];
@@ -893,18 +994,60 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
       return runtime.callValue(replacer, searchArgument, move args);
     }
   }
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  const pattern = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
-  if (runtime.pendingThrow) return undefinedValue();
+  runtime.pushTempRoot(cellValue(handle));
+  const patternHandle = argumentHandle(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
+  runtime.pushTempRoot(cellValue(patternHandle));
   const replaceValue = runtime.argument(argsBase, argc, 1);
   // The replacement string converts once, before any match.
-  let fixedReplacement = Array<u16>();
+  let replacementHandle: u32 = 0;
   const isFunction = runtime.isCallable(replaceValue);
   if (!isFunction) {
-    fixedReplacement = argumentBytes(inout runtime, replaceValue);
-    if (runtime.pendingThrow) return undefinedValue();
+    replacementHandle = argumentHandle(inout runtime, replaceValue);
+    if (runtime.pendingThrow) {
+      runtime.popTempRoot();
+      runtime.popTempRoot();
+      return undefinedValue();
+    }
   }
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  if (!isFunction && narrow(in runtime, handle) && narrow(in runtime, patternHandle) && narrow(in runtime, replacementHandle)) {
+    const hay = runtime.heap.stringStorageBytes(handle);
+    const key = runtime.heap.stringStorageBytes(patternHandle);
+    const template = runtime.heap.stringStorageBytes(replacementHandle);
+    const step: usize = key.length == 0 ? 1 : key.length;
+    let joined = Array<u8>();
+    let copied: usize = 0;
+    let searchFrom: usize = 0;
+    while (searchFrom <= hay.length) {
+      const found = findBytes(in hay, in key, searchFrom);
+      if (found < 0) break;
+      const position = usize(found);
+      while (copied < position) {
+        joined.push(hay[copied]);
+        copied = copied + 1;
+      }
+      const replacement = expandReplacement(in template, in key, position, in hay);
+      appendAll(inout joined, in replacement);
+      copied = position + key.length;
+      searchFrom = position + step;
+    }
+    while (copied < hay.length) {
+      joined.push(hay[copied]);
+      copied = copied + 1;
+    }
+    return runtime.newStringLatin1(move joined);
+  }
+  const bytes = runtime.heap.stringUnits(handle);
+  const pattern = runtime.heap.stringUnits(patternHandle);
+  let fixedReplacement = Array<u16>();
+  if (!isFunction) fixedReplacement = runtime.heap.stringUnits(replacementHandle);
   let positions = Array<usize>();
   const advance: usize = pattern.length == 0 ? 1 : pattern.length;
   let searchFrom: usize = 0;
@@ -1025,34 +1168,46 @@ function stringToWellFormed(inout runtime: Runtime, thisValue: Value, argsBase: 
 
 function stringTrim(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "trim";
-  const bytes = thisString(inout runtime, thisValue, in text);
-  if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newStringUnits(trimBytes(in bytes, true, true));
+  return trimString(inout runtime, thisValue, in text, true, true);
 }
 
 function stringTrimStart(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "trimStart";
-  const bytes = thisString(inout runtime, thisValue, in text);
-  if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newStringUnits(trimBytes(in bytes, true, false));
+  return trimString(inout runtime, thisValue, in text, true, false);
 }
 
 function stringTrimEnd(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "trimEnd";
-  const bytes = thisString(inout runtime, thisValue, in text);
-  if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newStringUnits(trimBytes(in bytes, false, true));
+  return trimString(inout runtime, thisValue, in text, false, true);
 }
 
 function stringToUpperCase(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "toUpperCase";
-  let bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  // Simple mappings in place, plus the one common expansion (sharp s).
+  if (narrow(in runtime, handle)) {
+    // Bytes map to bytes, except the two Latin-1 letters whose capitals
+    // lie above it (y with diaeresis, micro sign) and the sharp s, which
+    // expands; those take the units path.
+    let bytes = runtime.heap.stringStorageBytes(handle);
+    let simple = true;
+    let index: usize = 0;
+    while (index < bytes.length) {
+      const byte = bytes[index];
+      if (byte == 0xFF || byte == 0xB5 || byte == 0xDF) {
+        simple = false;
+        break;
+      }
+      bytes[index] = u8(upperUnit(u16(byte)));
+      index = index + 1;
+    }
+    if (simple) return runtime.newStringLatin1(move bytes);
+  }
+  const units = runtime.heap.stringUnits(handle);
   let joined = Array<u16>();
   let index: usize = 0;
-  while (index < bytes.length) {
-    const unit = bytes[index];
+  while (index < units.length) {
+    const unit = units[index];
     if (unit == 0xDF) {
       joined.push(83);
       joined.push(83);
@@ -1066,21 +1221,34 @@ function stringToUpperCase(inout runtime: Runtime, thisValue: Value, argsBase: u
 
 function stringToLowerCase(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "toLowerCase";
-  let bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
+  if (narrow(in runtime, handle)) {
+    // Every Latin-1 lowercase letter is Latin-1.
+    let bytes = runtime.heap.stringStorageBytes(handle);
+    let index: usize = 0;
+    while (index < bytes.length) {
+      bytes[index] = u8(lowerUnit(u16(bytes[index])));
+      index = index + 1;
+    }
+    return runtime.newStringLatin1(move bytes);
+  }
+  let units = runtime.heap.stringUnits(handle);
   let index: usize = 0;
-  while (index < bytes.length) {
-    bytes[index] = lowerUnit(bytes[index]);
+  while (index < units.length) {
+    units[index] = lowerUnit(units[index]);
     index = index + 1;
   }
-  return runtime.newStringUnits(move bytes);
+  return runtime.newStringUnits(move units);
 }
 
 function stringRepeat(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "repeat";
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
+  runtime.pushTempRoot(cellValue(handle));
   const countNumber = runtime.toNumberValue(runtime.argument(argsBase, argc, 0));
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   if (countNumber < 0.0 || countNumber == 1.0 / 0.0) {
     const message: String = "Invalid count value";
@@ -1089,50 +1257,83 @@ function stringRepeat(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     return undefinedValue();
   }
   const count: u32 = countNumber != countNumber ? 0 : u32(truncateDouble(countNumber));
+  if (narrow(in runtime, handle)) {
+    const bytes = runtime.heap.stringStorageBytes(handle);
+    let joined = Array<u8>();
+    let repeat: u32 = 0;
+    while (repeat < count) {
+      appendAll(inout joined, in bytes);
+      repeat = repeat + 1;
+    }
+    return runtime.newStringLatin1(move joined);
+  }
+  const units = runtime.heap.stringUnits(handle);
   let joined = Array<u16>();
   let repeat: u32 = 0;
   while (repeat < count) {
-    let k: usize = 0;
-    while (k < bytes.length) {
-      joined.push(bytes[k]);
-      k = k + 1;
-    }
+    appendAll(inout joined, in units);
     repeat = repeat + 1;
   }
   return runtime.newStringUnits(move joined);
 }
 
 function padBytes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, atStart: boolean, in method: String): Value {
-  const bytes = thisString(inout runtime, thisValue, in method);
+  const handle = thisStringHandle(inout runtime, thisValue, in method);
   if (runtime.pendingThrow) return undefinedValue();
+  runtime.pushTempRoot(cellValue(handle));
   const target = runtime.toLength(runtime.argument(argsBase, argc, 0));
-  if (runtime.pendingThrow) return undefinedValue();
-  let filler = Array<u16>();
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
   const given = runtime.argument(argsBase, argc, 1);
-  if (isUndefined(given)) {
+  let fillerHandle: u32 = 0;
+  if (!isUndefined(given)) {
+    fillerHandle = argumentHandle(inout runtime, given);
+    if (runtime.pendingThrow) {
+      runtime.popTempRoot();
+      return undefinedValue();
+    }
+  }
+  runtime.popTempRoot();
+  const length = runtime.heap.stringLength(handle);
+  let fillerLength: usize = 1;
+  if (fillerHandle != 0) fillerLength = runtime.heap.stringLength(fillerHandle);
+  if (usize(target) <= length || fillerLength == 0) return cellValue(handle);
+  const missing = usize(target) - length;
+  if (narrow(in runtime, handle) && (fillerHandle == 0 || narrow(in runtime, fillerHandle))) {
+    let filler = Array<u8>();
+    if (fillerHandle == 0) {
+      filler.push(32);
+    } else {
+      filler = runtime.heap.stringStorageBytes(fillerHandle);
+    }
+    const bytes = runtime.heap.stringStorageBytes(handle);
+    let joined = Array<u8>();
+    if (!atStart) appendAll(inout joined, in bytes);
+    let k: usize = 0;
+    while (k < missing) {
+      joined.push(filler[k % filler.length]);
+      k = k + 1;
+    }
+    if (atStart) appendAll(inout joined, in bytes);
+    return runtime.newStringLatin1(move joined);
+  }
+  let filler = Array<u16>();
+  if (fillerHandle == 0) {
     filler.push(32);
   } else {
-    filler = argumentBytes(inout runtime, given);
-    if (runtime.pendingThrow) return undefinedValue();
+    filler = runtime.heap.stringUnits(fillerHandle);
   }
-  if (usize(target) <= bytes.length || filler.length == 0) return runtime.newStringUnits(copyAll(in bytes));
-  const missing = usize(target) - bytes.length;
-  let padding = Array<u16>();
-  while (padding.length < missing) {
-    padding.push(filler[padding.length % filler.length]);
-  }
+  const units = runtime.heap.stringUnits(handle);
   let joined = Array<u16>();
-  if (atStart) {
-    let k: usize = 0;
-    while (k < padding.length) { joined.push(padding[k]); k = k + 1; }
-    k = 0;
-    while (k < bytes.length) { joined.push(bytes[k]); k = k + 1; }
-  } else {
-    let k: usize = 0;
-    while (k < bytes.length) { joined.push(bytes[k]); k = k + 1; }
-    k = 0;
-    while (k < padding.length) { joined.push(padding[k]); k = k + 1; }
+  if (!atStart) appendAll(inout joined, in units);
+  let k: usize = 0;
+  while (k < missing) {
+    joined.push(filler[k % filler.length]);
+    k = k + 1;
   }
+  if (atStart) appendAll(inout joined, in units);
   return runtime.newStringUnits(move joined);
 }
 
@@ -1161,43 +1362,86 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
     args.push(runtime.argument(argsBase, argc, 1));
     return runtime.callValue(splitter, separatorArgument, move args);
   }
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
+  runtime.pushTempRoot(cellValue(handle));
   const result = runtime.heap.allocateArray(0);
+  runtime.pushTempRoot(cellValue(result));
   const separatorValue = runtime.argument(argsBase, argc, 0);
   const limitValue = runtime.argument(argsBase, argc, 1);
   const limit: u32 = isUndefined(limitValue) ? 4294967295 : runtime.toLength(limitValue);
-  if (runtime.pendingThrow) return undefinedValue();
-  if (limit == 0) return cellValue(result);
-  if (isUndefined(separatorValue)) {
-    runtime.heap.arraySet(result, 0, runtime.newStringUnits(copyAll(in bytes)));
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
+  if (limit == 0) {
+    runtime.popTempRoot();
+    runtime.popTempRoot();
     return cellValue(result);
   }
-  const separator = argumentBytes(inout runtime, separatorValue);
-  if (runtime.pendingThrow) return undefinedValue();
-  if (separator.length == 0) {
+  if (isUndefined(separatorValue)) {
+    runtime.heap.arraySet(result, 0, cellValue(handle));
+    runtime.popTempRoot();
+    runtime.popTempRoot();
+    return cellValue(result);
+  }
+  const separatorHandle = argumentHandle(inout runtime, separatorValue);
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
+  const length = runtime.heap.stringLength(handle);
+  const separatorLength = runtime.heap.stringLength(separatorHandle);
+  // Every piece is a substring of the receiver, cut in storage form.
+  if (separatorLength == 0) {
     let index: usize = 0;
-    while (index < bytes.length && runtime.heap.arrayLength(result) < limit) {
-      let one = Array<u16>();
-      one.push(bytes[index]);
+    while (index < length && runtime.heap.arrayLength(result) < limit) {
       const count = runtime.heap.arrayLength(result);
-      runtime.heap.arraySet(result, count, runtime.newStringUnits(move one));
+      runtime.heap.arraySet(result, count, runtime.substringValue(handle, index, index + 1));
       index = index + 1;
     }
+    runtime.popTempRoot();
+    runtime.popTempRoot();
     return cellValue(result);
   }
-  let start: usize = 0;
-  while (runtime.heap.arrayLength(result) < limit) {
-    const found = findBytes(in bytes, in separator, start);
-    if (found < 0) {
-      const count = runtime.heap.arrayLength(result);
-      runtime.heap.arraySet(result, count, runtime.newStringUnits(sliceFrom(in bytes, start)));
-      return cellValue(result);
+  let cuts = Array<usize>();
+  if (narrow(in runtime, handle) && narrow(in runtime, separatorHandle)) {
+    const hay = runtime.heap.stringStorageBytes(handle);
+    const key = runtime.heap.stringStorageBytes(separatorHandle);
+    let searchFrom: usize = 0;
+    while (true) {
+      const found = findBytes(in hay, in key, searchFrom);
+      if (found < 0) break;
+      cuts.push(usize(found));
+      searchFrom = usize(found) + separatorLength;
     }
-    const count = runtime.heap.arrayLength(result);
-    runtime.heap.arraySet(result, count, runtime.newStringUnits(sliceBytes(in bytes, start, usize(found))));
-    start = usize(found) + separator.length;
+  } else {
+    const hay = runtime.heap.stringUnits(handle);
+    const key = runtime.heap.stringUnits(separatorHandle);
+    let searchFrom: usize = 0;
+    while (true) {
+      const found = findBytes(in hay, in key, searchFrom);
+      if (found < 0) break;
+      cuts.push(usize(found));
+      searchFrom = usize(found) + separatorLength;
+    }
   }
+  let start: usize = 0;
+  let cut: usize = 0;
+  while (cut < cuts.length && runtime.heap.arrayLength(result) < limit) {
+    const count = runtime.heap.arrayLength(result);
+    runtime.heap.arraySet(result, count, runtime.substringValue(handle, start, cuts[cut]));
+    start = cuts[cut] + separatorLength;
+    cut = cut + 1;
+  }
+  if (runtime.heap.arrayLength(result) < limit) {
+    const count = runtime.heap.arrayLength(result);
+    runtime.heap.arraySet(result, count, runtime.substringValue(handle, start, length));
+  }
+  runtime.popTempRoot();
+  runtime.popTempRoot();
   return cellValue(result);
 }
 
@@ -1215,27 +1459,61 @@ function stringReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     args.push(runtime.argument(argsBase, argc, 1));
     return runtime.callValue(replacer, searchArgument, move args);
   }
-  const bytes = thisString(inout runtime, thisValue, in text);
+  const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
-  const pattern = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
-  if (runtime.pendingThrow) return undefinedValue();
-  const found = findBytes(in bytes, in pattern, 0);
-  if (found < 0) return runtime.newStringUnits(copyAll(in bytes));
+  runtime.pushTempRoot(cellValue(handle));
+  const patternHandle = argumentHandle(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
+  runtime.pushTempRoot(cellValue(patternHandle));
   const replacementValue = runtime.argument(argsBase, argc, 1);
+  // A string replacement converts before the search; a function is
+  // called only on a match.
+  let replacementHandle: u32 = 0;
+  const functional = runtime.isCallable(replacementValue);
+  if (!functional) {
+    replacementHandle = argumentHandle(inout runtime, replacementValue);
+    if (runtime.pendingThrow) {
+      runtime.popTempRoot();
+      runtime.popTempRoot();
+      return undefinedValue();
+    }
+  }
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  if (!functional && narrow(in runtime, handle) && narrow(in runtime, patternHandle) && narrow(in runtime, replacementHandle)) {
+    const bytes = runtime.heap.stringStorageBytes(handle);
+    const pattern = runtime.heap.stringStorageBytes(patternHandle);
+    const found = findBytes(in bytes, in pattern, 0);
+    if (found < 0) return cellValue(handle);
+    const template = runtime.heap.stringStorageBytes(replacementHandle);
+    const replacement = expandReplacement(in template, in pattern, usize(found), in bytes);
+    let joined = Array<u8>();
+    let k: usize = 0;
+    while (k < usize(found)) {
+      joined.push(bytes[k]);
+      k = k + 1;
+    }
+    appendAll(inout joined, in replacement);
+    k = usize(found) + pattern.length;
+    while (k < bytes.length) {
+      joined.push(bytes[k]);
+      k = k + 1;
+    }
+    return runtime.newStringLatin1(move joined);
+  }
+  const bytes = runtime.heap.stringUnits(handle);
+  const pattern = runtime.heap.stringUnits(patternHandle);
+  const found = findBytes(in bytes, in pattern, 0);
+  if (found < 0) return cellValue(handle);
   const replacement = replacementFor(inout runtime, replacementValue, in pattern, usize(found), in bytes);
   if (runtime.pendingThrow) return undefinedValue();
   let joined = sliceBytes(in bytes, 0, usize(found));
-  let k: usize = 0;
-  while (k < replacement.length) {
-    joined.push(replacement[k]);
-    k = k + 1;
-  }
+  appendAll(inout joined, in replacement);
   const rest = sliceFrom(in bytes, usize(found) + pattern.length);
-  k = 0;
-  while (k < rest.length) {
-    joined.push(rest[k]);
-    k = k + 1;
-  }
+  appendAll(inout joined, in rest);
   return runtime.newStringUnits(move joined);
 }
 

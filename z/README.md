@@ -170,7 +170,12 @@ as itself); host output goes out as UTF-8 with a lone surrogate written
 as U+FFFD; the regex backend receives the storage as libregexp's 8-bit
 or 16-bit mode, nothing transcoded. Case mapping covers ASCII and
 Latin-1 plus the sharp s expansion; the full Unicode tables are not
-here. `Date`: the time value lives in a hidden slot,
+here. The common `String.prototype` methods -- search, slicing, split,
+replace with a string, case mapping, trim, repeat, padding, concat --
+work on a narrow string's storage bytes directly and build a narrow
+result in one pass; wide strings take the units path, same algorithms
+generic over the element. `z/tools/malloc-count.c` is a dylib to
+`DYLD_INSERT_LIBRARIES` when counting allocator calls. `Date`: the time value lives in a hidden slot,
 the arithmetic is the specification's over `f64`, the wall clock and the
 local zone's offset and abbreviation come from libc through a three-
 function C header the Z module imports directly, the Date Time String

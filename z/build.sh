@@ -12,6 +12,8 @@ mkdir -p "$OUT"
 
 echo "[0/6] native backend"
 "$HERE/native.sh" >/dev/null
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$HERE/engine/native" -o "$OUT/native/regex_contexts" "$HERE/tests/regex_contexts.c" "$OUT/native/libzjsregexp.a"
+"$OUT/native/regex_contexts"
 
 echo "[1/6] Z engine -> libzjsz.a"
 (cd "$Z_LANG" && bun run z build "$HERE/engine" >/dev/null)

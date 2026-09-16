@@ -17,6 +17,12 @@ typedef struct {
   uintptr_t step_budget;
   uintptr_t steps_left;
   int last_failure;
+  /* Set by lre_realloc when the allocator refuses (or the injected
+     limit does); the category of a failed call. */
+  bool allocation_failed;
+  uintptr_t allocation_count;
+  uintptr_t allocation_limit;
+  uintptr_t allocations_until_failure;
   char error_message[128];
   /* The scratch buffer Z fills. */
   uint8_t *scratch;
@@ -43,12 +49,24 @@ typedef struct {
 /* --- Host callbacks libregexp requires; `opaque` is the context --- */
 
 void *lre_realloc(void *opaque, void *ptr, size_t size) {
-  (void)opaque;
+  Context *context = (Context *)opaque;
   if (size == 0) {
     free(ptr);
     return NULL;
   }
-  return realloc(ptr, size);
+  if (context != NULL) {
+    context->allocation_count += 1;
+    if (context->allocation_limit != 0) {
+      if (context->allocations_until_failure == 0) {
+        context->allocation_failed = true;
+        return NULL;
+      }
+      context->allocations_until_failure -= 1;
+    }
+  }
+  void *grown = realloc(ptr, size);
+  if (grown == NULL && context != NULL) context->allocation_failed = true;
+  return grown;
 }
 
 bool lre_check_stack_overflow(void *opaque, size_t alloca_size) {
@@ -80,6 +98,7 @@ static void enter(Context *context) {
   context->stack_floor = here > context->stack_budget ? here - context->stack_budget : 1;
   context->steps_left = context->step_budget;
   context->last_failure = 0;
+  context->allocation_failed = false;
 }
 
 static void leave(Context *context) {
@@ -111,13 +130,19 @@ void zjs_re_set_step_budget(uintptr_t handle, uintptr_t checks) {
   ((Context *)handle)->step_budget = checks;
 }
 
+void zjs_re_set_allocation_limit(uintptr_t handle, uintptr_t count) {
+  Context *context = (Context *)handle;
+  context->allocation_limit = count;
+  context->allocations_until_failure = count == 0 ? 0 : count - 1;
+}
+
 uintptr_t zjs_re_scratch(uintptr_t handle, uintptr_t length) {
   Context *context = (Context *)handle;
   if (length + 1 > context->scratch_capacity) {
     uintptr_t wanted = context->scratch_capacity * 2;
     if (wanted < length + 1) wanted = length + 1;
     if (wanted < 256) wanted = 256;
-    uint8_t *grown = (uint8_t *)realloc(context->scratch, wanted);
+    uint8_t *grown = (uint8_t *)lre_realloc(context, context->scratch, wanted);
     if (grown == NULL) return 0;
     context->scratch = grown;
     context->scratch_capacity = wanted;
@@ -139,19 +164,21 @@ uintptr_t zjs_re_compile(uintptr_t handle, uintptr_t pattern, uintptr_t length, 
   uint8_t *bytecode = lre_compile(&bytecode_length, context->error_message, (int)sizeof(context->error_message),
                                   (const char *)pattern, (size_t)length, flags, context);
   int failure = context->last_failure;
+  bool allocation_failed = context->allocation_failed;
   leave(context);
   if (bytecode == NULL) {
-    /* A syntax failure carries a message; a resource failure does not. */
-    if (failure != 0) {
-      context->last_failure = failure;
-    } else if (context->error_message[0] == 0) {
+    /* The category comes from what the callbacks saw, never from the
+       message: the parser writes "out of memory" as a message too. */
+    if (allocation_failed) {
       context->last_failure = ZJS_RE_OUT_OF_MEMORY;
+    } else if (failure != 0) {
+      context->last_failure = failure;
     } else {
       context->last_failure = ZJS_RE_SYNTAX;
     }
     return 0;
   }
-  Pattern *compiled = (Pattern *)malloc(sizeof(Pattern));
+  Pattern *compiled = (Pattern *)lre_realloc(context, NULL, sizeof(Pattern));
   if (compiled == NULL) {
     lre_realloc(NULL, bytecode, 0);
     context->last_failure = ZJS_RE_OUT_OF_MEMORY;
@@ -227,7 +254,7 @@ int zjs_re_exec(uintptr_t handle, uintptr_t pattern_handle, uintptr_t input, uin
   context->capture_total = compiled->captures;
   if (context->capture_total > ZJS_RE_MAX_CAPTURES) return ZJS_RE_BAD_BYTECODE;
   if (context->capture_total > context->capture_slots) {
-    uint8_t **grown = (uint8_t **)realloc(context->captures, sizeof(uint8_t *) * 2 * (size_t)context->capture_total);
+    uint8_t **grown = (uint8_t **)lre_realloc(context, context->captures, sizeof(uint8_t *) * 2 * (size_t)context->capture_total);
     if (grown == NULL) return ZJS_RE_OUT_OF_MEMORY;
     context->captures = grown;
     context->capture_slots = context->capture_total;
@@ -239,8 +266,12 @@ int zjs_re_exec(uintptr_t handle, uintptr_t pattern_handle, uintptr_t input, uin
      code points when the bytecode was compiled in unicode mode. */
   int result = lre_exec(captures, compiled->bytecode, bytes, (int)start, (int)length, type, context);
   int failure = context->last_failure;
+  bool allocation_failed = context->allocation_failed;
   leave(context);
-  if (result < 0) return failure != 0 ? failure : result;
+  if (result < 0) {
+    if (allocation_failed) return ZJS_RE_OUT_OF_MEMORY;
+    return failure != 0 ? failure : result;
+  }
   if (result == 0) return ZJS_RE_NO_MATCH;
   for (int g = 0; g < context->capture_total; g++) {
     const uint8_t *from = captures[2 * g];
@@ -269,6 +300,10 @@ uintptr_t zjs_re_live_handles(uintptr_t handle) {
 
 uintptr_t zjs_re_live_bytes(uintptr_t handle) {
   return ((Context *)handle)->live_bytes;
+}
+
+uintptr_t zjs_re_allocation_count(uintptr_t handle) {
+  return ((Context *)handle)->allocation_count;
 }
 
 uintptr_t zjs_re_retained_bytes(uintptr_t handle) {

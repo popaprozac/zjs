@@ -707,6 +707,20 @@ export struct Heap {
     return this.strings[usize(this.headers[usize(handle)].payload)][index];
   }
 
+  // A copy of the storage: the Latin-1 bytes of a narrow string (the
+  // fast paths' working form), or the wide string's byte pairs.
+  function stringStorageBytes(handle: u32): Array<u8> {
+    const at = usize(this.headers[usize(handle)].payload);
+    let copied = Array<u8>();
+    let index: usize = 0;
+    const length = this.strings[at].length;
+    while (index < length) {
+      copied.push(this.strings[at][index]);
+      index = index + 1;
+    }
+    return copied;
+  }
+
   // The content as UTF-8 for the host (a lone surrogate becomes U+FFFD).
   function stringUtf8(handle: u32): Array<u8> {
     const at = usize(this.headers[usize(handle)].payload);

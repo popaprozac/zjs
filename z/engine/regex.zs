@@ -268,6 +268,16 @@ export struct RegexBackend {
   function setStepBudget(checks: usize): void {
     native.zjs_re_set_step_budget(this.context, checks);
   }
+
+  // Deterministic out-of-memory coverage: the Nth allocation through the
+  // context fails (zero for none).
+  function setAllocationLimit(count: usize): void {
+    native.zjs_re_set_allocation_limit(this.context, count);
+  }
+
+  function allocationCount(): usize {
+    return native.zjs_re_allocation_count(this.context);
+  }
 }
 
 export function createRegexBackend(): RegexBackend {
@@ -326,4 +336,54 @@ test "two backends keep independent captures, scratch, and accounting" {
   first.release();
   second.release();
   expect(first.context).toEqual(0);
+}
+
+test "resource failures carry their category: memory, steps, stack" {
+  let backend = createRegexBackend();
+  const pattern: String = "(a|b)*c";
+  const source = asciiBytes(in pattern);
+  // Compile: the first allocation refused is out of memory, not syntax,
+  // whatever message the parser writes.
+  backend.setAllocationLimit(1);
+  expect(backend.compile(in source, 0)).toEqual(-1);
+  expect(backend.lastFailure).toEqual(REGEX_OUT_OF_MEMORY);
+  backend.setAllocationLimit(0);
+  const entry = backend.compile(in source, 0);
+  expect(entry >= 0).toEqual(true);
+  const before = backend.allocationCount();
+  // Exec: backtracking state is allocated through the context; refuse it.
+  let input = Array<u8>();
+  let i: usize = 0;
+  while (i < 2000) { input.push(97); i = i + 1; }
+  input.push(99);
+  const buffer = backend.reserve(input.length);
+  i = 0;
+  while (i < input.length) { backend.store(buffer, i, input[i]); i = i + 1; }
+  expect(backend.execLoaded(entry, buffer, input.length, 0, false)).toEqual(REGEX_MATCH);
+  expect(backend.allocationCount() > before).toEqual(true);
+  backend.setAllocationLimit(1);
+  expect(backend.execLoaded(entry, buffer, input.length, 0, false)).toEqual(REGEX_OUT_OF_MEMORY);
+  backend.setAllocationLimit(0);
+  // Steps: a catastrophic pattern under a budget of one check.
+  const slow: String = "(a+)+$";
+  const slowSource = asciiBytes(in slow);
+  const slowEntry = backend.compile(in slowSource, 0);
+  expect(slowEntry >= 0).toEqual(true);
+  let hard = Array<u8>();
+  i = 0;
+  while (i < 40) { hard.push(97); i = i + 1; }
+  hard.push(98);
+  const hardBuffer = backend.reserve(hard.length);
+  i = 0;
+  while (i < hard.length) { backend.store(hardBuffer, i, hard[i]); i = i + 1; }
+  backend.setStepBudget(1);
+  expect(backend.execLoaded(slowEntry, hardBuffer, hard.length, 0, false)).toEqual(REGEX_STEP_LIMIT);
+  backend.setStepBudget(0);
+  // Stack: the compiler's recursion under a one-byte budget.
+  backend.setStackBudget(1);
+  const deep: String = "((a))";
+  const deepSource = asciiBytes(in deep);
+  expect(backend.compile(in deepSource, 0)).toEqual(-1);
+  expect(backend.lastFailure).toEqual(REGEX_STACK_LIMIT);
+  backend.release();
 }

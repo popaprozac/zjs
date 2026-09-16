@@ -85,15 +85,21 @@ int zjs_re_capture_end(uintptr_t context, int group);
    compiler's recursion (bytes below the entry point, default 256 KiB). The
    step budget, when non-zero, bounds one exec's work in units of ten
    thousand matcher iterations; an exhausted budget returns
-   ZJS_RE_STEP_LIMIT. */
+   ZJS_RE_STEP_LIMIT. The allocation limit, when non-zero, makes the
+   matcher's Nth allocation through this context fail (deterministic
+   coverage of the out-of-memory paths); it counts from the moment it is
+   set. */
 void zjs_re_set_stack_budget(uintptr_t context, uintptr_t bytes);
 void zjs_re_set_step_budget(uintptr_t context, uintptr_t checks);
+void zjs_re_set_allocation_limit(uintptr_t context, uintptr_t count);
 
 /* Accounting, per context: compiled patterns alive and the bytes they
-   hold (patterns compiled through it, until freed), and the scratch and
-   transcoding memory it retains. */
+   hold (patterns compiled through it, until freed), the scratch and
+   capture memory it retains, and the matcher's allocation calls through
+   it (compile and exec) since creation. */
 uintptr_t zjs_re_live_handles(uintptr_t context);
 uintptr_t zjs_re_live_bytes(uintptr_t context);
 uintptr_t zjs_re_retained_bytes(uintptr_t context);
+uintptr_t zjs_re_allocation_count(uintptr_t context);
 
 #endif
