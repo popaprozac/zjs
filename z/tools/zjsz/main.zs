@@ -132,32 +132,106 @@ function writeOut(in bytes: Array<u8>): void {
   nativeFree(buffer);
 }
 
-function runFile(in path: String): i32 throws String {
+function runFile(in path: String, dictThreshold: i32, stats: boolean): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
+  if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
   installConsole(inout runtime);
   const outcome = evaluate(inout runtime, move source);
+  if (stats) reportStats(in runtime);
   if (!outcome.isThrow) return 0;
   reportThrow(inout runtime, outcome.value);
   return 1;
 }
 
+// Heap figures after a run, on stderr: slots in use, live cells,
+// dictionary-mode objects, collections.
+function reportStats(in runtime: Runtime): void {
+  let line = Array<u8>();
+  appendText(inout line, "zjsz: slots ");
+  appendDecimal(inout line, runtime.heap.slotsInUse());
+  appendText(inout line, " cells ");
+  appendDecimal(inout line, runtime.heap.liveCells());
+  appendText(inout line, " dictionaries ");
+  appendDecimal(inout line, runtime.heap.dictionaryCount());
+  appendText(inout line, " collections ");
+  appendDecimal(inout line, runtime.heap.collections);
+  line.push(10);
+  writeError(in line);
+}
+
+function appendDecimal(inout line: Array<u8>, value: u32): void {
+  let digits = Array<u8>();
+  let rest = value;
+  if (rest == 0) digits.push(48);
+  while (rest > 0) {
+    digits.push(u8(48 + rest % 10));
+    rest = rest / 10;
+  }
+  let index = digits.length;
+  while (index > 0) {
+    index = index - 1;
+    line.push(digits[index]);
+  }
+}
+
+// A decimal option value, or -1.
+function decimalOf(in text: String): i32 {
+  let value: i32 = 0;
+  let index: usize = 0;
+  const length = text.byteLength;
+  if (length == 0) return -1;
+  while (index < length) {
+    const byte = text.byteAt(index);
+    if (byte < 48 || byte > 57) return -1;
+    value = value * 10 + i32(byte - 48);
+    index = index + 1;
+  }
+  return value;
+}
+
 function main(): i32 {
-  // Arguments exclude the program name: `run <file>`.
+  // Arguments exclude the program name:
+  //   run [--dict-threshold N] [--stats] <file>
+  // --dict-threshold sets the property count at which an object leaves
+  // its hidden class (for measurement); --stats prints heap figures
+  // after the run.
   const arguments = process.args();
   if (arguments.length < 2) {
-    console.error("usage: zjsz run <file>");
+    console.error("usage: zjsz run [--dict-threshold N] [--stats] <file>");
     return 2;
   }
   const commandLength = arguments[0].byteLength;
   const command = arguments[0].copyBytes(0, commandLength);
   if (command != "run") {
-    console.error("usage: zjsz run <file>");
+    console.error("usage: zjsz run [--dict-threshold N] [--stats] <file>");
     return 2;
   }
-  const pathLength = arguments[1].byteLength;
-  const path = arguments[1].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path);
+  let index: usize = 1;
+  let dictThreshold: i32 = -1;
+  let stats = false;
+  while (index + 1 < arguments.length) {
+    const optionLength = arguments[index].byteLength;
+    const option = arguments[index].copyBytes(0, optionLength);
+    if (option == "--stats") {
+      stats = true;
+      index = index + 1;
+    } else if (option == "--dict-threshold" && index + 2 < arguments.length) {
+      const valueLength = arguments[index + 1].byteLength;
+      const value = arguments[index + 1].copyBytes(0, valueLength);
+      dictThreshold = decimalOf(in value);
+      if (dictThreshold < 0) {
+        console.error("zjsz: --dict-threshold needs a decimal count");
+        return 2;
+      }
+      index = index + 2;
+    } else {
+      break;
+    }
+  }
+  const pathLength = arguments[index].byteLength;
+  const path = arguments[index].copyBytes(0, pathLength);
+  const outcome = attempt runFile(in path, dictThreshold, stats);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

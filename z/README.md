@@ -33,7 +33,12 @@ concatenation, number/string coercions and formatting, equality and ordering,
 logical operators, `var`/`let`/`const`, assignment in all forms, `++`/`--`,
 `if`/`while`/`do`/`for`/`break`/`continue`; functions, calls, recursion,
 defaults, hoisting, the conditional operator; objects on hidden classes with
-prototype chains, arrays with holes, property access in every form, method
+prototype chains (an object past 64 properties, or one that loses a property
+other than its newest, moves to dictionary mode: pairs in insertion order
+plus a hash index, constant-time lookup, insertion, and deletion, the same
+ordering, attributes, and accessors, and no inline cache ever recorded for
+it; deleting the newest property steps back to the parent class, so small
+objects stay on the fast path; the threshold comes from the table below), arrays with holes, property access in every form, method
 calls with `this`, `new` with `prototype`/`constructor`, `typeof`; the Error
 family as Z builtins, `throw`, `try`/`catch`/`finally` with unwinding across
 frames; closures -- captured bindings live in environment cells addressed by
@@ -332,19 +337,23 @@ is a representation problem: the handle heap and the NaN-boxed values
 stay. The checked-index cost and the field-borrow limitation are
 recorded as compiler findings with the measurements.
 
-Strings are byte strings, as in the reference: `length`, indexing, and
-the String methods count bytes. Whether the rewrite keeps that or moves to
-UTF-16 code units is an open design question; the oracle needs parity with
-the reference for now. Text has three distinct roles and never crosses
-between them by accident: source text is bytes end to end (the lexer,
-parser, and compiler read `Array<u8>`, `eval` and `Function` hand their
-bytes straight to the parser, and the C API copies the caller's bytes
-without validating them, so a script that is not UTF-8 cannot abort the
-host); string values are bytes; and only diagnostics for the host --
-`zjsz`'s throw line, log output -- decode to a Z `String`, replacing each
-maximal invalid subsequence with U+FFFD so the result always satisfies
-String's valid-UTF-8 invariant and is never mistaken for the original
-bytes.
+Strings follow ECMAScript: `length`, indexing, slicing, capture offsets,
+and every String method count UTF-16 code units, and a lone surrogate is
+preserved. Storage is one of two forms behind the same interface: Latin-1
+(one byte per unit, the canonical form whenever every unit fits) or UTF-16
+(two bytes per unit); the reference counts bytes, which is why the eval
+corpus keeps only cases whose values agree with node. Text has three
+distinct roles and never crosses between them by accident: source text is
+bytes end to end (the lexer, parser, and compiler read `Array<u8>`, `eval`
+and `Function` hand their bytes to the parser as WTF-8, and the C API
+copies the caller's bytes without validating them, so a script that is not
+UTF-8 cannot abort the host); string values are code units, decoded from
+UTF-8 at the source and host boundaries (a byte that is not UTF-8 becomes
+the unit with its value) and encoded back to UTF-8 for the host with a
+lone surrogate as U+FFFD; and only diagnostics for the host -- `zjsz`'s
+throw line, log output -- decode to a Z `String`, replacing each maximal
+invalid subsequence with U+FFFD so the result always satisfies String's
+valid-UTF-8 invariant and is never mistaken for the original bytes.
 
 Not yet: early errors for lexical redeclarations (`let x; var x;` and the
 like compile; the `syntax/redeclaration` test262 directories expect a
@@ -366,6 +375,36 @@ non-generational; the reference's nursery is a later refinement.
 $ ./z/oracle.sh
 reference passed: 5   z passed: 0   gap: 5
 ```
+
+## Dictionary mode: the threshold
+
+One million property operations per cell, seconds, best of three, on
+objects of N properties; `class` never leaves the hidden class, `dict`
+always does. Uncached lookups (`hit`, computed keys), misses, and
+enumeration are within noise of each other up to 32 properties and turn
+in the dictionary's favour from 64, where class mode's chain walk grows
+with N and passes a second per million at a thousand; a monomorphic
+named access (`named`, the inline-cache path) stays about a quarter faster
+in class mode at every size, and class mode holds half the slots. So
+objects keep their class through 64 properties and leave it on the
+65th.
+
+| N | hit class | hit dict | miss class | miss dict | enumerate class | enumerate dict | named class | named dict |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 0.117 | 0.112 | 0.250 | 0.236 | 0.185 | 0.101 | 0.088 | 0.075 |
+| 32 | 0.146 | 0.127 | 0.376 | 0.161 | 0.131 | 0.110 | 0.059 | 0.075 |
+| 64 | 0.170 | 0.127 | 0.592 | 0.390 | 0.241 | 0.065 | 0.058 | 0.073 |
+| 128 | 0.257 | 0.124 | 1.068 | 0.188 | 0.414 | 0.059 | 0.064 | 0.071 |
+| 1024 | 1.027 | 0.115 | 8.019 | 0.169 | 1.620 | 0.054 | 0.068 | 0.066 |
+| 100000 | timeout | 0.297 | timeout | 0.426 | timeout | 0.109 | | |
+
+Construction of a million properties' worth of objects: 0.09 s (class)
+against 0.15 s (dict) at four properties, 0.58 against 0.15 at 128, a
+timeout against 0.30 at a hundred thousand. Slots in use for a million
+properties: about one per property in class mode, two per pair plus the
+index in dictionary mode. Delete-and-reinsert is level across sizes in
+dictionary mode and reaches 1.9 s at 16k in class mode. The runner is
+`--dict-threshold` over generated files (bounded at 20 s per run).
 
 ## Embedding lifecycle
 
@@ -414,6 +453,10 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
 ./z/oracle-eval.sh                # behavioral oracle: diff eval results, both engines
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 ./z/spike/run.sh                  # Phase 0 measurements
+./z/build/zjsz run [--dict-threshold N] [--stats] file.js
+                                  # --dict-threshold: property count at which an
+                                  #   object leaves its hidden class (measurement)
+                                  # --stats: slots, cells, dictionaries, collections
 
 cd ~/code/z-lang && bun run z test ~/code/zjs/z/engine/heap.zs   # unit tests
 ```

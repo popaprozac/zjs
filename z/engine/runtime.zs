@@ -353,10 +353,12 @@ export struct Runtime {
   //
   // A property access site remembers the receiver's hidden class and
   // where the property was found. Validation is by class: a class fixes
-  // the slot layout, adding a property changes the class, and a deleted
-  // or redefined slot is caught by the marker and attribute checks. A
-  // cached prototype is compared by handle against the receiver's actual
-  // prototype, so a reused handle cannot alias.
+  // the slot layout, adding or removing a property changes the class, and
+  // a redefined slot is caught by the attribute checks. A cached
+  // prototype is compared by handle against the receiver's actual
+  // prototype, so a reused handle cannot alias. A dictionary-mode object
+  // is never recorded, and its payload equals no class, so a site that
+  // cached the object before it changed representation misses.
 
   // A cached load, or the deleted marker for a miss.
   function loadCached(fi: u32, nameSlot: usize, handle: u32): Value {
@@ -377,6 +379,7 @@ export struct Runtime {
   }
 
   function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    if (this.heap.isDictionary(handle)) return;
     const receiverClass = this.heap.objectClass(handle);
     const own = this.heap.objectFindSlot(handle, atom);
     if (own >= 0) {
@@ -385,7 +388,7 @@ export struct Runtime {
       return;
     }
     const proto = this.heap.objectProto(handle);
-    if (proto == 0 || !this.heap.isObject(proto)) return;
+    if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return;
     const inherited = this.heap.objectFindSlot(proto, atom);
     if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
     const protoClass = this.heap.objectClass(proto);
@@ -426,7 +429,7 @@ export struct Runtime {
   // property, or the transition that added one when the prototype chain
   // (at most two objects, ending in null) holds no such property.
   function populateStoreCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, classBefore: u32): void {
-    if (handle == this.globalObject) return;
+    if (handle == this.globalObject || this.heap.isDictionary(handle)) return;
     const own = this.heap.objectFindSlot(handle, atom);
     if (own < 0) return;
     const attr = this.heap.attrOf(handle, u32(own));
@@ -445,14 +448,14 @@ export struct Runtime {
     let proto2Class: u32 = 0;
     let proto = this.heap.objectProto(handle);
     if (proto != 0) {
-      if (!this.heap.isObject(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
       depth = 1;
       proto1 = proto;
       proto1Class = this.heap.objectClass(proto);
       proto = this.heap.objectProto(proto);
     }
     if (proto != 0) {
-      if (!this.heap.isObject(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
       depth = 2;
       proto2 = proto;
       proto2Class = this.heap.objectClass(proto);
@@ -1984,20 +1987,15 @@ export struct Runtime {
       i = i + 1;
     }
     // Symbol keys last, in insertion order.
-    let classId = this.heap.objectClass(object);
-    let symbolNames = Array<u32>();
-    while (classId != 0) {
-      const name = this.heap.classes[usize(classId)].transitionName;
-      if (this.isSymbolKeyAtom(name) && !this.isPrivateKeyAtom(name)) {
-        const slot = this.heap.classes[usize(classId)].transitionSlot;
-        if (!isDeleted(this.heap.slot(object, slot))) symbolNames.push(name);
+    const allNames = this.heap.objectNames(object);
+    i = 0;
+    while (i < allNames.length) {
+      const name = allNames[i];
+      if (name != 0 && this.isSymbolKeyAtom(name) && !this.isPrivateKeyAtom(name)) {
+        const slot = this.heap.objectFindSlot(object, name);
+        if (slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot)))) keys.push(this.symbolOfKeyAtom(name));
       }
-      classId = this.heap.classes[usize(classId)].parent;
-    }
-    let s = symbolNames.length;
-    while (s > 0) {
-      s = s - 1;
-      keys.push(this.symbolOfKeyAtom(symbolNames[s]));
+      i = i + 1;
     }
   }
 
@@ -2118,8 +2116,9 @@ export struct Runtime {
     return 0;
   }
 
-  // Remove an own property. Objects keep their class and mark the slot
-  // deleted, as the reference does; arrays leave a hole.
+  // Remove an own property: the heap drops it from the object's class
+  // or dictionary (a virtual property of a function leaves a tombstone
+  // in its bag instead); arrays leave a hole.
   function deleteProperty(inout this, object: Value, key: Value): boolean {
     if (!isCell(object) || asCell(object) == 0) return true;
     const handle = asCell(object);
@@ -2158,7 +2157,11 @@ export struct Runtime {
       const atom = this.propertyKey(key);
       if (this.functionBagHas(handle, atom)) {
         const bag = this.functionBag(handle);
-        return this.deleteFromObject(bag, atom);
+        const removed = this.deleteFromObject(bag, atom);
+        // A redefined `length` or `name`, once gone, must not uncover the
+        // virtual one: the tombstone records the deletion.
+        if (removed && (atom == this.atomLength || atom == this.atomName)) this.heap.objectDefine(bag, atom, deletedValue(), PROP_CONFIGURABLE);
+        return removed;
       }
       if (atom == this.atomPrototype) return !this.isConstructorValue(object);
       if (atom == this.atomLength || atom == this.atomName) {
@@ -2174,9 +2177,9 @@ export struct Runtime {
 
   function deleteFromObject(inout this, handle: u32, atom: u32): boolean {
     const slot = this.heap.objectFindSlot(handle, atom);
-    if (slot < 0 || isDeleted(this.heap.slot(handle, u32(slot)))) return true;
+    if (slot < 0) return true;
     if ((this.heap.attrOf(handle, u32(slot)) & PROP_CONFIGURABLE) == 0) return false;
-    this.heap.setSlot(handle, u32(slot), deletedValue());
+    this.heap.objectDelete(handle, atom, u32(slot));
     return true;
   }
 
@@ -2242,22 +2245,14 @@ export struct Runtime {
     return this.makeError(ERROR_KIND_TYPE, move message);
   }
 
-  // The names an object's own class holds, in slot order, hidden keys
-  // left out.
+  // The names an object holds, in insertion order, hidden keys left out
+  // (as 0).
   function ownNames(handle: u32): Array<u32> {
-    const propCount = this.heap.classPropCount(this.heap.objectClass(handle));
-    let names = Array<u32>();
-    let fill: u32 = 0;
-    while (fill < propCount) {
-      names.push(0);
-      fill = fill + 1;
-    }
-    let classId = this.heap.objectClass(handle);
-    while (classId != 0) {
-      const slot = this.heap.classes[usize(classId)].transitionSlot;
-      const name = this.heap.classes[usize(classId)].transitionName;
-      if (!this.isHiddenAtom(name)) names[usize(slot)] = name;
-      classId = this.heap.classes[usize(classId)].parent;
+    let names = this.heap.objectNames(handle);
+    let i: usize = 0;
+    while (i < names.length) {
+      if (names[i] != 0 && this.isHiddenAtom(names[i])) names[i] = 0;
+      i = i + 1;
     }
     return names;
   }

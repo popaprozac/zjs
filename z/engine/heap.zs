@@ -93,8 +93,17 @@ struct CellHeader {
 // acquired the same names in the same order: `parent` plus one added name
 // at slot `transitionSlot`. Lookup walks the parent chain comparing atom
 // handles; interned names make that a pointer comparison. Class 0 is the
-// empty root. The reference builds a hash table for wide classes; that is a
-// performance-phase addition.
+// empty root.
+//
+// An object that grows past `dictThreshold` properties, or loses one that
+// is not its newest, leaves the class tree for dictionary mode: its
+// header's payload carries DICT_BIT and a dictionary index, its slots
+// hold (key, value) pairs in insertion order (the key as the atom's cell
+// value, so the collector traces it; a removed pair's key is the deleted
+// marker), and a side hash index maps atoms to pairs. No cached class ever
+// equals such a payload, so inline caches miss on it; the runtime never
+// records one either. Lookup, insertion, and deletion are constant time;
+// enumeration walks the pairs.
 struct HiddenClass {
   parent: u32;
   transitionName: u32;
@@ -102,6 +111,20 @@ struct HiddenClass {
   propCount: u32;
   transitionNames: Array<u32>;
   transitionChildren: Array<u32>;
+}
+
+export const DICT_BIT: u32 = 2147483648;
+
+// The side index of a dictionary-mode object: open addressing over pair
+// numbers plus one (0 is empty), sized to at least twice the pair
+// capacity. A removed pair stays in the index as a tombstone until the
+// next rehash; `used` counts pairs taken, removed ones included, `live`
+// the ones present.
+struct Dictionary {
+  index: Array<u32>;
+  mask: u32;
+  used: u32;
+  live: u32;
 }
 
 // String cells keep their bytes in a Z-owned Array<u8>, held in a side
@@ -115,6 +138,12 @@ export struct Heap {
   attrs: Array<u8>;
   strings: Array<Array<u8>>;
   classes: Array<HiddenClass>;
+  // Dictionary-mode indexes, one per such object, reused after a sweep.
+  dictionaries: Array<Dictionary>;
+  freeDictionaries: Array<u32>;
+  freeDictionaryCount: usize;
+  // The property count past which an object leaves the class tree.
+  dictThreshold: u32;
   // Handles and string-table indices released by a sweep, reused before
   // the arrays grow. `freeHandleCount` / `freeStringCount` mark the live
   // extent, since Z's Array cannot pop.
@@ -245,6 +274,9 @@ export struct Heap {
         continue;
       }
       if (!this.headers[usize(handle)].marked) {
+        if (tag == TAG_OBJECT && (this.headers[usize(handle)].payload & DICT_BIT) != 0) {
+          this.releaseDictionary(this.headers[usize(handle)].payload & (DICT_BIT - 1));
+        }
         if (tag == TAG_STRING) {
           const stringIndex = this.headers[usize(handle)].payload;
           this.strings[usize(stringIndex)] = Array<u8>();
@@ -398,9 +430,16 @@ export struct Heap {
     this.headers[usize(handle)].link = proto;
   }
 
-  // The object's own slot for `atom`, or -1.
+  // The object's own slot for `atom`, or -1: the value slot, in either
+  // representation.
   function objectFindSlot(handle: u32, atom: u32): i32 {
-    return this.classFindSlot(this.headers[usize(handle)].payload, atom);
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & DICT_BIT) != 0) return this.dictionaryFind(handle, payload & (DICT_BIT - 1), atom);
+    return this.classFindSlot(payload, atom);
+  }
+
+  function isDictionary(handle: u32): boolean {
+    return (this.headers[usize(handle)].payload & DICT_BIT) != 0;
   }
 
   // Write an own property, adding it (and transitioning the class) when
@@ -412,6 +451,15 @@ export struct Heap {
       return;
     }
     const parentClass = this.headers[usize(handle)].payload;
+    if ((parentClass & DICT_BIT) != 0) {
+      this.dictionaryInsert(handle, parentClass & (DICT_BIT - 1), atom, value);
+      return;
+    }
+    if (this.classes[usize(parentClass)].propCount >= this.dictThreshold) {
+      const dictionary = this.toDictionary(handle);
+      this.dictionaryInsert(handle, dictionary, atom, value);
+      return;
+    }
     const child = this.classTransition(parentClass, atom);
     const slotIndex = this.classes[usize(child)].transitionSlot;
     if (slotIndex >= this.headers[usize(handle)].slotCount) {
@@ -421,6 +469,242 @@ export struct Heap {
     }
     this.headers[usize(handle)].payload = child;
     this.setSlot(handle, slotIndex, value);
+  }
+
+  // Remove an own property, given its value slot. In class mode the
+  // newest property is dropped by stepping back to the parent class; any
+  // other removal moves the object to dictionary mode, where a pair is
+  // simply retired. Either way the name is gone from lookup and a later
+  // addition takes the last place in enumeration order.
+  function objectDelete(inout this, handle: u32, atom: u32, slot: u32): void {
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & DICT_BIT) != 0) {
+      this.dictionaryRemove(payload & (DICT_BIT - 1), handle, slot);
+      return;
+    }
+    if (this.classes[usize(payload)].transitionName == atom && this.classes[usize(payload)].transitionSlot == slot) {
+      this.headers[usize(handle)].payload = this.classes[usize(payload)].parent;
+      this.setSlot(handle, slot, undefinedValue());
+      this.setAttr(handle, slot, PROP_DEFAULT);
+      return;
+    }
+    const dictionary = this.toDictionary(handle);
+    const pairSlot = this.dictionaryFind(handle, dictionary, atom);
+    if (pairSlot >= 0) this.dictionaryRemove(dictionary, handle, u32(pairSlot));
+  }
+
+  // The object's own names in insertion order, whatever its
+  // representation; a class-mode slot that holds nothing yet is skipped.
+  function objectNames(handle: u32): Array<u32> {
+    let names = Array<u32>();
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & DICT_BIT) != 0) {
+      const used = this.dictionaries[usize(payload & (DICT_BIT - 1))].used;
+      let pair: u32 = 0;
+      while (pair < used) {
+        const key = this.slot(handle, pair * 2);
+        if (!isDeleted(key)) names.push(asCell(key));
+        pair = pair + 1;
+      }
+      return names;
+    }
+    const propCount = this.classes[usize(payload)].propCount;
+    let fill: u32 = 0;
+    while (fill < propCount) {
+      names.push(0);
+      fill = fill + 1;
+    }
+    let classId = payload;
+    while (classId != 0) {
+      names[usize(this.classes[usize(classId)].transitionSlot)] = this.classes[usize(classId)].transitionName;
+      classId = this.classes[usize(classId)].parent;
+    }
+    return names;
+  }
+
+  // --- Dictionary mode ---
+
+  function dictionaryHash(atom: u32, mask: u32): u32 {
+    let hash = atom.wrappingMultiply(2654435761);
+    hash = hash ^ (hash >> 15);
+    return hash & mask;
+  }
+
+  // The value slot of `atom` in a dictionary object, or -1.
+  function dictionaryFind(handle: u32, dictionary: u32, atom: u32): i32 {
+    const mask = this.dictionaries[usize(dictionary)].mask;
+    let probe = this.dictionaryHash(atom, mask);
+    const start = this.headers[usize(handle)].slotStart;
+    while (true) {
+      const entry = this.dictionaries[usize(dictionary)].index[usize(probe)];
+      if (entry == 0) return -1;
+      const key = this.slots[usize(start + (entry - 1) * 2)];
+      if (!isDeleted(key) && asCell(key) == atom) return i32((entry - 1) * 2 + 1);
+      probe = (probe + 1) & mask;
+    }
+    return -1;
+  }
+
+  // Add a pair for a name the object does not have.
+  function dictionaryInsert(inout this, handle: u32, dictionary: u32, atom: u32, value: Value): void {
+    const capacity = this.headers[usize(handle)].slotCount / 2;
+    if (this.dictionaries[usize(dictionary)].used >= capacity) {
+      // Full: drop the retired pairs when they are the larger part,
+      // otherwise double the pairs; either way rebuild the index.
+      if (this.dictionaries[usize(dictionary)].live * 2 < this.dictionaries[usize(dictionary)].used) {
+        this.dictionaryCompact(handle, dictionary);
+      } else {
+        this.growSlots(handle, capacity * 4);
+      }
+      this.dictionaryRehash(handle, dictionary);
+    }
+    const pair = this.dictionaries[usize(dictionary)].used;
+    this.dictionaries[usize(dictionary)].used = pair + 1;
+    this.dictionaries[usize(dictionary)].live = this.dictionaries[usize(dictionary)].live + 1;
+    this.setSlot(handle, pair * 2, cellValue(atom));
+    this.setSlot(handle, pair * 2 + 1, value);
+    this.setAttr(handle, pair * 2 + 1, PROP_DEFAULT);
+    this.dictionaryIndexPair(dictionary, atom, pair);
+  }
+
+  function dictionaryIndexPair(inout this, dictionary: u32, atom: u32, pair: u32): void {
+    const mask = this.dictionaries[usize(dictionary)].mask;
+    let probe = this.dictionaryHash(atom, mask);
+    while (this.dictionaries[usize(dictionary)].index[usize(probe)] != 0) {
+      probe = (probe + 1) & mask;
+    }
+    this.dictionaries[usize(dictionary)].index[usize(probe)] = pair + 1;
+  }
+
+  function dictionaryRemove(inout this, dictionary: u32, handle: u32, slot: u32): void {
+    this.setSlot(handle, slot - 1, deletedValue());
+    this.setSlot(handle, slot, undefinedValue());
+    this.setAttr(handle, slot, PROP_DEFAULT);
+    this.dictionaries[usize(dictionary)].live = this.dictionaries[usize(dictionary)].live - 1;
+  }
+
+  // Rebuild the index over the pairs in use, at twice the pair capacity.
+  function dictionaryRehash(inout this, handle: u32, dictionary: u32): void {
+    const capacity = this.headers[usize(handle)].slotCount / 2;
+    let size: u32 = 8;
+    while (size < capacity * 2) {
+      size = size * 2;
+    }
+    let index = Array<u32>();
+    let fill: u32 = 0;
+    while (fill < size) {
+      index.push(0);
+      fill = fill + 1;
+    }
+    this.dictionaries[usize(dictionary)].index = move index;
+    this.dictionaries[usize(dictionary)].mask = size - 1;
+    const used = this.dictionaries[usize(dictionary)].used;
+    let pair: u32 = 0;
+    while (pair < used) {
+      const key = this.slot(handle, pair * 2);
+      if (!isDeleted(key)) this.dictionaryIndexPair(dictionary, asCell(key), pair);
+      pair = pair + 1;
+    }
+  }
+
+  // Close the gaps left by retired pairs, keeping the order.
+  function dictionaryCompact(inout this, handle: u32, dictionary: u32): void {
+    const used = this.dictionaries[usize(dictionary)].used;
+    let write: u32 = 0;
+    let read: u32 = 0;
+    while (read < used) {
+      const key = this.slot(handle, read * 2);
+      if (!isDeleted(key)) {
+        if (write != read) {
+          const value = this.slot(handle, read * 2 + 1);
+          const attr = this.attrOf(handle, read * 2 + 1);
+          this.setSlot(handle, write * 2, key);
+          this.setSlot(handle, write * 2 + 1, value);
+          this.setAttr(handle, write * 2 + 1, attr);
+        }
+        write = write + 1;
+      }
+      read = read + 1;
+    }
+    let clear = write;
+    while (clear < used) {
+      this.setSlot(handle, clear * 2, undefinedValue());
+      this.setSlot(handle, clear * 2 + 1, undefinedValue());
+      this.setAttr(handle, clear * 2 + 1, PROP_DEFAULT);
+      clear = clear + 1;
+    }
+    this.dictionaries[usize(dictionary)].used = write;
+    this.dictionaries[usize(dictionary)].live = write;
+  }
+
+  // Move a class-mode object to dictionary mode, keeping every property,
+  // its attributes, and its place in the order. Returns the dictionary.
+  function toDictionary(inout this, handle: u32): u32 {
+    const names = this.objectNames(handle);
+    let values = Array<Value>();
+    let attrs = Array<u8>();
+    let kept = Array<u32>();
+    let i: usize = 0;
+    while (i < names.length) {
+      const name = names[i];
+      if (name != 0) {
+        const slot = this.classFindSlot(this.headers[usize(handle)].payload, name);
+        values.push(this.slot(handle, u32(slot)));
+        attrs.push(this.attrOf(handle, u32(slot)));
+        kept.push(name);
+      }
+      i = i + 1;
+    }
+    const count = u32(kept.length);
+    let capacity: u32 = 8;
+    while (capacity < count + count / 2 + 1) {
+      capacity = capacity * 2;
+    }
+    if (this.headers[usize(handle)].slotCount < capacity * 2) this.growSlots(handle, capacity * 2);
+    let dictionary: u32 = 0;
+    if (this.freeDictionaryCount > 0) {
+      this.freeDictionaryCount = this.freeDictionaryCount - 1;
+      dictionary = this.freeDictionaries[this.freeDictionaryCount];
+      this.dictionaries[usize(dictionary)] = Dictionary({ index: Array<u32>(), mask: 0, used: count, live: count });
+    } else {
+      this.dictionaries.push(Dictionary({ index: Array<u32>(), mask: 0, used: count, live: count }));
+      dictionary = u32(this.dictionaries.length - 1);
+    }
+    let pair: u32 = 0;
+    while (pair < count) {
+      const name = kept[usize(pair)];
+      const value = values[usize(pair)];
+      const attr = attrs[usize(pair)];
+      this.setSlot(handle, pair * 2, cellValue(name));
+      this.setSlot(handle, pair * 2 + 1, value);
+      this.setAttr(handle, pair * 2 + 1, attr);
+      pair = pair + 1;
+    }
+    let clear = count * 2;
+    const total = this.headers[usize(handle)].slotCount;
+    while (clear < total) {
+      this.setSlot(handle, clear, undefinedValue());
+      this.setAttr(handle, clear, PROP_DEFAULT);
+      clear = clear + 1;
+    }
+    this.headers[usize(handle)].payload = DICT_BIT | dictionary;
+    this.dictionaryRehash(handle, dictionary);
+    return dictionary;
+  }
+
+  function releaseDictionary(inout this, dictionary: u32): void {
+    this.dictionaries[usize(dictionary)] = Dictionary({ index: Array<u32>(), mask: 0, used: 0, live: 0 });
+    if (this.freeDictionaryCount < this.freeDictionaries.length) {
+      this.freeDictionaries[this.freeDictionaryCount] = dictionary;
+    } else {
+      this.freeDictionaries.push(dictionary);
+    }
+    this.freeDictionaryCount = this.freeDictionaryCount + 1;
+  }
+
+  // Live dictionary-mode objects, for the harness.
+  function dictionaryCount(): u32 {
+    return u32(this.dictionaries.length - this.freeDictionaryCount);
   }
 
   // --- Arrays ---
@@ -889,6 +1173,7 @@ export function createHeap(): Heap {
   return Heap({
     headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), strings: Array<Array<u8>>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
+    dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0,
   });
@@ -896,6 +1181,10 @@ export function createHeap(): Heap {
 
 // The fewest allocations between collections.
 const COLLECT_FLOOR: u32 = 4096;
+
+// Properties an object may hold in class mode before its next addition
+// moves it to dictionary mode (chosen from measurement; see README).
+export const DICT_THRESHOLD: u32 = 64;
 
 // The bytes of a Z String as an owned byte array.
 // An owned copy of the byte range [start, end).
@@ -1121,4 +1410,165 @@ test "marking follows links: prototypes, environments, closures" {
   expect(heap.tagOf(fn)).toEqual(TAG_FUNCTION);
   expect(heap.tagOf(unreachable)).toEqual(TAG_FREE);
   expect(heap.liveCells()).toEqual(6);
+}
+
+// --- Dictionary mode ---
+
+// Distinct string cells to serve as atoms: "n0", "n1", ...
+function testNames(inout heap: Heap, count: u32): Array<u32> {
+  let names = Array<u32>();
+  let i: u32 = 0;
+  while (i < count) {
+    let bytes = Array<u8>();
+    bytes.push(110);
+    let rest = i;
+    let digits = Array<u8>();
+    if (rest == 0) digits.push(48);
+    while (rest > 0) {
+      digits.push(u8(48 + rest % 10));
+      rest = rest / 10;
+    }
+    let d = digits.length;
+    while (d > 0) {
+      d = d - 1;
+      bytes.push(digits[d]);
+    }
+    names.push(heap.allocateLatin1(move bytes));
+    i = i + 1;
+  }
+  return names;
+}
+
+test "an object past the threshold becomes a dictionary keeping order, values, and attributes" {
+  let heap = createHeap();
+  heap.dictThreshold = 4;
+  const names = testNames(inout heap, 6);
+  const object = heap.allocateObject(0);
+  let i: u32 = 0;
+  while (i < 4) {
+    heap.objectSet(object, names[usize(i)], int32Value(i32(i * 10)));
+    i = i + 1;
+  }
+  heap.setAttr(object, u32(heap.objectFindSlot(object, names[1])), PROP_NONE);
+  expect(heap.isDictionary(object)).toEqual(false);
+  heap.objectSet(object, names[4], int32Value(40));
+  expect(heap.isDictionary(object)).toEqual(true);
+  heap.objectSet(object, names[5], int32Value(50));
+  i = 0;
+  while (i < 6) {
+    const slot = heap.objectFindSlot(object, names[usize(i)]);
+    expect(slot >= 0).toEqual(true);
+    expect(asInt32(heap.slot(object, u32(slot)))).toEqual(i32(i * 10));
+    i = i + 1;
+  }
+  expect(heap.attrOf(object, u32(heap.objectFindSlot(object, names[1])))).toEqual(PROP_NONE);
+  expect(heap.attrOf(object, u32(heap.objectFindSlot(object, names[2])))).toEqual(PROP_DEFAULT);
+  const order = heap.objectNames(object);
+  expect(order.length).toEqual(6);
+  expect(order[0]).toEqual(names[0]);
+  expect(order[5]).toEqual(names[5]);
+  expect(heap.objectFindSlot(object, 12345)).toEqual(-1);
+  expect(heap.dictionaryCount()).toEqual(1);
+}
+
+test "deleting the newest property keeps the class; deleting another makes a dictionary; both re-add last" {
+  let heap = createHeap();
+  const names = testNames(inout heap, 3);
+  const object = heap.allocateObject(0);
+  heap.objectSet(object, names[0], int32Value(1));
+  heap.objectSet(object, names[1], int32Value(2));
+  heap.objectSet(object, names[2], int32Value(3));
+  const full = heap.objectClass(object);
+  heap.objectDelete(object, names[2], u32(heap.objectFindSlot(object, names[2])));
+  expect(heap.isDictionary(object)).toEqual(false);
+  expect(heap.objectFindSlot(object, names[2])).toEqual(-1);
+  heap.objectSet(object, names[2], int32Value(30));
+  expect(heap.objectClass(object)).toEqual(full);
+  const afterReadd = heap.objectNames(object);
+  expect(afterReadd[2]).toEqual(names[2]);
+  heap.objectDelete(object, names[0], u32(heap.objectFindSlot(object, names[0])));
+  expect(heap.isDictionary(object)).toEqual(true);
+  expect(heap.objectFindSlot(object, names[0])).toEqual(-1);
+  const afterDelete = heap.objectNames(object);
+  expect(afterDelete.length).toEqual(2);
+  heap.objectSet(object, names[0], int32Value(10));
+  const order = heap.objectNames(object);
+  expect(order.length).toEqual(3);
+  expect(order[0]).toEqual(names[1]);
+  expect(order[2]).toEqual(names[0]);
+  expect(asInt32(heap.slot(object, u32(heap.objectFindSlot(object, names[0]))))).toEqual(10);
+  expect(asInt32(heap.slot(object, u32(heap.objectFindSlot(object, names[2]))))).toEqual(30);
+}
+
+test "a dictionary grows, and compacts instead of growing when most pairs are retired" {
+  let heap = createHeap();
+  heap.dictThreshold = 0;
+  const names = testNames(inout heap, 200);
+  const object = heap.allocateObject(0);
+  let i: u32 = 0;
+  while (i < 200) {
+    heap.objectSet(object, names[usize(i)], int32Value(i32(i)));
+    i = i + 1;
+  }
+  expect(heap.isDictionary(object)).toEqual(true);
+  const names1 = heap.objectNames(object);
+  expect(names1.length).toEqual(200);
+  i = 0;
+  while (i < 190) {
+    heap.objectDelete(object, names[usize(i)], u32(heap.objectFindSlot(object, names[usize(i)])));
+    i = i + 1;
+  }
+  const names2 = heap.objectNames(object);
+  expect(names2.length).toEqual(10);
+  // Retire and re-add one name many times: the pairs compact rather
+  // than the slots growing without bound.
+  let cycle: u32 = 0;
+  while (cycle < 5000) {
+    heap.objectDelete(object, names[195], u32(heap.objectFindSlot(object, names[195])));
+    heap.objectSet(object, names[195], int32Value(i32(cycle)));
+    cycle = cycle + 1;
+  }
+  expect(heap.slotCountOf(object) <= 1024).toEqual(true);
+  const names3 = heap.objectNames(object);
+  expect(names3.length).toEqual(10);
+  expect(asInt32(heap.slot(object, u32(heap.objectFindSlot(object, names[195]))))).toEqual(4999);
+  expect(asInt32(heap.slot(object, u32(heap.objectFindSlot(object, names[190]))))).toEqual(190);
+  const order = heap.objectNames(object);
+  expect(order[0]).toEqual(names[190]);
+  expect(order[9]).toEqual(names[195]);
+  expect(heap.objectFindSlot(object, names[0])).toEqual(-1);
+}
+
+test "a sweep releases a dead dictionary and a live one survives the compaction" {
+  let heap = createHeap();
+  heap.dictThreshold = 2;
+  const names = testNames(inout heap, 8);
+  const kept = heap.allocateObject(0);
+  const dead = heap.allocateObject(0);
+  let i: u32 = 0;
+  while (i < 8) {
+    heap.objectSet(kept, names[usize(i)], int32Value(i32(i + 100)));
+    heap.objectSet(dead, names[usize(i)], int32Value(i32(i)));
+    i = i + 1;
+  }
+  expect(heap.dictionaryCount()).toEqual(2);
+  heap.markHandle(kept);
+  heap.sweep();
+  expect(heap.dictionaryCount()).toEqual(1);
+  expect(heap.tagOf(dead)).toEqual(TAG_FREE);
+  // The keys were reached through the object's slots.
+  expect(heap.tagOf(names[3])).toEqual(TAG_STRING);
+  i = 0;
+  while (i < 8) {
+    const slot = heap.objectFindSlot(kept, names[usize(i)]);
+    expect(asInt32(heap.slot(kept, u32(slot)))).toEqual(i32(i + 100));
+    i = i + 1;
+  }
+  // A new dictionary reuses the released index.
+  const later = heap.allocateObject(0);
+  heap.objectSet(later, names[0], int32Value(1));
+  heap.objectSet(later, names[1], int32Value(2));
+  heap.objectSet(later, names[2], int32Value(3));
+  expect(heap.isDictionary(later)).toEqual(true);
+  expect(heap.dictionaryCount()).toEqual(2);
 }
