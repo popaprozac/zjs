@@ -1,4 +1,4 @@
-# probe status at z-lang 684ce980 (clean). Written by run.sh --record.
+# probe status at z-lang 69397510 (clean). Written by run.sh --record.
 array-pop LANDED
 byte-literal COMPILER-REJECTED
 enum-integer-code COMPILER-REJECTED
