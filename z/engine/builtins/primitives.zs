@@ -539,10 +539,146 @@ function stringLastIndexOf(inout runtime: Runtime, thisValue: Value, argsBase: u
   return int32Value(-1);
 }
 
+// --- The RegExp protocol ---
+//
+// match / matchAll / replace / replaceAll / search / split hand the work
+// to the argument's @@method when it has one; a plain string argument
+// to match / matchAll / search becomes a RegExp first.
+
+function requireCoercible(inout runtime: Runtime, thisValue: Value, in method: String): boolean {
+  if (!isUndefined(thisValue) && !isNull(thisValue)) return true;
+  const message: String = `String.prototype.${method} called on null or undefined`;
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
+  return false;
+}
+
+// GetMethod(value, symbol): the callable, or undefined.
+function symbolMethod(inout runtime: Runtime, value: Value, symbol: Value): Value {
+  if (isUndefined(value) || isNull(value)) return undefinedValue();
+  const method = runtime.getProperty(value, symbol);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (isUndefined(method) || isNull(method)) return undefinedValue();
+  if (!runtime.isCallable(method)) {
+    const message: String = "Symbol method is not a function";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  return method;
+}
+
+// A RegExp argument to includes / startsWith / endsWith is a TypeError.
+function rejectRegExpArgument(inout runtime: Runtime, value: Value, in method: String): boolean {
+  const isRegExp = runtime.isRegExp(value);
+  if (runtime.pendingThrow) return true;
+  if (!isRegExp) return false;
+  const message: String = `First argument to String.prototype.${method} must not be a regular expression`;
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
+  return true;
+}
+
+// A global-flag check for matchAll and replaceAll on a RegExp argument.
+function requireGlobalFlag(inout runtime: Runtime, value: Value, in method: String): boolean {
+  const isRegExp = runtime.isRegExp(value);
+  if (runtime.pendingThrow) return false;
+  if (!isRegExp) return true;
+  const flagsText: String = "flags";
+  const flagsKey = runtime.internText(in flagsText);
+  const flags = runtime.getProperty(value, flagsKey);
+  if (runtime.pendingThrow) return false;
+  if (isUndefined(flags) || isNull(flags)) {
+    const message: String = `String.prototype.${method} called with a RegExp whose flags are undefined`;
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return false;
+  }
+  const flagsString = runtime.toStringValue(flags);
+  if (runtime.pendingThrow) return false;
+  const flagBytes = runtime.heap.stringBytes(asCell(flagsString));
+  let i: usize = 0;
+  while (i < flagBytes.length) {
+    if (flagBytes[i] == 103) return true;
+    i = i + 1;
+  }
+  const message: String = `String.prototype.${method} called with a non-global RegExp argument`;
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
+  return false;
+}
+
+// match and search: the argument's @@method, else a RegExp made from it.
+function stringMatchLike(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, symbol: Value, in method: String, flags: Value): Value {
+  if (!requireCoercible(inout runtime, thisValue, in method)) return undefinedValue();
+  const regexp = runtime.argument(argsBase, argc, 0);
+  if (!isUndefined(regexp) && !isNull(regexp)) {
+    const matcher = symbolMethod(inout runtime, regexp, symbol);
+    if (runtime.pendingThrow) return undefinedValue();
+    if (!isUndefined(matcher)) {
+      let args = Array<Value>();
+      args.push(thisValue);
+      return runtime.callValue(matcher, regexp, move args);
+    }
+  }
+  const text = runtime.toStringValue(thisValue);
+  if (runtime.pendingThrow) return undefinedValue();
+  runtime.pushTempRoot(text);
+  const regexProto = runtime.regexProto;
+  const rx = runtime.regexpCreate(regexp, flags, regexProto);
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
+  runtime.pushTempRoot(rx);
+  const invoked = runtime.getProperty(rx, symbol);
+  let result = undefinedValue();
+  if (!runtime.pendingThrow) {
+    if (!runtime.isCallable(invoked)) {
+      const message: String = "RegExp method is not a function";
+      const error = runtime.typeError(in message);
+      runtime.raise(error);
+    } else {
+      let args = Array<Value>();
+      args.push(text);
+      result = runtime.callValue(invoked, rx, move args);
+    }
+  }
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  return result;
+}
+
+function stringMatch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "match";
+  const symbolMatch = runtime.symbolMatch;
+  return stringMatchLike(inout runtime, thisValue, argsBase, argc, symbolMatch, in method, undefinedValue());
+}
+
+function stringSearch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "search";
+  const symbolSearch = runtime.symbolSearch;
+  return stringMatchLike(inout runtime, thisValue, argsBase, argc, symbolSearch, in method, undefinedValue());
+}
+
+function stringMatchAll(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "matchAll";
+  const regexp = runtime.argument(argsBase, argc, 0);
+  if (!requireCoercible(inout runtime, thisValue, in method)) return undefinedValue();
+  if (!isUndefined(regexp) && !isNull(regexp)) {
+    if (!requireGlobalFlag(inout runtime, regexp, in method)) return undefinedValue();
+  }
+  const globalText: String = "g";
+  const globalFlag = runtime.internText(in globalText);
+  const symbolMatchAll = runtime.symbolMatchAll;
+  return stringMatchLike(inout runtime, thisValue, argsBase, argc, symbolMatchAll, in method, globalFlag);
+}
+
 function stringIncludes(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "includes";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
+  if (rejectRegExpArgument(inout runtime, runtime.argument(argsBase, argc, 0), in text)) return undefinedValue();
   const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
   const startAt = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
@@ -554,6 +690,7 @@ function stringStartsWith(inout runtime: Runtime, thisValue: Value, argsBase: u3
   const text: String = "startsWith";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
+  if (rejectRegExpArgument(inout runtime, runtime.argument(argsBase, argc, 0), in text)) return undefinedValue();
   const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
   const startAt = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(bytes.length));
@@ -571,6 +708,7 @@ function stringEndsWith(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   const text: String = "endsWith";
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
+  if (rejectRegExpArgument(inout runtime, runtime.argument(argsBase, argc, 0), in text)) return undefinedValue();
   const needle = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
   const end = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), i32(bytes.length)), i32(bytes.length));
@@ -790,6 +928,20 @@ function replacementFor(inout runtime: Runtime, replaceValue: Value, in matched:
 // an empty pattern matching between every byte.
 function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "replaceAll";
+  if (!requireCoercible(inout runtime, thisValue, in text)) return undefinedValue();
+  const searchArgument = runtime.argument(argsBase, argc, 0);
+  if (!isUndefined(searchArgument) && !isNull(searchArgument)) {
+    if (!requireGlobalFlag(inout runtime, searchArgument, in text)) return undefinedValue();
+    const symbolReplace = runtime.symbolReplace;
+    const replacer = symbolMethod(inout runtime, searchArgument, symbolReplace);
+    if (runtime.pendingThrow) return undefinedValue();
+    if (!isUndefined(replacer)) {
+      let args = Array<Value>();
+      args.push(thisValue);
+      args.push(runtime.argument(argsBase, argc, 1));
+      return runtime.callValue(replacer, searchArgument, move args);
+    }
+  }
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   const pattern = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
@@ -1035,6 +1187,17 @@ function stringPadEnd(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 // come later.
 function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "split";
+  if (!requireCoercible(inout runtime, thisValue, in text)) return undefinedValue();
+  const separatorArgument = runtime.argument(argsBase, argc, 0);
+  const symbolSplit = runtime.symbolSplit;
+  const splitter = symbolMethod(inout runtime, separatorArgument, symbolSplit);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (!isUndefined(splitter)) {
+    let args = Array<Value>();
+    args.push(thisValue);
+    args.push(runtime.argument(argsBase, argc, 1));
+    return runtime.callValue(splitter, separatorArgument, move args);
+  }
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   const result = runtime.heap.allocateArray(0);
@@ -1078,6 +1241,17 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
 // replace(pattern, replacement) with a string pattern: the first match.
 function stringReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "replace";
+  if (!requireCoercible(inout runtime, thisValue, in text)) return undefinedValue();
+  const searchArgument = runtime.argument(argsBase, argc, 0);
+  const symbolReplace = runtime.symbolReplace;
+  const replacer = symbolMethod(inout runtime, searchArgument, symbolReplace);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (!isUndefined(replacer)) {
+    let args = Array<Value>();
+    args.push(thisValue);
+    args.push(runtime.argument(argsBase, argc, 1));
+    return runtime.callValue(replacer, searchArgument, move args);
+  }
   const bytes = thisString(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
   const pattern = argumentBytes(inout runtime, runtime.argument(argsBase, argc, 0));
@@ -1258,6 +1432,12 @@ export function installPrimitives(inout runtime: Runtime): void {
   runtime.defineMethod(stringProto, in padEndText, stringPadEnd, 1);
   const splitText: String = "split";
   runtime.defineMethod(stringProto, in splitText, stringSplit, 2);
+  const matchText: String = "match";
+  runtime.defineMethod(stringProto, in matchText, stringMatch, 1);
+  const matchAllText: String = "matchAll";
+  runtime.defineMethod(stringProto, in matchAllText, stringMatchAll, 1);
+  const searchText: String = "search";
+  runtime.defineMethod(stringProto, in searchText, stringSearch, 1);
   const replaceText: String = "replace";
   runtime.defineMethod(stringProto, in replaceText, stringReplace, 2);
   const localeCompareText: String = "localeCompare";

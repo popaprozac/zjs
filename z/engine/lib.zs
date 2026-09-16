@@ -38,6 +38,13 @@ struct ContextSlot {
     this.hadError = outcome.isThrow;
     this.lastResult = outcome.value;
   }
+
+  // Native resources go back at teardown; the cells stay until the
+  // registry itself does.
+  function release(inout this): void {
+    this.live = false;
+    this.runtime.releaseNative();
+  }
 }
 
 struct Registry {
@@ -87,7 +94,7 @@ export c function zjs_z_free_context(handle: usize): void {
   const current = engine.get();
   current.registry.withLock((inout registry): void => {
     if (handle > registry.slots.length) return;
-    registry.slots[handle - 1].live = false;
+    registry.slots[handle - 1].release();
   });
 }
 

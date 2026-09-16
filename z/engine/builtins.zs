@@ -21,6 +21,7 @@ import { installGenerator } from "./builtins/generator.zs";
 import { installCollections } from "./builtins/collections.zs";
 import { installPromise } from "./builtins/promise.zs";
 import { installDate } from "./builtins/date.zs";
+import { installRegExp } from "./builtins/regexp.zs";
 
 export function createEngine(): Runtime {
   let runtime = createRuntime();
@@ -39,5 +40,6 @@ export function createEngine(): Runtime {
   installCollections(inout runtime);
   installPromise(inout runtime);
   installDate(inout runtime);
+  installRegExp(inout runtime);
   return runtime;
 }

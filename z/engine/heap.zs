@@ -63,6 +63,8 @@ export const FLAG_NON_EXTENSIBLE: u8 = 1;
 export const FLAG_LENGTH_READONLY: u8 = 2;
 // A symbol cell minted as a class private name: never an own key.
 export const FLAG_PRIVATE_NAME: u8 = 4;
+// A string cell that is the runtime's atom for its bytes.
+export const FLAG_INTERNED: u8 = 8;
 
 struct CellHeader {
   tag: u8;
@@ -607,6 +609,18 @@ export struct Heap {
   }
 
   // An owned copy of a string cell's bytes.
+  // bytes[start, end) of a string, copied; the caller keeps end in range.
+  function stringSlice(handle: u32, start: usize, end: usize): Array<u8> {
+    const at = usize(this.headers[usize(handle)].payload);
+    let copied = Array<u8>();
+    let index = start;
+    while (index < end) {
+      copied.push(this.strings[at][index]);
+      index = index + 1;
+    }
+    return copied;
+  }
+
   function stringBytes(handle: u32): Array<u8> {
     const at = usize(this.headers[usize(handle)].payload);
     let copied = Array<u8>();

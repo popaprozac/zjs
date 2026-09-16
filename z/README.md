@@ -167,7 +167,25 @@ local and UTC getters and setters, the string forms, `toJSON`,
 `EvalError`, `URIError`, `AggregateError` (its iterable kept as
 `errors`), an options object's `cause` on every error constructor, the
 `Error.prototype.stack` accessor over an error-data slot, and the four
-URI functions over the byte strings. `yield*` in an async generator takes the operand's async
+URI functions over the byte strings. `RegExp`: the matcher is QuickJS-NG's
+libregexp, the same vendored copy the reference uses, behind a nine-function
+C adapter (`engine/native/zjs_regexp.c`) that the Z module `engine/regex.zs`
+alone talks to; patterns are cached by source and flags (256 slots, least
+recently used out, freed at context teardown), a compile failure is a
+SyntaxError carrying libregexp's message, and the matcher's failures are
+distinct RangeErrors (memory, step budget, stack budget; the stack floor
+is real, the step budget is off unless the embedder sets one). The Z side
+owns everything the program sees: literals (a fresh object per evaluation),
+the constructor's forms, `exec` / `test` / `toString`, the flag getters,
+`source` escaping, `lastIndex` as an own property, `@@match` / `@@matchAll`
+/ `@@replace` / `@@search` / `@@split` with species, named groups, the `d`
+flag's indices, `%RegExpStringIteratorPrototype%`, and the string methods'
+dispatch through those symbols. Text: an all-ASCII input is matched as
+8-bit units (identical to UTF-16 there); any other input is transcoded to
+UTF-16 at the boundary with a unit-to-byte map, so classes, case folding,
+dot, and the `u` flag see what the specification defines, and offsets come
+back as bytes -- a boundary inside a surrogate pair rounds to the pair's
+sequence. `yield*` in an async generator takes the operand's async
 iterator (a sync one wrapped through `%AsyncFromSyncIteratorPrototype%`),
 awaits each `next`, hands each value to the request as it is, forwards
 what `next` sends, and yields the delegate's final value as the
@@ -239,7 +257,13 @@ prints `Invalid Date` (the reference prints ISO or `[object]`), a
 six-digit year carries its sign in `toISOString`, `2026-13-01` and
 `T24:00:01` do not parse, a `+02:00` offset and a negative six-digit
 year parse to the right instant, and the `toString` / `toUTCString`
-forms parse at all (the reference differs on each); the native error
+forms parse at all (the reference differs on each); a RegExp's `toString`
+gives `/source/flags` (the reference gives `[object]`), `source` escapes
+`/` and is `(?:)` when empty, a bad pattern or flag string throws a
+SyntaxError (the reference swallows it and never matches), `RegExp(re)`
+returns `re`, named groups, `matchAll`, and the `@@`-methods exist, and a
+non-ASCII input matches by code unit (the reference matches bytes, so `.`
+takes one byte of a multi-byte character); the native error
 constructors have `length` 1 (AggregateError 2) and their prototypes
 carry `name` (the reference has 0 and nothing); `new AggregateError([])`
 has an empty message and a non-enumerable `errors` (the reference has
@@ -287,7 +311,7 @@ String's valid-UTF-8 invariant and is never mistaken for the original
 bytes.
 
 Not yet: per-iteration `let` bindings in loops (a closure made in a loop
-sees one binding), `RegExp`, a `return` or `throw` sent to a
+sees one binding), `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
 delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, weak semantics for `WeakMap` /
 `WeakSet`, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a

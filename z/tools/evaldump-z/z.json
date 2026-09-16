@@ -1,0 +1,14 @@
+{
+  "target": {
+    "name": "evaldump-z",
+    "entry": "main.zs",
+    "link": {
+      "directories": [
+        "../../build/native"
+      ],
+      "libraries": [
+        "zjsregexp"
+      ]
+    }
+  }
+}

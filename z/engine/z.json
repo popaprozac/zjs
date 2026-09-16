@@ -5,6 +5,14 @@
     "entry": "lib.zs",
     "runtime": {
       "initialize": "initializeRuntime"
+    },
+    "link": {
+      "directories": [
+        "../build/native"
+      ],
+      "libraries": [
+        "zjsregexp"
+      ]
     }
   }
 }

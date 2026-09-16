@@ -17,10 +17,11 @@ if [ ! -x "$HERE/build/evaldump-ref" ]; then
     -lm -framework Foundation -framework Security -fobjc-arc -lz || exit 2
 fi
 
-if ! (cd "$Z_LANG" && bun run z run "$HERE/tools/evaldump-z/main.zs" --release -- /dev/null) >"$OUT/build.log" 2>&1; then
+"$HERE/native.sh" >/dev/null
+if ! (cd "$Z_LANG" && bun run z build "$HERE/tools/evaldump-z" --release) >"$OUT/build.log" 2>&1; then
   echo "Z dump tool failed to build:" >&2; grep -v '^\$' "$OUT/build.log" | head -8 >&2; exit 2
 fi
-Z_DUMP="$HERE/tools/evaldump-z/.z-cache/run/$(ls -t "$HERE/tools/evaldump-z/.z-cache/run/" | grep -v '\.c$' | head -1)"
+Z_DUMP="$HERE/tools/evaldump-z/build/evaldump-z"
 
 targets=("$@"); [ ${#targets[@]} -gt 0 ] || targets=("$HERE/tests/eval-corpus")
 files=()

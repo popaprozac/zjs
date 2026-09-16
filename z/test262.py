@@ -35,6 +35,7 @@ def run_engine(binary, source, timeout):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--test262", type=Path, default=ROOT / "vendor" / "test262")
+    ap.add_argument("--include", action="append", help="suite directory (relative to the checkout) to run instead of the curated list; repeatable")
     ap.add_argument("--filter", type=str, default=None)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--timeout", type=float, default=5.0)
@@ -54,6 +55,8 @@ def main():
         return 2
 
     cfg = ref.load_config()
+    if args.include:
+        cfg["include"] = args.include
     tests = ref.gather_tests(args.test262, cfg, args.filter)
     if args.limit:
         tests = tests[: args.limit]

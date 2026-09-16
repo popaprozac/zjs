@@ -1003,6 +1003,30 @@ engine uses neither pattern.
 
 ---
 
+## G33 — A byte buffer cannot cross to native code as a pointer and length
+
+**Status:** `proposed` · **Size:** medium · **Priority:** medium
+**Confirmed:** z-lang `69397510` · **Blocks:** no
+**Found:** the RegExp slice, handing patterns and inputs to the vendored
+matcher.
+
+An imported C function (`import native from "x.h"`) and a raw C function
+both take only ABI scalars, `cstring`, and imported native types; a
+`Slice<u8>` or `Array<u8>` cannot be passed in either direction from Z to C
+(the export direction accepts `Slice<u8>`). The engine's regex boundary
+therefore allocates a native buffer through one scalar call and fills it
+with one `static inline` store call per byte from a Z loop, then hands the
+pointer and length over as `usize` (`engine/regex.zs`, `loadBuffer`). The
+store inlines, so the loop is a checked-index read and a byte write per
+byte; a `memcpy` would be one call. Every regex exec pays it for its input.
+
+The ask: a borrowed byte view at the import boundary -- `in bytes:
+Slice<u8>` on an imported or raw function lowering to `(const uint8_t *,
+size_t)` -- or a documented `bytes.data`-style projection usable from a
+raw body. Until then the per-byte copy stands.
+
+---
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

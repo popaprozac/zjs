@@ -1299,6 +1299,26 @@ export struct Compiler {
       this.nameNext(contextualStart, contextualLength, contextualPrefix);
       return this.compileExpr(in parser, inout runtime, n.left);
     }
+    if (k == NodeKind.regexExpr) {
+      // /source/flags: the two strings as constants, a fresh object at
+      // every evaluation.
+      let lastSlash = n.end - 1;
+      while (lastSlash > n.start && parser.source[usize(lastSlash)] != 47) { lastSlash = lastSlash - 1; }
+      const sourceIndex = this.addConst(runtime.internValue(sliceBytes(in parser.source, usize(n.start + 1), usize(lastSlash))));
+      const flagsIndex = this.addConst(runtime.internValue(sliceBytes(in parser.source, usize(lastSlash + 1), usize(n.end))));
+      const dst = this.allocReg();
+      if (sourceIndex < 256 && flagsIndex < 256) {
+        this.emit(instABC(Op.newRegex, dst, u8(sourceIndex), u8(flagsIndex)));
+      } else {
+        const sourceReg = this.allocReg();
+        this.emit(instAU16(Op.loadConst, sourceReg, sourceIndex));
+        const flagsReg = this.allocReg();
+        this.emit(instAU16(Op.loadConst, flagsReg, flagsIndex));
+        this.emit(instABC(Op.newRegexR, dst, sourceReg, flagsReg));
+        this.nextReg = dst + 1;
+      }
+      return dst;
+    }
     if (k == NodeKind.stringExpr) {
       const decoded = decodeStringBody(in parser, n.start + 1, n.end > 0 ? n.end - 1 : n.start + 1);
       const index = this.addConst(runtime.internValue(move decoded));

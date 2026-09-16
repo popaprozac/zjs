@@ -11,7 +11,8 @@ import { expect } from "std/test";
 import { thread } from "std/thread";
 import math from "std/math";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted } from "./value.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME } from "./heap.zs";
+import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT } from "./regex.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED } from "./heap.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
@@ -262,6 +263,27 @@ export struct Runtime {
   atomPromiseRecord: u32;
   atomErrorData: u32;
   atomDateValue: u32;
+  atomRegexSource: u32;
+  atomRegexFlags: u32;
+  atomRegexCompiled: u32;
+  atomRegexIter: u32;
+  atomRegexTicket: u32;
+  atomLastIndex: u32;
+  atomIndex: u32;
+  atomInput: u32;
+  atomGroups: u32;
+  atomExec: u32;
+  atomFlags: u32;
+  regexProto: u32;
+  regexIteratorProto: u32;
+  regexExecFn: u32;
+  regexCtor: u32;
+  regexBackend: RegexBackend;
+  symbolMatch: Value;
+  symbolMatchAll: Value;
+  symbolReplace: Value;
+  symbolSearch: Value;
+  symbolSplit: Value;
   // %AsyncIteratorPrototype% and %AsyncGeneratorPrototype%.
   asyncIteratorProto: u32;
   asyncGeneratorProto: u32;
@@ -584,6 +606,7 @@ export struct Runtime {
       slot = (slot + 1) & mask;
     }
     const handle = this.heap.allocateString(move bytes);
+    this.heap.setFlags(handle, FLAG_INTERNED);
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
     return handle;
@@ -696,6 +719,222 @@ export struct Runtime {
     this.heap.objectDefine(handle, atomDateValue, doubleValue(time), PROP_NONE);
   }
 
+  // --- RegExp objects ---
+  //
+  // A RegExp keeps its source, flag bits, and the backend cache slot of
+  // its compiled form in hidden slots; `lastIndex` is an ordinary own
+  // property. The prototype has no slots, so it is not a RegExp itself.
+  function isRegExpObject(value: Value): boolean {
+    if (!this.isObjectLike(value)) return false;
+    return this.heap.objectFindSlot(asCell(value), this.atomRegexSource) >= 0;
+  }
+
+  function regexpSourceValue(handle: u32): Value {
+    const slot = this.heap.objectFindSlot(handle, this.atomRegexSource);
+    return this.heap.slot(handle, u32(slot));
+  }
+
+  function regexpSource(handle: u32): Array<u8> {
+    return this.heap.stringBytes(asCell(this.regexpSourceValue(handle)));
+  }
+
+  function regexpFlagBits(handle: u32): i32 {
+    const slot = this.heap.objectFindSlot(handle, this.atomRegexFlags);
+    return asInt32(this.heap.slot(handle, u32(slot)));
+  }
+
+  // IsRegExp: an object's @@match decides when present; else the slot.
+  function isRegExp(inout this, value: Value): boolean {
+    if (!this.isObjectLike(value)) return false;
+    const symbolMatch = this.symbolMatch;
+    const matcher = this.getProperty(value, symbolMatch);
+    if (this.pendingThrow) return false;
+    if (!isUndefined(matcher)) return this.toBooleanValue(matcher);
+    return this.isRegExpObject(value);
+  }
+
+  // A flags string to bits; -1 for an unknown or repeated flag.
+  function regexpFlagBitsOf(in flags: Array<u8>): i32 {
+    let bits: i32 = 0;
+    let i: usize = 0;
+    while (i < flags.length) {
+      const flag = flags[i];
+      let bit: i32 = 0;
+      if (flag == 100) bit = REGEX_HAS_INDICES;
+      if (flag == 103) bit = REGEX_GLOBAL;
+      if (flag == 105) bit = REGEX_IGNORE_CASE;
+      if (flag == 109) bit = REGEX_MULTILINE;
+      if (flag == 115) bit = REGEX_DOT_ALL;
+      if (flag == 117) bit = REGEX_UNICODE;
+      if (flag == 118) bit = REGEX_UNICODE_SETS;
+      if (flag == 121) bit = REGEX_STICKY;
+      if (bit == 0 || (bits & bit) != 0) return -1;
+      bits = bits | bit;
+      i = i + 1;
+    }
+    if ((bits & REGEX_UNICODE) != 0 && (bits & REGEX_UNICODE_SETS) != 0) return -1;
+    return bits;
+  }
+
+  // RegExpAlloc: an object with a writable, non-enumerable,
+  // non-configurable `lastIndex`, not yet a RegExp.
+  function regexpAlloc(inout this, proto: u32): u32 {
+    const object = this.heap.allocateObject(proto);
+    const atomLastIndex = this.atomLastIndex;
+    this.heap.objectDefine(object, atomLastIndex, int32Value(0), PROP_WRITABLE);
+    return object;
+  }
+
+  // RegExpInitialize with the pattern and flags already strings: the
+  // flags parse, the pattern compiles (a SyntaxError names the backend's
+  // complaint), the slots fill, and lastIndex is set to 0 through Set.
+  function regexpInitialize(inout this, object: u32, pattern: Value, flags: Value): boolean {
+    const flagBytes = this.heap.stringBytes(asCell(flags));
+    const bits = this.regexpFlagBitsOf(in flagBytes);
+    if (bits < 0) {
+      const head: String = "Invalid flags supplied to RegExp constructor '";
+      let message = bytesOf(in head);
+      appendBytes(inout message, this.heap.stringBytes(asCell(flags)));
+      message.push(39);
+      const error = this.makeError(ERROR_KIND_SYNTAX, move message);
+      this.raise(error);
+      return false;
+    }
+    const sourceBytes = this.heap.stringBytes(asCell(pattern));
+    const entry = this.regexBackend.compile(in sourceBytes, bits);
+    if (entry < 0) {
+      const head: String = "Invalid regular expression: /";
+      let message = bytesOf(in head);
+      appendBytes(inout message, this.heap.stringBytes(asCell(pattern)));
+      message.push(47);
+      appendBytes(inout message, this.heap.stringBytes(asCell(flags)));
+      const separator: String = ": ";
+      appendBytes(inout message, bytesOf(in separator));
+      const detail = this.regexBackend.errorMessage();
+      let k: usize = 0;
+      while (k < detail.length) {
+        message.push(detail[k]);
+        k = k + 1;
+      }
+      const error = this.makeError(ERROR_KIND_SYNTAX, move message);
+      this.raise(error);
+      return false;
+    }
+    const atomRegexSource = this.atomRegexSource;
+    this.heap.objectDefine(object, atomRegexSource, pattern, PROP_NONE);
+    const atomRegexFlags = this.atomRegexFlags;
+    this.heap.objectDefine(object, atomRegexFlags, int32Value(bits), PROP_NONE);
+    const atomRegexCompiled = this.atomRegexCompiled;
+    this.heap.objectDefine(object, atomRegexCompiled, int32Value(entry), PROP_NONE);
+    const ticket = this.regexBackend.ticket(entry);
+    const atomRegexTicket = this.atomRegexTicket;
+    this.heap.objectDefine(object, atomRegexTicket, doubleValue(ticket), PROP_NONE);
+    const atomLastIndex = this.atomLastIndex;
+    const stored = this.setProperty(cellValue(object), cellValue(atomLastIndex), int32Value(0));
+    if (this.pendingThrow) return false;
+    if (!stored) {
+      const message: String = "Cannot assign to read only property 'lastIndex'";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return false;
+    }
+    return true;
+  }
+
+  // RegExpCreate from strings (undefined for either means empty).
+  function regexpCreate(inout this, pattern: Value, flags: Value, proto: u32): Value {
+    let patternText = pattern;
+    if (isUndefined(pattern)) patternText = this.internValue(Array<u8>());
+    let flagsText = flags;
+    if (isUndefined(flags)) flagsText = this.internValue(Array<u8>());
+    const patternString = this.toStringValue(patternText);
+    if (this.pendingThrow) return undefinedValue();
+    this.pushTempRoot(patternString);
+    const flagsString = this.toStringValue(flagsText);
+    if (this.pendingThrow) {
+      this.popTempRoot();
+      return undefinedValue();
+    }
+    this.pushTempRoot(flagsString);
+    const object = this.regexpAlloc(proto);
+    this.pushTempRoot(cellValue(object));
+    const ok = this.regexpInitialize(object, patternString, flagsString);
+    this.popTempRoot();
+    this.popTempRoot();
+    this.popTempRoot();
+    if (!ok) return undefinedValue();
+    return cellValue(object);
+  }
+
+  // The backend cache slot for a RegExp, recompiling if it was evicted:
+  // the slot's ticket changes when the slot is reused.
+  function regexpEntry(inout this, handle: u32): i32 {
+    const slot = this.heap.objectFindSlot(handle, this.atomRegexCompiled);
+    const cached = asInt32(this.heap.slot(handle, u32(slot)));
+    const ticketSlot = this.heap.objectFindSlot(handle, this.atomRegexTicket);
+    const ticket = toNumber(this.heap.slot(handle, u32(ticketSlot)));
+    if (this.regexBackend.ticket(cached) == ticket) return cached;
+    const source = this.regexpSource(handle);
+    const bits = this.regexpFlagBits(handle);
+    const entry = this.regexBackend.compile(in source, bits);
+    if (entry < 0) {
+      const message: String = "Regular expression: recompilation failed";
+      const error = this.rangeError(in message);
+      this.raise(error);
+      return -1;
+    }
+    const atomRegexCompiled = this.atomRegexCompiled;
+    this.heap.objectDefine(handle, atomRegexCompiled, int32Value(entry), PROP_NONE);
+    const freshTicket = this.regexBackend.ticket(entry);
+    const atomRegexTicket = this.atomRegexTicket;
+    this.heap.objectDefine(handle, atomRegexTicket, doubleValue(freshTicket), PROP_NONE);
+    return entry;
+  }
+
+  // Run a RegExp against a string from a byte offset: REGEX_MATCH or
+  // REGEX_NO_MATCH, or a raised error for the backend's failures. The
+  // string's bytes go straight from the heap into the backend's buffer.
+  function regexpExecRaw(inout this, handle: u32, input: u32, start: usize): i32 {
+    const entry = this.regexpEntry(handle);
+    if (this.pendingThrow) return REGEX_NO_MATCH;
+    const length = this.heap.stringLength(input);
+    const buffer = this.regexBackend.reserve(length);
+    let result = REGEX_OUT_OF_MEMORY;
+    if (buffer != 0) {
+      let i: usize = 0;
+      while (i < length) {
+        const byte = this.heap.stringByte(input, i);
+        this.regexBackend.store(buffer, i, byte);
+        i = i + 1;
+      }
+      result = this.regexBackend.execLoaded(entry, buffer, length, start);
+    }
+    if (result >= 0) return result;
+    if (result == REGEX_OUT_OF_MEMORY) {
+      const message: String = "Regular expression: out of memory";
+      const error = this.rangeError(in message);
+      this.raise(error);
+    } else if (result == REGEX_STEP_LIMIT) {
+      const message: String = "Regular expression: step limit exceeded";
+      const error = this.rangeError(in message);
+      this.raise(error);
+    } else if (result == REGEX_STACK_LIMIT) {
+      const message: String = "Maximum call stack size exceeded";
+      const error = this.rangeError(in message);
+      this.raise(error);
+    } else {
+      const message: String = "Regular expression: invalid bytecode";
+      const error = this.typeError(in message);
+      this.raise(error);
+    }
+    return REGEX_NO_MATCH;
+  }
+
+  // Native resources held by this runtime, released at teardown.
+  function releaseNative(inout this): void {
+    this.regexBackend.release();
+  }
+
   function hasErrorData(value: Value): boolean {
     if (!this.isObjectLike(value)) return false;
     return this.heap.objectFindSlot(asCell(value), this.atomErrorData) >= 0;
@@ -720,7 +959,12 @@ export struct Runtime {
   // A property key as an atom handle: strings intern their bytes; anything
   // else goes through ToString first.
   function propertyKey(inout this, key: Value): u32 {
-    if (this.isStringValue(key)) return this.internBytes(this.heap.stringBytes(asCell(key)));
+    if (this.isStringValue(key)) {
+      // An atom names itself; any other string is interned by its bytes.
+      const handle = asCell(key);
+      if ((this.heap.flagsOf(handle) & FLAG_INTERNED) != 0) return handle;
+      return this.internBytes(this.heap.stringBytes(handle));
+    }
     if (this.isSymbolValue(key)) return this.heap.symbolKeyAtom(asCell(key));
     const text = this.toStringValue(key);
     const textBytes = this.heap.stringBytes(asCell(text));
@@ -2760,6 +3004,23 @@ export struct Runtime {
     this.atomPromiseRecord = this.hiddenAtom(112, 114);
     this.atomErrorData = this.hiddenAtom(101, 100);
     this.atomDateValue = this.hiddenAtom(100, 116);
+    this.atomRegexSource = this.hiddenAtom(114, 115);
+    this.atomRegexFlags = this.hiddenAtom(114, 102);
+    this.atomRegexCompiled = this.hiddenAtom(114, 99);
+    this.atomRegexIter = this.hiddenAtom(114, 105);
+    this.atomRegexTicket = this.hiddenAtom(114, 116);
+    const lastIndexText: String = "lastIndex";
+    this.atomLastIndex = this.atomOf(in lastIndexText);
+    const indexText: String = "index";
+    this.atomIndex = this.atomOf(in indexText);
+    const inputText: String = "input";
+    this.atomInput = this.atomOf(in inputText);
+    const groupsText: String = "groups";
+    this.atomGroups = this.atomOf(in groupsText);
+    const execText: String = "exec";
+    this.atomExec = this.atomOf(in execText);
+    const flagsText: String = "flags";
+    this.atomFlags = this.atomOf(in flagsText);
     this.atomSyncIterator = this.hiddenAtom(115, 105);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
@@ -2794,6 +3055,16 @@ export struct Runtime {
     this.symbolUnscopables = this.newSymbol(this.internText(in unscopablesText));
     const asyncIteratorText: String = "Symbol.asyncIterator";
     this.symbolAsyncIterator = this.newSymbol(this.internText(in asyncIteratorText));
+    const matchText: String = "Symbol.match";
+    this.symbolMatch = this.newSymbol(this.internText(in matchText));
+    const matchAllText: String = "Symbol.matchAll";
+    this.symbolMatchAll = this.newSymbol(this.internText(in matchAllText));
+    const replaceText: String = "Symbol.replace";
+    this.symbolReplace = this.newSymbol(this.internText(in replaceText));
+    const searchText: String = "Symbol.search";
+    this.symbolSearch = this.newSymbol(this.internText(in searchText));
+    const splitText: String = "Symbol.split";
+    this.symbolSplit = this.newSymbol(this.internText(in splitText));
     // Value properties of the global object.
     this.setGlobalAttr("NaN", doubleValue(nativeNan()), PROP_NONE);
     this.setGlobalAttr("Infinity", doubleValue(1.0 / 0.0), PROP_NONE);
@@ -2907,6 +3178,46 @@ export struct Runtime {
     this.heap.markHandle(atomErrorData);
     const atomDateValue = this.atomDateValue;
     this.heap.markHandle(atomDateValue);
+    const atomRegexSource = this.atomRegexSource;
+    this.heap.markHandle(atomRegexSource);
+    const atomRegexFlags = this.atomRegexFlags;
+    this.heap.markHandle(atomRegexFlags);
+    const atomRegexCompiled = this.atomRegexCompiled;
+    this.heap.markHandle(atomRegexCompiled);
+    const atomRegexIter = this.atomRegexIter;
+    this.heap.markHandle(atomRegexIter);
+    const atomRegexTicket = this.atomRegexTicket;
+    this.heap.markHandle(atomRegexTicket);
+    const atomLastIndex = this.atomLastIndex;
+    this.heap.markHandle(atomLastIndex);
+    const atomIndex = this.atomIndex;
+    this.heap.markHandle(atomIndex);
+    const atomInput = this.atomInput;
+    this.heap.markHandle(atomInput);
+    const atomGroups = this.atomGroups;
+    this.heap.markHandle(atomGroups);
+    const atomExec = this.atomExec;
+    this.heap.markHandle(atomExec);
+    const atomFlags = this.atomFlags;
+    this.heap.markHandle(atomFlags);
+    const regexProto = this.regexProto;
+    if (regexProto != 0) this.heap.markHandle(regexProto);
+    const regexIteratorProto = this.regexIteratorProto;
+    if (regexIteratorProto != 0) this.heap.markHandle(regexIteratorProto);
+    const regexExecFn = this.regexExecFn;
+    if (regexExecFn != 0) this.heap.markHandle(regexExecFn);
+    const regexCtor = this.regexCtor;
+    if (regexCtor != 0) this.heap.markHandle(regexCtor);
+    const symbolMatch = this.symbolMatch;
+    this.heap.markValue(symbolMatch);
+    const symbolMatchAll = this.symbolMatchAll;
+    this.heap.markValue(symbolMatchAll);
+    const symbolReplace = this.symbolReplace;
+    this.heap.markValue(symbolReplace);
+    const symbolSearch = this.symbolSearch;
+    this.heap.markValue(symbolSearch);
+    const symbolSplit = this.symbolSplit;
+    this.heap.markValue(symbolSplit);
     const promiseProto = this.promiseProto;
     this.heap.markHandle(promiseProto);
     let job: usize = 0;
@@ -4870,6 +5181,30 @@ export struct Runtime {
               throwing = true;
             }
           }
+          newRegex => {
+            const pattern = this.functions[usize(fi)].constants[usize(inst.b)];
+            const flags = this.functions[usize(fi)].constants[usize(inst.c)];
+            const regexProto = this.regexProto;
+            const created = this.regexpCreate(pattern, flags, regexProto);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, created);
+            }
+          }
+          newRegexR => {
+            const pattern = this.reg(base, inst.b);
+            const flags = this.reg(base, inst.c);
+            const regexProto = this.regexProto;
+            const created = this.regexpCreate(pattern, flags, regexProto);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, created);
+            }
+          }
           _ => {
             // Opcode pairs that share a handler, and the unimplemented rest.
             if (op == Op.cmpEq || op == Op.cmpNe) {
@@ -5144,7 +5479,7 @@ export struct Runtime {
   }
 }
 
-function appendBytes(inout target: Array<u8>, source: Array<u8>): void {
+export function appendBytes(inout target: Array<u8>, source: Array<u8>): void {
   let index: usize = 0;
   while (index < source.length) {
     target.push(source[index]);
@@ -5166,7 +5501,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
