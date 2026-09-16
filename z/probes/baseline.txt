@@ -1,4 +1,4 @@
-# probe status at z-lang ca09a9c4 (clean). Written by run.sh --record.
+# probe status at z-lang ad43b117 (clean). Written by run.sh --record.
 array-capacity LANDED
 array-pop LANDED
 byte-literal COMPILER-REJECTED
