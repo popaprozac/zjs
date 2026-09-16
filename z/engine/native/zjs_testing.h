@@ -9,6 +9,7 @@
 
 #include <pthread.h>
 #include <stdint.h>
+#include <time.h>
 
 typedef struct zjs_gate {
   pthread_mutex_t lock;
@@ -24,23 +25,38 @@ static inline void zjs_gate_init(zjs_gate *gate) {
   gate->resume = 0;
 }
 
+/* Waits are bounded: a gate that is not resumed or never arrived at
+   within the limit reports failure instead of hanging a build. */
+#define ZJS_GATE_LIMIT_SECONDS 30
+
+static inline int zjs_gate_wait_until(zjs_gate *gate, int *flag) {
+  struct timespec deadline;
+  clock_gettime(CLOCK_REALTIME, &deadline);
+  deadline.tv_sec += ZJS_GATE_LIMIT_SECONDS;
+  while (!*flag) {
+    if (pthread_cond_timedwait(&gate->changed, &gate->lock, &deadline) != 0) return *flag;
+  }
+  return 1;
+}
+
 /* Called by the engine (gate == 0 means no gate): mark arrival, wait for
-   the test's resume. */
+   the test's resume; proceeds anyway after the limit. */
 static inline void zjs_gate_arrive(uintptr_t handle) {
   zjs_gate *gate = (zjs_gate *)handle;
   if (gate == 0) return;
   pthread_mutex_lock(&gate->lock);
   gate->arrived = 1;
   pthread_cond_broadcast(&gate->changed);
-  while (!gate->resume) pthread_cond_wait(&gate->changed, &gate->lock);
+  zjs_gate_wait_until(gate, &gate->resume);
   pthread_mutex_unlock(&gate->lock);
 }
 
-/* Called by the test. */
-static inline void zjs_gate_await_arrival(zjs_gate *gate) {
+/* Called by the test: 1 once the engine has arrived, 0 on timeout. */
+static inline int zjs_gate_await_arrival(zjs_gate *gate) {
   pthread_mutex_lock(&gate->lock);
-  while (!gate->arrived) pthread_cond_wait(&gate->changed, &gate->lock);
+  int arrived = zjs_gate_wait_until(gate, &gate->arrived);
   pthread_mutex_unlock(&gate->lock);
+  return arrived;
 }
 
 static inline void zjs_gate_resume(zjs_gate *gate) {

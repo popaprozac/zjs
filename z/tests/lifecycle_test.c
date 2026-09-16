@@ -17,6 +17,7 @@
 
 static int failures = 0;
 #define CHECK(condition, what) do { if (!(condition)) { failures++; fprintf(stderr, "lifecycle: FAIL %s\n", what); } } while (0)
+#define MUST(call, what) do { if ((call) != 0) { failures++; fprintf(stderr, "lifecycle: FAIL %s\n", what); } } while (0)
 
 static double now_seconds(void) {
   struct timespec t;
@@ -69,16 +70,16 @@ static void overlap(void) {
   a.ctx = zjs_new_context(); zjs_gate_init(&a.gate); a.result = -2;
   b.ctx = zjs_new_context(); zjs_gate_init(&b.gate); b.result = -2;
   pthread_t ta, tb;
-  pthread_create(&ta, NULL, evaluate_gated, &a);
-  pthread_create(&tb, NULL, evaluate_gated, &b);
-  zjs_gate_await_arrival(&a.gate);
-  zjs_gate_await_arrival(&b.gate);
+  MUST(pthread_create(&ta, NULL, evaluate_gated, &a), "pthread_create");
+  MUST(pthread_create(&tb, NULL, evaluate_gated, &b), "pthread_create");
+  int a_arrived = zjs_gate_await_arrival(&a.gate);
+  int b_arrived = zjs_gate_await_arrival(&b.gate);
   /* Both evaluations are inside their locked work now. */
-  CHECK(a.gate.arrived && b.gate.arrived, "overlap: two contexts inside their evaluations at once");
+  CHECK(a_arrived && b_arrived, "overlap: two contexts inside their evaluations at once");
   zjs_gate_resume(&a.gate);
   zjs_gate_resume(&b.gate);
-  pthread_join(ta, NULL);
-  pthread_join(tb, NULL);
+  MUST(pthread_join(ta, NULL), "pthread_join");
+  MUST(pthread_join(tb, NULL), "pthread_join");
   CHECK(a.result == 0 && b.result == 0, "overlap: both gated evaluations completed without error");
   zjs_free_context(a.ctx);
   zjs_free_context(b.ctx);
@@ -88,10 +89,10 @@ static void overlap(void) {
   evaluate_long(&wa);
   double single = now_seconds() - t;
   t = now_seconds();
-  pthread_create(&ta, NULL, evaluate_long, &wa);
-  pthread_create(&tb, NULL, evaluate_long, &wb);
-  pthread_join(ta, NULL);
-  pthread_join(tb, NULL);
+  MUST(pthread_create(&ta, NULL, evaluate_long, &wa), "pthread_create");
+  MUST(pthread_create(&tb, NULL, evaluate_long, &wb), "pthread_create");
+  MUST(pthread_join(ta, NULL), "pthread_join");
+  MUST(pthread_join(tb, NULL), "pthread_join");
   double both = now_seconds() - t;
   CHECK(wa.ok && wb.ok, "overlap: both long evaluations succeed");
   printf("lifecycle: one context %.3fs, two concurrently %.3fs (benchmark, not asserted)\n", single, both);
@@ -110,10 +111,10 @@ static void serialization(void) {
   ZjsContext *ctx = zjs_new_context();
   zjs_eval(ctx, "var total = 0;");
   pthread_t ta, tb;
-  pthread_create(&ta, NULL, evaluate_add, ctx);
-  pthread_create(&tb, NULL, evaluate_add, ctx);
-  pthread_join(ta, NULL);
-  pthread_join(tb, NULL);
+  MUST(pthread_create(&ta, NULL, evaluate_add, ctx), "pthread_create");
+  MUST(pthread_create(&tb, NULL, evaluate_add, ctx), "pthread_create");
+  MUST(pthread_join(ta, NULL), "pthread_join");
+  MUST(pthread_join(tb, NULL), "pthread_join");
   zjs_eval(ctx, "if (total !== 400000) throw new Error('interleaved: ' + total);");
   CHECK(zjs_had_error(ctx) == 0, "serialization: total is exact");
   CHECK(zjs_z_eval_count((uintptr_t)ctx) == 402, "serialization: every evaluation counted");
@@ -129,8 +130,16 @@ typedef struct {
   int evaluator_error;
 } Race;
 static void wait_for(Race *race, int stage) {
+  struct timespec deadline;
+  clock_gettime(CLOCK_REALTIME, &deadline);
+  deadline.tv_sec += ZJS_GATE_LIMIT_SECONDS;
   pthread_mutex_lock(&race->lock);
-  while (race->stage < stage) pthread_cond_wait(&race->changed, &race->lock);
+  while (race->stage < stage) {
+    if (pthread_cond_timedwait(&race->changed, &race->lock, &deadline) != 0) {
+      CHECK(0, "race: waited past the limit");
+      break;
+    }
+  }
   pthread_mutex_unlock(&race->lock);
 }
 static void advance(Race *race, int stage) {
@@ -155,13 +164,13 @@ static void free_after_admission(void) {
   gated.ctx = zjs_new_context(); zjs_gate_init(&gated.gate); gated.result = -2;
   uintptr_t native_before = zjs_re_live_contexts();
   pthread_t evaluator;
-  pthread_create(&evaluator, NULL, free_after_admission_evaluator, &gated);
-  zjs_gate_await_arrival(&gated.gate);
+  MUST(pthread_create(&evaluator, NULL, free_after_admission_evaluator, &gated), "pthread_create");
+  CHECK(zjs_gate_await_arrival(&gated.gate), "free after admission: the evaluator arrived at the gate");
   zjs_free_context(gated.ctx);
   CHECK(zjs_had_error(gated.ctx) == 1, "free after admission: the handle is stale at once");
   CHECK(zjs_re_live_contexts() == native_before, "free after admission: the admitted evaluation keeps the context alive");
   zjs_gate_resume(&gated.gate);
-  pthread_join(evaluator, NULL);
+  MUST(pthread_join(evaluator, NULL), "pthread_join");
   CHECK(gated.result == 0, "free after admission: the admitted evaluation completed without error");
   CHECK(zjs_re_live_contexts() == native_before - 1, "free after admission: native context destroyed once the evaluation returned");
   printf("lifecycle: free after admission: evaluation completed (result %d), native contexts %lu\n", gated.result, (unsigned long)zjs_re_live_contexts());
@@ -176,10 +185,10 @@ static void *free_before_lookup_evaluator(void *argument) {
 static void free_before_lookup(void) {
   Race race = { zjs_new_context(), PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0 };
   pthread_t evaluator;
-  pthread_create(&evaluator, NULL, free_before_lookup_evaluator, &race);
+  MUST(pthread_create(&evaluator, NULL, free_before_lookup_evaluator, &race), "pthread_create");
   zjs_free_context(race.ctx);
   advance(&race, 2);
-  pthread_join(evaluator, NULL);
+  MUST(pthread_join(evaluator, NULL), "pthread_join");
   CHECK(race.evaluator_error == 1, "free before lookup: the evaluation is refused");
 }
 

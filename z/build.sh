@@ -29,9 +29,11 @@ cp "$HERE/engine/build/libzjsz.a" "$OUT/libzjs.a"
 ar r "$OUT/libzjs.a" "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/zjs_regexp.o"
 ranlib "$OUT/libzjs.a"
 
-echo "[3b/6] lifecycle test"
-clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" -I "$HERE/engine/build" -I "$HERE/engine/native" \
-  -o "$OUT/lifecycle_test" "$HERE/tests/lifecycle_test.c" "$OUT/libzjs.a"
+echo "[3b/6] lifecycle test (its own build of the library, with the test-only gate; not shipped)"
+(cd "$Z_LANG" && bun run z build "$HERE/tests/lifecycle" >/dev/null)
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" -I "$HERE/tests/lifecycle/build" -I "$HERE/engine/native" \
+  -o "$OUT/lifecycle_test" "$HERE/tests/lifecycle_test.c" "$HERE/tests/lifecycle/build/libzjsz.a" \
+  "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/zjs_regexp.o"
 "$OUT/lifecycle_test"
 
 echo "[4/6] test262 runner (unmodified)"

@@ -28,9 +28,8 @@ import { parseProgram } from "./parser.zs";
 import { compileProgram } from "./compiler.zs";
 import { Value, undefinedValue } from "./value.zs";
 import { sliceBytes } from "./heap.zs";
-import testing from "./native/zjs_testing.h";
 
-struct ContextState {
+export struct ContextState {
   hadError: boolean;
   evalCount: u64;
   runtime: Runtime;
@@ -44,7 +43,7 @@ struct ContextState {
   }
 }
 
-class Context {
+export class Context {
   readonly state: Mutex<ContextState>;
 }
 
@@ -63,14 +62,14 @@ struct Registry {
   detached: u64;
 }
 
-class Engine {
+export class Engine {
   readonly registry: Mutex<Registry>;
   publicationEpoch: i32 on thread.main;
 }
 
 const engine = Once<Engine>();
 
-function initializeRuntime(): OnceLifetime<Engine> on thread.main {
+export function initializeRuntime(): OnceLifetime<Engine> on thread.main {
   return engine.initialize(new Engine({
     registry: Mutex(Registry({ slots: Array<Option<Context>>(), generations: Array<u32>(), freeSlots: Array<u32>(), live: 0, created: 0, detached: 0 })),
     publicationEpoch: 1,
@@ -96,7 +95,7 @@ function handleGeneration(handle: usize): u32 {
 }
 
 // The context a handle names, retained, or none: the admission step.
-function retain(handle: usize): Option<Context> {
+export function retain(handle: usize): Option<Context> {
   const index = handleIndex(handle);
   const generation = handleGeneration(handle);
   if (index == 0) return Option<Context>.none;
@@ -195,29 +194,7 @@ export c function zjs_z_eval(handle: usize, source: Slice<u8>): void {
   }
 }
 
-// Test-only: the same evaluation, pausing at `gate` (a zjs_gate the test
-// owns, as a scalar) after admission and after taking the context lock,
-// and reporting the evaluation's own error flag through the reference it
-// holds -- the handle may be stale by then. Not part of the embedding ABI.
-export c function zjs_z_eval_gated(handle: usize, source: Slice<u8>, gate: usize): i32 {
-  const bytes = sliceToBytes(source);
-  const found = retain(handle);
-  match (found) {
-    some(context) => {
-      return context.state.withLock((inout state): i32 => {
-        testing.zjs_gate_arrive(gate);
-        const byteCount = bytes.length;
-        state.evaluate(sliceBytes(in bytes, 0, byteCount));
-        return state.hadError ? 1 : 0;
-      });
-    }
-    none => {
-      return -1;
-    }
-  }
-}
-
-function sliceToBytes(source: Slice<u8>): Array<u8> {
+export function sliceToBytes(source: Slice<u8>): Array<u8> {
   let bytes = Array<u8>();
   let index: usize = 0;
   const count = source.length;
