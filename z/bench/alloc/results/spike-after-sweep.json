@@ -1,0 +1,238 @@
+{
+ "what": "Two million objects held and dropped, then three million short-lived ones. The memory figures are read at the end of the run and, for the address space, while a copy of the workload idles after the burst: they are the present state, not a high-water mark.",
+ "environment": {
+  "date": "2026-09-17",
+  "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "compiler_checkout": "<scratch>/z-lang-pin",
+  "compiler_checkout_revision": "ad43b117",
+  "compiler_checkout_clean": true,
+  "runs_per_median": 7,
+  "timeout_seconds": 120.0
+ },
+ "runs": {
+  "before": {
+   "binary": "<scratch>/stages2/zjsz-ints",
+   "binary_provenance": {
+    "engine_commit": "81cd092",
+    "engine_commit_full": "81cd0923c3d47c3ed5ff3fda7df272d13db53819",
+    "patch": null,
+    "compiler": {
+     "checkout": "<scratch>/z-lang-pin",
+     "revision": "ad43b117",
+     "clean": true,
+     "wanted": "ad43b117",
+     "verified": true
+    },
+    "build": "bun run z build z/tools/zjsz --release",
+    "evidence": "Stage 0",
+    "native_backend": {
+     "directory": "z/build/native",
+     "reused_as_is": true,
+     "built_by": "z/native.sh, at the tree revision below, before the stages were built",
+     "sources_last_changed_at": "6e6c42b",
+     "tree_revision_when_reused": "bab46de",
+     "files_sha256": {
+      "libregexp.o": "40ed28c5e00aa6971763be7ab17a40deb2716ad99a2d8bdf3a52d1292e33476d",
+      "libunicode.o": "2ff8631f819d9f0f8a182a58e97c1d2ca5432d824eaf6b3805dde670b89618bd",
+      "libzjsregexp.a": "46920bc5c6cc35d81e6a6d5c2b7d67b26aace1515ec8a326216ca7db0967c083",
+      "regex_contexts": "49ef7d2d9eff9a9cff93a7719419fd6ab3e8dbe97839894c3cfbecc57d83a56f",
+      "zjs_regexp.o": "041517dddf5abda645d2a17fa0bc8f4b5ec673dd1dc6bd6075bbb72c29704e46"
+     }
+    },
+    "built_at": "2026-09-17T16:46:51",
+    "binary_sha256": "19c54bbcec928595a15a3479e7aa9171187680d26e58ac6653514644ddc70297"
+   },
+   "wall_seconds": 1.6676278337836266,
+   "timing_failures": [],
+   "collection": {
+    "collections": 267,
+    "collecting_us": 970886,
+    "pause_p50_us": 3216,
+    "pause_p95_us": 4543,
+    "pause_p99_us": 13759,
+    "pause_max_us": 43110,
+    "cells_allocated": 10000827,
+    "slots_allocated": 44197156,
+    "engine_in_use_kib": 174659
+   },
+   "memory_kib_at_end_of_run": null,
+   "instrumented_failure": null,
+   "address_space_after_the_burst": {
+    "physical_footprint_now": "214.4M",
+    "default_zone": {
+     "virtual": "400.8M",
+     "allocated": "408.6M"
+    },
+    "regions": {
+     "MALLOC guard page": {
+      "virtual": "3584K",
+      "resident": "0K",
+      "dirty": "0K"
+     },
+     "MALLOC metadata": {
+      "virtual": "800K",
+      "resident": "432K",
+      "dirty": "432K"
+     },
+     "MALLOC_LARGE": {
+      "virtual": "248.0M",
+      "resident": "178.4M",
+      "dirty": "178.4M"
+     },
+     "MALLOC_REALLOC": {
+      "virtual": "128.0M",
+      "resident": "10.4M",
+      "dirty": "10.4M"
+     },
+     "MALLOC_REALLOC (reserved)": {
+      "virtual": "32.0M",
+      "resident": "0K",
+      "dirty": "0K"
+     },
+     "MALLOC_SMALL": {
+      "virtual": "16.0M",
+      "resident": "720K",
+      "dirty": "656K"
+     },
+     "MALLOC_SMALL (empty)": {
+      "virtual": "4096K",
+      "resident": "1728K",
+      "dirty": "0K"
+     },
+     "MALLOC_TINY": {
+      "virtual": "4096K",
+      "resident": "48K",
+      "dirty": "48K"
+     },
+     "Stack": {
+      "virtual": "8176K",
+      "resident": "16K",
+      "dirty": "16K"
+     },
+     "TOTAL": {
+      "virtual": "1.2G",
+      "resident": "279.8M",
+      "dirty": "190.6M"
+     }
+    }
+   }
+  },
+  "after": {
+   "binary": "<scratch>/stages2/zjsz-report",
+   "binary_provenance": {
+    "engine_commit": "8a2a8e3",
+    "engine_commit_full": "8a2a8e3b8ec42bd46568a229b470afcf3cfe2de7",
+    "patch": null,
+    "compiler": {
+     "checkout": "<scratch>/z-lang-pin",
+     "revision": "ad43b117",
+     "clean": true,
+     "wanted": "ad43b117",
+     "verified": true
+    },
+    "build": "bun run z build z/tools/zjsz --release",
+    "evidence": "Stage 0",
+    "native_backend": {
+     "directory": "z/build/native",
+     "reused_as_is": true,
+     "built_by": "z/native.sh, at the tree revision below, before the stages were built",
+     "sources_last_changed_at": "6e6c42b",
+     "tree_revision_when_reused": "bab46de",
+     "files_sha256": {
+      "libregexp.o": "40ed28c5e00aa6971763be7ab17a40deb2716ad99a2d8bdf3a52d1292e33476d",
+      "libunicode.o": "2ff8631f819d9f0f8a182a58e97c1d2ca5432d824eaf6b3805dde670b89618bd",
+      "libzjsregexp.a": "46920bc5c6cc35d81e6a6d5c2b7d67b26aace1515ec8a326216ca7db0967c083",
+      "regex_contexts": "49ef7d2d9eff9a9cff93a7719419fd6ab3e8dbe97839894c3cfbecc57d83a56f",
+      "zjs_regexp.o": "041517dddf5abda645d2a17fa0bc8f4b5ec673dd1dc6bd6075bbb72c29704e46"
+     }
+    },
+    "built_at": "2026-09-17T16:47:16",
+    "binary_sha256": "b57e2ed0652d84b3ca5933bb87f7cff40ee51ee681b750dce7d6e5aa8b9bdc88"
+   },
+   "wall_seconds": 0.7855074163526297,
+   "timing_failures": [],
+   "collection": {
+    "collections": 267,
+    "collecting_us": 152083,
+    "pause_p50_us": 17,
+    "pause_p95_us": 37,
+    "pause_p99_us": 16702,
+    "pause_max_us": 64130,
+    "cells_allocated": 10000827,
+    "slots_allocated": 44197156,
+    "engine_in_use_kib": 179
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 37,
+    "in_use_kib": 179,
+    "held_arena_kib": 224,
+    "held_spare_arena_kib": 224,
+    "held_table_kib": 224,
+    "held_strings_kib": 15,
+    "held_other_kib": 54,
+    "allocator_in_use_kib": 814,
+    "allocator_reserved_kib": 24576,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 755328,
+    "footprint_now_kib": 798289,
+    "resident_peak_kib": 756800
+   },
+   "instrumented_failure": null,
+   "address_space_after_the_burst": {
+    "physical_footprint_now": "246.6M",
+    "default_zone": {
+     "virtual": "28.8M",
+     "allocated": "871K"
+    },
+    "regions": {
+     "MALLOC guard page": {
+      "virtual": "3424K",
+      "resident": "0K",
+      "dirty": "0K"
+     },
+     "MALLOC metadata": {
+      "virtual": "800K",
+      "resident": "400K",
+      "dirty": "400K"
+     },
+     "MALLOC_LARGE (empty)": {
+      "virtual": "248.0M",
+      "resident": "0K",
+      "dirty": "0K"
+     },
+     "MALLOC_REALLOC (empty)": {
+      "virtual": "160.0M",
+      "resident": "0K",
+      "dirty": "0K"
+     },
+     "MALLOC_SMALL": {
+      "virtual": "16.0M",
+      "resident": "848K",
+      "dirty": "480K"
+     },
+     "MALLOC_SMALL (empty)": {
+      "virtual": "8192K",
+      "resident": "16K",
+      "dirty": "16K"
+     },
+     "MALLOC_TINY": {
+      "virtual": "4096K",
+      "resident": "48K",
+      "dirty": "48K"
+     },
+     "Stack": {
+      "virtual": "8176K",
+      "resident": "16K",
+      "dirty": "16K"
+     },
+     "TOTAL": {
+      "virtual": "1.2G",
+      "resident": "89.5M",
+      "dirty": "1649K"
+     }
+    }
+   }
+  }
+ }
+}

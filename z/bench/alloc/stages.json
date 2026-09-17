@@ -1,17 +1,67 @@
 {
-  "compiler": { "repository": "z-lang", "revision": "ad43b117", "stage": "Stage 0 (the TypeScript compiler run by bun); no native compiler build was used" },
+  "compiler": {
+    "repository": "z-lang",
+    "revision": "ad43b117",
+    "stage": "Stage 0 (the TypeScript compiler run by bun); no native compiler build was used"
+  },
   "build": "bun run z build z/tools/zjsz --release, against an isolated clone of the compiler at the revision above",
   "note": "Each stage is the engine at one commit. A stage differs from the one before it by that commit only, so a column of the matrix is the incremental effect of its change on top of all the earlier ones, in this order. It is not what the change would do alone or in another order.",
   "stages": [
-    { "name": "base", "commit": "cb06736", "change": "The previous checkpoint's engine (97d9e1b) plus the measurement flags; the engine's behaviour is unchanged." },
-    { "name": "atoms", "commit": "a408dbd", "change": "The names the engine looks up constantly are atoms it holds." },
-    { "name": "calls", "commit": "0ed992b", "change": "Engine calls with up to two arguments write them into registers." },
-    { "name": "arenas", "commit": "f7eb0b7", "change": "A sweep sizes its arena once; small heaps flip between two kept arenas." },
-    { "name": "promise", "commit": "39bc925", "change": "A promise is two cells, a reaction one, a job none." },
-    { "name": "suspend", "commit": "7b35c70", "change": "Async bodies hand their driver a value; a suspension reuses its register array." },
-    { "name": "plain", "commit": "1e9cbe1", "change": "Awaiting a non-object value queues its continuation directly." },
-    { "name": "ints", "commit": "81cd092", "change": "An int32 becomes a string in one allocation." },
-    { "name": "table", "commit": "06dbbd2", "change": "The handle table has an extent a sweep can cut back." },
-    { "name": "queue", "commit": "f42d6d5", "change": "The job queue reuses its own storage." }
-  ]
+    {
+      "name": "base",
+      "commit": "cb06736",
+      "change": "The previous checkpoint's engine (97d9e1b) plus the measurement flags; the engine's behaviour is unchanged."
+    },
+    {
+      "name": "atoms",
+      "commit": "a408dbd",
+      "change": "The names the engine looks up constantly are atoms it holds."
+    },
+    {
+      "name": "calls",
+      "commit": "0ed992b",
+      "change": "Engine calls with up to two arguments write them into registers."
+    },
+    {
+      "name": "arenas",
+      "commit": "f7eb0b7",
+      "change": "A sweep sizes its arena once; small heaps flip between two kept arenas."
+    },
+    {
+      "name": "promise",
+      "commit": "39bc925",
+      "change": "A promise is two cells, a reaction one, a job none."
+    },
+    {
+      "name": "suspend",
+      "commit": "7b35c70",
+      "change": "Async bodies hand their driver a value; a suspension reuses its register array."
+    },
+    {
+      "name": "plain",
+      "commit": "1e9cbe1",
+      "change": "Awaiting a non-object value queues its continuation directly."
+    },
+    {
+      "name": "ints",
+      "commit": "81cd092",
+      "change": "An int32 becomes a string in one allocation."
+    },
+    {
+      "name": "table",
+      "commit": "06dbbd2",
+      "change": "The handle table has an extent a sweep can cut back."
+    },
+    {
+      "name": "queue",
+      "commit": "f42d6d5",
+      "change": "The job queue reuses its own storage."
+    },
+    {
+      "name": "report",
+      "commit": "8a2a8e3",
+      "change": "The storage report (--mem-stats); the heap reads its arrays' capacity where it had estimated it. No engine behaviour changes."
+    }
+  ],
+  "native_backend": "z/build/native is built once by z/native.sh from z/engine/native at the tree's revision and reused as is for every stage; each build records its digests and the revision that last touched its sources."
 }

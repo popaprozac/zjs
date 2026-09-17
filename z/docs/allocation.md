@@ -50,20 +50,20 @@ the arena work is worth), and no other ordering was measured.
 
 Nanoseconds per operation:
 
-| Workload | base | atoms | calls | arenas | promise | suspend | plain | ints | table | queue | first to last |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| await of a primitive | 367 | 258 | 261 | 250 | 189 | 128 | 89 | 88 | 86 | 89 | -76% |
-| await of one settled promise | 284 | 179 | 188 | 174 | 167 | 106 | 108 | 108 | 106 | 110 | -61% |
-| await of a fresh settled promise | 408 | 298 | 302 | 296 | 235 | 171 | 168 | 173 | 168 | 167 | -59% |
-| await of a pending promise | 913 | 696 | 688 | 661 | 527 | 401 | 354 | 349 | 350 | 350 | -62% |
-| async generator value | 1294 | 911 | 915 | 883 | 689 | 478 | 393 | 390 | 392 | 393 | -70% |
-| then-link on a pending chain | 458 | 418 | 412 | 375 | 187 | 186 | 187 | 188 | 196 | 190 | -58% |
-| settle loop (new Promise + then) | 500 | 493 | 484 | 457 | 326 | 333 | 329 | 328 | 332 | 329 | -34% |
-| combinator element (all, race) | 1011 | 905 | 807 | 775 | 533 | 537 | 542 | 539 | 516 | 520 | -49% |
-| small-live-set churn | 96 | 95 | 96 | 94 | 93 | 95 | 94 | 70 | 69 | 69 | -28% |
-| churn against 300,000 retained | 191 | 187 | 190 | 185 | 184 | 182 | 184 | 184 | 184 | 185 | -3% |
+| Workload | base | atoms | calls | arenas | promise | suspend | plain | ints | table | queue | report | first to last |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| await of a primitive | 361 | 257 | 264 | 247 | 189 | 131 | 90 | 87 | 88 | 90 | 92 | -75% |
+| await of one settled promise | 288 | 185 | 194 | 176 | 178 | 117 | 113 | 116 | 113 | 122 | 120 | -58% |
+| await of a fresh settled promise | 422 | 312 | 313 | 300 | 240 | 175 | 173 | 183 | 183 | 180 | 181 | -57% |
+| await of a pending promise | 926 | 728 | 711 | 678 | 545 | 423 | 366 | 371 | 371 | 365 | 370 | -60% |
+| async generator value | 1345 | 949 | 953 | 915 | 712 | 500 | 410 | 411 | 407 | 413 | 419 | -69% |
+| then-link on a pending chain | 491 | 457 | 434 | 370 | 200 | 196 | 192 | 198 | 208 | 205 | 199 | -60% |
+| settle loop (new Promise + then) | 517 | 528 | 505 | 477 | 343 | 349 | 348 | 345 | 365 | 361 | 353 | -32% |
+| combinator element (all, race) | 1056 | 946 | 842 | 813 | 560 | 563 | 555 | 559 | 539 | 555 | 550 | -48% |
+| small-live-set churn | 98 | 98 | 99 | 97 | 97 | 99 | 97 | 72 | 70 | 71 | 72 | -27% |
+| churn against 300,000 retained | 192 | 190 | 191 | 188 | 190 | 186 | 187 | 188 | 187 | 188 | 189 | -2% |
 
-Startup subtracted, ms: base 3.0, atoms 4.3, calls 3.1, arenas 3.1, promise 3.3, suspend 3.4, plain 3.0, ints 3.3, table 3.4, queue 3.8.
+Startup subtracted, ms: base 3.1, atoms 3.1, calls 2.8, arenas 3.0, promise 3.0, suspend 2.8, plain 2.9, ints 3.2, table 3.0, queue 2.9, report 2.8.
 
 - **atoms** (`a408dbd`): the names the engine looks up constantly (`done`,
   `value`, `then`, `next`, `return`, `throw`, `resolve`) are atoms it holds.
@@ -87,6 +87,9 @@ Startup subtracted, ms: base 3.0, atoms 4.3, calls 3.1, arenas 3.1, promise 3.3,
   back (see the burst below). By design it does nothing on these workloads.
 - **queue** (`f42d6d5`): the job queue reuses its own storage. It changes
   allocator bytes, not time.
+- **report** (`8a2a8e3`): `--mem-stats`, and the heap reads its arrays'
+  capacity where it had estimated it. No engine behaviour changes; it is
+  the stage the storage figures below come from.
 
 First stage to last, per operation (`figures-base.json`,
 `figures-final.json`; cells and slots from `cells-before.json`, which is
@@ -95,16 +98,16 @@ not exist yet, and `cells-after.json`):
 
 | Workload | Cells | Slots | Allocator calls | Allocator bytes requested | Collections | Collecting, ms | Pause p50 / p99 / max, us | Peak resident, MB |
 |---|---|---|---|---|---|---|---|---|
-| await of a primitive | 11 to 1 | 49 to 5 | 4.12 to 0.01 | 1630 to 10 | 536 to 49 | 11.1 to 0.9 | 20 / 40 / 94 to 16 / 40 / 40 | 3.2 to 3.0 |
-| await of one settled promise | 5 to 1 | 24 to 5 | 4.06 to 0.01 | 762 to 10 | 244 to 49 | 4.8 to 1.0 | 19 / 37 / 52 to 17 / 39 / 39 | 3.3 to 3.1 |
-| await of a fresh settled promise | 11 to 3 | 49 to 13 | 4.12 to 0.01 | 1630 to 8 | 536 to 146 | 10.3 to 2.8 | 19 / 34 / 110 to 18 / 34 / 41 | 3.1 to 3.0 |
-| await of a pending promise | 25 to 7 | 111 to 32 | 9.26 to 0.02 | 3761 to 18 | 609 to 171 | 13.3 to 3.4 | 21 / 38 / 103 to 18 / 44 / 58 | 3.0 to 3.0 |
-| async generator value | 36 to 8 | 163 to 35 | 15.35 to 0.01 | 5328 to 10 | 1754 to 390 | 41.7 to 7.4 | 23 / 37 / 74 to 18 / 41 / 49 | 3.2 to 2.9 |
-| then-link on a pending chain | 9 to 3 | 37 to 13 | 1.02 to 0.01 | 1880 to 561 | 6 to 5 | 23.3 to 7.4 | 1333 / 15617 / 15617 to 518 / 5107 / 5107 | 205.7 to 67.9 |
-| settle loop (new Promise + then) | 21 to 11 | 83 to 42 | 2.20 to 0.01 | 3120 to 11 | 1023 to 537 | 21.0 to 10.9 | 20 / 33 / 85 to 19 / 35 / 141 | 3.0 to 3.0 |
-| combinator element (all, race) | 32 to 13 | 139 to 60 | 10.87 to 0.02 | 4854 to 20 | 769 to 303 | 18.1 to 7.3 | 23 / 41 / 103 to 23 / 38 / 126 | 3.9 to 3.0 |
-| small-live-set churn | 1 to 1 | 3 to 3 | 1.35 to 0.67 | 121 to 6 | 976 to 976 | 32.3 to 31.7 | 32 / 47 / 89 to 31 / 56 / 130 | 3.1 to 2.9 |
-| churn against 300,000 retained | 2 to 2 | 10 to 10 | 0.00 to 0.00 | 456 to 342 | 8 to 8 | 38.6 to 30.9 | 7903 / 10885 / 10885 to 6083 / 9170 / 9170 | 159.5 to 132.2 |
+| await of a primitive | 11 to 1 | 49 to 5 | 4.12 to 0.01 | 1630 to 10 | 536 to 49 | 11.6 to 0.9 | 20 / 51 / 92 to 16 / 40 / 40 | 3.3 to 3.0 |
+| await of one settled promise | 5 to 1 | 24 to 5 | 4.06 to 0.01 | 762 to 10 | 244 to 49 | 5.3 to 0.9 | 19 / 63 / 138 to 17 / 34 / 34 | 3.3 to 3.0 |
+| await of a fresh settled promise | 11 to 3 | 49 to 13 | 4.12 to 0.01 | 1630 to 8 | 536 to 146 | 11.3 to 2.9 | 19 / 59 / 131 to 18 / 57 / 99 | 3.5 to 3.0 |
+| await of a pending promise | 25 to 7 | 111 to 32 | 9.26 to 0.02 | 3761 to 18 | 609 to 171 | 14.3 to 3.2 | 22 / 67 / 109 to 18 / 39 / 90 | 3.2 to 3.0 |
+| async generator value | 36 to 8 | 163 to 35 | 15.35 to 0.01 | 5328 to 10 | 1754 to 390 | 45.5 to 7.6 | 24 / 56 / 217 to 18 / 42 / 98 | 3.4 to 3.0 |
+| then-link on a pending chain | 9 to 3 | 37 to 13 | 1.02 to 0.01 | 1880 to 561 | 6 to 5 | 26.1 to 7.6 | 1512 / 16813 / 16813 to 483 / 5411 / 5411 | 210.3 to 69.8 |
+| settle loop (new Promise + then) | 21 to 11 | 83 to 42 | 2.20 to 0.01 | 3120 to 11 | 1023 to 537 | 21.8 to 11.1 | 20 / 38 / 104 to 20 / 39 / 95 | 3.4 to 3.0 |
+| combinator element (all, race) | 32 to 13 | 139 to 60 | 10.87 to 0.02 | 4854 to 20 | 769 to 303 | 19.6 to 7.3 | 24 / 61 / 154 to 23 / 46 / 59 | 3.6 to 3.0 |
+| small-live-set churn | 1 to 1 | 3 to 3 | 1.35 to 0.67 | 121 to 6 | 976 to 976 | 34.6 to 31.0 | 33 / 69 / 173 to 31 / 47 / 107 | 3.2 to 2.9 |
+| churn against 300,000 retained | 2 to 2 | 10 to 10 | 0.00 to 0.00 | 456 to 342 | 8 to 8 | 32.4 to 28.1 | 6465 / 9518 / 9518 to 4822 / 8249 / 8249 | 157.2 to 130.6 |
 
 Small-heap pauses did not move. The allocator calls that remain in the
 churn loop are the contents of the strings it makes.
@@ -135,16 +138,16 @@ Last stage, KiB (`figures-final.json`):
 
 | Workload | Alive at last collection | In use | Held: arena | spare arena | table | strings | other | Allocator in use | Allocator reserved | Resident now | Footprint now | Resident peak |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| await of a primitive | 37 | 126 | 449 | 288 | 176 | 15 | 82 | 1074 | 20480 | 3184 | 2272 | 3184 |
-| await of one settled promise | 38 | 126 | 450 | 288 | 176 | 15 | 82 | 1090 | 16384 | 3104 | 2192 | 3104 |
-| await of a fresh settled promise | 38 | 217 | 288 | 225 | 192 | 15 | 83 | 864 | 16384 | 3120 | 2208 | 3120 |
-| await of a pending promise | 38 | 129 | 225 | 288 | 192 | 15 | 116 | 897 | 28672 | 3328 | 2400 | 3328 |
-| async generator value | 38 | 252 | 288 | 225 | 176 | 15 | 86 | 851 | 16384 | 3056 | 2144 | 3056 |
-| then-link on a pending chain | 19073 | 34610 | 45354 | 0 | 20480 | 15 | 81 | 65986 | 86320 | 69504 | 68656 | 69504 |
-| settle loop (new Promise + then) | 37 | 136 | 184 | 288 | 192 | 15 | 90 | 834 | 20480 | 3200 | 2272 | 3200 |
-| combinator element (all, race) | 43 | 171 | 228 | 288 | 192 | 15 | 118 | 899 | 16384 | 3184 | 2256 | 3184 |
-| small-live-set churn | 37 | 180 | 144 | 143 | 176 | 118 | 58 | 702 | 24576 | 3056 | 2160 | 3056 |
-| churn against 300,000 retained | 21051 | 38601 | 50869 | 0 | 25088 | 15 | 50 | 89666 | 117712 | 133824 | 133024 | 133824 |
+| await of a primitive | 37 | 126 | 449 | 288 | 176 | 15 | 82 | 1074 | 24576 | 3184 | 2272 | 3184 |
+| await of one settled promise | 38 | 126 | 450 | 288 | 176 | 15 | 82 | 1090 | 16384 | 3184 | 2272 | 3184 |
+| await of a fresh settled promise | 38 | 217 | 288 | 225 | 192 | 15 | 83 | 864 | 20480 | 3088 | 2176 | 3088 |
+| await of a pending promise | 38 | 129 | 225 | 288 | 192 | 15 | 116 | 897 | 20480 | 3152 | 2224 | 3152 |
+| async generator value | 38 | 252 | 288 | 225 | 176 | 15 | 86 | 851 | 20480 | 3152 | 2240 | 3152 |
+| then-link on a pending chain | 19073 | 34610 | 45354 | 0 | 20480 | 15 | 81 | 65986 | 94512 | 70976 | 70128 | 70976 |
+| settle loop (new Promise + then) | 37 | 136 | 184 | 288 | 192 | 15 | 90 | 834 | 16384 | 3168 | 2240 | 3168 |
+| combinator element (all, race) | 43 | 171 | 228 | 288 | 192 | 15 | 118 | 899 | 20480 | 3184 | 2256 | 3184 |
+| small-live-set churn | 37 | 180 | 144 | 143 | 176 | 118 | 58 | 702 | 16384 | 2992 | 2096 | 2992 |
+| churn against 300,000 retained | 21051 | 38601 | 50869 | 0 | 25088 | 15 | 50 | 89666 | 121808 | 134672 | 133888 | 134672 |
 
 A small heap holds about a megabyte by capacity for a live set of 40 KiB:
 two arenas sized for the next cycle, and the table. That is the price of
@@ -169,36 +172,43 @@ whole: its top survivor moves at every collection and its walk is cheap.
 
 | | Before (`ints`) | After (last) |
 |---|---|---|
-| The run | 1,518 ms | 705 ms |
-| Collecting | 951 ms | 137 ms |
-| Median pause | 3,190 us | 17 us |
-| Longest pause (during the burst itself) | 48 ms | 49 ms |
+| The run | 1,408 ms | 664 ms |
+| Collecting | 947 ms | 122 ms |
+| Median pause | 3,425 us | 16 us |
+| Longest pause (during the burst itself) | 44 ms | 47 ms |
 
-What holds the memory afterwards, read while a copy of the workload idles
-after the burst (`vmmap --summary`) and at the end of the run
-(`--mem-stats`). These are present-state figures, not high-water marks:
+What holds the memory afterwards, read at the end of the run
+(`--mem-stats`) and while a copy of the workload idles after the burst
+(`vmmap --summary`, four seconds in). These are present-state figures,
+not high-water marks:
 
 | | Before | After |
 |---|---|---|
 | Engine: alive at the last collection | not reported by that stage | 37 KiB |
 | Engine: in use | 171 MB | 179 KiB |
 | Engine: held by capacity, all arrays | not reported by that stage | 741 KiB |
-| Allocator: default zone, allocated | 408.6M | 871K |
+| Allocator: in use | not reported by that stage | 814 KiB |
+| Allocator: default zone, allocated (`vmmap`) | 408.6M | 871K |
 | `MALLOC_LARGE`, in use (resident) | 201.6M | none |
-| `MALLOC_LARGE (empty)` (resident, dirty) | 528.3M | 761.9M |
-| `MALLOC_REALLOC (empty)` (resident) | none | 10.4M |
-| Physical footprint now | 747.3M | 781.4M |
-| Resident now, at the end of the run | not reported by that stage | 782 MB |
-| Resident peak | not reported by that stage | 784 MB |
+| `MALLOC_LARGE (empty)` (resident, dirty) | 528.3M | 852.3M |
+| `MALLOC_REALLOC` (resident) | 10.4M | none |
+| Physical footprint, idling after the burst | 748.2M | 859.4M |
+| Resident now, at the end of the run | not reported by that stage | 799 MB |
+| Resident peak | not reported by that stage | 800 MB |
 
 So the engine's part is settled by measurement: before the change it
 still held 409 MB after the burst, and now it holds under a megabyte and
-the allocator reports under a megabyte in use. The footprint does not
-fall, and 762 MB of it is in regions `vmmap` labels `MALLOC_LARGE (empty)`:
-large blocks the engine has freed that remain mapped, resident, and dirty.
-Whether and when the system allocator gives those back was not
-determined here; nothing in the engine refers to them. No allocator call
-or host interface is proposed.
+the allocator reports under a megabyte in use. What remains is in regions
+`vmmap` labels `MALLOC_LARGE (empty)`: large blocks the engine has freed
+that stay mapped. Whether they stay resident is not the engine's to
+decide, and the recordings differ on it. Three readings of the same idle
+copy, all four seconds in: standalone, 762 MB and 852 MB of those regions
+resident and dirty (footprint 779 MB and 859 MB); taken straight after the
+policy sweep in one batch (`spike-after-sweep.json`), none of it resident
+(footprint 247 MB, 1.2 GB mapped), and the ints stage's own figure fell
+the same way, from 748 MB to 214 MB. So the system does reclaim them, on
+its schedule; when was not determined here, and nothing in the engine
+refers to them. No allocator call or host interface is proposed.
 
 ## The floor
 
@@ -210,23 +220,24 @@ Six small-live-set workloads, ranges across them (`policy.json`):
 
 | Floor, cells | Wall time against 4,096 | Resident now | Median pause | Longest pause |
 |---|---|---|---|---|
-| 1,024 | +5% to +12% | 2.7 to 2.9 MB | 14 to 18 us | 30 to 115 us |
-| 4,096 |  | 3.0 to 3.2 MB | 17 to 31 us | 34 to 158 us |
-| 16,384 | -7% to 0% | 4.4 to 5.5 MB | 35 to 93 us | 67 to 165 us |
-| 65,536 | -8% to +3% | 11.0 to 14.3 MB | 114 to 347 us | 139 to 415 us |
+| 1,024 | +7% to +15% | 2.7 to 2.9 MB | 14 to 19 us | 34 to 109 us |
+| 4,096 |  | 3.0 to 3.1 MB | 17 to 31 us | 35 to 147 us |
+| 16,384 | -6% to +1% | 4.4 to 5.6 MB | 34 to 94 us | 68 to 218 us |
+| 65,536 | -7% to +4% | 11.0 to 15.1 MB | 115 to 346 us | 147 to 431 us |
 
 At the default floor collecting is 4 to 15% of these workloads, so that
 is all a larger floor can win. 16,384 takes most of it for about two more
 megabytes resident and median pauses two to three times as long; 65,536
-wins nothing further and costs ten megabytes and pauses ten times as long.
+wins nothing further and costs eight to twelve megabytes and pauses ten
+times as long.
 
 Survivors' multiple, large live sets:
 
 | Multiple | 60,000 live cells | 300,000 retained |
 |---|---|---|
-| 150% | 70 collections, 103 ms collecting, 24.8 MB resident | 10 collections, 36 ms collecting, 107.8 MB resident |
-| 200% | 53 collections, 87 ms collecting, 25.4 MB resident | 8 collections, 30 ms collecting, 132.2 MB resident |
-| 300% | 36 collections, 68 ms collecting, 30.0 MB resident | 6 collections, 27 ms collecting, 157.3 MB resident |
+| 150% | 70 collections, 100 ms collecting, 25.1 MB resident | 10 collections, 38 ms collecting, 106.2 MB resident |
+| 200% | 53 collections, 84 ms collecting, 26.1 MB resident | 8 collections, 30 ms collecting, 130.6 MB resident |
+| 300% | 36 collections, 67 ms collecting, 30.2 MB resident | 6 collections, 27 ms collecting, 159.0 MB resident |
 
 The defaults stay at 4,096 cells and 200%. For an engine meant to be
 embedded small, three megabytes resident and pauses near a tenth of a
@@ -244,11 +255,17 @@ export Z_LANG=<a clone of z-lang at the revision in stages.json>
 ./z/bench/alloc/run.py build-stages /tmp/stages         # one binary per stage, from its commit
 ./z/bench/alloc/run.py matrix /tmp/stages z/bench/alloc/results/matrix.json
 ./z/bench/alloc/run.py figures /tmp/stages/zjsz-base z/bench/alloc/results/figures-base.json
-./z/bench/alloc/run.py figures z/build/zjsz z/bench/alloc/results/figures-final.json
+./z/bench/alloc/run.py figures /tmp/stages/zjsz-report z/bench/alloc/results/figures-final.json
 ./z/bench/alloc/run.py build-stage f7eb0b7 /tmp/stages/zjsz-arenas-counted z/bench/alloc/cell-counters.patch
 ./z/bench/alloc/run.py cells /tmp/stages/zjsz-arenas-counted z/bench/alloc/results/cells-before.json
-./z/bench/alloc/run.py cells z/build/zjsz z/bench/alloc/results/cells-after.json
-./z/bench/alloc/run.py policy z/build/zjsz z/bench/alloc/results/policy.json
-./z/bench/alloc/run.py spike /tmp/stages/zjsz-ints z/build/zjsz z/bench/alloc/results/spike.json
+./z/bench/alloc/run.py cells /tmp/stages/zjsz-report z/bench/alloc/results/cells-after.json
+./z/bench/alloc/run.py policy /tmp/stages/zjsz-report z/bench/alloc/results/policy.json
+./z/bench/alloc/run.py spike /tmp/stages/zjsz-ints /tmp/stages/zjsz-report z/bench/alloc/results/spike.json
 ./z/bench/alloc/tables.py                               # the tables above
+./z/bench/alloc/run.py test                             # the runner's own checks
 ```
+
+The runner builds a stage only from a clean compiler checkout at the
+revision in `stages.json`; a child that fails or times out leaves its cell
+without a figure rather than a wrong one. Each result embeds the
+provenance of the binaries it was measured with (`z/bench/alloc/README.md`).

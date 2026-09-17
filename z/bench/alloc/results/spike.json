@@ -4,43 +4,76 @@
   "date": "2026-09-17",
   "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
   "processor": "arm",
-  "compiler_checkout_revision": "ad43b117",
+  "compiler_checkout": "/Users/zach/code/z-lang",
+  "compiler_checkout_revision": "9439181a",
+  "compiler_checkout_clean": true,
   "runs_per_median": 7,
-  "timeout_seconds": 120.0,
-  "engine_tree": "see \"binary\" / \"stages\": each binary names the commit it was built from"
+  "timeout_seconds": 120.0
  },
  "runs": {
   "before": {
-   "binary": "stage ints, 81cd092",
-   "wall_seconds": 1.517976832576096,
+   "binary": "/private/tmp/claude-501/-Users-zach-code-zjs/2f6566e2-5434-40c9-bfe5-cd5a48be672f/scratchpad/stages2/zjsz-ints",
+   "binary_provenance": {
+    "engine_commit": "81cd092",
+    "engine_commit_full": "81cd0923c3d47c3ed5ff3fda7df272d13db53819",
+    "patch": null,
+    "compiler": {
+     "checkout": "/private/tmp/claude-501/-Users-zach-code-zjs/2f6566e2-5434-40c9-bfe5-cd5a48be672f/scratchpad/z-lang-pin",
+     "revision": "ad43b117",
+     "clean": true,
+     "wanted": "ad43b117",
+     "verified": true
+    },
+    "build": "bun run z build z/tools/zjsz --release",
+    "evidence": "Stage 0",
+    "native_backend": {
+     "directory": "z/build/native",
+     "reused_as_is": true,
+     "built_by": "z/native.sh, at the tree revision below, before the stages were built",
+     "sources_last_changed_at": "6e6c42b",
+     "tree_revision_when_reused": "bab46de",
+     "files_sha256": {
+      "libregexp.o": "40ed28c5e00aa6971763be7ab17a40deb2716ad99a2d8bdf3a52d1292e33476d",
+      "libunicode.o": "2ff8631f819d9f0f8a182a58e97c1d2ca5432d824eaf6b3805dde670b89618bd",
+      "libzjsregexp.a": "46920bc5c6cc35d81e6a6d5c2b7d67b26aace1515ec8a326216ca7db0967c083",
+      "regex_contexts": "49ef7d2d9eff9a9cff93a7719419fd6ab3e8dbe97839894c3cfbecc57d83a56f",
+      "zjs_regexp.o": "041517dddf5abda645d2a17fa0bc8f4b5ec673dd1dc6bd6075bbb72c29704e46"
+     }
+    },
+    "built_at": "2026-09-17T16:46:51",
+    "binary_sha256": "19c54bbcec928595a15a3479e7aa9171187680d26e58ac6653514644ddc70297"
+   },
+   "wall_seconds": 1.4078039154410362,
+   "timing_failures": [],
    "collection": {
     "collections": 267,
-    "collecting_us": 950731,
-    "pause_p50_us": 3190,
-    "pause_p95_us": 3658,
-    "pause_p99_us": 15792,
-    "pause_max_us": 47827,
+    "collecting_us": 947292,
+    "pause_p50_us": 3425,
+    "pause_p95_us": 3561,
+    "pause_p99_us": 13313,
+    "pause_max_us": 43601,
     "cells_allocated": 10000827,
     "slots_allocated": 44197156,
     "engine_in_use_kib": 174659
    },
    "memory_kib_at_end_of_run": null,
+   "instrumented_failure": null,
    "address_space_after_the_burst": {
-    "physical_footprint_now": "747.3M",
+    "physical_footprint_now": "748.2M",
     "default_zone": {
-     "virtual": "404.8M",
+     "virtual": "400.8M",
      "allocated": "408.6M"
     },
     "regions": {
      "MALLOC guard page": {
-      "virtual": "3136K",
+      "virtual": "4000K",
       "resident": "0K",
       "dirty": "0K"
      },
      "MALLOC metadata": {
       "virtual": "800K",
-      "resident": "560K",
-      "dirty": "560K"
+      "resident": "544K",
+      "dirty": "544K"
      },
      "MALLOC_LARGE": {
       "virtual": "248.0M",
@@ -63,14 +96,14 @@
       "dirty": "0K"
      },
      "MALLOC_SMALL": {
-      "virtual": "20.0M",
-      "resident": "4064K",
-      "dirty": "4064K"
+      "virtual": "16.0M",
+      "resident": "2736K",
+      "dirty": "2736K"
      },
      "MALLOC_SMALL (empty)": {
       "virtual": "4096K",
-      "resident": "1280K",
-      "dirty": "1280K"
+      "resident": "3584K",
+      "dirty": "3584K"
      },
      "MALLOC_TINY": {
       "virtual": "4096K",
@@ -84,22 +117,53 @@
      },
      "TOTAL": {
       "virtual": "1.9G",
-      "resident": "879.0M",
-      "dirty": "747.3M"
+      "resident": "837.0M",
+      "dirty": "748.2M"
      }
     }
    }
   },
   "after": {
-   "binary": "zjsz built from the tree at the commit that added this file (the queue stage plus --mem-stats)",
-   "wall_seconds": 0.7045104587450624,
+   "binary": "/private/tmp/claude-501/-Users-zach-code-zjs/2f6566e2-5434-40c9-bfe5-cd5a48be672f/scratchpad/stages2/zjsz-report",
+   "binary_provenance": {
+    "engine_commit": "8a2a8e3",
+    "engine_commit_full": "8a2a8e3b8ec42bd46568a229b470afcf3cfe2de7",
+    "patch": null,
+    "compiler": {
+     "checkout": "/private/tmp/claude-501/-Users-zach-code-zjs/2f6566e2-5434-40c9-bfe5-cd5a48be672f/scratchpad/z-lang-pin",
+     "revision": "ad43b117",
+     "clean": true,
+     "wanted": "ad43b117",
+     "verified": true
+    },
+    "build": "bun run z build z/tools/zjsz --release",
+    "evidence": "Stage 0",
+    "native_backend": {
+     "directory": "z/build/native",
+     "reused_as_is": true,
+     "built_by": "z/native.sh, at the tree revision below, before the stages were built",
+     "sources_last_changed_at": "6e6c42b",
+     "tree_revision_when_reused": "bab46de",
+     "files_sha256": {
+      "libregexp.o": "40ed28c5e00aa6971763be7ab17a40deb2716ad99a2d8bdf3a52d1292e33476d",
+      "libunicode.o": "2ff8631f819d9f0f8a182a58e97c1d2ca5432d824eaf6b3805dde670b89618bd",
+      "libzjsregexp.a": "46920bc5c6cc35d81e6a6d5c2b7d67b26aace1515ec8a326216ca7db0967c083",
+      "regex_contexts": "49ef7d2d9eff9a9cff93a7719419fd6ab3e8dbe97839894c3cfbecc57d83a56f",
+      "zjs_regexp.o": "041517dddf5abda645d2a17fa0bc8f4b5ec673dd1dc6bd6075bbb72c29704e46"
+     }
+    },
+    "built_at": "2026-09-17T16:47:16",
+    "binary_sha256": "b57e2ed0652d84b3ca5933bb87f7cff40ee51ee681b750dce7d6e5aa8b9bdc88"
+   },
+   "wall_seconds": 0.6638170424848795,
+   "timing_failures": [],
    "collection": {
     "collections": 267,
-    "collecting_us": 136907,
-    "pause_p50_us": 17,
-    "pause_p95_us": 33,
-    "pause_p99_us": 16932,
-    "pause_max_us": 48602,
+    "collecting_us": 121676,
+    "pause_p50_us": 16,
+    "pause_p95_us": 23,
+    "pause_p99_us": 14900,
+    "pause_max_us": 46575,
     "cells_allocated": 10000827,
     "slots_allocated": 44197156,
     "engine_in_use_kib": 179
@@ -113,21 +177,22 @@
     "held_strings_kib": 15,
     "held_other_kib": 54,
     "allocator_in_use_kib": 814,
-    "allocator_reserved_kib": 28672,
+    "allocator_reserved_kib": 20480,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 800848,
-    "footprint_now_kib": 800401,
-    "resident_peak_kib": 802448
+    "resident_now_kib": 798736,
+    "footprint_now_kib": 798289,
+    "resident_peak_kib": 800368
    },
+   "instrumented_failure": null,
    "address_space_after_the_burst": {
-    "physical_footprint_now": "781.4M",
+    "physical_footprint_now": "859.4M",
     "default_zone": {
-     "virtual": "28.8M",
+     "virtual": "20.8M",
      "allocated": "871K"
     },
     "regions": {
      "MALLOC guard page": {
-      "virtual": "3712K",
+      "virtual": "3520K",
       "resident": "0K",
       "dirty": "0K"
      },
@@ -137,19 +202,14 @@
       "dirty": "560K"
      },
      "MALLOC_LARGE (empty)": {
-      "virtual": "954.4M",
-      "resident": "761.9M",
-      "dirty": "761.9M"
-     },
-     "MALLOC_REALLOC (empty)": {
-      "virtual": "160.0M",
-      "resident": "10.4M",
-      "dirty": "10.4M"
+      "virtual": "1.2G",
+      "resident": "852.3M",
+      "dirty": "852.3M"
      },
      "MALLOC_SMALL": {
-      "virtual": "20.0M",
-      "resident": "6272K",
-      "dirty": "6272K"
+      "virtual": "12.0M",
+      "resident": "4048K",
+      "dirty": "4048K"
      },
      "MALLOC_SMALL (empty)": {
       "virtual": "4096K",
@@ -167,9 +227,9 @@
       "dirty": "32K"
      },
      "TOTAL": {
-      "virtual": "1.9G",
-      "resident": "913.2M",
-      "dirty": "781.5M"
+      "virtual": "2.0G",
+      "resident": "948.2M",
+      "dirty": "859.4M"
      }
     }
    }

@@ -1,31 +1,64 @@
 {
- "what": "One binary, every workload: uninstrumented median wall time with startup subtracted; then, from separate instrumented runs, the engine's collection figures (--gc-stats), its storage figures at the end of the run (--mem-stats), and the allocator's calls and bytes by calling site (tools/alloc-attr.c).",
+ "what": "One binary, every workload: uninstrumented median wall time with startup subtracted; then, from separate instrumented runs, the engine's collection figures (--gc-stats), its storage figures at the end of the run (--mem-stats), and the allocator's calls and bytes by calling site (tools/alloc-attr.c). A failed run is recorded as such and gives no figure.",
  "environment": {
   "date": "2026-09-17",
   "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
   "processor": "arm",
+  "compiler_checkout": "<scratch>/z-lang-pin",
   "compiler_checkout_revision": "ad43b117",
+  "compiler_checkout_clean": true,
   "runs_per_median": 7,
-  "timeout_seconds": 120.0,
-  "engine_tree": "see \"binary\" / \"stages\": each binary names the commit it was built from"
+  "timeout_seconds": 120.0
  },
- "binary": "zjsz built from the tree at the commit that added this file (the queue stage plus --mem-stats)",
+ "binary": "<scratch>/stages2/zjsz-report",
+ "binary_provenance": {
+  "engine_commit": "8a2a8e3",
+  "engine_commit_full": "8a2a8e3b8ec42bd46568a229b470afcf3cfe2de7",
+  "patch": null,
+  "compiler": {
+   "checkout": "<scratch>/z-lang-pin",
+   "revision": "ad43b117",
+   "clean": true,
+   "wanted": "ad43b117",
+   "verified": true
+  },
+  "build": "bun run z build z/tools/zjsz --release",
+  "evidence": "Stage 0",
+  "native_backend": {
+   "directory": "z/build/native",
+   "reused_as_is": true,
+   "built_by": "z/native.sh, at the tree revision below, before the stages were built",
+   "sources_last_changed_at": "6e6c42b",
+   "tree_revision_when_reused": "bab46de",
+   "files_sha256": {
+    "libregexp.o": "40ed28c5e00aa6971763be7ab17a40deb2716ad99a2d8bdf3a52d1292e33476d",
+    "libunicode.o": "2ff8631f819d9f0f8a182a58e97c1d2ca5432d824eaf6b3805dde670b89618bd",
+    "libzjsregexp.a": "46920bc5c6cc35d81e6a6d5c2b7d67b26aace1515ec8a326216ca7db0967c083",
+    "regex_contexts": "49ef7d2d9eff9a9cff93a7719419fd6ab3e8dbe97839894c3cfbecc57d83a56f",
+    "zjs_regexp.o": "041517dddf5abda645d2a17fa0bc8f4b5ec673dd1dc6bd6075bbb72c29704e46"
+   }
+  },
+  "built_at": "2026-09-17T16:47:16",
+  "binary_sha256": "b57e2ed0652d84b3ca5933bb87f7cff40ee51ee681b750dce7d6e5aa8b9bdc88"
+ },
  "flags_for_timing": [],
  "flags_for_collection_and_memory": [
   "--gc-stats",
   "--mem-stats"
  ],
- "startup_seconds_subtracted": 0.003718082793056965,
+ "startup_seconds_subtracted": 0.003017667680978775,
+ "startup_failures": [],
  "workloads": {
   "await-prim": {
    "operations": 200000,
-   "wall_seconds": 0.02135258261114359,
-   "ns_per_operation": 88.17249909043312,
+   "wall_seconds": 0.021302917040884495,
+   "ns_per_operation": 91.4262467995286,
+   "timing_failures": [],
    "collection": {
     "collections": 49,
-    "collecting_us": 940,
+    "collecting_us": 895,
     "pause_p50_us": 16,
-    "pause_p95_us": 34,
+    "pause_p95_us": 29,
     "pause_p99_us": 40,
     "pause_max_us": 40,
     "cells_allocated": 200828,
@@ -41,19 +74,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 82,
     "allocator_in_use_kib": 1074,
-    "allocator_reserved_kib": 20480,
+    "allocator_reserved_kib": 24576,
     "allocator_peak_in_use_kib": 0,
     "resident_now_kib": 3184,
     "footprint_now_kib": 2272,
     "resident_peak_kib": 3184
    },
+   "instrumented_failure": null,
    "peak_resident_kib_by_time_l": 3104,
    "allocator": {
     "malloc_calls": 942,
     "calloc_calls": 169,
     "realloc_calls": 902,
     "free_calls": 1648,
-    "bytes_requested": 1983324,
+    "bytes_requested": 1983337,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 1104512,
     "sites": [
@@ -93,9 +127,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images",
-       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+       "map_images"
       ]
      },
      {
@@ -104,9 +138,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
-       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images"
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
       ]
      },
      {
@@ -184,15 +218,16 @@
   },
   "await-settled": {
    "operations": 200000,
-   "wall_seconds": 0.025252792052924633,
-   "ns_per_operation": 107.67354629933834,
+   "wall_seconds": 0.024705667048692703,
+   "ns_per_operation": 108.43999683856964,
+   "timing_failures": [],
    "collection": {
     "collections": 49,
-    "collecting_us": 961,
+    "collecting_us": 905,
     "pause_p50_us": 17,
-    "pause_p95_us": 34,
-    "pause_p99_us": 39,
-    "pause_max_us": 39,
+    "pause_p95_us": 30,
+    "pause_p99_us": 34,
+    "pause_max_us": 34,
     "cells_allocated": 200831,
     "slots_allocated": 1002915,
     "engine_in_use_kib": 126
@@ -208,17 +243,18 @@
     "allocator_in_use_kib": 1090,
     "allocator_reserved_kib": 16384,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 3104,
-    "footprint_now_kib": 2192,
-    "resident_peak_kib": 3104
+    "resident_now_kib": 3184,
+    "footprint_now_kib": 2272,
+    "resident_peak_kib": 3184
    },
-   "peak_resident_kib_by_time_l": 3168,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 3104,
    "allocator": {
     "malloc_calls": 947,
     "calloc_calls": 169,
     "realloc_calls": 906,
     "free_calls": 1655,
-    "bytes_requested": 1985495,
+    "bytes_requested": 1985508,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 1121760,
     "sites": [
@@ -349,15 +385,16 @@
   },
   "await-fresh": {
    "operations": 200000,
-   "wall_seconds": 0.03773616719990969,
-   "ns_per_operation": 170.0904220342636,
+   "wall_seconds": 0.03732937481254339,
+   "ns_per_operation": 171.55853565782309,
+   "timing_failures": [],
    "collection": {
     "collections": 146,
-    "collecting_us": 2820,
+    "collecting_us": 2906,
     "pause_p50_us": 18,
-    "pause_p95_us": 30,
-    "pause_p99_us": 34,
-    "pause_max_us": 41,
+    "pause_p95_us": 31,
+    "pause_p99_us": 57,
+    "pause_max_us": 99,
     "cells_allocated": 600828,
     "slots_allocated": 2602907,
     "engine_in_use_kib": 217
@@ -371,19 +408,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 83,
     "allocator_in_use_kib": 864,
-    "allocator_reserved_kib": 16384,
+    "allocator_reserved_kib": 20480,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 3120,
-    "footprint_now_kib": 2208,
-    "resident_peak_kib": 3120
+    "resident_now_kib": 3088,
+    "footprint_now_kib": 2176,
+    "resident_peak_kib": 3088
    },
-   "peak_resident_kib_by_time_l": 3088,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 3024,
    "allocator": {
     "malloc_calls": 1043,
     "calloc_calls": 169,
     "realloc_calls": 904,
     "free_calls": 1751,
-    "bytes_requested": 1689639,
+    "bytes_requested": 1689652,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 887664,
     "sites": [
@@ -433,9 +471,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
-       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images"
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
       ]
      },
      {
@@ -444,9 +482,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images",
-       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+       "map_images"
       ]
      },
      {
@@ -514,15 +552,16 @@
   },
   "await-suspended": {
    "operations": 100000,
-   "wall_seconds": 0.0396230835467577,
-   "ns_per_operation": 359.05000753700733,
+   "wall_seconds": 0.03826349973678589,
+   "ns_per_operation": 352.45832055807114,
+   "timing_failures": [],
    "collection": {
     "collections": 171,
-    "collecting_us": 3355,
+    "collecting_us": 3235,
     "pause_p50_us": 18,
-    "pause_p95_us": 29,
-    "pause_p99_us": 44,
-    "pause_max_us": 58,
+    "pause_p95_us": 23,
+    "pause_p99_us": 39,
+    "pause_max_us": 90,
     "cells_allocated": 700840,
     "slots_allocated": 3202946,
     "engine_in_use_kib": 129
@@ -536,19 +575,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 116,
     "allocator_in_use_kib": 897,
-    "allocator_reserved_kib": 28672,
+    "allocator_reserved_kib": 20480,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 3328,
-    "footprint_now_kib": 2400,
-    "resident_peak_kib": 3328
+    "resident_now_kib": 3152,
+    "footprint_now_kib": 2224,
+    "resident_peak_kib": 3152
    },
-   "peak_resident_kib_by_time_l": 3056,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 3120,
    "allocator": {
     "malloc_calls": 1082,
     "calloc_calls": 171,
     "realloc_calls": 943,
     "free_calls": 1816,
-    "bytes_requested": 1806674,
+    "bytes_requested": 1806687,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 926848,
     "sites": [
@@ -679,15 +719,16 @@
   },
   "async-gen": {
    "operations": 200000,
-   "wall_seconds": 0.0830896245315671,
-   "ns_per_operation": 396.85770869255066,
+   "wall_seconds": 0.0826217494904995,
+   "ns_per_operation": 398.0204090476036,
+   "timing_failures": [],
    "collection": {
     "collections": 390,
-    "collecting_us": 7411,
+    "collecting_us": 7587,
     "pause_p50_us": 18,
-    "pause_p95_us": 26,
-    "pause_p99_us": 41,
-    "pause_max_us": 49,
+    "pause_p95_us": 27,
+    "pause_p99_us": 42,
+    "pause_max_us": 98,
     "cells_allocated": 1600840,
     "slots_allocated": 7002970,
     "engine_in_use_kib": 252
@@ -701,19 +742,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 86,
     "allocator_in_use_kib": 851,
-    "allocator_reserved_kib": 16384,
+    "allocator_reserved_kib": 20480,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 3056,
-    "footprint_now_kib": 2144,
-    "resident_peak_kib": 3056
+    "resident_now_kib": 3152,
+    "footprint_now_kib": 2240,
+    "resident_peak_kib": 3152
    },
-   "peak_resident_kib_by_time_l": 3008,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 3040,
    "allocator": {
     "malloc_calls": 1301,
     "calloc_calls": 169,
     "realloc_calls": 925,
     "free_calls": 2023,
-    "bytes_requested": 1998686,
+    "bytes_requested": 1998699,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 872944,
     "sites": [
@@ -763,9 +805,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images",
-       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+       "map_images"
       ]
      },
      {
@@ -774,9 +816,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
-       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images"
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
       ]
      },
      {
@@ -844,15 +886,16 @@
   },
   "then-chain": {
    "operations": 200000,
-   "wall_seconds": 0.040605165995657444,
-   "ns_per_operation": 184.4354160130024,
+   "wall_seconds": 0.04177025053650141,
+   "ns_per_operation": 193.76291427761316,
+   "timing_failures": [],
    "collection": {
     "collections": 5,
-    "collecting_us": 7414,
-    "pause_p50_us": 518,
-    "pause_p95_us": 5107,
-    "pause_p99_us": 5107,
-    "pause_max_us": 5107,
+    "collecting_us": 7633,
+    "pause_p50_us": 483,
+    "pause_p95_us": 5411,
+    "pause_p99_us": 5411,
+    "pause_max_us": 5411,
     "cells_allocated": 600825,
     "slots_allocated": 2602878,
     "engine_in_use_kib": 34610
@@ -866,19 +909,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 81,
     "allocator_in_use_kib": 65986,
-    "allocator_reserved_kib": 86320,
+    "allocator_reserved_kib": 94512,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 69504,
-    "footprint_now_kib": 68656,
-    "resident_peak_kib": 69504
+    "resident_now_kib": 70976,
+    "footprint_now_kib": 70128,
+    "resident_peak_kib": 70976
    },
-   "peak_resident_kib_by_time_l": 69504,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 71472,
    "allocator": {
     "malloc_calls": 904,
     "calloc_calls": 169,
     "realloc_calls": 902,
     "free_calls": 1610,
-    "bytes_requested": 112160850,
+    "bytes_requested": 112160863,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 72523136,
     "sites": [
@@ -918,9 +962,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images",
-       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+       "map_images"
       ]
      },
      {
@@ -929,9 +973,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
-       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images"
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
       ]
      },
      {
@@ -995,13 +1039,13 @@
       ]
      },
      {
-      "kind": "realloc",
+      "kind": "malloc",
       "calls": 10,
-      "bytes_requested": 65472,
+      "bytes_requested": 76,
       "frames": [
-       "Z___z_module_2_Runtime_queueValue",
-       "Z___z_module_2_Runtime_settlePromise",
-       "__z_module_29_evaluate"
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_28_defineGetter"
       ]
      }
     ]
@@ -1009,15 +1053,16 @@
   },
   "then-loop": {
    "operations": 200000,
-   "wall_seconds": 0.07129512447863817,
-   "ns_per_operation": 337.88520842790604,
+   "wall_seconds": 0.07088637538254261,
+   "ns_per_operation": 339.3435385078192,
+   "timing_failures": [],
    "collection": {
     "collections": 537,
-    "collecting_us": 10870,
-    "pause_p50_us": 19,
-    "pause_p95_us": 24,
-    "pause_p99_us": 35,
-    "pause_max_us": 141,
+    "collecting_us": 11057,
+    "pause_p50_us": 20,
+    "pause_p95_us": 25,
+    "pause_p99_us": 39,
+    "pause_max_us": 95,
     "cells_allocated": 2200821,
     "slots_allocated": 8402859,
     "engine_in_use_kib": 136
@@ -1031,19 +1076,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 90,
     "allocator_in_use_kib": 834,
-    "allocator_reserved_kib": 20480,
+    "allocator_reserved_kib": 16384,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 3200,
-    "footprint_now_kib": 2272,
-    "resident_peak_kib": 3200
+    "resident_now_kib": 3168,
+    "footprint_now_kib": 2240,
+    "resident_peak_kib": 3168
    },
-   "peak_resident_kib_by_time_l": 3072,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 3104,
    "allocator": {
     "malloc_calls": 1431,
     "calloc_calls": 170,
     "realloc_calls": 912,
     "free_calls": 2144,
-    "bytes_requested": 2189580,
+    "bytes_requested": 2189593,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 851472,
     "sites": [
@@ -1093,9 +1139,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images",
-       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+       "map_images"
       ]
      },
      {
@@ -1104,9 +1150,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
-       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images"
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
       ]
      },
      {
@@ -1174,15 +1220,16 @@
   },
   "combinators": {
    "operations": 100000,
-   "wall_seconds": 0.057124292477965355,
-   "ns_per_operation": 534.0620968490839,
+   "wall_seconds": 0.05680558271706104,
+   "ns_per_operation": 537.8791503608227,
+   "timing_failures": [],
    "collection": {
     "collections": 303,
-    "collecting_us": 7340,
+    "collecting_us": 7350,
     "pause_p50_us": 23,
-    "pause_p95_us": 29,
-    "pause_p99_us": 38,
-    "pause_max_us": 126,
+    "pause_p95_us": 32,
+    "pause_p99_us": 46,
+    "pause_max_us": 59,
     "cells_allocated": 1270821,
     "slots_allocated": 5967860,
     "engine_in_use_kib": 171
@@ -1196,19 +1243,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 118,
     "allocator_in_use_kib": 899,
-    "allocator_reserved_kib": 16384,
+    "allocator_reserved_kib": 20480,
     "allocator_peak_in_use_kib": 0,
     "resident_now_kib": 3184,
     "footprint_now_kib": 2256,
     "resident_peak_kib": 3184
    },
-   "peak_resident_kib_by_time_l": 3104,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 3120,
    "allocator": {
     "malloc_calls": 1206,
     "calloc_calls": 172,
     "realloc_calls": 938,
     "free_calls": 1937,
-    "bytes_requested": 1988756,
+    "bytes_requested": 1988769,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 926304,
     "sites": [
@@ -1339,15 +1387,16 @@
   },
   "churn-small": {
    "operations": 3000000,
-   "wall_seconds": 0.21730824932456017,
-   "ns_per_operation": 71.19672217716773,
+   "wall_seconds": 0.22035399917513132,
+   "ns_per_operation": 72.44544383138418,
+   "timing_failures": [],
    "collection": {
     "collections": 976,
-    "collecting_us": 31731,
+    "collecting_us": 31033,
     "pause_p50_us": 31,
-    "pause_p95_us": 40,
-    "pause_p99_us": 56,
-    "pause_max_us": 130,
+    "pause_p95_us": 38,
+    "pause_p99_us": 47,
+    "pause_max_us": 107,
     "cells_allocated": 4000824,
     "slots_allocated": 8002855,
     "engine_in_use_kib": 180
@@ -1361,19 +1410,20 @@
     "held_strings_kib": 118,
     "held_other_kib": 58,
     "allocator_in_use_kib": 702,
-    "allocator_reserved_kib": 24576,
+    "allocator_reserved_kib": 16384,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 3056,
-    "footprint_now_kib": 2160,
-    "resident_peak_kib": 3056
+    "resident_now_kib": 2992,
+    "footprint_now_kib": 2096,
+    "resident_peak_kib": 2992
    },
-   "peak_resident_kib_by_time_l": 2928,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 2992,
    "allocator": {
     "malloc_calls": 2001891,
     "calloc_calls": 171,
     "realloc_calls": 897,
     "free_calls": 2002593,
-    "bytes_requested": 17473609,
+    "bytes_requested": 17473622,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 717120,
     "sites": [
@@ -1504,15 +1554,16 @@
   },
   "churn-retained": {
    "operations": 1000000,
-   "wall_seconds": 0.189946916885674,
-   "ns_per_operation": 186.22883409261703,
+   "wall_seconds": 0.18974800035357475,
+   "ns_per_operation": 186.73033267259598,
+   "timing_failures": [],
    "collection": {
     "collections": 8,
-    "collecting_us": 30922,
-    "pause_p50_us": 6083,
-    "pause_p95_us": 9170,
-    "pause_p99_us": 9170,
-    "pause_max_us": 9170,
+    "collecting_us": 28091,
+    "pause_p50_us": 4822,
+    "pause_p95_us": 8249,
+    "pause_p99_us": 8249,
+    "pause_max_us": 8249,
     "cells_allocated": 2300824,
     "slots_allocated": 10251427,
     "engine_in_use_kib": 38601
@@ -1526,19 +1577,20 @@
     "held_strings_kib": 15,
     "held_other_kib": 50,
     "allocator_in_use_kib": 89666,
-    "allocator_reserved_kib": 117712,
+    "allocator_reserved_kib": 121808,
     "allocator_peak_in_use_kib": 0,
-    "resident_now_kib": 133824,
-    "footprint_now_kib": 133024,
-    "resident_peak_kib": 133824
+    "resident_now_kib": 134672,
+    "footprint_now_kib": 133888,
+    "resident_peak_kib": 134672
    },
-   "peak_resident_kib_by_time_l": 135376,
+   "instrumented_failure": null,
+   "peak_resident_kib_by_time_l": 133760,
    "allocator": {
     "malloc_calls": 943,
     "calloc_calls": 172,
     "realloc_calls": 936,
     "free_calls": 1657,
-    "bytes_requested": 341604906,
+    "bytes_requested": 341604919,
     "allocator_live_at_exit": 26592,
     "allocator_peak_live": 156102576,
     "sites": [
@@ -1578,9 +1630,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
-       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images"
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
       ]
      },
      {
@@ -1589,9 +1641,9 @@
       "bytes_requested": 1952,
       "frames": [
        "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
        "map_images_nolock",
-       "map_images",
-       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+       "map_images"
       ]
      },
      {

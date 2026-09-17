@@ -16,7 +16,9 @@ print("| Workload | " + " | ".join(stages) + " | first to last |")
 print("|---|" + "---|" * (len(stages) + 1))
 for w, row in matrix["workloads"].items():
     v = [row["ns_per_operation"][s] for s in stages]
-    print("| %s | %s | %+.0f%% |" % (NAMES[w], " | ".join("%.0f" % x for x in v), 100 * (v[-1] - v[0]) / v[0]))
+    cell = lambda x: "failed" if x is None else "%.0f" % x
+    change = "" if v[0] is None or v[-1] is None else "%+.0f%%" % (100 * (v[-1] - v[0]) / v[0])
+    print("| %s | %s | %s |" % (NAMES[w], " | ".join(cell(x) for x in v), change))
 print("\nStartup subtracted, ms: " + ", ".join("%s %.1f" % (s, matrix["startup_seconds_subtracted"][s] * 1000) for s in stages))
 
 base, final = load("figures-base.json"), load("figures-final.json")

@@ -4,12 +4,43 @@
   "date": "2026-09-17",
   "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
   "processor": "arm",
+  "compiler_checkout": "<scratch>/z-lang-pin",
   "compiler_checkout_revision": "ad43b117",
+  "compiler_checkout_clean": true,
   "runs_per_median": 7,
-  "timeout_seconds": 120.0,
-  "engine_tree": "see \"binary\" / \"stages\": each binary names the commit it was built from"
+  "timeout_seconds": 120.0
  },
- "binary": "zjsz built from the tree at the commit that added this file (the queue stage plus --mem-stats)",
+ "binary": "<scratch>/stages2/zjsz-report",
+ "binary_provenance": {
+  "engine_commit": "8a2a8e3",
+  "engine_commit_full": "8a2a8e3b8ec42bd46568a229b470afcf3cfe2de7",
+  "patch": null,
+  "compiler": {
+   "checkout": "<scratch>/z-lang-pin",
+   "revision": "ad43b117",
+   "clean": true,
+   "wanted": "ad43b117",
+   "verified": true
+  },
+  "build": "bun run z build z/tools/zjsz --release",
+  "evidence": "Stage 0",
+  "native_backend": {
+   "directory": "z/build/native",
+   "reused_as_is": true,
+   "built_by": "z/native.sh, at the tree revision below, before the stages were built",
+   "sources_last_changed_at": "6e6c42b",
+   "tree_revision_when_reused": "bab46de",
+   "files_sha256": {
+    "libregexp.o": "40ed28c5e00aa6971763be7ab17a40deb2716ad99a2d8bdf3a52d1292e33476d",
+    "libunicode.o": "2ff8631f819d9f0f8a182a58e97c1d2ca5432d824eaf6b3805dde670b89618bd",
+    "libzjsregexp.a": "46920bc5c6cc35d81e6a6d5c2b7d67b26aace1515ec8a326216ca7db0967c083",
+    "regex_contexts": "49ef7d2d9eff9a9cff93a7719419fd6ab3e8dbe97839894c3cfbecc57d83a56f",
+    "zjs_regexp.o": "041517dddf5abda645d2a17fa0bc8f4b5ec673dd1dc6bd6075bbb72c29704e46"
+   }
+  },
+  "built_at": "2026-09-17T16:47:16",
+  "binary_sha256": "b57e2ed0652d84b3ca5933bb87f7cff40ee51ee681b750dce7d6e5aa8b9bdc88"
+ },
  "workloads": {
   "await-prim": {
    "operations": 200000,
