@@ -4872,6 +4872,10 @@ export struct Runtime {
       this.resolvePromise(asCell(promise), value);
       return;
     }
+    if (!this.isObjectLike(value)) {
+      this.awaitPlainValue(REACTION_ASYNC, gen, value);
+      return;
+    }
     // The `constructor` read may run the program: the body is between
     // its frame and its reaction here, so it is held explicitly.
     this.pushTempRoot(cellValue(gen));
@@ -4889,6 +4893,17 @@ export struct Runtime {
     const reaction = this.newReaction(REACTION_ASYNC, undefinedValue(), undefinedValue(), undefinedValue(), gen);
     this.attachReaction(asCell(awaited), reaction);
     this.popTempRoot();
+  }
+
+  // Await of a value that is not an object. The specification wraps it
+  // in a new promise, fulfills that at once (a non-object has no `then`
+  // to look up), and registers the continuation on it, which queues the
+  // continuation's job there and then. The program can reach neither
+  // the promise nor any step of that, so the job is queued directly:
+  // the same single job at the same point in the queue.
+  function awaitPlainValue(inout this, kind: i32, gen: u32, value: Value): void {
+    const reaction = this.newReaction(kind, undefinedValue(), undefinedValue(), undefinedValue(), gen);
+    this.enqueueJob(JOB_REACTION, reaction, value, booleanValue(false));
   }
 
   // --- Async generators ---
@@ -5080,6 +5095,10 @@ export struct Runtime {
     // A yield awaits its value before answering; nothing else resumes
     // the body meanwhile.
     if (kind == 0) this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+    if (!this.isObjectLike(value)) {
+      this.awaitPlainValue(kind == 1 ? REACTION_ASYNC_GEN_AWAIT : REACTION_ASYNC_GEN_YIELD, gen, value);
+      return;
+    }
     // The `constructor` read may run the program: the body is between
     // its frame and its reaction here, so it is held explicitly.
     this.pushTempRoot(cellValue(gen));

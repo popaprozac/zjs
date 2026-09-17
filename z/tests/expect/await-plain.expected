@@ -1,0 +1,55 @@
+number before
+undefined before
+null before
+string before
+boolean before
+symbol before
+promise before
+thenable before
+object before
+gen start
+t1
+number after 1
+undefined after undefined
+null after null
+string after s
+boolean after false
+symbol after Symbol(sym)
+promise after p
+object after [object Object]
+gen awaited 1
+caught after a plain await
+u1
+t2
+number again 1
+undefined again undefined
+null again null
+string again s
+boolean again false
+symbol again Symbol(sym)
+promise again p
+thenable after th
+object again [object Object]
+gen sent x
+for await 1
+finally awaited
+u2
+t3
+number done 1
+object done {"plain":true}
+next1 {"value":2,"done":false}
+u3
+t4
+thenable again th
+for await two
+t5
+next2 {"value":"three","done":false}
+t6
+next3 {"value":4,"done":false}
+for await null
+t7
+next4 {"value":5,"done":true}
+next5 {"done":true}
+t8
+t9
+t10
