@@ -1,0 +1,25 @@
+t1
+await native
+await value
+resolve(native).then
+u1
+t2
+await thenable
+race
+allSettled
+any
+agen yield native
+t3
+await sub
+async return native
+Sub.resolve(native).then
+new resolved with native
+t4
+finally.then
+sub finally.then
+all
+Sub.all
+t5
+t6
+t7
+t8
