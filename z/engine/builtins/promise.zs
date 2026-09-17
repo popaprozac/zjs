@@ -138,8 +138,7 @@ function invokeThen(inout runtime: Runtime, target: Value, args: Array<Value>): 
     runtime.pushTempRoot(args[index]);
     index = index + 1;
   }
-  const thenText: String = "then";
-  const thenKey = runtime.internText(in thenText);
+  const thenKey = cellValue(runtime.atomThen);
   const then = runtime.getProperty(target, thenKey);
   while (index > 0) {
     runtime.popTempRoot();
@@ -331,8 +330,7 @@ function promiseWithResolvers(inout runtime: Runtime, thisValue: Value, argsBase
   const promiseText: String = "promise";
   const promiseAtom = runtime.atomOf(in promiseText);
   runtime.heap.objectDefine(result, promiseAtom, runtime.heap.slot(capability, 0), PROP_DEFAULT);
-  const resolveText: String = "resolve";
-  const resolveAtom = runtime.atomOf(in resolveText);
+  const resolveAtom = runtime.atomResolve;
   runtime.heap.objectDefine(result, resolveAtom, runtime.heap.slot(capability, 1), PROP_DEFAULT);
   const rejectText: String = "reject";
   const rejectAtom = runtime.atomOf(in rejectText);
@@ -420,8 +418,7 @@ function aggregate(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   runtime.heap.setSlot(record, 2, cellValue(capability));
   runtime.heap.setSlot(record, 3, int32Value(mode));
   runtime.pushTempRoot(cellValue(record));
-  const resolveText: String = "resolve";
-  const resolveKey = runtime.internText(in resolveText);
+  const resolveKey = cellValue(runtime.atomResolve);
   const promiseResolve = runtime.getProperty(thisValue, resolveKey);
   if (!runtime.pendingThrow && !runtime.isCallable(promiseResolve)) {
     const message: String = "Promise resolve is not a function";

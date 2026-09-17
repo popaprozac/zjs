@@ -264,6 +264,15 @@ export struct Runtime {
   atomConstructor: u32;
   atomName: u32;
   atomMessage: u32;
+  // Names the engine itself looks up constantly: iterator results,
+  // thenables, iterator methods. Held as atoms so a lookup builds nothing.
+  atomDone: u32;
+  atomValue: u32;
+  atomThen: u32;
+  atomNext: u32;
+  atomReturn: u32;
+  atomThrow: u32;
+  atomResolve: u32;
   // The hidden key under which a wrapper object keeps its primitive. Its
   // bytes begin with 0xFF, which no JavaScript string can contain, so
   // user code can neither read nor forge it.
@@ -2587,11 +2596,9 @@ export struct Runtime {
   function createIterResult(inout this, value: Value, done: boolean): Value {
     const objectProto = this.objectProto;
     const result = this.heap.allocateObject(objectProto);
-    const valueText: String = "value";
-    const valueAtom = this.atomOf(in valueText);
+    const valueAtom = this.atomValue;
     this.heap.objectSet(result, valueAtom, value);
-    const doneText: String = "done";
-    const doneAtom = this.atomOf(in doneText);
+    const doneAtom = this.atomDone;
     this.heap.objectSet(result, doneAtom, booleanValue(done));
     return cellValue(result);
   }
@@ -2665,8 +2672,7 @@ export struct Runtime {
     if (!isCell(iterator) || asCell(iterator) == 0 || !this.heap.isObject(asCell(iterator))) return false;
     const handle = asCell(iterator);
     if (this.heap.objectFindSlot(handle, this.atomIterSource) < 0) return false;
-    const nextText: String = "next";
-    const nextAtom = this.atomOf(in nextText);
+    const nextAtom = this.atomNext;
     if (this.heap.objectFindSlot(handle, nextAtom) >= 0) return false;
     const arrayIteratorProto = this.arrayIteratorProto;
     if (this.heap.objectProto(handle) != arrayIteratorProto) return false;
@@ -2747,8 +2753,7 @@ export struct Runtime {
   // throw is left pending (and reads as done).
   function iteratorStep(inout this, iterator: Value): Value {
     if (this.isPristineArrayIterator(iterator)) return this.arrayIteratorStep(asCell(iterator));
-    const nextText: String = "next";
-    const nextKey = this.internText(in nextText);
+    const nextKey = cellValue(this.atomNext);
     const next = this.getProperty(iterator, nextKey);
     if (this.pendingThrow) return deletedValue();
     if (!this.isCallable(next)) {
@@ -2765,13 +2770,11 @@ export struct Runtime {
       this.raise(error);
       return deletedValue();
     }
-    const doneText: String = "done";
-    const doneKey = this.internText(in doneText);
+    const doneKey = cellValue(this.atomDone);
     const done = this.getProperty(result, doneKey);
     if (this.pendingThrow) return deletedValue();
     if (this.toBooleanValue(done)) return deletedValue();
-    const valueText: String = "value";
-    const valueKey = this.internText(in valueText);
+    const valueKey = cellValue(this.atomValue);
     const value = this.getProperty(result, valueKey);
     if (this.pendingThrow) return deletedValue();
     return value;
@@ -2782,9 +2785,18 @@ export struct Runtime {
   // iterator.<method>(value) for a delegating yield*: the result object,
   // or the deleted marker when the method is absent (`absent` set) or
   // the call threw (pending).
+  // The key of an iterator method by its name: the three the engine
+  // calls are atoms already.
+  function iteratorMethodKey(inout this, in name: String): Value {
+    if (name.byteLength == 4 && name.byteAt(0) == 110) return cellValue(this.atomNext);
+    if (name.byteLength == 5 && name.byteAt(0) == 116) return cellValue(this.atomThrow);
+    if (name.byteLength == 6 && name.byteAt(0) == 114) return cellValue(this.atomReturn);
+    return this.internText(in name);
+  }
+
   function iteratorCallWith(inout this, iterator: Value, in name: String, value: Value, inout absent: boolean): Value {
     absent = false;
-    const key = this.internText(in name);
+    const key = this.iteratorMethodKey(in name);
     const method = this.getProperty(iterator, key);
     if (this.pendingThrow) return deletedValue();
     if (isUndefined(method) || isNull(method)) {
@@ -2815,7 +2827,7 @@ export struct Runtime {
   // method (next must exist), the deleted marker on a throw (pending).
   function iteratorCallRaw(inout this, iterator: Value, in name: String, value: Value, mustExist: boolean, inout absent: boolean): Value {
     absent = false;
-    const key = this.internText(in name);
+    const key = this.iteratorMethodKey(in name);
     const method = this.getProperty(iterator, key);
     if (this.pendingThrow) return deletedValue();
     if (isUndefined(method) || isNull(method)) {
@@ -2844,8 +2856,7 @@ export struct Runtime {
   function iteratorClose(inout this, iterator: Value): void {
     if (!this.isObjectLike(iterator)) return;
     if (this.isPristineArrayIterator(iterator)) return;
-    const returnText: String = "return";
-    const returnKey = this.internText(in returnText);
+    const returnKey = cellValue(this.atomReturn);
     const method = this.getProperty(iterator, returnKey);
     if (this.pendingThrow) return;
     if (isUndefined(method) || isNull(method)) return;
@@ -3507,6 +3518,20 @@ export struct Runtime {
     this.atomConstructor = this.atomOf(in constructorText);
     this.atomName = this.atomOf(in nameText);
     this.atomMessage = this.atomOf(in messageText);
+    const doneText: String = "done";
+    this.atomDone = this.atomOf(in doneText);
+    const valueText: String = "value";
+    this.atomValue = this.atomOf(in valueText);
+    const thenText: String = "then";
+    this.atomThen = this.atomOf(in thenText);
+    const nextText: String = "next";
+    this.atomNext = this.atomOf(in nextText);
+    const returnText: String = "return";
+    this.atomReturn = this.atomOf(in returnText);
+    const throwText: String = "throw";
+    this.atomThrow = this.atomOf(in throwText);
+    const resolveText: String = "resolve";
+    this.atomResolve = this.atomOf(in resolveText);
     let hidden = Array<u8>();
     hidden.push(255);
     hidden.push(112);
@@ -3839,6 +3864,20 @@ export struct Runtime {
     this.heap.markHandle(atomName);
     const atomMessage = this.atomMessage;
     this.heap.markHandle(atomMessage);
+    const atomDone = this.atomDone;
+    this.heap.markHandle(atomDone);
+    const atomValue = this.atomValue;
+    this.heap.markHandle(atomValue);
+    const atomThen = this.atomThen;
+    this.heap.markHandle(atomThen);
+    const atomNext = this.atomNext;
+    this.heap.markHandle(atomNext);
+    const atomReturn = this.atomReturn;
+    this.heap.markHandle(atomReturn);
+    const atomThrow = this.atomThrow;
+    this.heap.markHandle(atomThrow);
+    const atomResolve = this.atomResolve;
+    this.heap.markHandle(atomResolve);
     // Names that hidden classes carry: a class is never freed, so the
     // atoms it names live as long as the runtime.
     index = 1;
@@ -4431,8 +4470,7 @@ export struct Runtime {
       this.fulfillPromise(handle, resolution);
       return;
     }
-    const thenText: String = "then";
-    const thenKey = this.internText(in thenText);
+    const thenKey = cellValue(this.atomThen);
     const then = this.getProperty(resolution, thenKey);
     if (this.pendingThrow) {
       const thrown = this.takePending();
@@ -4756,11 +4794,9 @@ export struct Runtime {
       this.rejectPromise(asCell(promise), thrown);
       return;
     }
-    const doneText: String = "done";
-    const doneKey = this.internText(in doneText);
+    const doneKey = cellValue(this.atomDone);
     const done = this.getProperty(outcome, doneKey);
-    const valueText: String = "value";
-    const valueKey = this.internText(in valueText);
+    const valueKey = cellValue(this.atomValue);
     const value = this.getProperty(outcome, valueKey);
     if (this.toBooleanValue(done)) {
       this.resolvePromise(asCell(promise), value);
@@ -4941,11 +4977,9 @@ export struct Runtime {
       this.asyncGeneratorResumeNext(gen);
       return;
     }
-    const doneText: String = "done";
-    const doneKey = this.internText(in doneText);
+    const doneKey = cellValue(this.atomDone);
     const done = this.getProperty(outcome, doneKey);
-    const valueText: String = "value";
-    const valueKey = this.internText(in valueText);
+    const valueKey = cellValue(this.atomValue);
     const value = this.getProperty(outcome, valueKey);
     if (this.toBooleanValue(done)) {
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
@@ -6516,7 +6550,7 @@ export function createRuntime(): Runtime {
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
     randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
-    atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
+    atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
     mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, gcTiming: false, gcPauses: Array<f64>(),
@@ -7040,19 +7074,13 @@ function asyncFromSyncRequest(inout runtime: Runtime, thisValue: Value, argsBase
     runtime.popTempRoot();
     return promise;
   }
-  const nextText: String = "next";
-  const returnText: String = "return";
-  const throwText: String = "throw";
   let method = undefinedValue();
   if (mode == 0) {
-    const key = runtime.internText(in nextText);
-    method = runtime.getProperty(sync, key);
+    method = runtime.getProperty(sync, cellValue(runtime.atomNext));
   } else if (mode == 2) {
-    const key = runtime.internText(in returnText);
-    method = runtime.getProperty(sync, key);
+    method = runtime.getProperty(sync, cellValue(runtime.atomReturn));
   } else {
-    const key = runtime.internText(in throwText);
-    method = runtime.getProperty(sync, key);
+    method = runtime.getProperty(sync, cellValue(runtime.atomThrow));
   }
   let result = undefinedValue();
   if (!runtime.pendingThrow) {
@@ -7082,11 +7110,9 @@ function asyncFromSyncRequest(inout runtime: Runtime, thisValue: Value, argsBase
     return promise;
   }
   runtime.pushTempRoot(result);
-  const doneText: String = "done";
-  const doneKey = runtime.internText(in doneText);
+  const doneKey = cellValue(runtime.atomDone);
   const done = runtime.getProperty(result, doneKey);
-  const valueText: String = "value";
-  const valueKey = runtime.internText(in valueText);
+  const valueKey = cellValue(runtime.atomValue);
   const value = runtime.getProperty(result, valueKey);
   runtime.popTempRoot();
   if (runtime.pendingThrow) {
