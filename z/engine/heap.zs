@@ -24,6 +24,7 @@
 
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, isAsciiBytes, isNarrowUnits, unitsToLatin1 } from "./text.zs";
 import { expect } from "std/test";
+import { replace } from "std/memory";
 import { Value, undefinedValue, deletedValue, isDeleted, cellValue, asCell, isCell, int32Value, asInt32 } from "./value.zs";
 
 // Tags mirror the reference engine (src/value.zc) so the two implementations
@@ -154,6 +155,20 @@ export struct Heap {
   slots: Array<Value>;
   // One attribute byte per slot, in step with `slots`.
   attrs: Array<u8>;
+  // The arena a sweep compacts into. While the heap is small the two
+  // arenas change places at every collection, so neither is allocated
+  // or grown again; a large heap sizes a fresh one exactly and frees
+  // the old, keeping nothing spare. Never holds a live cell's slots
+  // between collections.
+  spareSlots: Array<Value>;
+  spareAttrs: Array<u8>;
+  // Slots in use right after the last sweep, to tell how many the cycle
+  // since has allocated.
+  slotsAfterSweep: usize;
+  // What the active arena was sized for. An arena far larger than the
+  // heap now needs is let go rather than kept as the spare, so memory a
+  // spike took is returned once the spike has passed.
+  activeReserved: usize;
   strings: Array<Array<u8>>;
   classes: Array<HiddenClass>;
   // Weak records reached during the current collection (see Weak
@@ -178,6 +193,9 @@ export struct Heap {
   ephemeronPasses: u32;
   weakVisits: u32;
   markedCells: u32;
+  // Slots of the cells traced in this collection: what the sweep will
+  // keep, known before it copies anything.
+  markedSlots: usize;
   // Dictionary-mode indexes, one per such object, reused after a sweep.
   dictionaries: Array<Dictionary>;
   freeDictionaries: Array<u32>;
@@ -273,6 +291,7 @@ export struct Heap {
       this.markCount = this.markCount - 1;
       const handle = this.markStack[this.markCount];
       this.markedCells = this.markedCells + 1;
+      this.markedSlots = this.markedSlots + usize(this.headers[usize(handle)].slotCount);
       // A key some weak record was waiting on: its values go live now.
       if (this.pendingCount > 0) this.activatePending(handle);
       const tag = this.headers[usize(handle)].tag;
@@ -316,14 +335,39 @@ export struct Heap {
     this.markCount = this.markCount + 1;
   }
 
-  // Free every unmarked cell, compact the live slots into a fresh arena,
-  // and clear the marks.
+  // Free every unmarked cell, compact the live slots into the other
+  // arena, and clear the marks. The arena is sized before the copy: the
+  // survivors' slots plus what the next cycle is expected to allocate
+  // (its threshold in cells times the slots a cell has been taking), so
+  // neither the copy nor the allocation that follows grows it.
   function sweep(inout this): void {
-    let compacted = Array<Value>();
-    let compactedAttrs = Array<u8>();
-    let survivors: u32 = 0;
-    let handle: u32 = 1;
     const count = u32(this.headers.length);
+    const liveSlots = this.markedSlots;
+    const survivors = this.markedCells;
+    const proportional = u32(u64(survivors) * u64(this.collectGrowthPercent) / 100);
+    const nextThreshold = proportional > this.collectFloor ? proportional : this.collectFloor;
+    let cycleSlots: usize = 0;
+    if (this.slots.length > this.slotsAfterSweep) cycleSlots = this.slots.length - this.slotsAfterSweep;
+    let cycleCells: usize = 1;
+    if (this.allocatedSinceCollect > 0) cycleCells = usize(this.allocatedSinceCollect);
+    let perCell = cycleSlots / cycleCells + 1;
+    if (survivors > 0 && liveSlots / usize(survivors) + 1 > perCell) perCell = liveSlots / usize(survivors) + 1;
+    const headroom = usize(nextThreshold) * perCell;
+    const needed = liveSlots + headroom + headroom / 8 + 64;
+    const retain = needed <= SPARE_RETAIN_SLOTS;
+    // The arena being filled is a local while it is filled.
+    let compacted = replace(inout this.spareSlots, Array<Value>());
+    let compactedAttrs = replace(inout this.spareAttrs, Array<u8>());
+    if (retain) {
+      compacted.clear();
+      compactedAttrs.clear();
+      compacted.reserveCapacity(needed);
+      compactedAttrs.reserveCapacity(needed);
+    } else {
+      compacted = Array<Value>.withCapacity(needed);
+      compactedAttrs = Array<u8>.withCapacity(needed);
+    }
+    let handle: u32 = 1;
     while (handle < count) {
       const tag = this.headers[usize(handle)].tag;
       if (tag == TAG_FREE) {
@@ -354,7 +398,6 @@ export struct Heap {
         handle = handle + 1;
         continue;
       }
-      survivors = survivors + 1;
       this.headers[usize(handle)].marked = false;
       const start = this.headers[usize(handle)].slotStart;
       const slotCount = this.headers[usize(handle)].slotCount;
@@ -369,11 +412,19 @@ export struct Heap {
       }
       handle = handle + 1;
     }
-    this.slots = move compacted;
-    this.attrs = move compactedAttrs;
+    // The arenas change places. A large heap lets the old one go.
+    let oldExtent = this.slots.length;
+    if (this.activeReserved > oldExtent) oldExtent = this.activeReserved;
+    const oldSlots = replace(inout this.slots, move compacted);
+    const oldAttrs = replace(inout this.attrs, move compactedAttrs);
+    if (retain && oldExtent <= needed * 4 + 65536) {
+      const emptySlots = replace(inout this.spareSlots, move oldSlots);
+      const emptyAttrs = replace(inout this.spareAttrs, move oldAttrs);
+    }
+    this.activeReserved = needed;
+    this.slotsAfterSweep = this.slots.length;
     this.allocatedSinceCollect = 0;
-    const proportional = u32(u64(survivors) * u64(this.collectGrowthPercent) / 100);
-    this.collectThreshold = proportional > this.collectFloor ? proportional : this.collectFloor;
+    this.collectThreshold = nextThreshold;
     this.collections = this.collections + 1;
   }
 
@@ -1646,10 +1697,10 @@ export function createHeap(): Heap {
     transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), strings: Array<Array<u8>>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, activeReserved: 0, strings: Array<Array<u8>>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
-    weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0,
+    weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
     dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0, collectFloor: COLLECT_FLOOR, collectGrowthPercent: COLLECT_GROWTH_PERCENT,
@@ -1657,6 +1708,9 @@ export function createHeap(): Heap {
 }
 
 // The fewest allocations between collections.
+// A compacted arena no larger than this many slots (about nine
+// megabytes) is kept to be compacted into next time.
+const SPARE_RETAIN_SLOTS: usize = 1048576;
 const COLLECT_FLOOR: u32 = 4096;
 const COLLECT_GROWTH_PERCENT: u32 = 200;
 // A cell header as laid out: three bytes of tag, mark, and flags, then

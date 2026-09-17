@@ -3678,6 +3678,7 @@ export struct Runtime {
 
   function collectNow(inout this): void {
     this.heap.markedCells = 0;
+    this.heap.markedSlots = 0;
     this.heap.weakVisits = 0;
     let index: usize = 0;
     while (index < usize(this.regTop)) {
@@ -3932,7 +3933,7 @@ export struct Runtime {
   }
 
   function rebuildAtoms(inout this): void {
-    let survivors = Array<u32>();
+    let survivors = Array<u32>.withCapacity(usize(this.atomCount));
     let index: usize = 0;
     while (index < this.atoms.length) {
       const atom = this.atoms[index];
@@ -4701,7 +4702,8 @@ export struct Runtime {
   }
 
   function compactJobs(inout this): void {
-    let rest = Array<Value>.withCapacity(this.jobs.length - this.jobCursor);
+    // Room to refill to the next compaction without growing again.
+    let rest = Array<Value>.withCapacity(this.jobs.length - this.jobCursor + JOB_COMPACT_AT * 2);
     let index = this.jobCursor;
     while (index < this.jobs.length) {
       rest.push(this.jobs[index]);
