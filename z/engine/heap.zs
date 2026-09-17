@@ -121,6 +121,9 @@ struct HiddenClass {
 
 export const DICT_BIT: u32 = 2147483648;
 
+// The most pending-ephemeron scratch kept between collections.
+const PENDING_RETAIN_BYTES: usize = 262144;
+
 // A weak record's slots and index markers (see Weak records).
 const WEAK_KEYS: u32 = 0;
 const WEAK_VALUES: u32 = 1;
@@ -156,10 +159,25 @@ export struct Heap {
   // Weak records reached during the current collection (see Weak
   // records); emptied when the collection ends, never a root.
   weakRecords: Array<u32>;
-  // Entries dropped for dead keys, cumulative; passes the last ephemeron
-  // fixpoint took. For the harness.
+  // Pending ephemeron work, indexed by key: an entry whose key was not
+  // yet marked when its record was reached waits here (a chained hash
+  // table over the key's handle) and is activated when the key is
+  // popped from the mark stack. Collection-local scratch; no cell is
+  // reachable through it. A consumed entry has key 0.
+  pendingKeys: Array<u32>;
+  pendingValues: Array<Value>;
+  pendingNext: Array<u32>;
+  pendingBuckets: Array<u32>;
+  pendingMask: u32;
+  pendingCount: u32;
+  // Entries dropped for dead keys, cumulative; passes the verification
+  // scan took after the last collection (1 when the pending index left
+  // nothing to find); weak entries examined and cells traced in the
+  // last collection. For the harness.
   weakCleared: u32;
   ephemeronPasses: u32;
+  weakVisits: u32;
+  markedCells: u32;
   // Dictionary-mode indexes, one per such object, reused after a sweep.
   dictionaries: Array<Dictionary>;
   freeDictionaries: Array<u32>;
@@ -249,6 +267,9 @@ export struct Heap {
     while (this.markCount > 0) {
       this.markCount = this.markCount - 1;
       const handle = this.markStack[this.markCount];
+      this.markedCells = this.markedCells + 1;
+      // A key some weak record was waiting on: its values go live now.
+      if (this.pendingCount > 0) this.activatePending(handle);
       const tag = this.headers[usize(handle)].tag;
       const link = this.headers[usize(handle)].link;
       if (link != 0 && !this.headers[usize(link)].marked) {
@@ -256,9 +277,14 @@ export struct Heap {
         this.pushMark(link);
       }
       // A weak record is traced like any cell (its index and counts, and
-      // the two weak arrays as cells), then queued for the ephemeron
-      // pass; a weak array's elements are never traced from here.
-      if (tag == TAG_WEAK_RECORD) this.weakRecords.push(handle);
+      // the two weak arrays as cells), queued for the clearing pass, and
+      // its entries registered: a marked key's value is marked now, the
+      // rest wait on their keys. A weak array's elements are never traced
+      // from here.
+      if (tag == TAG_WEAK_RECORD) {
+        this.weakRecords.push(handle);
+        this.registerWeakRecord(handle);
+      }
       // Slots hold values for every tag but strings and weak arrays.
       if (tag != TAG_STRING && tag != TAG_WEAK_ARRAY) {
         const start = this.headers[usize(handle)].slotStart;
@@ -811,18 +837,19 @@ export struct Heap {
   // whatever reaches them: they are private to the record (nothing else
   // may hold them, and nothing does; `recordOf` hands out the record,
   // not the arrays). A key is marked only by something other than its
-  // record; a value only once its key is (`markEphemerons`, run after
-  // the strong roots to a fixpoint over every record reached, including
-  // records reached through values). Entries whose key is unmarked are
-  // then dropped (`clearDeadWeakEntries`), before the atom rebuild and
-  // the sweep; the value's other references, if any, keep it. Both
-  // passes allocate nothing: the arrays compact and the index rebuilds
-  // in place, so a long-lived record's storage follows its live count.
-  //
-  // The repeated scan is worst-case quadratic: a chain of n records
-  // whose keys are reached only through the previous record's value,
-  // discovered in reverse order, takes n passes over all entries. The
-  // README records the measurement.
+  // record; a value only once its key is. When a record is reached, each
+  // entry whose key is already marked has its value marked at once, and
+  // the rest wait in a key-indexed pending table (collection-local
+  // scratch, not a root); when a waiting key is traced, its values are
+  // marked in turn. So a chain of records whose keys are reached only
+  // through the previous record's value costs one visit per entry
+  // whatever order the records are found in. `markEphemerons` then
+  // verifies with one scan (and would finish the job to a fixpoint if
+  // it ever found anything). Entries whose key is unmarked are dropped
+  // (`clearDeadWeakEntries`), before the atom rebuild and the sweep; the
+  // value's other references, if any, keep it. Those passes allocate no
+  // cells: the arrays compact and the index rebuilds in place, so a
+  // long-lived record's storage follows its live count.
 
   function allocateWeakArray(inout this): u32 {
     const handle = this.allocate(TAG_WEAK_ARRAY, 4);
@@ -1012,9 +1039,131 @@ export struct Heap {
     this.weakRebuildIndex(record);
   }
 
-  // After the strong roots: values whose keys are marked get marked,
-  // repeatedly, until a pass marks nothing. Marking a value can reach
-  // more weak records (queued by drainMarks) and more keys.
+  // --- Pending ephemeron work ---
+
+  // A reached record's entries: process each whose key is already
+  // marked, register the rest by key.
+  function registerWeakRecord(inout this, record: u32): void {
+    const keys = asCell(this.slot(record, WEAK_KEYS));
+    const values = asCell(this.slot(record, WEAK_VALUES));
+    const count = this.arrayLength(keys);
+    let position: u32 = 0;
+    while (position < count) {
+      const key = this.slot(keys, position);
+      if (!isDeleted(key)) {
+        this.weakVisits = this.weakVisits + 1;
+        const value = this.slot(values, position);
+        if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+          if (this.headers[usize(asCell(key))].marked) {
+            this.headers[usize(asCell(value))].marked = true;
+            this.pushMark(asCell(value));
+          } else {
+            this.addPending(asCell(key), value);
+          }
+        }
+      }
+      position = position + 1;
+    }
+  }
+
+  function addPending(inout this, key: u32, value: Value): void {
+    if (this.pendingBuckets.length == 0) {
+      let buckets = Array<u32>();
+      let i: u32 = 0;
+      while (i < 16) {
+        buckets.push(0);
+        i = i + 1;
+      }
+      this.pendingBuckets = move buckets;
+      this.pendingMask = 15;
+    }
+    if ((this.pendingKeys.length + 1) * 2 > this.pendingBuckets.length) this.growPending();
+    const entry = u32(this.pendingKeys.length);
+    const bucket = this.weakHash(key, this.pendingMask);
+    this.pendingKeys.push(key);
+    this.pendingValues.push(value);
+    this.pendingNext.push(this.pendingBuckets[usize(bucket)]);
+    this.pendingBuckets[usize(bucket)] = entry + 1;
+    this.pendingCount = this.pendingCount + 1;
+  }
+
+  // Twice the buckets, the chains rebuilt.
+  function growPending(inout this): void {
+    const size = u32(this.pendingBuckets.length) * 2;
+    let buckets = Array<u32>.withCapacity(usize(size));
+    let i: u32 = 0;
+    while (i < size) {
+      buckets.push(0);
+      i = i + 1;
+    }
+    this.pendingBuckets = move buckets;
+    this.pendingMask = size - 1;
+    let entry: u32 = 0;
+    const count = u32(this.pendingKeys.length);
+    while (entry < count) {
+      const key = this.pendingKeys[usize(entry)];
+      if (key != 0) {
+        const bucket = this.weakHash(key, this.pendingMask);
+        this.pendingNext[usize(entry)] = this.pendingBuckets[usize(bucket)];
+        this.pendingBuckets[usize(bucket)] = entry + 1;
+      }
+      entry = entry + 1;
+    }
+  }
+
+  // The key `handle` was just popped from the mark stack: every value
+  // waiting on it is marked (and will be traced in turn).
+  function activatePending(inout this, handle: u32): void {
+    const bucket = this.weakHash(handle, this.pendingMask);
+    let at = this.pendingBuckets[usize(bucket)];
+    while (at != 0) {
+      const entry = usize(at - 1);
+      if (this.pendingKeys[entry] == handle) {
+        const value = this.pendingValues[entry];
+        this.pendingKeys[entry] = 0;
+        this.pendingCount = this.pendingCount - 1;
+        if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+          this.headers[usize(asCell(value))].marked = true;
+          this.pushMark(asCell(value));
+        }
+      }
+      at = this.pendingNext[entry];
+    }
+  }
+
+  // The scratch between collections: emptied, its capacity kept while it
+  // is small, released once it has grown past the retention limit (a
+  // collection that needs more allocates it again).
+  function resetPending(inout this): void {
+    this.pendingCount = 0;
+    if (this.pendingScratchBytes() > PENDING_RETAIN_BYTES) {
+      this.pendingKeys = Array<u32>();
+      this.pendingValues = Array<Value>();
+      this.pendingNext = Array<u32>();
+      this.pendingBuckets = Array<u32>();
+      this.pendingMask = 0;
+      return;
+    }
+    this.pendingKeys.clear();
+    this.pendingValues.clear();
+    this.pendingNext.clear();
+    let i: usize = 0;
+    while (i < this.pendingBuckets.length) {
+      this.pendingBuckets[i] = 0;
+      i = i + 1;
+    }
+  }
+
+  // Bytes the pending scratch holds between collections, for the harness.
+  function pendingScratchBytes(): usize {
+    return this.pendingKeys.capacity * 4 + this.pendingValues.capacity * 8 + this.pendingNext.capacity * 4 + this.pendingBuckets.capacity * 4;
+  }
+
+  // After the strong roots have drained, with the pending index having
+  // activated every value whose key was marked: a verification scan over
+  // the records reached. It marks nothing when the index did its job;
+  // should it find something, it keeps going to a fixpoint, so the
+  // collection is right either way.
   function markEphemerons(inout this): void {
     let passes: u32 = 0;
     let progressed = true;
@@ -1031,6 +1180,7 @@ export struct Heap {
         while (position < count) {
           const key = this.slot(keys, position);
           if (!isDeleted(key) && this.headers[usize(asCell(key))].marked) {
+            this.weakVisits = this.weakVisits + 1;
             const value = this.slot(values, position);
             if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
               this.markHandle(asCell(value));
@@ -1072,6 +1222,7 @@ export struct Heap {
       r = r + 1;
     }
     this.weakRecords = Array<u32>();
+    this.resetPending();
   }
 
   // --- Closures and environments ---
@@ -1478,7 +1629,8 @@ export function createHeap(): Heap {
   return Heap({
     headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), strings: Array<Array<u8>>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
-    weakRecords: Array<u32>(), weakCleared: 0, ephemeronPasses: 0,
+    weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
+    weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0,
     dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0,
@@ -1992,7 +2144,9 @@ test "weak record: keys reached only through another record's value, in both dis
     expect(heap.tagOf(k2)).toEqual(TAG_OBJECT);
     expect(heap.tagOf(v2)).toEqual(TAG_OBJECT);
     expect(heap.weakSize(b)).toEqual(1);
-    expect(heap.ephemeronPasses >= 2).toEqual(true);
+    // The pending index did the work: the verification scan found nothing.
+    expect(heap.ephemeronPasses).toEqual(1);
+    expect(heap.pendingCount).toEqual(0);
     order = order + 1;
   }
 }
@@ -2018,10 +2172,11 @@ test "weak record: a record discovered through a value joins the fixpoint" {
   expect(heap.weakSize(b)).toEqual(1);
 }
 
-test "weak record: a long chain in reverse discovery order takes one pass per link" {
+test "weak record: a long chain in reverse discovery order needs no repeated scan" {
   // Record i maps key i to a holder of key i + 1; the records are rooted
-  // last-first; only key 0 is rooted. Every key survives, and the
-  // fixpoint needs about as many passes as links.
+  // last-first; only key 0 is rooted. Every key survives; the pending
+  // index activates each link as its key is traced, so the verification
+  // scan finds nothing and the work stays linear.
   let heap = createHeap();
   const links: u32 = 40;
   let records = Array<u32>();
@@ -2053,7 +2208,9 @@ test "weak record: a long chain in reverse discovery order takes one pass per li
     expect(heap.tagOf(keys[usize(i)])).toEqual(TAG_OBJECT);
     i = i + 1;
   }
-  expect(heap.ephemeronPasses >= links).toEqual(true);
+  expect(heap.ephemeronPasses).toEqual(1);
+  // Each entry was examined once at registration and once by the scan.
+  expect(heap.weakVisits <= links * 2).toEqual(true);
 }
 
 test "weak record: a shared key dropped clears it from every record; an unreachable record keeps nothing alive" {
@@ -2080,6 +2237,45 @@ test "weak record: a shared key dropped clears it from every record; an unreacha
   expect(heap.tagOf(orphan)).toEqual(TAG_FREE);
   expect(heap.tagOf(orphanKey)).toEqual(TAG_FREE);
   expect(heap.tagOf(orphanValue)).toEqual(TAG_FREE);
+}
+
+test "weak record: one key across many records, kept or dropped, and the scratch released" {
+  let heap = createHeap();
+  const hot = heap.allocateObject(0);
+  const cold = heap.allocateObject(0);
+  let records = Array<u32>();
+  let hotValues = Array<u32>();
+  let i: u32 = 0;
+  while (i < 20000) {
+    const record = heap.allocateWeakRecord(2);
+    heap.weakPut(record, cold, cellValue(heap.allocateObject(0)));
+    const value = heap.allocateObject(0);
+    heap.weakPut(record, hot, cellValue(value));
+    records.push(record);
+    hotValues.push(value);
+    i = i + 1;
+  }
+  const holder = heap.allocateArray(0);
+  i = 0;
+  while (i < 20000) {
+    heap.arraySet(holder, i, cellValue(records[usize(i)]));
+    i = i + 1;
+  }
+  let roots = Array<u32>();
+  roots.push(holder);
+  roots.push(hot);
+  collectWith(inout heap, in roots);
+  i = 0;
+  while (i < 20000) {
+    expect(heap.weakSize(records[usize(i)])).toEqual(1);
+    expect(heap.tagOf(hotValues[usize(i)])).toEqual(TAG_OBJECT);
+    i = i + 1;
+  }
+  expect(heap.tagOf(cold)).toEqual(TAG_FREE);
+  expect(heap.weakCleared).toEqual(20000);
+  expect(heap.ephemeronPasses).toEqual(1);
+  expect(heap.pendingCount).toEqual(0);
+  expect(heap.pendingScratchBytes() <= 262144).toEqual(true);
 }
 
 test "weak record: a reused handle is not the old key" {

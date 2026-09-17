@@ -28,19 +28,35 @@ it is never marked as a root.
 `Runtime.collectGarbage`:
 
 1. strong roots (registers, globals, frames, temporary roots, prototypes,
-   atoms the compiled code and hidden classes hold), each drained;
-2. `markEphemerons`: to a fixpoint over `weakRecords`, a value is marked
-   once its key is marked; marking a value can reach further keys and
-   further weak records (which `drainMarks` appends to the worklist and
-   the same fixpoint then covers);
+   atoms the compiled code and hidden classes hold), each drained. While
+   draining, a weak record that is reached registers its entries: a
+   value whose key is already marked is marked at once; the others wait
+   in the pending table, indexed by key. When a key with waiting values
+   is popped from the mark stack, its values are marked and traced in
+   turn, and records reached through them register the same way. So the
+   drain itself completes the ephemeron closure, in one visit per entry.
+2. `markEphemerons`: a verification scan over the records reached; it
+   marks nothing when the pending table did its job, and would continue
+   to a fixpoint if it ever found something, so the collection is right
+   either way.
 3. `clearDeadWeakEntries`: entries whose key is unmarked are retired,
-   each touched record compacted and its index rebuilt in place;
-4. `rebuildAtoms`: the weak atom table, after the ephemeron pass because
-   values reached through it can hold interned strings;
+   each touched record compacted and its index rebuilt in place.
+4. `rebuildAtoms`: the weak atom table, after the ephemeron work because
+   values reached through it can hold interned strings.
 5. `sweep`.
 
 Clearing removes the record's references; a value with other references
-survives. Nothing allocates during steps 2 and 3.
+survives. Steps 2 and 3 allocate nothing.
+
+The pending table is collection-local Z-owned scratch (a chained hash
+table over key handles: keys, values, next links, buckets), never a root:
+a value waiting in it is not reachable through it, so a value that points
+back at its own unmarked key stays unmarked and both are collected. It
+grows only with the number of waiting entries -- nothing is added to cell
+headers or to ordinary objects -- and is emptied at the end of every
+collection, its capacity kept while under 256 KiB and released otherwise.
+A Z allocation failure traps, as everywhere in the engine; marking is
+never skipped.
 
 ## Storage
 
@@ -98,20 +114,25 @@ across a WeakMap and a WeakSet, 100 held, ordinary collections only):
 | before | 0.075 s | 601,026 | (kept forever) |
 | weak | 0.042 s | 3,769 | 398,170 |
 
-The repeated scan is quadratic on an adversarial chain: record i maps key
-i to a holder of key i + 1, only key 0 rooted, records discovered in
-reverse (the natural order when they sit in an array, since marking pops
-its children last-first). Each pass frees one more link:
+Cost, an adversarial chain: record i maps key i to a holder of key i + 1,
+only key 0 rooted, records discovered in reverse (the natural order when
+they sit in an array, since marking pops its children last-first). The
+first implementation rescanned every record per pass; the pending table
+visits each entry once at registration and once in the verification scan.
 
-| links | passes | gc() |
-|---|---|---|
-| 200 | 201 | 1 ms |
-| 1,000 | 1,001 | 5 ms |
-| 3,000 | 3,001 | 32 ms |
-| 10,000 | 10,001 | 367 ms |
-| 30,000 | 30,001 | 3.4 s |
+| links | 1d4d5c9 passes | 1d4d5c9 gc() | pending passes | pending gc() | entry visits | scratch peak |
+|---|---|---|---|---|---|---|
+| 1,000 | 1,001 | 4 ms | 1 | 0 ms | 2,000 | 24 KiB |
+| 10,000 | 10,001 | 310 ms | 1 | 2 ms | 20,000 | 384 KiB |
+| 30,000 | 30,001 | 2,925 ms | 1 | 5 ms | 60,000 | 768 KiB |
 
-The same chain discovered in the favourable order takes 2 passes, and
-with nothing rooted every entry clears in 1. A worklist keyed by newly
-marked keys would make the adversarial case linear; it is not needed for
-any real workload seen and is left as a follow-up.
+The favourable order (1d4d5c9: 2 passes) costs the same in both. One key
+across 100,000 records: 13 ms against 14 ms, 300,000 visits, 3 MiB of
+scratch during the collection and none retained. 100,000 value-to-key
+cycles, none rooted, clear in one pass either way. A chain of 10,000
+records each reached through the previous one's value: 1 ms in both.
+Ordinary workloads without weak collections are unchanged (integer loop,
+calls, property access, arrays, strings, closures: within 1 percent, the
+same allocator calls); the churn test (400,000 dropped keys under ordinary
+collections) is 0.039 s against 0.040 s with ten more allocator calls for
+the scratch. The binary is the same 735,544 bytes.

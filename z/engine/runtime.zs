@@ -3276,6 +3276,8 @@ export struct Runtime {
   // only at instruction boundaries, where every live value sits in a
   // register, a frame, a global, or a table -- never in a Z local.
   function collectGarbage(inout this): void {
+    this.heap.markedCells = 0;
+    this.heap.weakVisits = 0;
     let index: usize = 0;
     while (index < usize(this.regTop)) {
       const value = this.regStack[index];

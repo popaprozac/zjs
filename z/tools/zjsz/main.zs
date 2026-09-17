@@ -172,6 +172,12 @@ function reportStats(in runtime: Runtime): void {
   appendDecimal(inout line, runtime.heap.weakCleared);
   appendText(inout line, " ephemeron-passes ");
   appendDecimal(inout line, runtime.heap.ephemeronPasses);
+  appendText(inout line, " weak-visits ");
+  appendDecimal(inout line, runtime.heap.weakVisits);
+  appendText(inout line, " marked ");
+  appendDecimal(inout line, runtime.heap.markedCells);
+  appendText(inout line, " pending-scratch ");
+  appendDecimal(inout line, u32(runtime.heap.pendingScratchBytes()));
   line.push(10);
   writeError(in line);
 }

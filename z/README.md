@@ -134,8 +134,10 @@ iterators (`Map Iterator` / `Set Iterator` prototypes), `Map.groupBy` /
 `get [Symbol.species]` on `Map`, `Set`, and `Array`. `WeakMap` and
 `WeakSet` hold their keys weakly: their entries live in the heap's weak
 records, whose keys are marked only by other references and whose values
-are marked once their key is (ephemeron marking to a fixpoint after the
-strong roots, before the atom rebuild and the sweep), entries of dead keys
+are marked once their key is (a key-indexed pending table completes the
+ephemeron closure during the strong-root drain, one visit per entry in
+any discovery order; a verification scan follows, then the atom rebuild
+and the sweep), entries of dead keys
 are dropped and the storage compacted in place, and a key must be an
 object or an unregistered symbol (`Symbol.for` keys are refused; `get` on
 anything else is undefined, `has` / `delete` false). See
