@@ -114,7 +114,21 @@ from the target's own `length` when that is a Number (infinity kept),
 `name` from the target's `name` when that is a String, read in that
 order. `instanceof` is InstanceofOperator throughout: a bound function
 asks its target, a custom `@@hasInstance` included, and any other
-callable's `prototype` is read each time and must be an object. The
+callable's `prototype` is read each time and must be an object. An
+array's [[Prototype]] can be changed too (it is kept under a hidden key
+in the array's bag, so the collector reaches it through the array, and
+an array never given one pays a single link check), and a prototype
+chain may pass through arrays and functions as well as plain objects:
+reads carry the receiver through all of them, a write asks the chain
+for an inherited setter or a read-only property before creating an own
+one (for an absent index too, once the array has a prototype of its
+own), and `in`, `for`-`in`, `isPrototypeOf`, `instanceof`, and the
+cycle check follow the same chain. A function written as an object
+literal's method, getter, or setter has no [[Construct]] and no
+`prototype`, like a class method; the parser records that on the
+function's node, as internal metadata the AST dump does not print,
+since `{ m() {} }` and `{ m: function () {} }` are the same tree shape
+and the second stays an ordinary constructable function. The
 `@@hasInstance` lookup is always made; when it finds the builtin (which
 is neither writable nor configurable) the call is skipped for the
 OrdinaryHasInstance it would have run. The
@@ -473,7 +487,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, `Object.prototype.__proto__` and `__proto__` in object literals, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, object-literal methods and accessors that refuse `new` (they are ordinary functions here, so their bindings construct too), naming an object-literal function from a computed symbol key, `setPrototypeOf` on arrays and other exotic objects (it reports success and changes nothing), direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, `Object.prototype.__proto__` and `__proto__` in object literals, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, naming an object-literal function from a computed key, elements defined on Array.prototype itself being consulted by a write to an absent index (an array with a prototype of its own does consult its chain), direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and
