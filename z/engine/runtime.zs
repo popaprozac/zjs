@@ -111,8 +111,8 @@ const SET_REFUSED: i32 = 2;
 const JOB_REACTION: i32 = 0;
 const JOB_THENABLE: i32 = 1;
 // The drained front of the job queue is dropped once it is this long
-// and at least half the queue.
-const JOB_COMPACT_AT: usize = 1024;
+// (in values, four to a job) and at least half the queue.
+const JOB_COMPACT_AT: usize = 4096;
 export const REACTION_HANDLER: i32 = 0;
 export const REACTION_ASYNC: i32 = 1;
 export const REACTION_ASYNC_GEN_AWAIT: i32 = 2;
@@ -4387,11 +4387,14 @@ export struct Runtime {
   // --- Promises and jobs ---
   //
   // A promise is an ordinary object holding a record under a hidden key:
-  // [state, result, fulfill reactions, reject reactions, handled]. A
-  // reaction is [kind, handler, destination, generator]: kind 0 runs a
-  // JavaScript handler and settles the destination with its result;
-  // kind 1 resumes an async function. Jobs are heap arrays [kind, a, b, c]
-  // in a queue the host drains after each script.
+  // [state, result, reactions, handled]. `reactions` is undefined while
+  // nothing waits, the one reaction while one does, and an array of them
+  // from the second on; settling empties it. A reaction is [kind,
+  // onFulfilled, onRejected, destination, generator]: kind 0 runs the
+  // handler for the outcome and settles the destination with its result;
+  // the other kinds resume an async body. A job is four values in the
+  // queue the host drains after each script -- kind, a, b, c -- and not
+  // a cell: a job that has run leaves nothing behind.
   //
   // A destination is one of three things. A promise the engine made for
   // itself (await, async bodies, a `then` whose species is the intrinsic
@@ -4419,12 +4422,11 @@ export struct Runtime {
   function newPromiseWithProto(inout this, proto: u32): Value {
     const object = this.heap.allocateObject(proto);
     this.pushTempRoot(cellValue(object));
-    const record = this.heap.allocateArray(5);
+    const record = this.heap.allocateArray(4);
     this.heap.setSlot(record, 0, int32Value(PROMISE_PENDING));
     this.heap.setSlot(record, 1, undefinedValue());
-    this.heap.setSlot(record, 2, cellValue(this.heap.allocateArray(0)));
-    this.heap.setSlot(record, 3, cellValue(this.heap.allocateArray(0)));
-    this.heap.setSlot(record, 4, booleanValue(false));
+    this.heap.setSlot(record, 2, undefinedValue());
+    this.heap.setSlot(record, 3, booleanValue(false));
     const atomPromiseRecord = this.atomPromiseRecord;
     this.heap.objectDefine(object, atomPromiseRecord, cellValue(record), PROP_NONE);
     this.popTempRoot();
@@ -4440,12 +4442,10 @@ export struct Runtime {
   }
 
   function enqueueJob(inout this, kind: i32, a: Value, b: Value, c: Value): void {
-    const job = this.heap.allocateArray(4);
-    this.heap.setSlot(job, 0, int32Value(kind));
-    this.heap.setSlot(job, 1, a);
-    this.heap.setSlot(job, 2, b);
-    this.heap.setSlot(job, 3, c);
-    this.jobs.push(cellValue(job));
+    this.jobs.push(int32Value(kind));
+    this.jobs.push(a);
+    this.jobs.push(b);
+    this.jobs.push(c);
   }
 
   function settlePromise(inout this, handle: u32, state: i32, value: Value): void {
@@ -4453,16 +4453,27 @@ export struct Runtime {
     if (asInt32(this.heap.slot(record, 0)) != PROMISE_PENDING) return;
     this.heap.setSlot(record, 0, int32Value(state));
     this.heap.setSlot(record, 1, value);
-    const reactions = asCell(this.heap.slot(record, state == PROMISE_FULFILLED ? 2 : 3));
-    this.heap.setSlot(record, 2, cellValue(this.heap.allocateArray(0)));
-    this.heap.setSlot(record, 3, cellValue(this.heap.allocateArray(0)));
-    const count = this.heap.arrayLength(reactions);
+    const waiting = this.heap.slot(record, 2);
+    this.heap.setSlot(record, 2, undefinedValue());
+    if (isUndefined(waiting)) return;
+    const rejected = booleanValue(state == PROMISE_REJECTED);
+    if (this.isReactionCell(asCell(waiting))) {
+      this.enqueueJob(JOB_REACTION, waiting, value, rejected);
+      return;
+    }
+    const count = this.heap.arrayLength(asCell(waiting));
     let index: u32 = 0;
     while (index < count) {
-      const reaction = this.heap.arrayGet(reactions, index);
-      this.enqueueJob(JOB_REACTION, reaction, value, booleanValue(state == PROMISE_REJECTED));
+      const reaction = this.heap.arrayGet(asCell(waiting), index);
+      this.enqueueJob(JOB_REACTION, reaction, value, rejected);
       index = index + 1;
     }
+  }
+
+  // A reaction's first slot is its kind, a number; a list of reactions
+  // holds cells only.
+  function isReactionCell(handle: u32): boolean {
+    return isInt32(this.heap.slot(handle, 0));
   }
 
   function fulfillPromise(inout this, handle: u32, value: Value): void {
@@ -4500,46 +4511,52 @@ export struct Runtime {
     this.enqueueJob(JOB_THENABLE, resolution, then, cellValue(handle));
   }
 
-  function newReaction(inout this, kind: i32, handler: Value, derived: Value, gen: u32): Value {
-    const reaction = this.heap.allocateArray(4);
+  function newReaction(inout this, kind: i32, onFulfilled: Value, onRejected: Value, destination: Value, gen: u32): Value {
+    const reaction = this.heap.allocateArray(5);
     this.heap.setSlot(reaction, 0, int32Value(kind));
-    this.heap.setSlot(reaction, 1, handler);
-    this.heap.setSlot(reaction, 2, derived);
+    this.heap.setSlot(reaction, 1, onFulfilled);
+    this.heap.setSlot(reaction, 2, onRejected);
+    this.heap.setSlot(reaction, 3, destination);
     // The generator a driver reaction resumes, as a cell so the
     // collector keeps a suspended body alive through its pending promise.
     if (gen == 0) {
-      this.heap.setSlot(reaction, 3, int32Value(0));
+      this.heap.setSlot(reaction, 4, int32Value(0));
     } else {
-      this.heap.setSlot(reaction, 3, cellValue(gen));
+      this.heap.setSlot(reaction, 4, cellValue(gen));
     }
     return cellValue(reaction);
   }
 
-  // PerformPromiseThen with one reaction for each outcome.
+  // PerformPromiseThen: one reaction carrying the handler for each
+  // outcome.
   function performThen(inout this, handle: u32, onFulfilled: Value, onRejected: Value, derived: Value): void {
-    this.pushTempRoot(derived);
-    const fulfillReaction = this.newReaction(REACTION_HANDLER, onFulfilled, derived, 0);
-    this.pushTempRoot(fulfillReaction);
-    const rejectReaction = this.newReaction(REACTION_HANDLER, onRejected, derived, 0);
-    this.popTempRoot();
-    this.popTempRoot();
-    this.attachReactions(handle, fulfillReaction, rejectReaction);
+    const reaction = this.newReaction(REACTION_HANDLER, onFulfilled, onRejected, derived, 0);
+    this.attachReaction(handle, reaction);
   }
 
-  function attachReactions(inout this, handle: u32, fulfillReaction: Value, rejectReaction: Value): void {
+  // A pending promise keeps the reaction -- alone, or in a list from the
+  // second on; a settled one queues its job at once.
+  function attachReaction(inout this, handle: u32, reaction: Value): void {
     const record = this.promiseRecord(handle);
     const state = asInt32(this.heap.slot(record, 0));
     if (state == PROMISE_PENDING) {
-      const fulfillList = asCell(this.heap.slot(record, 2));
-      this.heap.arraySet(fulfillList, this.heap.arrayLength(fulfillList), fulfillReaction);
-      const rejectList = asCell(this.heap.slot(record, 3));
-      this.heap.arraySet(rejectList, this.heap.arrayLength(rejectList), rejectReaction);
+      const waiting = this.heap.slot(record, 2);
+      if (isUndefined(waiting)) {
+        this.heap.setSlot(record, 2, reaction);
+      } else if (this.isReactionCell(asCell(waiting))) {
+        const list = this.heap.allocateArray(0);
+        this.heap.arraySet(list, 0, waiting);
+        this.heap.arraySet(list, 1, reaction);
+        this.heap.setSlot(record, 2, cellValue(list));
+      } else {
+        const list = asCell(waiting);
+        this.heap.arraySet(list, this.heap.arrayLength(list), reaction);
+      }
     } else {
       const result = this.heap.slot(record, 1);
-      const isReject = state == PROMISE_REJECTED;
-      this.enqueueJob(JOB_REACTION, isReject ? rejectReaction : fulfillReaction, result, booleanValue(isReject));
+      this.enqueueJob(JOB_REACTION, reaction, result, booleanValue(state == PROMISE_REJECTED));
     }
-    this.heap.setSlot(record, 4, booleanValue(true));
+    this.heap.setSlot(record, 3, booleanValue(true));
   }
 
   // PromiseResolve(%Promise%, value): a promise whose `constructor` is
@@ -4660,22 +4677,26 @@ export struct Runtime {
   // forever runs in bounded memory.
   function runJobs(inout this): void {
     while (this.jobCursor < this.jobs.length) {
-      const queued = this.jobs[this.jobCursor];
-      this.jobs[this.jobCursor] = undefinedValue();
-      this.jobCursor = this.jobCursor + 1;
+      const at = this.jobCursor;
+      const kind = asInt32(this.jobs[at]);
+      const first = this.jobs[at + 1];
+      const second = this.jobs[at + 2];
+      const third = this.jobs[at + 3];
+      this.jobs[at + 1] = undefinedValue();
+      this.jobs[at + 2] = undefinedValue();
+      this.jobs[at + 3] = undefinedValue();
+      this.jobCursor = at + 4;
       if (this.jobCursor >= JOB_COMPACT_AT && this.jobCursor * 2 >= this.jobs.length) this.compactJobs();
-      this.pushTempRoot(queued);
-      const job = asCell(queued);
-      const kind = asInt32(this.heap.slot(job, 0));
+      // The job's values are held for its own run only.
+      this.pushTempRoot(first);
+      this.pushTempRoot(second);
+      this.pushTempRoot(third);
       if (kind == JOB_REACTION) {
-        const reaction = asCell(this.heap.slot(job, 1));
-        const argument = this.heap.slot(job, 2);
-        const isReject = isTrue(this.heap.slot(job, 3));
-        this.runReaction(reaction, argument, isReject);
+        this.runReaction(asCell(first), second, isTrue(third));
       } else {
-        const thenable = this.heap.slot(job, 1);
-        const then = this.heap.slot(job, 2);
-        const promise = this.heap.slot(job, 3);
+        const thenable = first;
+        const then = second;
+        const promise = third;
         const shared = this.newResolvingShared(promise);
         this.pushTempRoot(shared);
         const resolve = this.resolvingFunction(promise, shared, false);
@@ -4695,6 +4716,8 @@ export struct Runtime {
         this.popTempRoot();
       }
       if (this.pendingThrow) { const dropped = this.takePending(); }
+      this.popTempRoot();
+      this.popTempRoot();
       this.popTempRoot();
     }
     this.jobs = Array<Value>();
@@ -4716,19 +4739,19 @@ export struct Runtime {
   function runReaction(inout this, reaction: u32, argument: Value, isReject: boolean): void {
     const kind = asInt32(this.heap.slot(reaction, 0));
     if (kind == REACTION_ASYNC) {
-      const gen = asCell(this.heap.slot(reaction, 3));
+      const gen = asCell(this.heap.slot(reaction, 4));
       this.asyncStep(gen, argument, isReject ? 1 : 0);
       return;
     }
     if (kind == REACTION_ASYNC_GEN_AWAIT) {
-      const gen = asCell(this.heap.slot(reaction, 3));
+      const gen = asCell(this.heap.slot(reaction, 4));
       this.asyncGeneratorStep(gen, argument, isReject ? 1 : 0);
       return;
     }
     if (kind == REACTION_ASYNC_GEN_RETURN_DONE) {
       // AsyncGeneratorAwaitReturn settled: the front request gets the
       // awaited value as its done result, or the rejection.
-      const gen = asCell(this.heap.slot(reaction, 3));
+      const gen = asCell(this.heap.slot(reaction, 4));
       const record = this.generatorRecord(gen);
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
       const request = this.asyncGeneratorFront(record);
@@ -4751,14 +4774,14 @@ export struct Runtime {
       // The value of a return request into a suspended body settled:
       // the body resumes in return mode with it, or in throw mode with
       // the rejection.
-      const gen = asCell(this.heap.slot(reaction, 3));
+      const gen = asCell(this.heap.slot(reaction, 4));
       this.asyncGeneratorStep(gen, argument, isReject ? 1 : 2);
       return;
     }
     if (kind == REACTION_ASYNC_GEN_YIELD) {
       // The yielded value settled: a fulfillment answers the request, a
       // rejection is thrown into the body at the yield.
-      const gen = asCell(this.heap.slot(reaction, 3));
+      const gen = asCell(this.heap.slot(reaction, 4));
       if (isReject) {
         this.asyncGeneratorStep(gen, argument, 1);
         return;
@@ -4777,8 +4800,8 @@ export struct Runtime {
       this.asyncGeneratorResumeNext(gen);
       return;
     }
-    const handler = this.heap.slot(reaction, 1);
-    const destination = this.heap.slot(reaction, 2);
+    const handler = this.heap.slot(reaction, isReject ? 2 : 1);
+    const destination = this.heap.slot(reaction, 3);
     if (!this.isCallable(handler)) {
       // No handler: the outcome passes through to the destination.
       this.settleDestination(destination, argument, isReject);
@@ -4826,8 +4849,8 @@ export struct Runtime {
       return;
     }
     this.pushTempRoot(awaited);
-    const reaction = this.newReaction(REACTION_ASYNC, undefinedValue(), undefinedValue(), gen);
-    this.attachReactions(asCell(awaited), reaction, reaction);
+    const reaction = this.newReaction(REACTION_ASYNC, undefinedValue(), undefinedValue(), undefinedValue(), gen);
+    this.attachReaction(asCell(awaited), reaction);
     this.popTempRoot();
   }
 
@@ -4905,8 +4928,8 @@ export struct Runtime {
       return;
     }
     this.pushTempRoot(awaited);
-    const reaction = this.newReaction(REACTION_ASYNC_GEN_RETURN_DONE, undefinedValue(), undefinedValue(), gen);
-    this.attachReactions(asCell(awaited), reaction, reaction);
+    const reaction = this.newReaction(REACTION_ASYNC_GEN_RETURN_DONE, undefinedValue(), undefinedValue(), undefinedValue(), gen);
+    this.attachReaction(asCell(awaited), reaction);
     this.popTempRoot();
   }
 
@@ -4928,8 +4951,8 @@ export struct Runtime {
       return;
     }
     this.pushTempRoot(awaited);
-    const reaction = this.newReaction(REACTION_ASYNC_GEN_RESUME_RETURN, undefinedValue(), undefinedValue(), gen);
-    this.attachReactions(asCell(awaited), reaction, reaction);
+    const reaction = this.newReaction(REACTION_ASYNC_GEN_RESUME_RETURN, undefinedValue(), undefinedValue(), undefinedValue(), gen);
+    this.attachReaction(asCell(awaited), reaction);
     this.popTempRoot();
   }
 
@@ -5037,8 +5060,8 @@ export struct Runtime {
       return;
     }
     this.pushTempRoot(awaited);
-    const reaction = this.newReaction(kind == 1 ? REACTION_ASYNC_GEN_AWAIT : REACTION_ASYNC_GEN_YIELD, undefinedValue(), undefinedValue(), gen);
-    this.attachReactions(asCell(awaited), reaction, reaction);
+    const reaction = this.newReaction(kind == 1 ? REACTION_ASYNC_GEN_AWAIT : REACTION_ASYNC_GEN_YIELD, undefinedValue(), undefinedValue(), undefinedValue(), gen);
+    this.attachReaction(asCell(awaited), reaction);
     this.popTempRoot();
   }
 

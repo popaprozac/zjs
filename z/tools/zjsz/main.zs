@@ -215,10 +215,19 @@ function reportGcStats(in runtime: Runtime): void {
   appendDecimal(inout line, microseconds(percentile(in pauses, 99)));
   appendText(inout line, " max-us ");
   appendDecimal(inout line, microseconds(percentile(in pauses, 100)));
+  appendText(inout line, " cells-allocated ");
+  appendDecimal(inout line, clampCount(runtime.heap.cellsAllocated()));
+  appendText(inout line, " slots-allocated ");
+  appendDecimal(inout line, clampCount(runtime.heap.slotsAllocated()));
   appendText(inout line, " in-use-kib ");
   appendDecimal(inout line, u32(truncateDouble(runtime.heap.bytesInUse() / 1024.0)));
   line.push(10);
   writeError(in line);
+}
+
+function clampCount(value: f64): u32 {
+  if (value >= 4294967295.0) return 4294967295;
+  return u32(truncateDouble(value));
 }
 
 function microseconds(nanoseconds: f64): u32 {
