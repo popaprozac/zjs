@@ -3195,7 +3195,7 @@ export struct Runtime {
   // for a plain call; reading it clears it.
   function takeHostNewTarget(inout this): Value {
     const target = this.hostNewTarget;
-    this.hostNewTarget = undefinedValue();
+    if (!isUndefined(target)) this.hostNewTarget = undefinedValue();
     return target;
   }
 
