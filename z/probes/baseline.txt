@@ -1,6 +1,7 @@
 # probe status at z-lang ad43b117 (clean). Written by run.sh --record.
 array-capacity LANDED
 array-pop LANDED
+array-truncate COMPILER-REJECTED
 byte-literal COMPILER-REJECTED
 enum-integer-code COMPILER-REJECTED
 field-view-borrow LANDED

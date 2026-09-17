@@ -1121,6 +1121,33 @@ inside the lock callback) is gone.
 
 ---
 
+
+## G38 — An array cannot be cut to a length, or report its capacity
+
+**Status:** `proposed` · **Size:** small · **Priority:** low
+**Confirmed:** z-lang `ad43b117` · **Blocks:** no
+**Found:** the allocation and collection checkpoint: shrinking the heap's
+handle table and the job queue after a burst.
+
+`Array<T>` can `clear()` (capacity kept) and `pop()` one element, returning
+an `Option<T>` that must be bound. It cannot be shortened to a given length
+in one step, and its capacity cannot be read. After a burst the engine's
+handle table holds millions of dead entries above a few thousand live
+ones; cutting it back by `pop` is millions of calls, and with no capacity
+to read the engine cannot tell how much storage an array it means to keep
+is holding.
+
+The engine does not need either to work: it keeps a logical extent beside
+each such array (the table's, the job queue's), overwrites the entries
+above it, and rebuilds the array with `withCapacity` when the extent falls
+under a quarter of the size the storage was made for, tracked by hand.
+That is arguably the better design for a hot table. The ask is small and
+illustrative: `array.truncate(length)` destroying the elements above it in
+reverse order and keeping the allocation, as `clear()` does for all of
+them, and a read-only `array.capacity`.
+
+Minimal reproduction: probe `array-truncate`.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic
