@@ -2230,32 +2230,110 @@ export struct Compiler {
     }
     if (k == NodeKind.yieldExpr) {
       if (n.boolValue && this.isAsyncGeneratorBody) {
-        // yield* in an async generator: the operand's async iterator
-        // (a sync one wrapped), each next() awaited, each value handed
-        // to the request as it is, what next() sends forwarded, and the
-        // delegate's final value the expression's. A return or throw
-        // sent while delegating is not forwarded (limitation).
+        // yield* in an async generator: the operand's async iterator (a
+        // sync one wrapped). Each resumption is forwarded by its mode --
+        // next(v), throw(e), return(v) -- and the delegate's answer is
+        // awaited before it is checked; its value is yielded as it is
+        // (the driver answers the request with it), its final value is
+        // the expression's. A delegate without throw is closed first (its
+        // return awaited; a rejection there wins) and the throw is a
+        // TypeError; one without return, or whose return finishes, makes
+        // this generator return the awaited value through its finally
+        // blocks.
         const iterable = this.compileExpr(in parser, inout runtime, n.left);
         const iterator = this.allocReg();
         this.emit(instAB(Op.iterGetAsync, iterator, iterable));
-        const sent = this.allocReg();
+        const received = this.allocReg();
+        const mode = this.allocReg();
         const result = this.allocReg();
         if (result + 1 > this.fixedRegs) this.fixedRegs = result + 1;
-        this.emit(instA(Op.loadUndefined, sent));
-        const loopTop = u32(this.code.length);
-        this.emitAsyncIteratorStep(inout runtime, iterator, sent, true, result);
-        const done = this.allocReg();
+        this.emit(instA(Op.loadUndefined, received));
+        this.emit(instAI16(Op.loadInt, mode, 0));
         const doneText: String = "done";
         const doneAtom = runtime.atomOf(in doneText);
-        this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
-        const exit = this.emit(instAI16(Op.jmpIfTrue, done, 0));
-        const value = this.allocReg();
         const valueText: String = "value";
         const valueAtom = runtime.atomOf(in valueText);
+        const loopTop = u32(this.code.length);
+        const one = this.allocReg();
+        this.emit(instAI16(Op.loadInt, one, 1));
+        const isThrow = this.allocReg();
+        this.emit(instABC(Op.cmpStrictEq, isThrow, mode, one));
+        const toThrow = this.emit(instAI16(Op.jmpIfTrue, isThrow, 0));
+        const two = this.allocReg();
+        this.emit(instAI16(Op.loadInt, two, 2));
+        const isReturn = this.allocReg();
+        this.emit(instABC(Op.cmpStrictEq, isReturn, mode, two));
+        const toReturn = this.emit(instAI16(Op.jmpIfTrue, isReturn, 0));
+        // next: the call, awaited, checked.
+        this.emit(instABC(Op.iterCallNext, result, iterator, received));
+        this.emit(instAB(Op.awaitOp, result, result));
+        this.emit(instA(Op.requireIterResult, result));
+        const toCheck = this.emit(instI16(Op.jmp, 0));
+        // throw: forwarded when the delegate has the method; otherwise
+        // the delegate is closed (return called and awaited) and the
+        // protocol violation is a TypeError.
+        this.patchJump(toThrow);
+        this.emit(instABC(Op.iterCallThrow, result, iterator, received));
+        const noThrow = this.allocReg();
+        this.emit(instAB(Op.isAbsent, noThrow, result));
+        const toClose = this.emit(instAI16(Op.jmpIfTrue, noThrow, 0));
+        this.emit(instAB(Op.awaitOp, result, result));
+        this.emit(instA(Op.requireIterResult, result));
+        const toCheck2 = this.emit(instI16(Op.jmp, 0));
+        this.patchJump(toClose);
+        const closing = this.allocReg();
+        const undefinedReg = this.allocReg();
+        this.emit(instA(Op.loadUndefined, undefinedReg));
+        this.emit(instABC(Op.iterCallReturn, closing, iterator, undefinedReg));
+        const noReturnToClose = this.allocReg();
+        this.emit(instAB(Op.isAbsent, noReturnToClose, closing));
+        const closed = this.emit(instAI16(Op.jmpIfTrue, noReturnToClose, 0));
+        this.emit(instAB(Op.awaitOp, closing, closing));
+        this.emit(instA(Op.requireIterResult, closing));
+        this.patchJump(closed);
+        const noThrowText: String = "The iterator does not provide a 'throw' method";
+        const noThrowConst = this.addConst(runtime.internUtf8Value(bytesOf(in noThrowText)));
+        this.emit(instU16(Op.throwTypeError, noThrowConst));
+        // return: forwarded when the delegate has the method; the value
+        // of a finished return, or the received value (already awaited
+        // by the driver) when there is no method, is what this generator
+        // returns.
+        this.patchJump(toReturn);
+        this.emit(instABC(Op.iterCallReturn, result, iterator, received));
+        const noReturn = this.allocReg();
+        this.emit(instAB(Op.isAbsent, noReturn, result));
+        const toPlainReturn = this.emit(instAI16(Op.jmpIfTrue, noReturn, 0));
+        this.emit(instAB(Op.awaitOp, result, result));
+        this.emit(instA(Op.requireIterResult, result));
+        const returnDone = this.allocReg();
+        this.emit(instABC(Op.loadProp, returnDone, result, this.nameSlot(doneAtom)));
+        const toYield = this.emit(instAI16(Op.jmpIfFalse, returnDone, 0));
+        const returned = this.allocReg();
+        this.emit(instABC(Op.loadProp, returned, result, this.nameSlot(valueAtom)));
+        const toUnwind = this.emit(instI16(Op.jmp, 0));
+        this.patchJump(toPlainReturn);
+        this.emit(instAB(Op.mov, returned, received));
+        this.patchJump(toUnwind);
+        if (this.regionDepth > 0) {
+          const savedFixed = this.fixedRegs;
+          if (returned + 1 > this.fixedRegs) this.fixedRegs = returned + 1;
+          this.emitUnwind(in parser, inout runtime, 0);
+          this.fixedRegs = savedFixed;
+        }
+        this.emit(instA(Op.returnOp, returned));
+        // A result from next or throw: finished, or yielded.
+        this.patchJump(toCheck);
+        this.patchJump(toCheck2);
+        const done = this.allocReg();
+        this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
+        const finished = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+        this.patchJump(toYield);
+        const value = this.allocReg();
         this.emit(instABC(Op.loadProp, value, result, this.nameSlot(valueAtom)));
-        this.emit(instAB(Op.yieldRaw, sent, value));
+        this.emit(instAB(Op.yieldDelegate, received, value));
+        this.emit(instA(Op.resumeMode, mode));
         this.emitJumpBack(loopTop);
-        this.patchJump(exit);
+        this.patchJump(finished);
         const dst = this.allocReg();
         this.emit(instABC(Op.loadProp, dst, result, this.nameSlot(valueAtom)));
         return dst;

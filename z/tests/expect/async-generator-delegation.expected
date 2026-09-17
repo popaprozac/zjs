@@ -1,0 +1,15 @@
+t1 {"value":1,"done":false} {"value":15,"done":false} {"value":"ret:7","done":false} {"done":true}
+t2 {"value":"p1","done":false} {"value":"got A","done":false} {"value":"sync-done","done":false} {"done":true}
+t3 asyncIterator,next(undefined),done?,value?,next(x),done?,value?,next(stop),done?,value?,expr=v-stop
+t4 {"value":"still-x","done":false} {"value":"n","done":false}
+t5 delegate-return,outer-finally {"value":{},"done":true}
+t6 fin {"value":"gone","done":true}
+t7a {"value":"caught:boom","done":false}
+t7b closed,TypeError
+t7c {"value":"RangeError","done":true}
+t8a TypeError
+t8b TypeError
+t8c {"value":"caught SyntaxError","done":true}
+t8d {"value":"caught EvalError","done":true}
+t9 next(undefined),release,next(b),p1:{"value":{},"done":false},p2:{"value":"later-b","done":false},return(c),p3:{"value":"c","done":true}
+t10 1000,second,third,end:1000,fourth

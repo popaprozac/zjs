@@ -250,9 +250,17 @@ dot, and the `u` flag see what the specification defines, and offsets come
 back as bytes -- a boundary inside a surrogate pair rounds to the pair's
 sequence. `yield*` in an async generator takes the operand's async
 iterator (a sync one wrapped through `%AsyncFromSyncIteratorPrototype%`),
-awaits each `next`, hands each value to the request as it is, forwards
-what `next` sends, and yields the delegate's final value as the
-expression's; `for await` iterates the same way.
+awaits each answer from the delegate's `next` / `throw` / `return` before
+checking it, forwards what each resumption sends by its mode (a delegate
+without `throw` is closed, its `return` awaited, and the throw is a
+TypeError; one without `return`, or whose `return` finishes, makes the
+generator return through its finally blocks), hands each delegate value to
+the request as it is, and makes the delegate's final value the
+expression's. A return request into a suspended async generator awaits
+its value and re-enters the body in return mode, so finally blocks run
+(they may await, yield, throw, or return an override); on an unstarted or
+completed generator the value is awaited and the request settles with it.
+`for await` iterates the same way.
 
 `./z/test262.py` runs the reference's own test262 runner logic
 (`scripts/test262/run.py`: harness assembly, strict/sloppy modes, curated

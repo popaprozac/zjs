@@ -2613,6 +2613,37 @@ export struct Runtime {
     return result;
   }
 
+  // iterator.<method>(value) as returned, for an async delegation that
+  // awaits and checks the result itself: `absent` when there is no such
+  // method (next must exist), the deleted marker on a throw (pending).
+  function iteratorCallRaw(inout this, iterator: Value, in name: String, value: Value, mustExist: boolean, inout absent: boolean): Value {
+    absent = false;
+    const key = this.internText(in name);
+    const method = this.getProperty(iterator, key);
+    if (this.pendingThrow) return deletedValue();
+    if (isUndefined(method) || isNull(method)) {
+      if (!mustExist) {
+        absent = true;
+        return deletedValue();
+      }
+      const missing: String = `iterator.${name} is not a function`;
+      const error = this.typeError(in missing);
+      this.raise(error);
+      return deletedValue();
+    }
+    if (!this.isCallable(method)) {
+      const message: String = `iterator.${name} is not a function`;
+      const error = this.typeError(in message);
+      this.raise(error);
+      return deletedValue();
+    }
+    let args = Array<Value>();
+    args.push(value);
+    const result = this.callValue(method, iterator, move args);
+    if (this.pendingThrow) return deletedValue();
+    return result;
+  }
+
   function iteratorClose(inout this, iterator: Value): void {
     if (!this.isObjectLike(iterator)) return;
     if (this.isPristineArrayIterator(iterator)) return;
@@ -5038,6 +5069,62 @@ export struct Runtime {
               const mode = this.heap.slot(record, 12);
               this.setReg(base, inst.a, mode);
             }
+          }
+          iterCallNext => {
+            const iterator = this.reg(base, inst.b);
+            const value = this.reg(base, inst.c);
+            const nextText: String = "next";
+            let absent = false;
+            const produced = this.iteratorCallRaw(iterator, in nextText, value, true, inout absent);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, produced);
+            }
+          }
+          iterCallThrow => {
+            const iterator = this.reg(base, inst.b);
+            const value = this.reg(base, inst.c);
+            const throwText: String = "throw";
+            let absent = false;
+            const produced = this.iteratorCallRaw(iterator, in throwText, value, false, inout absent);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, produced);
+            }
+          }
+          iterCallReturn => {
+            const iterator = this.reg(base, inst.b);
+            const value = this.reg(base, inst.c);
+            const returnText: String = "return";
+            let absent = false;
+            const produced = this.iteratorCallRaw(iterator, in returnText, value, false, inout absent);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, produced);
+            }
+          }
+          isAbsent => {
+            const held = this.reg(base, inst.b);
+            this.setReg(base, inst.a, booleanValue(isDeleted(held)));
+          }
+          requireIterResult => {
+            const held = this.reg(base, inst.a);
+            if (!this.isObjectLike(held)) {
+              const message: String = "Iterator result is not an object";
+              thrown = this.typeError(in message);
+              throwing = true;
+            }
+          }
+          throwTypeError => {
+            const named = this.functions[usize(fi)].constants[usize(bcU16(inst))];
+            thrown = this.makeError(ERROR_KIND_TYPE, this.heap.stringUtf8(asCell(named)));
+            throwing = true;
           }
           iterNextWith => {
             const iterator = this.reg(base, inst.b);

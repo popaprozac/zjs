@@ -156,7 +156,7 @@ export enum Op {
   jmpIfGeImm,
   invokeGlobal,
   privateCheck,
-  throwTypeError,
+  throwTypeError,  // bc = message constant: throws a TypeError with that message (an async delegation's missing throw method).
   storeGlobalStrict,
   iterCloseQuiet,
   jmpIfNotGenReturn,
@@ -186,6 +186,11 @@ export enum Op {
   iterThrowWith,   // a = result, b = iterator, c = value: iterator.throw(value); without one, closes the iterator and throws a TypeError.
   iterReturnWith,  // a = result, b = iterator, c = value: iterator.return(value); without one, a done result holding the value.
   jmpIfNotReturn,  // bc = offset: jumps unless the generator's last resumption was a return (after a plain yield: fall through into the return).
+  iterCallNext,    // a = result, b = iterator, c = value: iterator.next(value) as returned, unchecked (an async delegation awaits it first).
+  iterCallThrow,   // a = result, b = iterator, c = value: iterator.throw(value) as returned, or the deleted marker when there is no such method.
+  iterCallReturn,  // a = result, b = iterator, c = value: iterator.return(value) as returned, or the deleted marker when there is no such method.
+  isAbsent,        // a = dst, b = src: whether src holds the deleted marker.
+  requireIterResult, // a = value: throws a TypeError unless it is an object.
 }
 
 export struct Inst {
@@ -405,6 +410,11 @@ export function opCode(op: Op): i32 {
     iterThrowWith => 164;
     iterReturnWith => 165;
     jmpIfNotReturn => 166;
+    iterCallNext => 167;
+    iterCallThrow => 168;
+    iterCallReturn => 169;
+    isAbsent => 170;
+    requireIterResult => 171;
   };
 }
 
