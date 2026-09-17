@@ -4456,7 +4456,9 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   compiled.strict = compiler.strict;
   compiled.isClassConstructor = role == 1 || role == 2;
   compiled.isDerived = role == 2;
-  compiled.isMethod = role == 3;
+  // A class method, or an object literal's method, getter, or setter:
+  // none has [[Construct]] or a `prototype` of its own.
+  compiled.isMethod = role == 3 || n.conciseMethod;
   compiled.thisReg = compiler.thisReg;
   // The name: written, else the parser's (methods, accessors), else the
   // context's; accessors carry a "get " / "set " prefix.

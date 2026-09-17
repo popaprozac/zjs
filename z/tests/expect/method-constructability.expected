@@ -1,0 +1,14 @@
+methods: TypeError,TypeError,TypeError,TypeError,TypeError
+accessors: TypeError,TypeError,TypeError,TypeError
+async and generator methods: TypeError,TypeError,TypeError
+function-valued properties stay constructable: constructs,constructs,constructs,true,constructs
+others: TypeError,TypeError
+no prototype property on methods and accessors: false,false,undefined,false,false,length,name
+prototype where there should be one: true,true,true,true,false,false
+still callable, with this and super: 1,2,3,4,base hi via object
+a method given a prototype is still not a constructor: TypeError,true,true
+bound methods and accessors: TypeError,TypeError,constructs,false
+Reflect.construct and instanceof: TypeError,TypeError,TypeError,false
+class extends a method: throws TypeError
+class members are as before: TypeError,TypeError,TypeError,constructs,constructs
+names and lengths unchanged: method,get getter,set setter,plain,named,0,1

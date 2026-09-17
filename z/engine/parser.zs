@@ -2087,6 +2087,7 @@ export struct Parser {
     this.ast.setChildren(method, in params);
     if (isAsync) this.ast.setBool(method, true);
     if (isGenerator) this.ast.setNum(method, 3.0);
+    this.ast.setConciseMethod(method);
     return method;
   }
 
@@ -2220,6 +2221,7 @@ export struct Parser {
         this.functionDepth = this.functionDepth - 1;
         if (body == NO_NODE) break;
         const accessor = this.ast.newNode(NodeKind.functionExpr, realName.start, this.endOf(body));
+        this.ast.setConciseMethod(accessor);
         if (computedKey == NO_NODE) this.ast.setName(accessor, realName.start, realName.length);
         this.ast.setLeft(accessor, body);
         this.ast.setChildren(accessor, in params);
@@ -2285,6 +2287,7 @@ export struct Parser {
         this.ast.setChildren(method, in params);
         if (isAsync) this.ast.setBool(method, true);
         if (isGenerator) this.ast.setNum(method, 3.0);
+        this.ast.setConciseMethod(method);
         value = method;
         propEnd = this.endOf(body);
       } else {

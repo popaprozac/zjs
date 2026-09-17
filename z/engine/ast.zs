@@ -110,6 +110,12 @@ export struct AstNode {
   nameStart: u32;
   nameLength: u32;
   scopeId: u32;
+  // A function written as an object literal's method, getter, or setter
+  // (`{ m() {} }`, `{ get x() {} }`), which has no [[Construct]] -- unlike
+  // `{ m: function () {} }`, which is an ordinary function. The tree shape
+  // does not tell them apart, so the parser records it here. Internal:
+  // the AST dump does not print it.
+  conciseMethod: boolean;
 }
 
 export struct Ast {
@@ -120,7 +126,7 @@ export struct Ast {
     this.nodes.push(AstNode({
       kind: kind, start: start, end: end, op: TokenKind.eof, num: 0.0,
       boolValue: false, left: NO_NODE, right: NO_NODE, third: NO_NODE,
-      childrenStart: 0, childrenCount: 0, nameStart: 0, nameLength: 0, scopeId: 0,
+      childrenStart: 0, childrenCount: 0, nameStart: 0, nameLength: 0, scopeId: 0, conciseMethod: false,
     }));
     return u32(this.nodes.length - 1);
   }
@@ -144,6 +150,7 @@ export struct Ast {
   function setOp(inout this, node: u32, value: TokenKind): void { this.nodes[usize(node)].op = value; }
   function setNum(inout this, node: u32, value: f64): void { this.nodes[usize(node)].num = value; }
   function setBool(inout this, node: u32, value: boolean): void { this.nodes[usize(node)].boolValue = value; }
+  function setConciseMethod(inout this, node: u32): void { this.nodes[usize(node)].conciseMethod = true; }
   function setStart(inout this, node: u32, value: u32): void { this.nodes[usize(node)].start = value; }
   function setEnd(inout this, node: u32, value: u32): void { this.nodes[usize(node)].end = value; }
   function setName(inout this, node: u32, start: u32, length: u32): void {
@@ -171,7 +178,7 @@ export function createAst(): Ast {
   nodes.push(AstNode({
     kind: NodeKind.program, start: 0, end: 0, op: TokenKind.eof, num: 0.0,
     boolValue: false, left: NO_NODE, right: NO_NODE, third: NO_NODE,
-    childrenStart: 0, childrenCount: 0, nameStart: 0, nameLength: 0, scopeId: 0,
+    childrenStart: 0, childrenCount: 0, nameStart: 0, nameLength: 0, scopeId: 0, conciseMethod: false,
   }));
   return Ast({ nodes: move nodes, children: Array<u32>() });
 }
