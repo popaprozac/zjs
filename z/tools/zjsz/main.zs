@@ -13,6 +13,7 @@ import { thread } from "std/thread";
 import { Runtime, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate } from "../../engine/lib.zs";
+import native from "./memstat.h";
 
 function nativeAlloc(count: usize): usize = raw c { return (uintptr_t)calloc(count, 1); }
 function nativeStoreByte(buffer: usize, index: usize, value: u8): void = raw c { ((uint8_t *)buffer)[index] = value; }
@@ -140,7 +141,7 @@ function gcHost(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u
   return undefinedValue();
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, gcFloor: i32, gcGrowth: i32): i32 throws String {
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
@@ -158,6 +159,7 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
   const outcome = evaluate(inout runtime, move source);
   if (stats) reportStats(in runtime);
   if (gcStats) reportGcStats(in runtime);
+  if (memStats) reportMemStats(in runtime);
   if (!outcome.isThrow) return 0;
   reportThrow(inout runtime, outcome.value);
   return 1;
@@ -223,6 +225,50 @@ function reportGcStats(in runtime: Runtime): void {
   appendDecimal(inout line, u32(truncateDouble(runtime.heap.bytesInUse() / 1024.0)));
   line.push(10);
   writeError(in line);
+}
+
+// Storage figures after a run and before anything is torn down, on
+// stderr, in KiB, all read at the same moment so they can be set against
+// each other: what the last collection found alive; what the engine has
+// in use now (garbage since included); what its arrays hold by capacity,
+// part by part; what the allocator says the program holds and what it
+// has reserved from the system; and the process's resident size and
+// physical footprint now, beside the peak resident size, which says
+// nothing about now.
+function reportMemStats(in runtime: Runtime): void {
+  let line = Array<u8>();
+  appendText(inout line, "zjsz-mem: live-at-last-collection-kib ");
+  appendDecimal(inout line, kib(runtime.heap.bytesLiveAtLastCollection()));
+  appendText(inout line, " in-use-kib ");
+  appendDecimal(inout line, kib(runtime.heap.bytesInUse()));
+  appendText(inout line, " held-arena-kib ");
+  appendDecimal(inout line, kib(runtime.heap.arenaBytesHeld()));
+  appendText(inout line, " held-spare-arena-kib ");
+  appendDecimal(inout line, kib(runtime.heap.spareArenaBytesHeld()));
+  appendText(inout line, " held-table-kib ");
+  appendDecimal(inout line, kib(runtime.heap.tableBytesHeld()));
+  appendText(inout line, " held-strings-kib ");
+  appendDecimal(inout line, kib(runtime.heap.stringBytesHeld()));
+  appendText(inout line, " held-other-kib ");
+  appendDecimal(inout line, kib(runtime.heap.otherBytesHeld() + runtime.runtimeBytesHeld()));
+  appendText(inout line, " allocator-in-use-kib ");
+  appendDecimal(inout line, kib(native.zjsz_alloc_in_use()));
+  appendText(inout line, " allocator-reserved-kib ");
+  appendDecimal(inout line, kib(native.zjsz_alloc_reserved()));
+  appendText(inout line, " allocator-peak-in-use-kib ");
+  appendDecimal(inout line, kib(native.zjsz_alloc_peak_in_use()));
+  appendText(inout line, " resident-now-kib ");
+  appendDecimal(inout line, kib(native.zjsz_resident_now()));
+  appendText(inout line, " footprint-now-kib ");
+  appendDecimal(inout line, kib(native.zjsz_footprint_now()));
+  appendText(inout line, " resident-peak-kib ");
+  appendDecimal(inout line, kib(native.zjsz_resident_peak()));
+  line.push(10);
+  writeError(in line);
+}
+
+function kib(bytes: f64): u32 {
+  return clampCount(bytes / 1024.0);
 }
 
 function clampCount(value: f64): u32 {
@@ -294,12 +340,14 @@ function decimalOf(in text: String): i32 {
 
 function main(): i32 {
   // Arguments exclude the program name:
-  //   run [--dict-threshold N] [--stats] [--gc-stats] [--gc-floor N]
-  //       [--gc-growth P] [--expose-gc] <file>
+  //   run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats]
+  //       [--gc-floor N] [--gc-growth P] [--expose-gc] <file>
   // --dict-threshold sets the property count at which an object leaves
   // its hidden class (for measurement); --stats prints heap figures
   // after the run; --gc-stats times every collection and prints the
-  // pause distribution; --gc-floor and --gc-growth set the collection
+  // pause distribution; --mem-stats prints storage figures (alive, in
+  // use, held by capacity, the allocator's, the process's now and at
+  // peak); --gc-floor and --gc-growth set the collection
   // policy's floor (cells) and survivor multiple (percent), for
   // measurement; --expose-gc defines a global gc() that collects.
   const arguments = process.args();
@@ -318,6 +366,7 @@ function main(): i32 {
   let stats = false;
   let exposeGc = false;
   let gcStats = false;
+  let memStats = false;
   let gcFloor: i32 = -1;
   let gcGrowth: i32 = -1;
   while (index + 1 < arguments.length) {
@@ -328,6 +377,9 @@ function main(): i32 {
       index = index + 1;
     } else if (option == "--gc-stats") {
       gcStats = true;
+      index = index + 1;
+    } else if (option == "--mem-stats") {
+      memStats = true;
       index = index + 1;
     } else if ((option == "--gc-floor" || option == "--gc-growth") && index + 2 < arguments.length) {
       const valueLength = arguments[index + 1].byteLength;
@@ -361,7 +413,7 @@ function main(): i32 {
   }
   const pathLength = arguments[index].byteLength;
   const path = arguments[index].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, gcFloor, gcGrowth);
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

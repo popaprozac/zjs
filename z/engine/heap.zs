@@ -165,13 +165,6 @@ export struct Heap {
   // Slots in use right after the last sweep, to tell how many the cycle
   // since has allocated.
   slotsAfterSweep: usize;
-  // What the active arena was sized for. An arena far larger than the
-  // heap now needs is let go rather than kept as the spare, so memory a
-  // spike took is returned once the spike has passed.
-  activeReserved: usize;
-  // The handle table's length when its storage was last made or last
-  // grew, to tell when it has become far larger than it needs.
-  headersHigh: usize;
   // The table's extent: one past the highest handle in use or on the
   // free list. The array behind it may be longer -- a sweep cuts the
   // extent back without touching the entries above it, which the next
@@ -392,7 +385,6 @@ export struct Heap {
       compacted = Array<Value>.withCapacity(needed);
       compactedAttrs = Array<u8>.withCapacity(needed);
     }
-    if (usize(count) > this.headersHigh) this.headersHigh = usize(count);
     // The highest survivor, found by looking down from the top -- but
     // the table is cut back to it only when that is worth a pass over
     // the free list: a large table that would shrink at least fourfold.
@@ -460,17 +452,17 @@ export struct Heap {
     }
     if (cutting) this.trimHandleTable(top);
     // The arenas change places. A large heap lets the old one go.
-    let oldExtent = this.slots.length;
-    if (this.activeReserved > oldExtent) oldExtent = this.activeReserved;
+    // An arena far larger than the heap now needs is let go rather than
+    // kept as the spare, so what a burst took goes back once it has passed.
+    const oldCapacity = this.slots.capacity;
     const oldSlots = replace(inout this.slots, move compacted);
     const oldAttrs = replace(inout this.attrs, move compactedAttrs);
-    if (retain && oldExtent <= needed * 4 + 65536) {
+    if (retain && oldCapacity <= needed * 4 + 65536) {
       const emptySlots = replace(inout this.spareSlots, move oldSlots);
       const emptyAttrs = replace(inout this.spareAttrs, move oldAttrs);
     }
     this.cellsBeforeCycle = this.cellsBeforeCycle + f64(this.allocatedSinceCollect);
     this.slotsBeforeCycle = this.slotsBeforeCycle + f64(cycleSlots);
-    this.activeReserved = needed;
     this.slotsAfterSweep = this.slots.length;
     this.allocatedSinceCollect = 0;
     this.collectThreshold = nextThreshold;
@@ -478,7 +470,7 @@ export struct Heap {
   }
 
   // Cut the table back to its highest live handle. When that leaves it
-  // under a quarter of the size its storage was made for, the table, the
+  // under a quarter of the capacity its storage holds, the table, the
   // free list, and the mark stack are rebuilt small and the old storage
   // is freed.
   function trimHandleTable(inout this, top: u32): void {
@@ -496,7 +488,7 @@ export struct Heap {
       at = at + 1;
     }
     this.freeHandleCount = kept;
-    if (this.headersHigh < HANDLE_TABLE_SHRINK_AT || this.headerCount * 4 >= this.headersHigh) return;
+    if (this.headers.capacity < HANDLE_TABLE_SHRINK_AT || this.headerCount * 4 >= this.headers.capacity) return;
     let smaller = Array<CellHeader>.withCapacity(this.headerCount * 2);
     let index: usize = 0;
     while (index < this.headerCount) {
@@ -512,7 +504,6 @@ export struct Heap {
     }
     const oldList = replace(inout this.freeHandles, move list);
     const oldStack = replace(inout this.markStack, Array<u32>());
-    this.headersHigh = this.headerCount;
   }
 
   // Move a cell's slots to a fresh, larger range. The old range is
@@ -1781,10 +1772,66 @@ export struct Heap {
     return this.slotsBeforeCycle + current;
   }
 
-  // Bytes the engine's own storage holds in use, for reports: a header
-  // per handle ever made (free ones included, since the table does not
-  // shrink), a value and an attribute byte per slot, and string content.
-  // Capacity beyond what is in use belongs to the allocator's figures.
+  // --- Storage figures, for reports ---
+  //
+  // Three different things. What was alive at the last collection: the
+  // cells it traced and their slots. What is in use now: that plus
+  // whatever has been allocated since, garbage included. What is held:
+  // the capacity of every array behind the heap, used or not, which is
+  // what the allocator sees.
+
+  // Headers and slots of the cells the last collection traced.
+  function bytesLiveAtLastCollection(): f64 {
+    return f64(this.markedCells) * HEADER_BYTES + f64(this.markedSlots) * 9.0;
+  }
+
+  // The active arena and the spare one kept to compact into.
+  function arenaBytesHeld(): f64 {
+    return f64(this.slots.capacity) * 8.0 + f64(this.attrs.capacity);
+  }
+
+  function spareArenaBytesHeld(): f64 {
+    return f64(this.spareSlots.capacity) * 8.0 + f64(this.spareAttrs.capacity);
+  }
+
+  // The handle table with its free list and the mark stack.
+  function tableBytesHeld(): f64 {
+    return f64(this.headers.capacity) * HEADER_BYTES + f64(this.freeHandles.capacity) * 4.0 + f64(this.markStack.capacity) * 4.0;
+  }
+
+  // The string table: an array per string plus each one's content.
+  function stringBytesHeld(): f64 {
+    let held: f64 = f64(this.strings.capacity) * 24.0 + f64(this.freeStrings.capacity) * 4.0;
+    let index: usize = 0;
+    while (index < this.strings.length) {
+      held = held + f64(this.strings[index].capacity);
+      index = index + 1;
+    }
+    return held;
+  }
+
+  // Hidden classes, dictionary indexes, and the collector's weak and
+  // pending-ephemeron scratch.
+  function otherBytesHeld(): f64 {
+    let held: f64 = f64(this.classes.capacity) * 64.0 + f64(this.dictionaries.capacity) * 40.0 + f64(this.freeDictionaries.capacity) * 4.0;
+    held = held + f64(this.weakRecords.capacity) * 4.0 + f64(this.pendingScratchBytes());
+    let index: usize = 0;
+    while (index < this.classes.length) {
+      held = held + f64(this.classes[index].transitionNames.capacity) * 4.0 + f64(this.classes[index].transitionChildren.capacity) * 4.0;
+      index = index + 1;
+    }
+    index = 0;
+    while (index < this.dictionaries.length) {
+      held = held + f64(this.dictionaries[index].index.capacity) * 4.0;
+      index = index + 1;
+    }
+    return held;
+  }
+
+  // Bytes the engine's own storage holds in use now: a header per handle
+  // within the table's extent (free ones included), a value and an
+  // attribute byte per slot, and string content. Capacity beyond that is
+  // in the held figures above.
   function bytesInUse(): f64 {
     let stringBytes: f64 = 0.0;
     let index: usize = 0;
@@ -1807,7 +1854,7 @@ export function createHeap(): Heap {
     transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, activeReserved: 0, headersHigh: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,

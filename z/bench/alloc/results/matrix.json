@@ -1,0 +1,355 @@
+{
+ "what": "Incremental effect of each stage on top of all earlier ones, in this order; median wall time, interleaved runs, startup subtracted.",
+ "environment": {
+  "date": "2026-09-17",
+  "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "compiler_checkout_revision": "ad43b117",
+  "runs_per_median": 7,
+  "timeout_seconds": 120.0,
+  "engine_tree": "see \"binary\" / \"stages\": each binary names the commit it was built from"
+ },
+ "compiler": {
+  "repository": "z-lang",
+  "revision": "ad43b117",
+  "stage": "Stage 0 (the TypeScript compiler run by bun); no native compiler build was used"
+ },
+ "build": "bun run z build z/tools/zjsz --release, against an isolated clone of the compiler at the revision above",
+ "stages": [
+  {
+   "name": "base",
+   "commit": "cb06736",
+   "change": "The previous checkpoint's engine (97d9e1b) plus the measurement flags; the engine's behaviour is unchanged."
+  },
+  {
+   "name": "atoms",
+   "commit": "a408dbd",
+   "change": "The names the engine looks up constantly are atoms it holds."
+  },
+  {
+   "name": "calls",
+   "commit": "0ed992b",
+   "change": "Engine calls with up to two arguments write them into registers."
+  },
+  {
+   "name": "arenas",
+   "commit": "f7eb0b7",
+   "change": "A sweep sizes its arena once; small heaps flip between two kept arenas."
+  },
+  {
+   "name": "promise",
+   "commit": "39bc925",
+   "change": "A promise is two cells, a reaction one, a job none."
+  },
+  {
+   "name": "suspend",
+   "commit": "7b35c70",
+   "change": "Async bodies hand their driver a value; a suspension reuses its register array."
+  },
+  {
+   "name": "plain",
+   "commit": "1e9cbe1",
+   "change": "Awaiting a non-object value queues its continuation directly."
+  },
+  {
+   "name": "ints",
+   "commit": "81cd092",
+   "change": "An int32 becomes a string in one allocation."
+  },
+  {
+   "name": "table",
+   "commit": "06dbbd2",
+   "change": "The handle table has an extent a sweep can cut back."
+  },
+  {
+   "name": "queue",
+   "commit": "f42d6d5",
+   "change": "The job queue reuses its own storage."
+  }
+ ],
+ "flags": [],
+ "startup_seconds_subtracted": {
+  "base": 0.0030471663922071457,
+  "atoms": 0.004309666343033314,
+  "calls": 0.003069499507546425,
+  "arenas": 0.0031340839341282845,
+  "promise": 0.0033440403640270233,
+  "suspend": 0.0033516250550746918,
+  "plain": 0.0029865847900509834,
+  "ints": 0.003282541409134865,
+  "table": 0.00340887438505888,
+  "queue": 0.0038278326392173767
+ },
+ "workloads": {
+  "await-prim": {
+   "operations": 200000,
+   "wall_seconds": {
+    "base": 0.07650774996727705,
+    "atoms": 0.05584912467747927,
+    "calls": 0.055276417173445225,
+    "arenas": 0.053190749138593674,
+    "promise": 0.04114750027656555,
+    "suspend": 0.028877291828393936,
+    "plain": 0.02072887495160103,
+    "ints": 0.020868916995823383,
+    "table": 0.020657291635870934,
+    "queue": 0.02159908413887024
+   },
+   "ns_per_operation": {
+    "base": 367.3029178753495,
+    "atoms": 257.69729167222977,
+    "calls": 261.034588329494,
+    "arenas": 250.28332602232695,
+    "promise": 189.01729956269264,
+    "suspend": 127.62833386659622,
+    "plain": 88.71145080775023,
+    "ints": 87.93187793344259,
+    "table": 86.24208625406027,
+    "queue": 88.85625749826431
+   }
+  },
+  "await-settled": {
+   "operations": 200000,
+   "wall_seconds": {
+    "base": 0.05992462579160929,
+    "atoms": 0.040064833126962185,
+    "calls": 0.04063104186207056,
+    "arenas": 0.03798404149711132,
+    "promise": 0.03677187580615282,
+    "suspend": 0.024475209414958954,
+    "plain": 0.024603665806353092,
+    "ints": 0.024864500388503075,
+    "table": 0.024560500867664814,
+    "queue": 0.025814457796514034
+   },
+   "ns_per_operation": {
+    "base": 284.3872969970107,
+    "atoms": 178.77583391964436,
+    "calls": 187.80771177262068,
+    "arenas": 174.24978781491518,
+    "promise": 167.139177210629,
+    "suspend": 105.61792179942131,
+    "plain": 108.08540508151054,
+    "ints": 107.90979489684105,
+    "table": 105.75813241302967,
+    "queue": 109.93312578648329
+   }
+  },
+  "await-fresh": {
+   "operations": 200000,
+   "wall_seconds": {
+    "base": 0.0847281664609909,
+    "atoms": 0.0639694994315505,
+    "calls": 0.0633952496573329,
+    "arenas": 0.06228245794773102,
+    "promise": 0.05035474989563227,
+    "suspend": 0.037599749863147736,
+    "plain": 0.036628167144954205,
+    "ints": 0.03797341603785753,
+    "table": 0.03701929189264774,
+    "queue": 0.03730595763772726
+   },
+   "ns_per_operation": {
+    "base": 408.4050003439188,
+    "atoms": 298.29916544258595,
+    "calls": 301.62875074893236,
+    "arenas": 295.74187006801367,
+    "promise": 235.05354765802622,
+    "suspend": 171.24062404036522,
+    "plain": 168.2079117745161,
+    "ints": 173.45437314361334,
+    "table": 168.05208753794432,
+    "queue": 167.39062499254942
+   }
+  },
+  "await-suspended": {
+   "operations": 100000,
+   "wall_seconds": {
+    "base": 0.09436783287674189,
+    "atoms": 0.07388474978506565,
+    "calls": 0.07186775002628565,
+    "arenas": 0.06923420913517475,
+    "promise": 0.056000624783337116,
+    "suspend": 0.043427166528999805,
+    "plain": 0.038368125446140766,
+    "ints": 0.03823041543364525,
+    "table": 0.0384334996342659,
+    "queue": 0.03886654134839773
+   },
+   "ns_per_operation": {
+    "base": 913.2066648453474,
+    "atoms": 695.7508344203234,
+    "calls": 687.9825051873922,
+    "arenas": 661.0012520104647,
+    "promise": 526.5658441931009,
+    "suspend": 400.75541473925114,
+    "plain": 353.8154065608978,
+    "ints": 349.47874024510384,
+    "table": 350.2462524920702,
+    "queue": 350.38708709180355
+   }
+  },
+  "async-gen": {
+   "operations": 200000,
+   "wall_seconds": {
+    "base": 0.2619215836748481,
+    "atoms": 0.1865132926031947,
+    "calls": 0.18611849937587976,
+    "arenas": 0.17970412503927946,
+    "promise": 0.14110395777970552,
+    "suspend": 0.0989467091858387,
+    "plain": 0.08149462472647429,
+    "ints": 0.08130154013633728,
+    "table": 0.08186429180204868,
+    "queue": 0.08237929176539183
+   },
+   "ns_per_operation": {
+    "base": 1294.3720864132047,
+    "atoms": 911.018131300807,
+    "calls": 915.2449993416667,
+    "arenas": 882.8502055257559,
+    "promise": 688.7995870783925,
+    "suspend": 477.97542065382004,
+    "plain": 392.5401996821165,
+    "ints": 390.0949936360121,
+    "table": 392.277087084949,
+    "queue": 392.75729563087225
+   }
+  },
+  "then-chain": {
+   "operations": 200000,
+   "wall_seconds": {
+    "base": 0.09459787514060736,
+    "atoms": 0.08799883257597685,
+    "calls": 0.08546033408492804,
+    "arenas": 0.07805904187262058,
+    "promise": 0.04073191713541746,
+    "suspend": 0.04050295893102884,
+    "plain": 0.04035391565412283,
+    "ints": 0.04091149941086769,
+    "table": 0.042676541954278946,
+    "queue": 0.04186108335852623
+   },
+   "ns_per_operation": {
+    "base": 457.75354374200106,
+    "atoms": 418.4458311647177,
+    "calls": 411.95417288690805,
+    "arenas": 374.6247896924615,
+    "promise": 186.9393838569522,
+    "suspend": 185.75666937977076,
+    "plain": 186.83665432035923,
+    "ints": 188.14479000866413,
+    "table": 196.33833784610033,
+    "queue": 190.16625359654427
+   }
+  },
+  "then-loop": {
+   "operations": 200000,
+   "wall_seconds": {
+    "base": 0.10304233245551586,
+    "atoms": 0.10299741569906473,
+    "calls": 0.09985437523573637,
+    "arenas": 0.09445033315569162,
+    "promise": 0.06858129147440195,
+    "suspend": 0.0700172083452344,
+    "plain": 0.06885720789432526,
+    "ints": 0.06893020775169134,
+    "table": 0.0698021249845624,
+    "queue": 0.06972708273679018
+   },
+   "ns_per_operation": {
+    "base": 499.9758303165436,
+    "atoms": 493.4387467801571,
+    "calls": 483.9243786409497,
+    "arenas": 456.5812461078167,
+    "promise": 326.18625555187464,
+    "suspend": 333.3279164507985,
+    "plain": 329.35311552137136,
+    "ints": 328.2383317127824,
+    "table": 331.9662529975176,
+    "queue": 329.496250487864
+   }
+  },
+  "combinators": {
+   "operations": 100000,
+   "wall_seconds": {
+    "base": 0.10414608381688595,
+    "atoms": 0.09485858306288719,
+    "calls": 0.08381887432187796,
+    "arenas": 0.08066558372229338,
+    "promise": 0.056678375229239464,
+    "suspend": 0.057028415612876415,
+    "plain": 0.05714033357799053,
+    "ints": 0.05720820836722851,
+    "table": 0.05501904245465994,
+    "queue": 0.05587408225983381
+   },
+   "ns_per_operation": {
+    "base": 1010.989174246788,
+    "atoms": 905.4891671985388,
+    "calls": 807.4937481433153,
+    "arenas": 775.3149978816509,
+    "promise": 533.3433486521244,
+    "suspend": 536.7679055780172,
+    "plain": 541.5374878793955,
+    "ints": 539.2566695809364,
+    "table": 516.1016806960106,
+    "queue": 520.4624962061644
+   }
+  },
+  "churn-small": {
+   "operations": 3000000,
+   "wall_seconds": {
+    "base": 0.2924056248739362,
+    "atoms": 0.2884515421465039,
+    "calls": 0.2915391670539975,
+    "arenas": 0.2845439165830612,
+    "promise": 0.28202504198998213,
+    "suspend": 0.28866695892065763,
+    "plain": 0.2854689583182335,
+    "ints": 0.21183545794337988,
+    "table": 0.20917204208672047,
+    "queue": 0.21102395746856928
+   },
+   "ns_per_operation": {
+    "base": 96.45281949390967,
+    "atoms": 94.71395860115688,
+    "calls": 96.15655584881704,
+    "arenas": 93.8032775496443,
+    "promise": 92.8936672086517,
+    "suspend": 95.10511128852765,
+    "plain": 94.16079117606084,
+    "ints": 69.51763884474833,
+    "table": 68.58772256722052,
+    "queue": 69.0653749431173
+   }
+  },
+  "churn-retained": {
+   "operations": 1000000,
+   "wall_seconds": {
+    "base": 0.1944017093628645,
+    "atoms": 0.19138799980282784,
+    "calls": 0.19299220852553844,
+    "arenas": 0.18785125017166138,
+    "promise": 0.18719616625458002,
+    "suspend": 0.18531945813447237,
+    "plain": 0.18733299989253283,
+    "ints": 0.187394667416811,
+    "table": 0.1876745829358697,
+    "queue": 0.18860524985939264
+   },
+   "ns_per_operation": {
+    "base": 191.35454297065735,
+    "atoms": 187.07833345979452,
+    "calls": 189.92270901799202,
+    "arenas": 184.7171662375331,
+    "promise": 183.852125890553,
+    "suspend": 181.96783307939768,
+    "plain": 184.34641510248184,
+    "ints": 184.11212600767612,
+    "table": 184.2657085508108,
+    "queue": 184.77741722017527
+   }
+  }
+ }
+}

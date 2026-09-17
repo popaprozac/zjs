@@ -4721,6 +4721,21 @@ export struct Runtime {
     return cellValue(shared);
   }
 
+  // Bytes held by the runtime's own arrays outside the heap: registers,
+  // frames, handlers, roots, the job queue, the atom table, and compiled
+  // code. For reports.
+  function runtimeBytesHeld(): f64 {
+    let held: f64 = f64(this.regStack.capacity) * 8.0 + f64(this.frames.capacity) * 80.0 + f64(this.tryStack.capacity) * 24.0;
+    held = held + f64(this.tempRoots.capacity) * 8.0 + f64(this.jobs.capacity) * 8.0 + f64(this.atoms.capacity) * 4.0;
+    held = held + f64(this.codeSegment.capacity) * 4.0 + f64(this.globals.capacity) * 40.0 + f64(this.gcPauses.capacity) * 8.0;
+    let index: usize = 0;
+    while (index < this.functions.length) {
+      held = held + f64(this.functions[index].constants.capacity) * 8.0 + f64(this.functions[index].propertyNames.capacity) * 4.0;
+      index = index + 1;
+    }
+    return held;
+  }
+
   // Run every queued job, including those queued while running. A job
   // that has run keeps nothing alive: its queue slot is cleared as it is
   // taken, the job is held for its own run only, and the drained front

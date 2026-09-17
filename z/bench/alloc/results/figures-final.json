@@ -1,0 +1,1671 @@
+{
+ "what": "One binary, every workload: uninstrumented median wall time with startup subtracted; then, from separate instrumented runs, the engine's collection figures (--gc-stats), its storage figures at the end of the run (--mem-stats), and the allocator's calls and bytes by calling site (tools/alloc-attr.c).",
+ "environment": {
+  "date": "2026-09-17",
+  "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "compiler_checkout_revision": "ad43b117",
+  "runs_per_median": 7,
+  "timeout_seconds": 120.0,
+  "engine_tree": "see \"binary\" / \"stages\": each binary names the commit it was built from"
+ },
+ "binary": "zjsz built from the tree at the commit that added this file (the queue stage plus --mem-stats)",
+ "flags_for_timing": [],
+ "flags_for_collection_and_memory": [
+  "--gc-stats",
+  "--mem-stats"
+ ],
+ "startup_seconds_subtracted": 0.003718082793056965,
+ "workloads": {
+  "await-prim": {
+   "operations": 200000,
+   "wall_seconds": 0.02135258261114359,
+   "ns_per_operation": 88.17249909043312,
+   "collection": {
+    "collections": 49,
+    "collecting_us": 940,
+    "pause_p50_us": 16,
+    "pause_p95_us": 34,
+    "pause_p99_us": 40,
+    "pause_max_us": 40,
+    "cells_allocated": 200828,
+    "slots_allocated": 1002907,
+    "engine_in_use_kib": 126
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 37,
+    "in_use_kib": 126,
+    "held_arena_kib": 449,
+    "held_spare_arena_kib": 288,
+    "held_table_kib": 176,
+    "held_strings_kib": 15,
+    "held_other_kib": 82,
+    "allocator_in_use_kib": 1074,
+    "allocator_reserved_kib": 20480,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3184,
+    "footprint_now_kib": 2272,
+    "resident_peak_kib": 3184
+   },
+   "peak_resident_kib_by_time_l": 3104,
+   "allocator": {
+    "malloc_calls": 942,
+    "calloc_calls": 169,
+    "realloc_calls": 902,
+    "free_calls": 1648,
+    "bytes_requested": 1983324,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 1104512,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 49,
+      "bytes_requested": 67640,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 11,
+      "bytes_requested": 32752,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     }
+    ]
+   }
+  },
+  "await-settled": {
+   "operations": 200000,
+   "wall_seconds": 0.025252792052924633,
+   "ns_per_operation": 107.67354629933834,
+   "collection": {
+    "collections": 49,
+    "collecting_us": 961,
+    "pause_p50_us": 17,
+    "pause_p95_us": 34,
+    "pause_p99_us": 39,
+    "pause_max_us": 39,
+    "cells_allocated": 200831,
+    "slots_allocated": 1002915,
+    "engine_in_use_kib": 126
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 38,
+    "in_use_kib": 126,
+    "held_arena_kib": 450,
+    "held_spare_arena_kib": 288,
+    "held_table_kib": 176,
+    "held_strings_kib": 15,
+    "held_other_kib": 82,
+    "allocator_in_use_kib": 1090,
+    "allocator_reserved_kib": 16384,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3104,
+    "footprint_now_kib": 2192,
+    "resident_peak_kib": 3104
+   },
+   "peak_resident_kib_by_time_l": 3168,
+   "allocator": {
+    "malloc_calls": 947,
+    "calloc_calls": 169,
+    "realloc_calls": 906,
+    "free_calls": 1655,
+    "bytes_requested": 1985495,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 1121760,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 49,
+      "bytes_requested": 67644,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 11,
+      "bytes_requested": 65504,
+      "frames": [
+       "Z___z_module_2_Runtime_queueValue",
+       "Z___z_module_2_Runtime_attachReaction",
+       "Z___z_module_2_Runtime_asyncStep"
+      ]
+     }
+    ]
+   }
+  },
+  "await-fresh": {
+   "operations": 200000,
+   "wall_seconds": 0.03773616719990969,
+   "ns_per_operation": 170.0904220342636,
+   "collection": {
+    "collections": 146,
+    "collecting_us": 2820,
+    "pause_p50_us": 18,
+    "pause_p95_us": 30,
+    "pause_p99_us": 34,
+    "pause_max_us": 41,
+    "cells_allocated": 600828,
+    "slots_allocated": 2602907,
+    "engine_in_use_kib": 217
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 38,
+    "in_use_kib": 217,
+    "held_arena_kib": 288,
+    "held_spare_arena_kib": 225,
+    "held_table_kib": 192,
+    "held_strings_kib": 15,
+    "held_other_kib": 83,
+    "allocator_in_use_kib": 864,
+    "allocator_reserved_kib": 16384,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3120,
+    "footprint_now_kib": 2208,
+    "resident_peak_kib": 3120
+   },
+   "peak_resident_kib_by_time_l": 3088,
+   "allocator": {
+    "malloc_calls": 1043,
+    "calloc_calls": 169,
+    "realloc_calls": 904,
+    "free_calls": 1751,
+    "bytes_requested": 1689639,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 887664,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 146,
+      "bytes_requested": 201500,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 12,
+      "bytes_requested": 65520,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     }
+    ]
+   }
+  },
+  "await-suspended": {
+   "operations": 100000,
+   "wall_seconds": 0.0396230835467577,
+   "ns_per_operation": 359.05000753700733,
+   "collection": {
+    "collections": 171,
+    "collecting_us": 3355,
+    "pause_p50_us": 18,
+    "pause_p95_us": 29,
+    "pause_p99_us": 44,
+    "pause_max_us": 58,
+    "cells_allocated": 700840,
+    "slots_allocated": 3202946,
+    "engine_in_use_kib": 129
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 38,
+    "in_use_kib": 129,
+    "held_arena_kib": 225,
+    "held_spare_arena_kib": 288,
+    "held_table_kib": 192,
+    "held_strings_kib": 15,
+    "held_other_kib": 116,
+    "allocator_in_use_kib": 897,
+    "allocator_reserved_kib": 28672,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3328,
+    "footprint_now_kib": 2400,
+    "resident_peak_kib": 3328
+   },
+   "peak_resident_kib_by_time_l": 3056,
+   "allocator": {
+    "malloc_calls": 1082,
+    "calloc_calls": 171,
+    "realloc_calls": 943,
+    "free_calls": 1816,
+    "bytes_requested": 1806674,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 926848,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 114,
+      "bytes_requested": 158232,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 57,
+      "bytes_requested": 79140,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_callPlaced"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     }
+    ]
+   }
+  },
+  "async-gen": {
+   "operations": 200000,
+   "wall_seconds": 0.0830896245315671,
+   "ns_per_operation": 396.85770869255066,
+   "collection": {
+    "collections": 390,
+    "collecting_us": 7411,
+    "pause_p50_us": 18,
+    "pause_p95_us": 26,
+    "pause_p99_us": 41,
+    "pause_max_us": 49,
+    "cells_allocated": 1600840,
+    "slots_allocated": 7002970,
+    "engine_in_use_kib": 252
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 38,
+    "in_use_kib": 252,
+    "held_arena_kib": 288,
+    "held_spare_arena_kib": 225,
+    "held_table_kib": 176,
+    "held_strings_kib": 15,
+    "held_other_kib": 86,
+    "allocator_in_use_kib": 851,
+    "allocator_reserved_kib": 16384,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3056,
+    "footprint_now_kib": 2144,
+    "resident_peak_kib": 3056
+   },
+   "peak_resident_kib_by_time_l": 3008,
+   "allocator": {
+    "malloc_calls": 1301,
+    "calloc_calls": 169,
+    "realloc_calls": 925,
+    "free_calls": 2023,
+    "bytes_requested": 1998686,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 872944,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 390,
+      "bytes_requested": 538220,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 11,
+      "bytes_requested": 32752,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_generatorResume"
+      ]
+     }
+    ]
+   }
+  },
+  "then-chain": {
+   "operations": 200000,
+   "wall_seconds": 0.040605165995657444,
+   "ns_per_operation": 184.4354160130024,
+   "collection": {
+    "collections": 5,
+    "collecting_us": 7414,
+    "pause_p50_us": 518,
+    "pause_p95_us": 5107,
+    "pause_p99_us": 5107,
+    "pause_max_us": 5107,
+    "cells_allocated": 600825,
+    "slots_allocated": 2602878,
+    "engine_in_use_kib": 34610
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 19073,
+    "in_use_kib": 34610,
+    "held_arena_kib": 45354,
+    "held_spare_arena_kib": 0,
+    "held_table_kib": 20480,
+    "held_strings_kib": 15,
+    "held_other_kib": 81,
+    "allocator_in_use_kib": 65986,
+    "allocator_reserved_kib": 86320,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 69504,
+    "footprint_now_kib": 68656,
+    "resident_peak_kib": 69504
+   },
+   "peak_resident_kib_by_time_l": 69504,
+   "allocator": {
+    "malloc_calls": 904,
+    "calloc_calls": 169,
+    "realloc_calls": 902,
+    "free_calls": 1610,
+    "bytes_requested": 112160850,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 72523136,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 10,
+      "bytes_requested": 160,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_28_defineGetter"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 10,
+      "bytes_requested": 65472,
+      "frames": [
+       "Z___z_module_2_Runtime_queueValue",
+       "Z___z_module_2_Runtime_settlePromise",
+       "__z_module_29_evaluate"
+      ]
+     }
+    ]
+   }
+  },
+  "then-loop": {
+   "operations": 200000,
+   "wall_seconds": 0.07129512447863817,
+   "ns_per_operation": 337.88520842790604,
+   "collection": {
+    "collections": 537,
+    "collecting_us": 10870,
+    "pause_p50_us": 19,
+    "pause_p95_us": 24,
+    "pause_p99_us": 35,
+    "pause_max_us": 141,
+    "cells_allocated": 2200821,
+    "slots_allocated": 8402859,
+    "engine_in_use_kib": 136
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 37,
+    "in_use_kib": 136,
+    "held_arena_kib": 184,
+    "held_spare_arena_kib": 288,
+    "held_table_kib": 192,
+    "held_strings_kib": 15,
+    "held_other_kib": 90,
+    "allocator_in_use_kib": 834,
+    "allocator_reserved_kib": 20480,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3200,
+    "footprint_now_kib": 2272,
+    "resident_peak_kib": 3200
+   },
+   "peak_resident_kib_by_time_l": 3072,
+   "allocator": {
+    "malloc_calls": 1431,
+    "calloc_calls": 170,
+    "realloc_calls": 912,
+    "free_calls": 2144,
+    "bytes_requested": 2189580,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 851472,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 537,
+      "bytes_requested": 741080,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_callPlaced"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 12,
+      "bytes_requested": 65520,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_callPlaced"
+      ]
+     }
+    ]
+   }
+  },
+  "combinators": {
+   "operations": 100000,
+   "wall_seconds": 0.057124292477965355,
+   "ns_per_operation": 534.0620968490839,
+   "collection": {
+    "collections": 303,
+    "collecting_us": 7340,
+    "pause_p50_us": 23,
+    "pause_p95_us": 29,
+    "pause_p99_us": 38,
+    "pause_max_us": 126,
+    "cells_allocated": 1270821,
+    "slots_allocated": 5967860,
+    "engine_in_use_kib": 171
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 43,
+    "in_use_kib": 171,
+    "held_arena_kib": 228,
+    "held_spare_arena_kib": 288,
+    "held_table_kib": 192,
+    "held_strings_kib": 15,
+    "held_other_kib": 118,
+    "allocator_in_use_kib": 899,
+    "allocator_reserved_kib": 16384,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3184,
+    "footprint_now_kib": 2256,
+    "resident_peak_kib": 3184
+   },
+   "peak_resident_kib_by_time_l": 3104,
+   "allocator": {
+    "malloc_calls": 1206,
+    "calloc_calls": 172,
+    "realloc_calls": 938,
+    "free_calls": 1937,
+    "bytes_requested": 1988756,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 926304,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 303,
+      "bytes_requested": 416952,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_callPlaced"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 12,
+      "bytes_requested": 65520,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "Z___z_module_2_Runtime_callPlaced"
+      ]
+     }
+    ]
+   }
+  },
+  "churn-small": {
+   "operations": 3000000,
+   "wall_seconds": 0.21730824932456017,
+   "ns_per_operation": 71.19672217716773,
+   "collection": {
+    "collections": 976,
+    "collecting_us": 31731,
+    "pause_p50_us": 31,
+    "pause_p95_us": 40,
+    "pause_p99_us": 56,
+    "pause_max_us": 130,
+    "cells_allocated": 4000824,
+    "slots_allocated": 8002855,
+    "engine_in_use_kib": 180
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 37,
+    "in_use_kib": 180,
+    "held_arena_kib": 144,
+    "held_spare_arena_kib": 143,
+    "held_table_kib": 176,
+    "held_strings_kib": 118,
+    "held_other_kib": 58,
+    "allocator_in_use_kib": 702,
+    "allocator_reserved_kib": 24576,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 3056,
+    "footprint_now_kib": 2160,
+    "resident_peak_kib": 3056
+   },
+   "peak_resident_kib_by_time_l": 2928,
+   "allocator": {
+    "malloc_calls": 2001891,
+    "calloc_calls": 171,
+    "realloc_calls": 897,
+    "free_calls": 2002593,
+    "bytes_requested": 17473609,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 717120,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 1000000,
+      "bytes_requested": 11000000,
+      "frames": [
+       "Z___z_module_2_Runtime_toStringValue",
+       "Z___z_module_2_Runtime_concatStrings",
+       "Z___z_module_2_Runtime_runFrames"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 1000000,
+      "bytes_requested": 3915954,
+      "frames": [
+       "Z___z_module_2_Runtime_concatStrings",
+       "Z___z_module_2_Runtime_runFrames",
+       "__z_module_29_evaluate"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 976,
+      "bytes_requested": 1354728,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "__z_module_29_evaluate"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     }
+    ]
+   }
+  },
+  "churn-retained": {
+   "operations": 1000000,
+   "wall_seconds": 0.189946916885674,
+   "ns_per_operation": 186.22883409261703,
+   "collection": {
+    "collections": 8,
+    "collecting_us": 30922,
+    "pause_p50_us": 6083,
+    "pause_p95_us": 9170,
+    "pause_p99_us": 9170,
+    "pause_max_us": 9170,
+    "cells_allocated": 2300824,
+    "slots_allocated": 10251427,
+    "engine_in_use_kib": 38601
+   },
+   "memory_kib_at_end_of_run": {
+    "live_at_last_collection_kib": 21051,
+    "in_use_kib": 38601,
+    "held_arena_kib": 50869,
+    "held_spare_arena_kib": 0,
+    "held_table_kib": 25088,
+    "held_strings_kib": 15,
+    "held_other_kib": 50,
+    "allocator_in_use_kib": 89666,
+    "allocator_reserved_kib": 117712,
+    "allocator_peak_in_use_kib": 0,
+    "resident_now_kib": 133824,
+    "footprint_now_kib": 133024,
+    "resident_peak_kib": 133824
+   },
+   "peak_resident_kib_by_time_l": 135376,
+   "allocator": {
+    "malloc_calls": 943,
+    "calloc_calls": 172,
+    "realloc_calls": 936,
+    "free_calls": 1657,
+    "bytes_requested": 341604906,
+    "allocator_live_at_exit": 26592,
+    "allocator_peak_live": 156102576,
+    "sites": [
+     {
+      "kind": "malloc",
+      "calls": 216,
+      "bytes_requested": 1625,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 177,
+      "bytes_requested": 2944,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images"
+      ]
+     },
+     {
+      "kind": "calloc",
+      "calls": 61,
+      "bytes_requested": 1952,
+      "frames": [
+       "_ZL24realizeClassWithoutSwiftP10objc_classS0_",
+       "map_images_nolock",
+       "map_images",
+       "___ZZN5dyld412RuntimeState16setObjCNotifiersENS_16ReadOnlyCallbackIPFvPKcPK11mach_headerEEENS1_IPFvS6_PvS6_PKvEEENS1_IPFvPK29_dyld_objc_notify_mapped_infoEEENS1_IPFvjSI_U13block_pointerFvjEEEEENK3$_0clEv_block_invoke"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 44,
+      "bytes_requested": 489,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 43,
+      "bytes_requested": 688,
+      "frames": [
+       "Z___z_module_4_Heap_objectSet",
+       "Z___z_module_4_Heap_objectDefine",
+       "__z_module_27_defineOp"
+      ]
+     },
+     {
+      "kind": "malloc",
+      "calls": 25,
+      "bytes_requested": 104,
+      "frames": [
+       "__z_module_4_bytesOf",
+       "Z___z_module_2_Runtime_atomOf",
+       "__z_module_18_defineUnary"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 21,
+      "bytes_requested": 14240,
+      "frames": [
+       "Z___z_module_2_Runtime_internLatin1",
+       "Z___z_module_2_Runtime_atomOf",
+       "Z___z_module_2_Runtime_defineMethod"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 19,
+      "bytes_requested": 8388592,
+      "frames": [
+       "Z___z_module_2_Runtime_collectGarbage",
+       "Z___z_module_2_Runtime_runFrames",
+       "__z_module_29_evaluate"
+      ]
+     },
+     {
+      "kind": "realloc",
+      "calls": 15,
+      "bytes_requested": 1048544,
+      "frames": [
+       "Z___z_module_4_Heap_pushMark",
+       "Z___z_module_4_Heap_markHandle",
+       "Z___z_module_2_Runtime_collectGarbage"
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

@@ -277,7 +277,9 @@ here. The common `String.prototype` methods -- search, slicing, split,
 replace with a string, case mapping, trim, repeat, padding, concat --
 work on a narrow string's storage bytes directly and build a narrow
 result in one pass; wide strings take the units path, same algorithms
-generic over the element. `z/tools/malloc-count.c` is a dylib to
+generic over the element. `z/tools/alloc-attr.c` attributes allocator
+calls and bytes to their calling sites (see `z/bench/alloc`), and
+`z/tools/malloc-count.c` is a dylib to
 `DYLD_INSERT_LIBRARIES` when counting allocator calls. `Date`: the time value lives in a hidden slot,
 the arithmetic is the specification's over `f64`, the wall clock and the
 local zone's offset and abbreviation come from libc through a three-
@@ -564,7 +566,7 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
 ./z/gc-check.sh                   # collector checks on engine counters (z/tests/gc)
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 ./z/spike/run.sh                  # Phase 0 measurements
-./z/build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--gc-floor N] [--gc-growth P] [--expose-gc] file.js
+./z/build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats] [--gc-floor N] [--gc-growth P] [--expose-gc] file.js
                                   # --dict-threshold: property count at which an
                                   #   object leaves its hidden class (measurement)
                                   # --stats: slots, cells, dictionaries, collections,
@@ -572,6 +574,9 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
                                   # --gc-stats: times every collection; prints their
                                   #   count, total, pause percentiles, cells and
                                   #   slots allocated, engine storage in use
+                                  # --mem-stats: storage alive, in use, and held by
+                                  #   capacity; the allocator's in use and reserved;
+                                  #   resident and footprint now, and resident peak
                                   # --gc-floor, --gc-growth: the collection policy's
                                   #   floor in cells and survivor multiple in
                                   #   percent (measurement)

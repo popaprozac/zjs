@@ -1,0 +1,85 @@
+{
+ "what": "Engine cells and slots allocated, cumulative over the run, per operation.",
+ "environment": {
+  "date": "2026-09-17",
+  "machine": "macOS-26.4-arm64-arm-64bit-Mach-O",
+  "processor": "arm",
+  "compiler_checkout_revision": "ad43b117",
+  "runs_per_median": 7,
+  "timeout_seconds": 120.0,
+  "engine_tree": "see \"binary\" / \"stages\": each binary names the commit it was built from"
+ },
+ "binary": "zjsz built from the tree at the commit that added this file (the queue stage plus --mem-stats)",
+ "workloads": {
+  "await-prim": {
+   "operations": 200000,
+   "cells_allocated": 200828,
+   "slots_allocated": 1002907,
+   "cells_per_operation": 1.00414,
+   "slots_per_operation": 5.014535
+  },
+  "await-settled": {
+   "operations": 200000,
+   "cells_allocated": 200831,
+   "slots_allocated": 1002915,
+   "cells_per_operation": 1.004155,
+   "slots_per_operation": 5.014575
+  },
+  "await-fresh": {
+   "operations": 200000,
+   "cells_allocated": 600828,
+   "slots_allocated": 2602907,
+   "cells_per_operation": 3.00414,
+   "slots_per_operation": 13.014535
+  },
+  "await-suspended": {
+   "operations": 100000,
+   "cells_allocated": 700840,
+   "slots_allocated": 3202946,
+   "cells_per_operation": 7.0084,
+   "slots_per_operation": 32.02946
+  },
+  "async-gen": {
+   "operations": 200000,
+   "cells_allocated": 1600840,
+   "slots_allocated": 7002970,
+   "cells_per_operation": 8.0042,
+   "slots_per_operation": 35.01485
+  },
+  "then-chain": {
+   "operations": 200000,
+   "cells_allocated": 600825,
+   "slots_allocated": 2602878,
+   "cells_per_operation": 3.004125,
+   "slots_per_operation": 13.01439
+  },
+  "then-loop": {
+   "operations": 200000,
+   "cells_allocated": 2200821,
+   "slots_allocated": 8402859,
+   "cells_per_operation": 11.004105,
+   "slots_per_operation": 42.014295
+  },
+  "combinators": {
+   "operations": 100000,
+   "cells_allocated": 1270821,
+   "slots_allocated": 5967860,
+   "cells_per_operation": 12.70821,
+   "slots_per_operation": 59.6786
+  },
+  "churn-small": {
+   "operations": 3000000,
+   "cells_allocated": 4000824,
+   "slots_allocated": 8002855,
+   "cells_per_operation": 1.333608,
+   "slots_per_operation": 2.6676183333333334
+  },
+  "churn-retained": {
+   "operations": 1000000,
+   "cells_allocated": 2300824,
+   "slots_allocated": 10251427,
+   "cells_per_operation": 2.300824,
+   "slots_per_operation": 10.251427
+  }
+ }
+}
