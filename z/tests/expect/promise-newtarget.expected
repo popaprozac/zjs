@@ -1,0 +1,17 @@
+getter throw propagates: RangeError | reads 1 | executor ran 0
+missing executor is reported first: TypeError | reads 0
+non-callable executor is reported first: TypeError | reads 0
+prototype from the getter: true | prototype,executor
+non-object prototype falls back: true
+plain bound new target, no prototype at all: true
+new bound Promise: true true true
+bound Promise called: TypeError
+bound Promise with the throwing new target: RangeError | reads 1
+and a bad executor still first: TypeError | reads 0
+bound Promise, answering new target: true
+bound twice: true true
+bound subclass: true sub true true
+static resolve through a bound constructor: true
+settles normally: {"v":1}
+bound subclass settles: s | then result is a Sub: true
+all through a bound constructor: 1,bp

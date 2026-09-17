@@ -92,7 +92,30 @@ getters and setters (object literals included), `[[DefineOwnProperty]]`
 with its validation, own keys in specification order, extensibility flags,
 strict-mode rejection of read-only writes; `Object`'s statics and `Reflect`;
 `Function` compiled from source, `bind`, and host functions that are not
-constructors. The `arguments` object (an array tagged for
+constructors. A function object's [[Prototype]] is separate from its
+`prototype` property: it is Function.prototype unless a class heritage,
+`bind`, or `setPrototypeOf` gave it another (null included), and
+property reads and writes, inherited accessors (against the receiver),
+statics, `super()` (the active function's [[Prototype]] when it runs),
+`isPrototypeOf`, and `instanceof` all follow it; `Object.setPrototypeOf`
+and `Reflect.setPrototypeOf` refuse a cycle or a non-extensible target,
+one by throwing and the other by answering false. An own property of a
+function hides the virtual `name` / `length` / `prototype` and whatever
+is inherited, even when it holds undefined. A bound function is an
+instance of one trampoline over [target, boundThis, arguments]. Whether
+it was called or constructed comes from the construct protocol, which
+hands a builtin its new target, never from the shape of `this`: a call
+uses boundThis, a construct ignores it and constructs the target, with
+the target as new target only when the new target was the bound function
+itself. It is constructable exactly when its target is, inherits from
+what its target inherits from, and has no `prototype` of its own (the
+program may define one; construction never reads it). `length` comes
+from the target's own `length` when that is a Number (infinity kept),
+`name` from the target's `name` when that is a String, read in that
+order. `instanceof` is InstanceofOperator throughout: a bound function
+asks its target, a custom `@@hasInstance` included, and any other
+callable's `prototype` is read each time and must be an object. The
+`arguments` object (an array tagged for
 `Object.prototype.toString`, shared with arrows through the environment)
 and rest parameters read the frame's actual arguments. `Symbol`: a symbol
 is a cell whose property key is a hidden atom (0xFF, a counter) linked
@@ -358,6 +381,8 @@ forms parse at all (the reference differs on each); `"é".length` is 1
 and every index, slice, and capture offset counts code units, `eval` of
 a lone surrogate returns it, and `toUpperCase` maps Latin-1 letters and
 expands the sharp s (the reference counts bytes and maps ASCII only);
+an instance made through a bound function is an `instanceof` that bound
+function, which asks its target (the reference says no);
 the oracle's dump renders a string as UTF-8 with its byte length, so
 well-formed text still compares, and the corpus keeps only cases whose
 values agree with node; a RegExp's `toString`
@@ -420,7 +445,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, bound functions' exact construct behaviour (they expose a `prototype`, and `instanceof` does not see through them), `Object.setPrototypeOf` on a function, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, `Object.prototype.__proto__` and `__proto__` in object literals, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, object-literal methods and accessors that refuse `new` (they are ordinary functions here, so their bindings construct too), naming an object-literal function from a computed symbol key, `setPrototypeOf` on arrays and other exotic objects (it reports success and changes nothing), direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and
