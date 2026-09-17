@@ -3349,11 +3349,15 @@ export struct Runtime {
       const callee = this.frames[index].callee;
       const env = this.frames[index].env;
       const newTarget = this.frames[index].newTarget;
+      const generator = this.frames[index].generator;
       this.heap.markValue(savedThis);
       this.heap.markValue(constructThis);
       this.heap.markValue(callee);
       this.heap.markHandle(env);
       this.heap.markValue(newTarget);
+      // A running generator or async body: its object (and record) may
+      // be referenced by nothing else during its first run.
+      this.heap.markHandle(generator);
       index = index + 1;
     }
     const hostThis = this.hostThis;
@@ -4126,7 +4130,13 @@ export struct Runtime {
     this.heap.setSlot(reaction, 0, int32Value(kind));
     this.heap.setSlot(reaction, 1, handler);
     this.heap.setSlot(reaction, 2, derived);
-    this.heap.setSlot(reaction, 3, int32Value(i32(gen)));
+    // The generator a driver reaction resumes, as a cell so the
+    // collector keeps a suspended body alive through its pending promise.
+    if (gen == 0) {
+      this.heap.setSlot(reaction, 3, int32Value(0));
+    } else {
+      this.heap.setSlot(reaction, 3, cellValue(gen));
+    }
     return cellValue(reaction);
   }
 
@@ -4228,19 +4238,19 @@ export struct Runtime {
   function runReaction(inout this, reaction: u32, argument: Value, isReject: boolean): void {
     const kind = asInt32(this.heap.slot(reaction, 0));
     if (kind == REACTION_ASYNC) {
-      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      const gen = asCell(this.heap.slot(reaction, 3));
       this.asyncStep(gen, argument, isReject ? 1 : 0);
       return;
     }
     if (kind == REACTION_ASYNC_GEN_AWAIT) {
-      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      const gen = asCell(this.heap.slot(reaction, 3));
       this.asyncGeneratorStep(gen, argument, isReject ? 1 : 0);
       return;
     }
     if (kind == REACTION_ASYNC_GEN_RETURN_DONE) {
       // AsyncGeneratorAwaitReturn settled: the front request gets the
       // awaited value as its done result, or the rejection.
-      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      const gen = asCell(this.heap.slot(reaction, 3));
       const record = this.generatorRecord(gen);
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
       const request = this.asyncGeneratorFront(record);
@@ -4263,14 +4273,14 @@ export struct Runtime {
       // The value of a return request into a suspended body settled:
       // the body resumes in return mode with it, or in throw mode with
       // the rejection.
-      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      const gen = asCell(this.heap.slot(reaction, 3));
       this.asyncGeneratorStep(gen, argument, isReject ? 1 : 2);
       return;
     }
     if (kind == REACTION_ASYNC_GEN_YIELD) {
       // The yielded value settled: a fulfillment answers the request, a
       // rejection is thrown into the body at the yield.
-      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      const gen = asCell(this.heap.slot(reaction, 3));
       if (isReject) {
         this.asyncGeneratorStep(gen, argument, 1);
         return;

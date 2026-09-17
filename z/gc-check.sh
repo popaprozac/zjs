@@ -20,5 +20,11 @@ cleared="$(stat "$out" weak-cleared)"; passes="$(stat "$out" ephemeron-passes)"
 echo "gc: forced: $(echo "$out" | head -1); weak-cleared $cleared, ephemeron-passes $passes"
 echo "$out" | grep -q "^kept,true" || { echo "gc: FAIL held key"; fail=1; }
 [ "$cleared" = 2000 ] || { echo "gc: FAIL expected 2000 cleared, got $cleared"; fail=1; }
+out="$("$ZJSZ" run --stats "$HERE/tests/gc/async-pressure.js" 2>&1)"
+collections="$(stat "$out" collections)"
+echo "gc: async: $(echo "$out" | head -1); collections $collections"
+echo "$out" | grep -q "^ab,y1,y2,d1,d2x,end:d3y" || { echo "gc: FAIL async bodies under pressure"; fail=1; }
+[ "$collections" -ge 3 ] || { echo "gc: FAIL too few collections in async pressure ($collections)"; fail=1; }
+
 [ "$fail" = 0 ] && echo "gc: ok"
 exit $fail
