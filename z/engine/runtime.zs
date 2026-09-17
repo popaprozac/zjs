@@ -302,6 +302,10 @@ export struct Runtime {
   // The intrinsic Promise constructor: the one constructor whose
   // capabilities the engine may make without observable steps.
   promiseCtor: u32;
+  // Function.prototype[@@hasInstance], which is neither writable nor
+  // configurable. When an instanceof finds it as the handler, the call
+  // is skipped for what it does, OrdinaryHasInstance.
+  hasInstanceBuiltin: u32;
   // The getter installed as Promise[Symbol.species]. While it is still
   // in place its call can be skipped: it returns its receiver and does
   // nothing else, so nothing can tell.
@@ -1478,7 +1482,15 @@ export struct Runtime {
       const bag = this.functionBag(handle);
       if (bag != 0) {
         const slot = this.heap.objectFindSlot(bag, atom);
-        if (slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)))) return this.lookupProperty(bag, atom, receiver);
+        if (slot >= 0) {
+          const held = this.heap.slot(bag, u32(slot));
+          if (!isDeleted(held)) {
+            if ((this.heap.attrOf(bag, u32(slot)) & PROP_ACCESSOR) == 0) return held;
+            const getter = this.heap.slot(asCell(held), 0);
+            if (!this.isCallable(getter)) return undefinedValue();
+            return this.callValue(getter, receiver, Array<Value>());
+          }
+        }
       }
       if (atom == this.atomPrototype && this.functionHasPrototype(cellValue(handle))) return cellValue(this.prototypeOf(handle));
       if (!this.functionVirtualDeleted(handle, atom)) {
@@ -1616,10 +1628,11 @@ export struct Runtime {
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
+      const owns = this.functionBagHas(handle, atom);
       // A function with no `prototype` of its own (a bound function, an
       // arrow, a method, most builtins) takes the assignment as an
       // ordinary property; a builtin constructor's is not writable.
-      if (atom == this.atomPrototype && this.functionBagHas(handle, atom) == false && this.functionHasPrototype(object)) {
+      if (atom == this.atomPrototype && !owns && this.functionHasPrototype(object)) {
         if (tag == TAG_HOST_FUNCTION) return false;
         if (!this.isObjectLike(value)) {
           // Any value may be assigned; a non-object one lives in the
@@ -1635,12 +1648,12 @@ export struct Runtime {
         return true;
       }
       if (atom == this.atomLength || atom == this.atomName) {
-        if (this.functionBagHas(handle, atom) == false) return false;
+        if (!owns) return false;
       }
       // Not an own property: what the [[Prototype]] chain holds decides.
       // An inherited setter runs against this function, an inherited
       // read-only property refuses the write.
-      if (this.functionBagHas(handle, atom) == false) {
+      if (!owns) {
         const inherited = this.setThroughFunctionChain(handle, atom, value, object);
         if (inherited != SET_NOT_INHERITED) return inherited == SET_DONE;
       }
@@ -2246,6 +2259,9 @@ export struct Runtime {
     const hasInstanceKey = this.symbolHasInstance;
     const handler = this.isObjectLike(target) ? this.getProperty(target, hasInstanceKey) : undefinedValue();
     if (this.pendingThrow) return false;
+    // The lookup above is the program's to observe; calling the builtin
+    // it usually finds is not, so its work is done here directly.
+    if (isCell(handler) && asCell(handler) == this.hasInstanceBuiltin && this.hasInstanceBuiltin != 0) return this.ordinaryHasInstance(target, value);
     if (!isUndefined(handler) && !isNull(handler)) {
       let args = Array<Value>();
       args.push(value);
@@ -6491,7 +6507,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

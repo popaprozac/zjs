@@ -115,6 +115,9 @@ from the target's own `length` when that is a Number (infinity kept),
 order. `instanceof` is InstanceofOperator throughout: a bound function
 asks its target, a custom `@@hasInstance` included, and any other
 callable's `prototype` is read each time and must be an object. The
+`@@hasInstance` lookup is always made; when it finds the builtin (which
+is neither writable nor configurable) the call is skipped for the
+OrdinaryHasInstance it would have run. The
 `arguments` object (an array tagged for
 `Object.prototype.toString`, shared with arrows through the environment)
 and rest parameters read the frame's actual arguments. `Symbol`: a symbol

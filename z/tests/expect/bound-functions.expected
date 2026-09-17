@@ -27,6 +27,8 @@ a defined prototype getter is not read by construction: 0,true,0
 inherits what the target inherits: true,true,
 custom hasInstance on the target: true,false,false,true
 hasInstance getter on the target is read each time: true,false,2
+a getter that hands back the builtin is still read: true,false,true,3
+a class's static @@hasInstance: true,false,true,false
 binding of a non-constructor: throws TypeError
 Function.prototype[@@hasInstance] directly: true,false,false,true
 own hasInstance on the binding itself: true

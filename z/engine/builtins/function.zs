@@ -257,4 +257,5 @@ export function installFunction(inout runtime: Runtime): void {
   const symbolHasInstanceBound = runtime.symbolHasInstance;
   const hasInstanceKey = runtime.propertyKey(symbolHasInstanceBound);
   runtime.heap.objectDefine(functionProto, hasInstanceKey, cellValue(hasInstanceFn), PROP_NONE);
+  runtime.hasInstanceBuiltin = hasInstanceFn;
 }

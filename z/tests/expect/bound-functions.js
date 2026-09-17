@@ -48,6 +48,8 @@ show("inherits what the target inherits:", function () { function P() {} functio
 // --- instanceof ---
 show("custom hasInstance on the target:", function () { function T() {} Object.defineProperty(T, Symbol.hasInstance, { value: function (v) { collect(); return v === 42; } }); var BT = T.bind(); return [42 instanceof BT, {} instanceof BT, new T() instanceof BT, 42 instanceof BT.bind()]; });
 show("hasInstance getter on the target is read each time:", function () { var n = 0; function T() {} Object.defineProperty(T, Symbol.hasInstance, { get: function () { n++; return undefined; } }); var BT = T.bind(); var r = [new T() instanceof BT, {} instanceof BT]; return r.concat(n); });
+show("a getter that hands back the builtin is still read:", function () { var n = 0; function T() {} Object.defineProperty(T, Symbol.hasInstance, { get: function () { n++; return Function.prototype[Symbol.hasInstance]; } }); return [new T() instanceof T, {} instanceof T, new T() instanceof T.bind(), n]; });
+show("a class's static @@hasInstance:", function () { class Even { static [Symbol.hasInstance](v) { return v % 2 == 0; } } return [2 instanceof Even, 3 instanceof Even, 2 instanceof Even.bind(), new Even() instanceof Even]; });
 show("binding of a non-constructor:", function () { return {} instanceof (() => 1).bind(); });
 show("Function.prototype[@@hasInstance] directly:", function () { var h = Function.prototype[Symbol.hasInstance]; return [h.call(B, new F()), h.call(B, {}), h.call({}, {}), h.call(B.bind(), new F())]; });
 show("own hasInstance on the binding itself:", function () { var C = F.bind(); Object.defineProperty(C, Symbol.hasInstance, { value: function () { return "yes"; } }); return 1 instanceof C; });
