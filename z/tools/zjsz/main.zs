@@ -10,7 +10,7 @@ import process from "std/process";
 import fs from "std/fs";
 import { Value, isCell, asCell, cellValue, undefinedValue } from "../../engine/value.zs";
 import { thread } from "std/thread";
-import { Runtime } from "../../engine/runtime.zs";
+import { Runtime, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate } from "../../engine/lib.zs";
 
@@ -140,10 +140,16 @@ function gcHost(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u
   return undefinedValue();
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean): i32 throws String {
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, gcFloor: i32, gcGrowth: i32): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
+  if (gcFloor > 0) {
+    runtime.heap.collectFloor = u32(gcFloor);
+    runtime.heap.collectThreshold = u32(gcFloor);
+  }
+  if (gcGrowth > 0) runtime.heap.collectGrowthPercent = u32(gcGrowth);
+  runtime.gcTiming = gcStats;
   installConsole(inout runtime);
   if (exposeGc) {
     const gcText: String = "gc";
@@ -151,6 +157,7 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
   }
   const outcome = evaluate(inout runtime, move source);
   if (stats) reportStats(in runtime);
+  if (gcStats) reportGcStats(in runtime);
   if (!outcome.isThrow) return 0;
   reportThrow(inout runtime, outcome.value);
   return 1;
@@ -180,6 +187,70 @@ function reportStats(in runtime: Runtime): void {
   appendDecimal(inout line, u32(runtime.heap.pendingScratchBytes()));
   line.push(10);
   writeError(in line);
+}
+
+// Collection figures after a run, on stderr: how many, their total, and
+// the pause distribution in microseconds, with what the engine's own
+// storage holds in use at the end.
+function reportGcStats(in runtime: Runtime): void {
+  let pauses = Array<f64>.withCapacity(runtime.gcPauses.length);
+  let total: f64 = 0.0;
+  let index: usize = 0;
+  while (index < runtime.gcPauses.length) {
+    pauses.push(runtime.gcPauses[index]);
+    total = total + runtime.gcPauses[index];
+    index = index + 1;
+  }
+  sortAscending(inout pauses);
+  let line = Array<u8>();
+  appendText(inout line, "zjsz-gc: collections ");
+  appendDecimal(inout line, u32(pauses.length));
+  appendText(inout line, " total-us ");
+  appendDecimal(inout line, microseconds(total));
+  appendText(inout line, " p50-us ");
+  appendDecimal(inout line, microseconds(percentile(in pauses, 50)));
+  appendText(inout line, " p95-us ");
+  appendDecimal(inout line, microseconds(percentile(in pauses, 95)));
+  appendText(inout line, " p99-us ");
+  appendDecimal(inout line, microseconds(percentile(in pauses, 99)));
+  appendText(inout line, " max-us ");
+  appendDecimal(inout line, microseconds(percentile(in pauses, 100)));
+  appendText(inout line, " in-use-kib ");
+  appendDecimal(inout line, u32(truncateDouble(runtime.heap.bytesInUse() / 1024.0)));
+  line.push(10);
+  writeError(in line);
+}
+
+function microseconds(nanoseconds: f64): u32 {
+  const value = truncateDouble(nanoseconds / 1000.0);
+  if (value >= 4294967295.0) return 4294967295;
+  return u32(value);
+}
+
+function percentile(in sorted: Array<f64>, percent: usize): f64 {
+  if (sorted.length == 0) return 0.0;
+  let at = sorted.length * percent / 100;
+  if (at >= sorted.length) at = sorted.length - 1;
+  return sorted[at];
+}
+
+// Shell sort: a few hundred thousand pauses at most, no allocation.
+function sortAscending(inout values: Array<f64>): void {
+  let gap = values.length / 2;
+  while (gap > 0) {
+    let i = gap;
+    while (i < values.length) {
+      const moving = values[i];
+      let j = i;
+      while (j >= gap && values[j - gap] > moving) {
+        values[j] = values[j - gap];
+        j = j - gap;
+      }
+      values[j] = moving;
+      i = i + 1;
+    }
+    gap = gap / 2;
+  }
 }
 
 function appendDecimal(inout line: Array<u8>, value: u32): void {
@@ -214,10 +285,14 @@ function decimalOf(in text: String): i32 {
 
 function main(): i32 {
   // Arguments exclude the program name:
-  //   run [--dict-threshold N] [--stats] [--expose-gc] <file>
+  //   run [--dict-threshold N] [--stats] [--gc-stats] [--gc-floor N]
+  //       [--gc-growth P] [--expose-gc] <file>
   // --dict-threshold sets the property count at which an object leaves
   // its hidden class (for measurement); --stats prints heap figures
-  // after the run; --expose-gc defines a global gc() that collects.
+  // after the run; --gc-stats times every collection and prints the
+  // pause distribution; --gc-floor and --gc-growth set the collection
+  // policy's floor (cells) and survivor multiple (percent), for
+  // measurement; --expose-gc defines a global gc() that collects.
   const arguments = process.args();
   if (arguments.length < 2) {
     console.error("usage: zjsz run [--dict-threshold N] [--stats] [--expose-gc] <file>");
@@ -233,12 +308,32 @@ function main(): i32 {
   let dictThreshold: i32 = -1;
   let stats = false;
   let exposeGc = false;
+  let gcStats = false;
+  let gcFloor: i32 = -1;
+  let gcGrowth: i32 = -1;
   while (index + 1 < arguments.length) {
     const optionLength = arguments[index].byteLength;
     const option = arguments[index].copyBytes(0, optionLength);
     if (option == "--stats") {
       stats = true;
       index = index + 1;
+    } else if (option == "--gc-stats") {
+      gcStats = true;
+      index = index + 1;
+    } else if ((option == "--gc-floor" || option == "--gc-growth") && index + 2 < arguments.length) {
+      const valueLength = arguments[index + 1].byteLength;
+      const value = arguments[index + 1].copyBytes(0, valueLength);
+      const parsed = decimalOf(in value);
+      if (parsed <= 0) {
+        console.error("zjsz: --gc-floor and --gc-growth need a positive decimal");
+        return 2;
+      }
+      if (option == "--gc-floor") {
+        gcFloor = parsed;
+      } else {
+        gcGrowth = parsed;
+      }
+      index = index + 2;
     } else if (option == "--expose-gc") {
       exposeGc = true;
       index = index + 1;
@@ -257,7 +352,7 @@ function main(): i32 {
   }
   const pathLength = arguments[index].byteLength;
   const path = arguments[index].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc);
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, gcFloor, gcGrowth);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

@@ -12,6 +12,14 @@ static inline double zjs_clock_now_ms(void) {
   return (double)now.tv_sec * 1000.0 + (double)(now.tv_usec / 1000);
 }
 
+/* A monotonic reading in nanoseconds, for timing collections when the
+   host asks for that. */
+static inline double zjs_clock_mono_ns(void) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return (double)now.tv_sec * 1000000000.0 + (double)now.tv_nsec;
+}
+
 /* Offset of local time from UTC, in milliseconds, at the UTC instant. */
 static inline double zjs_local_offset_ms(double utc_ms) {
   if (utc_ms != utc_ms) return 0.0;

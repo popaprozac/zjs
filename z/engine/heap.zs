@@ -199,6 +199,11 @@ export struct Heap {
   allocatedSinceCollect: u32;
   collectThreshold: u32;
   collections: u32;
+  // The policy's two numbers, settable by the host for measurement: the
+  // least allocation between collections, and the survivors' multiple
+  // (in percent) that replaces it once that is larger.
+  collectFloor: u32;
+  collectGrowthPercent: u32;
 
   // These are methods rather than free functions for a concrete reason.
   // Z rejects `inout` on a place expression -- `allocate(inout
@@ -367,8 +372,8 @@ export struct Heap {
     this.slots = move compacted;
     this.attrs = move compactedAttrs;
     this.allocatedSinceCollect = 0;
-    const proportional = survivors * 2;
-    this.collectThreshold = proportional > COLLECT_FLOOR ? proportional : COLLECT_FLOOR;
+    const proportional = u32(u64(survivors) * u64(this.collectGrowthPercent) / 100);
+    this.collectThreshold = proportional > this.collectFloor ? proportional : this.collectFloor;
     this.collections = this.collections + 1;
   }
 
@@ -1614,6 +1619,20 @@ export struct Heap {
   function slotsInUse(): u32 {
     return u32(this.slots.length);
   }
+
+  // Bytes the engine's own storage holds in use, for reports: a header
+  // per handle ever made (free ones included, since the table does not
+  // shrink), a value and an attribute byte per slot, and string content.
+  // Capacity beyond what is in use belongs to the allocator's figures.
+  function bytesInUse(): f64 {
+    let stringBytes: f64 = 0.0;
+    let index: usize = 0;
+    while (index < this.strings.length) {
+      stringBytes = stringBytes + f64(this.strings[index].length);
+      index = index + 1;
+    }
+    return f64(this.headers.length) * HEADER_BYTES + f64(this.slots.length) * 9.0 + stringBytes;
+  }
 }
 
 export function createHeap(): Heap {
@@ -1633,12 +1652,16 @@ export function createHeap(): Heap {
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0,
     dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD,
     markStack: Array<u32>(), markCount: 0,
-    allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0,
+    allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0, collectFloor: COLLECT_FLOOR, collectGrowthPercent: COLLECT_GROWTH_PERCENT,
   });
 }
 
 // The fewest allocations between collections.
 const COLLECT_FLOOR: u32 = 4096;
+const COLLECT_GROWTH_PERCENT: u32 = 200;
+// A cell header as laid out: three bytes of tag, mark, and flags, then
+// four u32 fields.
+const HEADER_BYTES: f64 = 20.0;
 
 // Properties an object may hold in class mode before its next addition
 // moves it to dictionary mode (chosen from measurement; see README).

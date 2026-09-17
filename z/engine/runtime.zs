@@ -10,6 +10,7 @@
 import { expect } from "std/test";
 import { thread } from "std/thread";
 import math from "std/math";
+import native from "./builtins/clock.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL } from "./heap.zs";
@@ -348,6 +349,10 @@ export struct Runtime {
   atomSyncIterator: u32;
   jobs: Array<Value>;
   jobCursor: usize;
+  // Collection timing, off unless the host turns it on: each pause in
+  // nanoseconds, in order. Nothing is read from the clock otherwise.
+  gcTiming: boolean;
+  gcPauses: Array<f64>;
   atomIterSource: u32;
   atomIterIndex: u32;
   atomIterKind: u32;
@@ -3625,6 +3630,13 @@ export struct Runtime {
   // only at instruction boundaries, where every live value sits in a
   // register, a frame, a global, or a table -- never in a Z local.
   function collectGarbage(inout this): void {
+    let started: f64 = 0.0;
+    if (this.gcTiming) started = native.zjs_clock_mono_ns();
+    this.collectNow();
+    if (this.gcTiming) this.gcPauses.push(native.zjs_clock_mono_ns() - started);
+  }
+
+  function collectNow(inout this): void {
     this.heap.markedCells = 0;
     this.heap.weakVisits = 0;
     let index: usize = 0;
@@ -6507,7 +6519,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, gcTiming: false, gcPauses: Array<f64>(),
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
