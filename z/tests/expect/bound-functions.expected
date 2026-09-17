@@ -1,0 +1,51 @@
+construct ignores boundThis: 1,2,true,,true
+call uses boundThis: 5,6,
+call with a this shaped like an instance: 5,
+call returns the target's result: k,1,2
+construct returns the target's object result: true
+arguments are prepended in order: 1,2,3,4,5,x,y,z
+bound arrow: throws TypeError
+bound class method: throws TypeError
+bound generator and async: TypeError,TypeError
+bound builtin non-constructor: throws TypeError
+bound class called: throws TypeError
+bound builtins construct: 2,3,2020,m,true
+Reflect.construct, distinct new target: true,true,1,9
+nested bindings: 1,7,true,true,true,true
+Reflect.construct, new target is the inner binding: false,true
+Reflect.construct, new target is the outer binding: true,false
+bound class: 3,true,true,true
+bound derived class: true,true,true
+a class re-parented to a binding: bound,x,true,true
+class extends a binding without prototype: throws TypeError
+class extends a binding given a prototype: 1,2,true,true,true
+bound Promise: true,true,true
+bound Promise called: throws TypeError
+no own prototype: false,false,undefined,length,name
+an assigned prototype is an ordinary property: true,true,true,1,true,true,true,false
+a defined prototype getter is not read by construction: 0,true,0
+inherits what the target inherits: true,true,
+custom hasInstance on the target: true,false,false,true
+hasInstance getter on the target is read each time: true,false,2
+binding of a non-constructor: throws TypeError
+Function.prototype[@@hasInstance] directly: true,false,false,true
+own hasInstance on the binding itself: true
+target prototype undefined: throws TypeError
+prototype undefined, unbound: throws TypeError
+primitive left side, bad prototype: false
+a function in the value's chain: true,true,true
+not callable: throws TypeError
+builtin without prototype: throws TypeError
+a binding's own prototype is not consulted: false,0
+the target's prototype getter is read, once per test: true,false,2
+the target's prototype getter throws: throws RangeError
+name and length: bound g,2,false,false,true,false,false,true,0
+length forms: Infinity,0,2,0,0,0,2147483648,4294967296,0,0,0,0,Infinity
+length must be own: 0,0,7
+name forms: "bound ","bound ","bound ","bound str","bound "
+reads in order, once each: length,name,bound n,1
+a throwing name getter: throws RangeError
+a throwing length getter: throws EvalError
+names of bindings of bindings, classes, symbols: bound bound g,bound K,"bound [desc]",true
+bind on a non-callable: throws TypeError
+collections inside bound construction: {"a":{"first":1},"b":{"second":2},"list":[{"first":1},{"second":2}]},true,{"a":{"first":1},"b":{"second":2},"list":[{"first":1},{"second":2}]},true

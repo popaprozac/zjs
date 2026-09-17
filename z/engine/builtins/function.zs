@@ -1,8 +1,8 @@
 // Function.prototype: call and apply.
 import { unitsOf } from "../text.zs";
-import { Value, undefinedValue, cellValue, int32Value, booleanValue, asCell, isCell, isUndefined, isNull } from "../value.zs";
+import { Value, undefinedValue, nullValue, cellValue, int32Value, doubleValue, booleanValue, asCell, isCell, isUndefined, isNull, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, HOST_BOUND_TRAMPOLINE } from "../runtime.zs";
+import { Runtime, HOST_BOUND_TRAMPOLINE, truncateDouble } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 import { parseProgram } from "../parser.zs";
 import { compileProgram } from "../compiler.zs";
@@ -57,9 +57,14 @@ function functionApply(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   return runtime.callValue(thisValue, receiver, move args);
 }
 
-// bind(thisArg, ...args): a host function whose bound slot holds
-// [target, thisArg, args...]; calling it prepends those, constructing it
-// constructs the target.
+// bind(thisArg, ...args): an instance of the bound trampoline whose
+// bound data is [target, boundThis, args...]. It is constructable exactly
+// when its target is, inherits from what its target inherits from, and
+// has no `prototype` of its own. `length` comes from the target's own
+// `length` when that is a Number (as an integer, less the bound
+// arguments, never below zero, infinity kept); `name` is "bound " and
+// the target's `name` when that is a String. Both reads are the
+// program's to observe, length first.
 function functionBind(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   if (!runtime.isCallable(thisValue)) {
     const message: String = "Bind must be called on a function";
@@ -77,36 +82,68 @@ function functionBind(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     runtime.heap.setSlot(record, index + 1, extra);
     index = index + 1;
   }
-  // length: the target's, less the bound arguments; name: "bound " + target's.
+  runtime.pushTempRoot(cellValue(record));
+  let length: f64 = 0.0;
   const lengthKey = cellValue(runtime.atomLength);
-  const targetLength = runtime.toLength(runtime.getProperty(thisValue, lengthKey));
-  if (runtime.pendingThrow) return undefinedValue();
-  const boundCount: u32 = argc > 1 ? argc - 1 : 0;
-  const remaining: u32 = targetLength > boundCount ? targetLength - boundCount : 0;
+  if (runtime.hasOwnProperty(thisValue, lengthKey)) {
+    const held = runtime.getProperty(thisValue, lengthKey);
+    if (runtime.pendingThrow) {
+      runtime.popTempRoot();
+      return undefinedValue();
+    }
+    if (isNumber(held)) {
+      const number = runtime.toNumberValue(held);
+      const boundCount: f64 = argc > 1 ? f64(argc - 1) : 0.0;
+      if (number == 1.0 / 0.0) {
+        length = number;
+      } else if (number == number && number != -1.0 / 0.0) {
+        length = truncateDouble(number) - boundCount;
+        if (length < 0.0) length = 0.0;
+      }
+    }
+  }
   const nameKey = cellValue(runtime.atomName);
   const targetName = runtime.getProperty(thisValue, nameKey);
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   const prefix: String = "bound ";
-  let nameBytes = unitsOf(in prefix);
+  let nameUnits = unitsOf(in prefix);
   if (runtime.isStringValue(targetName)) {
     const more = runtime.heap.stringUnits(asCell(targetName));
     let k: usize = 0;
     while (k < more.length) {
-      nameBytes.push(more[k]);
+      nameUnits.push(more[k]);
       k = k + 1;
     }
   }
-  const bound = runtime.newSharedHostNamed(HOST_BOUND_TRAMPOLINE, cellValue(record), remaining, move nameBytes);
-  if (runtime.isConstructorValue(thisValue)) runtime.heap.setSlot(bound, 4, booleanValue(true));
+  const bound = runtime.newSharedHostNamed(HOST_BOUND_TRAMPOLINE, cellValue(record), 0, move nameUnits);
+  if (length <= 2147483647.0) {
+    runtime.heap.setSlot(bound, 1, int32Value(i32(length)));
+  } else {
+    runtime.heap.setSlot(bound, 1, doubleValue(length));
+  }
+  if (runtime.isConstructorValue(thisValue)) runtime.markAllocatingConstructor(bound);
+  const inherited = runtime.protoOfValue(thisValue);
+  if (inherited != runtime.functionProto) {
+    const atomFunctionProto = runtime.atomFunctionProto;
+    runtime.setFunctionHidden(bound, atomFunctionProto, inherited == 0 ? nullValue() : cellValue(inherited));
+  }
   return cellValue(bound);
 }
 
+// [[Call]] and [[Construct]] of a bound function. Which one this is
+// comes from the construct protocol, never from the shape of `this`: a
+// construct hands over its new target, a call does not. A call uses
+// boundThis; a construct ignores it and constructs the target, with the
+// target as new target when the new target was this bound function
+// itself. Both prepend the bound arguments.
 function boundTrampoline(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const newTarget = runtime.takeHostNewTarget();
   const record = asCell(runtime.heap.slot(callee, 0));
   const target = runtime.heap.slot(record, 0);
   const boundThis = runtime.heap.slot(record, 1);
   const recordLength = runtime.heap.arrayLength(record);
-  let args = Array<Value>();
+  let args = Array<Value>.withCapacity(usize(recordLength - 2 + argc));
   let index: u32 = 2;
   while (index < recordLength) {
     args.push(runtime.heap.slot(record, index));
@@ -117,10 +154,9 @@ function boundTrampoline(inout runtime: Runtime, thisValue: Value, argsBase: u32
     args.push(runtime.argument(argsBase, argc, index));
     index = index + 1;
   }
-  // Constructed: `this` is the object newInvoke made, and the target is
-  // constructed in its place.
-  if (runtime.isObjectLike(thisValue) && runtime.heap.isObject(asCell(thisValue)) && runtime.heap.objectClass(asCell(thisValue)) == 0 && runtime.heap.objectProto(asCell(thisValue)) == runtime.prototypeOf(callee) && runtime.isConstructorValue(target)) {
-    return runtime.constructValue(target, move args, target);
+  if (!isUndefined(newTarget)) {
+    const forwarded = (isCell(newTarget) && asCell(newTarget) == callee) ? target : newTarget;
+    return runtime.constructValue(target, move args, forwarded);
   }
   return runtime.callValue(target, boundThis, move args);
 }

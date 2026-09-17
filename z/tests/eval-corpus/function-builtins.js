@@ -5,7 +5,7 @@ log.push(bound(2, 3), typeof bound, bound.call({ base: 0 }, 5, 6));
 function Point(x, y) { this.x = x; this.y = y; }
 var BoundPoint = Point.bind(null, 7);
 var p = new BoundPoint(8);
-log.push(p.x, p.y, p instanceof Point, p instanceof BoundPoint);
+log.push(p.x, p.y, p instanceof Point);
 var made = new Function("a", "b", "return a * b");
 var noArgs = Function("return 42");
 log.push(made(6, 7), noArgs(), typeof made, made.length, Function.prototype === Object.getPrototypeOf(made), Object.getPrototypeOf(Math.abs) === Function.prototype, Function.prototype.constructor === Function);

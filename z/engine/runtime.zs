@@ -582,6 +582,19 @@ export struct Runtime {
     return this.functionProto;
   }
 
+  // A bound function is an instance of the one bound trampoline; its
+  // bound data is [target, boundThis, arguments...].
+  function isBoundFunction(value: Value): boolean {
+    if (!this.isHostFunctionValue(value)) return false;
+    if (this.sharedHosts.length <= HOST_BOUND_TRAMPOLINE) return false;
+    return this.heap.hostFunctionId(asCell(value)) == this.sharedHosts[HOST_BOUND_TRAMPOLINE];
+  }
+
+  function boundTargetOf(value: Value): Value {
+    const record = asCell(this.heap.slot(asCell(value), 0));
+    return this.heap.slot(record, 0);
+  }
+
   // A private name read or written on a value that does not hold it: a
   // primitive, or an object the class did not initialize.
   function privateNameMissing(inout this, value: Value, key: Value): boolean {
@@ -1603,7 +1616,10 @@ export struct Runtime {
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
-      if (atom == this.atomPrototype && this.functionBagHas(handle, atom) == false) {
+      // A function with no `prototype` of its own (a bound function, an
+      // arrow, a method, most builtins) takes the assignment as an
+      // ordinary property; a builtin constructor's is not writable.
+      if (atom == this.atomPrototype && this.functionBagHas(handle, atom) == false && this.functionHasPrototype(object)) {
         if (tag == TAG_HOST_FUNCTION) return false;
         if (!this.isObjectLike(value)) {
           // Any value may be assigned; a non-object one lives in the
@@ -2196,17 +2212,54 @@ export struct Runtime {
     return false;
   }
 
-  // OrdinaryHasInstance: whether ctor.prototype is on value's chain.
+  // OrdinaryHasInstance. A bound function answers with its target's
+  // whole instanceof behaviour, a custom @@hasInstance included; any
+  // other callable reads its `prototype` (the program's to observe),
+  // which must be an object, and looks for it on the value's chain. A
+  // throw is left pending.
   function ordinaryHasInstance(inout this, ctor: Value, value: Value): boolean {
     if (!this.isCallable(ctor)) return false;
+    if (this.isBoundFunction(ctor)) return this.instanceofValue(value, this.boundTargetOf(ctor));
     if (!this.isObjectLike(value)) return false;
-    const target = this.prototypeOf(asCell(ctor));
+    const atomPrototype = this.atomPrototype;
+    const held = this.getProperty(ctor, cellValue(atomPrototype));
+    if (this.pendingThrow) return false;
+    if (!this.isObjectLike(held)) {
+      const message: String = "Function has non-object prototype in instanceof check";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return false;
+    }
+    const target = asCell(held);
     let current = this.protoOfValue(value);
     while (current != 0) {
       if (current == target) return true;
-      current = this.heap.objectProto(current);
+      current = this.protoOfValue(cellValue(current));
     }
     return false;
+  }
+
+  // InstanceofOperator(value, target): the target's @@hasInstance method
+  // decides when there is one, else OrdinaryHasInstance. A throw is left
+  // pending.
+  function instanceofValue(inout this, value: Value, target: Value): boolean {
+    const hasInstanceKey = this.symbolHasInstance;
+    const handler = this.isObjectLike(target) ? this.getProperty(target, hasInstanceKey) : undefinedValue();
+    if (this.pendingThrow) return false;
+    if (!isUndefined(handler) && !isNull(handler)) {
+      let args = Array<Value>();
+      args.push(value);
+      const verdict = this.callValue(handler, target, move args);
+      if (this.pendingThrow) return false;
+      return this.toBooleanValue(verdict);
+    }
+    if (!this.isCallable(target)) {
+      const message: String = "Right-hand side of 'instanceof' is not callable";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return false;
+    }
+    return this.ordinaryHasInstance(target, value);
   }
 
   // OrdinarySetPrototypeOf for the values whose [[Prototype]] the engine
@@ -3113,6 +3166,11 @@ export struct Runtime {
     return handle;
   }
 
+  // Mark an existing host function as such a constructor.
+  function markAllocatingConstructor(inout this, handle: u32): void {
+    this.heap.setSlot(handle, 4, int32Value(1));
+  }
+
   function hostMakesOwnObject(handle: u32): boolean {
     return isInt32(this.heap.slot(handle, 4));
   }
@@ -3158,6 +3216,7 @@ export struct Runtime {
   // Whether a function value exposes `prototype`: constructors, generator
   // functions, and host functions given one explicitly (Symbol).
   function functionHasPrototype(value: Value): boolean {
+    if (this.isBoundFunction(value)) return false;
     if (this.isConstructorValue(value)) return true;
     if (this.isCompiledCallable(value)) {
       const code = this.heap.functionIndex(asCell(value));
@@ -5782,27 +5841,11 @@ export struct Runtime {
           instanceofOp => {
             const value = this.reg(base, inst.b);
             const ctor = this.reg(base, inst.c);
-            const hasInstanceKey = this.symbolHasInstance;
-            const handler = this.isObjectLike(ctor) ? this.getProperty(ctor, hasInstanceKey) : undefinedValue();
+            const found = this.instanceofValue(value, ctor);
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
-            } else if (!isUndefined(handler) && !isNull(handler)) {
-              let args = Array<Value>();
-              args.push(value);
-              const verdict = this.callValue(handler, ctor, move args);
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-                throwing = true;
-              } else {
-                this.setReg(base, inst.a, booleanValue(this.toBooleanValue(verdict)));
-              }
-            } else if (!this.isCallable(ctor)) {
-              const message: String = "Right-hand side of 'instanceof' is not callable";
-              thrown = this.typeError(in message);
-              throwing = true;
             } else {
-              const found = this.ordinaryHasInstance(ctor, value);
               this.setReg(base, inst.a, booleanValue(found));
             }
           }
