@@ -4047,10 +4047,7 @@ export struct Runtime {
       if (this.pendingThrow) return this.internLatin1Value(Array<u8>());
       return this.toStringValue(primitive);
     }
-    if (isInt32(value)) {
-      const text = int32ToString(asInt32(value));
-      return this.newStringLatin1(bytesOf(in text));
-    }
+    if (isInt32(value)) return this.newStringLatin1(int32Digits(asInt32(value)));
     if (isDouble(value)) {
       const text = doubleToString(asDouble(value));
       return this.newStringLatin1(bytesOf(in text));
@@ -6998,6 +6995,25 @@ export function bytesToDisplayString(in bytes: Array<u8>): String {
 function bufferToString(buffer: usize): String {
   const view: cstring = nativeView(buffer);
   return String.from(view);
+}
+
+// The decimal digits of an int32 as the bytes a string cell stores: the
+// one allocation is the one the cell keeps.
+export function int32Digits(value: i32): Array<u8> {
+  let bytes = Array<u8>.withCapacity(11);
+  let rest: i64 = i64(value);
+  if (rest < 0) {
+    bytes.push(45);
+    rest = 0 - rest;
+  }
+  let divisor: i64 = 1;
+  while (divisor * 10 <= rest) { divisor = divisor * 10; }
+  while (divisor > 0) {
+    bytes.push(u8(48 + rest / divisor));
+    rest = rest % divisor;
+    divisor = divisor / 10;
+  }
+  return bytes;
 }
 
 export function int32ToString(value: i32): String {
