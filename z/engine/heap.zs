@@ -169,6 +169,14 @@ export struct Heap {
   // heap now needs is let go rather than kept as the spare, so memory a
   // spike took is returned once the spike has passed.
   activeReserved: usize;
+  // The handle table's length when its storage was last made or last
+  // grew, to tell when it has become far larger than it needs.
+  headersHigh: usize;
+  // The table's extent: one past the highest handle in use or on the
+  // free list. The array behind it may be longer -- a sweep cuts the
+  // extent back without touching the entries above it, which the next
+  // allocations overwrite.
+  headerCount: usize;
   // Cells and slots allocated in completed cycles, for reports; the
   // current cycle's are added when asked.
   cellsBeforeCycle: f64;
@@ -257,8 +265,16 @@ export struct Heap {
       this.headers[usize(handle)] = header;
       return handle;
     }
-    this.headers.push(header);
-    return u32(this.headers.length - 1);
+    // Past the free list, the table's next entry: one a sweep cut off
+    // and left in place, or a new one.
+    const next = this.headerCount;
+    if (next < this.headers.length) {
+      this.headers[next] = header;
+    } else {
+      this.headers.push(header);
+    }
+    this.headerCount = next + 1;
+    return u32(next);
   }
 
   // Whether enough has been allocated since the last collection for the
@@ -340,12 +356,17 @@ export struct Heap {
   }
 
   // Free every unmarked cell, compact the live slots into the other
-  // arena, and clear the marks. The arena is sized before the copy: the
+  // arena, and clear the marks. When a large table's survivors all sit in
+  // its lowest quarter, the dead cells above the highest of them are not
+  // listed for reuse: the table's extent is cut back to that survivor, so
+  // a collection after a spike costs what is alive and not what once
+  // was, and a table left far larger than it needs gives its storage
+  // back. The arena is sized before the copy: the
   // survivors' slots plus what the next cycle is expected to allocate
   // (its threshold in cells times the slots a cell has been taking), so
   // neither the copy nor the allocation that follows grows it.
   function sweep(inout this): void {
-    const count = u32(this.headers.length);
+    const count = u32(this.headerCount);
     const liveSlots = this.markedSlots;
     const survivors = this.markedCells;
     const proportional = u32(u64(survivors) * u64(this.collectGrowthPercent) / 100);
@@ -371,11 +392,28 @@ export struct Heap {
       compacted = Array<Value>.withCapacity(needed);
       compactedAttrs = Array<u8>.withCapacity(needed);
     }
-    let handle: u32 = 1;
-    while (handle < count) {
+    if (usize(count) > this.headersHigh) this.headersHigh = usize(count);
+    // The highest survivor, found by looking down from the top -- but
+    // the table is cut back to it only when that is worth a pass over
+    // the free list: a large table that would shrink at least fourfold.
+    // A small heap's top survivor moves at every collection, and its
+    // table is cheap to walk whole.
+    let top: u32 = count - 1;
+    if (usize(count) >= HANDLE_TABLE_CUT_AT) {
+      while (top >= 1 && !this.headers[usize(top)].marked) { top = top - 1; }
+      if ((usize(top) + 1) * 4 >= usize(count)) top = count - 1;
+    }
+    const cutting = top != count - 1;
+    // Handles are visited from the top down, so the cells this sweep
+    // frees are listed highest first and the next allocations take the
+    // lowest of them: survivors gather low in the table, which is what
+    // lets a later sweep cut it back.
+    const listBelow: u32 = cutting ? top : count;
+    let handle: u32 = count - 1;
+    while (handle >= 1) {
       const tag = this.headers[usize(handle)].tag;
       if (tag == TAG_FREE) {
-        handle = handle + 1;
+        handle = handle - 1;
         continue;
       }
       if (!this.headers[usize(handle)].marked) {
@@ -393,13 +431,17 @@ export struct Heap {
           this.freeStringCount = this.freeStringCount + 1;
         }
         this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
-        if (this.freeHandleCount < this.freeHandles.length) {
-          this.freeHandles[this.freeHandleCount] = handle;
-        } else {
-          this.freeHandles.push(handle);
+        // A cell above the highest survivor is cut off with the table,
+        // not listed.
+        if (handle < listBelow) {
+          if (this.freeHandleCount < this.freeHandles.length) {
+            this.freeHandles[this.freeHandleCount] = handle;
+          } else {
+            this.freeHandles.push(handle);
+          }
+          this.freeHandleCount = this.freeHandleCount + 1;
         }
-        this.freeHandleCount = this.freeHandleCount + 1;
-        handle = handle + 1;
+        handle = handle - 1;
         continue;
       }
       this.headers[usize(handle)].marked = false;
@@ -414,8 +456,9 @@ export struct Heap {
         compactedAttrs.push(keptAttr);
         index = index + 1;
       }
-      handle = handle + 1;
+      handle = handle - 1;
     }
+    if (cutting) this.trimHandleTable(top);
     // The arenas change places. A large heap lets the old one go.
     let oldExtent = this.slots.length;
     if (this.activeReserved > oldExtent) oldExtent = this.activeReserved;
@@ -432,6 +475,44 @@ export struct Heap {
     this.allocatedSinceCollect = 0;
     this.collectThreshold = nextThreshold;
     this.collections = this.collections + 1;
+  }
+
+  // Cut the table back to its highest live handle. When that leaves it
+  // under a quarter of the size its storage was made for, the table, the
+  // free list, and the mark stack are rebuilt small and the old storage
+  // is freed.
+  function trimHandleTable(inout this, top: u32): void {
+    this.headerCount = usize(top) + 1;
+    // Handles listed by earlier sweeps that the table no longer holds
+    // leave the list.
+    let kept: usize = 0;
+    let at: usize = 0;
+    while (at < this.freeHandleCount) {
+      const listed = this.freeHandles[at];
+      if (listed <= top) {
+        this.freeHandles[kept] = listed;
+        kept = kept + 1;
+      }
+      at = at + 1;
+    }
+    this.freeHandleCount = kept;
+    if (this.headersHigh < HANDLE_TABLE_SHRINK_AT || this.headerCount * 4 >= this.headersHigh) return;
+    let smaller = Array<CellHeader>.withCapacity(this.headerCount * 2);
+    let index: usize = 0;
+    while (index < this.headerCount) {
+      smaller.push(this.headers[index]);
+      index = index + 1;
+    }
+    const oldHeaders = replace(inout this.headers, move smaller);
+    let list = Array<u32>.withCapacity(this.freeHandleCount);
+    index = 0;
+    while (index < this.freeHandleCount) {
+      list.push(this.freeHandles[index]);
+      index = index + 1;
+    }
+    const oldList = replace(inout this.freeHandles, move list);
+    const oldStack = replace(inout this.markStack, Array<u32>());
+    this.headersHigh = this.headerCount;
   }
 
   // Move a cell's slots to a fresh, larger range. The old range is
@@ -1669,8 +1750,20 @@ export struct Heap {
   }
 
   // Allocated cells, excluding the reserved handle 0.
+  // Whether a handle's cell has been freed: listed for reuse, or cut
+  // from the table with everything above the highest survivor.
+  function isReleased(handle: u32): boolean {
+    if (usize(handle) >= this.headerCount) return true;
+    return this.headers[usize(handle)].tag == TAG_FREE;
+  }
+
+  // One past the highest handle the table holds.
+  function handleExtent(): u32 {
+    return u32(this.headerCount);
+  }
+
   function liveCells(): u32 {
-    return u32(this.headers.length - 1 - this.freeHandleCount);
+    return u32(this.headerCount - 1 - this.freeHandleCount);
   }
 
   function slotsInUse(): u32 {
@@ -1699,7 +1792,7 @@ export struct Heap {
       stringBytes = stringBytes + f64(this.strings[index].length);
       index = index + 1;
     }
-    return f64(this.headers.length) * HEADER_BYTES + f64(this.slots.length) * 9.0 + stringBytes;
+    return f64(this.headerCount) * HEADER_BYTES + f64(this.slots.length) * 9.0 + stringBytes;
   }
 }
 
@@ -1714,7 +1807,7 @@ export function createHeap(): Heap {
     transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, activeReserved: 0, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, activeReserved: 0, headersHigh: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
@@ -1728,6 +1821,10 @@ export function createHeap(): Heap {
 // A compacted arena no larger than this many slots (about nine
 // megabytes) is kept to be compacted into next time.
 const SPARE_RETAIN_SLOTS: usize = 1048576;
+// A handle table never made larger than this is not worth rebuilding.
+const HANDLE_TABLE_SHRINK_AT: usize = 65536;
+// A table shorter than this is walked whole rather than cut back.
+const HANDLE_TABLE_CUT_AT: usize = 32768;
 const COLLECT_FLOOR: u32 = 4096;
 const COLLECT_GROWTH_PERCENT: u32 = 200;
 // A cell header as laid out: three bytes of tag, mark, and flags, then
@@ -1933,8 +2030,8 @@ test "a sweep frees unmarked cells, compacts slots, and reuses handles" {
   heap.markHandle(kept);
   heap.sweep();
   expect(heap.liveCells()).toEqual(3);
-  expect(heap.tagOf(dropped)).toEqual(TAG_FREE);
-  expect(heap.tagOf(droppedString)).toEqual(TAG_FREE);
+  expect(heap.isReleased(dropped)).toEqual(true);
+  expect(heap.isReleased(droppedString)).toEqual(true);
   expect(heap.isArray(child)).toEqual(true);
   expect(heap.stringLength(keptString)).toEqual(4);
   expect(heap.slotsInUse() < slotsBefore).toEqual(true);
@@ -1949,21 +2046,76 @@ test "a sweep frees unmarked cells, compacts slots, and reuses handles" {
 
 test "marking follows links: prototypes, environments, closures" {
   let heap = createHeap();
+  const unreachable = heap.allocateObject(0);
   const proto = heap.allocateObject(0);
   const object = heap.allocateObject(proto);
   const outerEnv = heap.allocateEnv(0, 1);
   const innerEnv = heap.allocateEnv(outerEnv, 1);
   const fn = heap.allocateFunction(3);
   const closure = heap.allocateClosure(3, innerEnv, cellValue(object));
-  const unreachable = heap.allocateObject(0);
   heap.setSlot(outerEnv, 0, cellValue(fn));
   heap.markHandle(closure);
   heap.sweep();
   expect(heap.tagOf(proto)).toEqual(TAG_OBJECT);
   expect(heap.tagOf(outerEnv)).toEqual(TAG_ENV);
   expect(heap.tagOf(fn)).toEqual(TAG_FUNCTION);
-  expect(heap.tagOf(unreachable)).toEqual(TAG_FREE);
+  expect(heap.isReleased(unreachable)).toEqual(true);
   expect(heap.liveCells()).toEqual(6);
+}
+
+test "a large table whose survivors sit low is cut back to the highest of them" {
+  let heap = createHeap();
+  const low = heap.allocateObject(0);
+  const kept = heap.allocateObject(0);
+  const middle = heap.allocateObject(0);
+  const high = heap.allocateObject(0);
+  let tail: u32 = 0;
+  while (tail < 40000) {
+    const garbage = heap.allocateObject(0);
+    tail = tail + 1;
+  }
+  expect(heap.handleExtent()).toEqual(high + 40001);
+  heap.markHandle(kept);
+  heap.markHandle(high);
+  heap.sweep();
+  // Everything above `high` is gone from the table and from the free
+  // list; `low` and `middle` are free below it and come back first.
+  expect(heap.handleExtent()).toEqual(high + 1);
+  expect(heap.liveCells()).toEqual(2);
+  expect(heap.isReleased(middle)).toEqual(true);
+  const first = heap.allocateObject(0);
+  const second = heap.allocateObject(0);
+  expect((first == low && second == middle) || (first == middle && second == low)).toEqual(true);
+  expect(heap.allocateObject(0)).toEqual(high + 1);
+  // Handles listed by an earlier sweep leave the list when a later one
+  // cuts the table below them.
+  tail = 0;
+  while (tail < 40000) {
+    const garbage = heap.allocateObject(0);
+    tail = tail + 1;
+  }
+  heap.markHandle(kept);
+  heap.sweep();
+  expect(heap.handleExtent()).toEqual(kept + 1);
+  expect(heap.liveCells()).toEqual(1);
+  expect(heap.allocateObject(0)).toEqual(low);
+  expect(heap.allocateObject(0)).toEqual(kept + 1);
+}
+
+test "a small table is walked whole and left as it is" {
+  let heap = createHeap();
+  const kept = heap.allocateObject(0);
+  let tail: u32 = 0;
+  while (tail < 100) {
+    const garbage = heap.allocateObject(0);
+    tail = tail + 1;
+  }
+  const extent = heap.handleExtent();
+  heap.markHandle(kept);
+  heap.sweep();
+  expect(heap.handleExtent()).toEqual(extent);
+  expect(heap.liveCells()).toEqual(1);
+  expect(heap.isReleased(kept + 50)).toEqual(true);
 }
 
 // --- Dictionary mode ---
@@ -2097,8 +2249,8 @@ test "a sweep releases a dead dictionary and a live one survives the compaction"
   let heap = createHeap();
   heap.dictThreshold = 2;
   const names = testNames(inout heap, 8);
-  const kept = heap.allocateObject(0);
   const dead = heap.allocateObject(0);
+  const kept = heap.allocateObject(0);
   let i: u32 = 0;
   while (i < 8) {
     heap.objectSet(kept, names[usize(i)], int32Value(i32(i + 100)));
@@ -2109,7 +2261,7 @@ test "a sweep releases a dead dictionary and a live one survives the compaction"
   heap.markHandle(kept);
   heap.sweep();
   expect(heap.dictionaryCount()).toEqual(1);
-  expect(heap.tagOf(dead)).toEqual(TAG_FREE);
+  expect(heap.isReleased(dead)).toEqual(true);
   // The keys were reached through the object's slots.
   expect(heap.tagOf(names[3])).toEqual(TAG_STRING);
   i = 0;
@@ -2176,8 +2328,8 @@ test "weak record: a rooted key keeps its entry and value; a dropped key loses b
   expect(heap.weakSize(fixture.record)).toEqual(1);
   expect(heap.weakFind(fixture.record, fixture.keys[0]) >= 0).toEqual(true);
   expect(heap.tagOf(fixture.values[0])).toEqual(TAG_OBJECT);
-  expect(heap.tagOf(fixture.keys[1])).toEqual(TAG_FREE);
-  expect(heap.tagOf(fixture.values[1])).toEqual(TAG_FREE);
+  expect(heap.isReleased(fixture.keys[1])).toEqual(true);
+  expect(heap.isReleased(fixture.values[1])).toEqual(true);
   expect(heap.weakCleared).toEqual(1);
   expect(heap.weakRecords.length).toEqual(0);
 }
@@ -2193,8 +2345,8 @@ test "weak record: a value referring back to its own key is collected with it" {
   roots.push(record);
   collectWith(inout heap, in roots);
   expect(heap.weakSize(record)).toEqual(0);
-  expect(heap.tagOf(key)).toEqual(TAG_FREE);
-  expect(heap.tagOf(value)).toEqual(TAG_FREE);
+  expect(heap.isReleased(key)).toEqual(true);
+  expect(heap.isReleased(value)).toEqual(true);
 }
 
 test "weak record: a value rooted elsewhere survives its dead key's entry" {
@@ -2205,7 +2357,7 @@ test "weak record: a value rooted elsewhere survives its dead key's entry" {
   roots.push(fixture.values[0]);
   collectWith(inout heap, in roots);
   expect(heap.weakSize(fixture.record)).toEqual(0);
-  expect(heap.tagOf(fixture.keys[0])).toEqual(TAG_FREE);
+  expect(heap.isReleased(fixture.keys[0])).toEqual(true);
   expect(heap.tagOf(fixture.values[0])).toEqual(TAG_OBJECT);
 }
 
@@ -2326,11 +2478,11 @@ test "weak record: a shared key dropped clears it from every record; an unreacha
   collectWith(inout heap, in roots);
   expect(heap.weakSize(a)).toEqual(0);
   expect(heap.weakSize(b)).toEqual(0);
-  expect(heap.tagOf(va)).toEqual(TAG_FREE);
-  expect(heap.tagOf(vb)).toEqual(TAG_FREE);
-  expect(heap.tagOf(orphan)).toEqual(TAG_FREE);
-  expect(heap.tagOf(orphanKey)).toEqual(TAG_FREE);
-  expect(heap.tagOf(orphanValue)).toEqual(TAG_FREE);
+  expect(heap.isReleased(va)).toEqual(true);
+  expect(heap.isReleased(vb)).toEqual(true);
+  expect(heap.isReleased(orphan)).toEqual(true);
+  expect(heap.isReleased(orphanKey)).toEqual(true);
+  expect(heap.isReleased(orphanValue)).toEqual(true);
 }
 
 test "weak record: one key across many records, kept or dropped, and the scratch released" {
@@ -2365,7 +2517,7 @@ test "weak record: one key across many records, kept or dropped, and the scratch
     expect(heap.tagOf(hotValues[usize(i)])).toEqual(TAG_OBJECT);
     i = i + 1;
   }
-  expect(heap.tagOf(cold)).toEqual(TAG_FREE);
+  expect(heap.isReleased(cold)).toEqual(true);
   expect(heap.weakCleared).toEqual(20000);
   expect(heap.ephemeronPasses).toEqual(1);
   expect(heap.pendingCount).toEqual(0);
