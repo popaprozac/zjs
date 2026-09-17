@@ -92,6 +92,12 @@ export const REACTION_HANDLER: i32 = 0;
 export const REACTION_ASYNC: i32 = 1;
 export const REACTION_ASYNC_GEN_AWAIT: i32 = 2;
 export const REACTION_ASYNC_GEN_YIELD: i32 = 3;
+// The awaited value of a return request on a generator that is not
+// running (unstarted or completed): settles the request.
+export const REACTION_ASYNC_GEN_RETURN_DONE: i32 = 4;
+// The awaited value of a return request into a suspended body: resumes
+// it in return mode, or in throw mode when the await rejected.
+export const REACTION_ASYNC_GEN_RESUME_RETURN: i32 = 5;
 
 // ToPrimitive hints.
 export const HINT_DEFAULT: u32 = 0;
@@ -106,6 +112,9 @@ const GEN_COMPLETED: i32 = 3;
 // An async body parked on an await (or an async generator on the await
 // of its yielded value): only the driver resumes it.
 const GEN_AWAITING: i32 = 4;
+// An async generator awaiting a return request's value while not
+// running; requests queue behind it.
+const GEN_AWAITING_RETURN: i32 = 5;
 
 export function errorKindName(kind: u32): String {
   if (kind == ERROR_KIND_ERROR) return "Error";
@@ -2768,13 +2777,12 @@ export struct Runtime {
       return undefinedValue();
     }
     const kind = asInt32(this.heap.slot(record, 9));
-    const delegating = kind == 3;
+    const delegating = kind == 3 || kind == 5;
     const callee = this.heap.slot(record, 1);
-    const asyncBody = this.functions[usize(this.heap.functionIndex(asCell(callee)))].isAsync;
-    if (mode == 2 && (kind == 4 || asyncBody)) {
-      // A return before the body ever ran completes the generator. So
-      // does one into an async generator's body (its finally blocks are
-      // not run: async delegation and return are a later checkpoint).
+    if (mode == 2 && kind == 4) {
+      // A return before the body ever ran completes the generator (an
+      // async generator's driver settles such a request itself, after
+      // awaiting the value, and never resumes here).
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
       return this.createIterResult(sent, true);
     }
@@ -4229,6 +4237,36 @@ export struct Runtime {
       this.asyncGeneratorStep(gen, argument, isReject ? 1 : 0);
       return;
     }
+    if (kind == REACTION_ASYNC_GEN_RETURN_DONE) {
+      // AsyncGeneratorAwaitReturn settled: the front request gets the
+      // awaited value as its done result, or the rejection.
+      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      const record = this.generatorRecord(gen);
+      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      const request = this.asyncGeneratorFront(record);
+      if (request != 0) {
+        const promise = this.heap.slot(request, 2);
+        if (isReject) {
+          this.rejectPromise(asCell(promise), argument);
+        } else {
+          this.pushTempRoot(argument);
+          const produced = this.createIterResult(argument, true);
+          this.popTempRoot();
+          this.resolvePromise(asCell(promise), produced);
+        }
+        this.asyncGeneratorPop(record);
+      }
+      this.asyncGeneratorResumeNext(gen);
+      return;
+    }
+    if (kind == REACTION_ASYNC_GEN_RESUME_RETURN) {
+      // The value of a return request into a suspended body settled:
+      // the body resumes in return mode with it, or in throw mode with
+      // the rejection.
+      const gen = u32(asInt32(this.heap.slot(reaction, 3)));
+      this.asyncGeneratorStep(gen, argument, isReject ? 1 : 2);
+      return;
+    }
     if (kind == REACTION_ASYNC_GEN_YIELD) {
       // The yielded value settled: a fulfillment answers the request, a
       // rejection is thrown into the body at the yield.
@@ -4348,9 +4386,54 @@ export struct Runtime {
     const queue = asCell(this.heap.slot(record, 10));
     this.heap.arraySet(queue, this.heap.arrayLength(queue), cellValue(request));
     const state = asInt32(this.heap.slot(record, 0));
-    if (state != GEN_RUNNING && state != GEN_AWAITING) this.asyncGeneratorResumeNext(gen);
+    if (state != GEN_RUNNING && state != GEN_AWAITING && state != GEN_AWAITING_RETURN) this.asyncGeneratorResumeNext(gen);
     this.popTempRoot();
     return promise;
+  }
+
+  // AsyncGeneratorAwaitReturn: a return request on a generator that is
+  // not running awaits its value, then settles the request with it.
+  function asyncGeneratorAwaitReturn(inout this, gen: u32, record: u32, value: Value): void {
+    this.heap.setSlot(record, 0, int32Value(GEN_AWAITING_RETURN));
+    this.pushTempRoot(value);
+    const awaited = this.promiseResolveValue(value);
+    this.popTempRoot();
+    if (this.pendingThrow) {
+      // A thenable whose `then` access throws: the request is rejected.
+      const thrown = this.takePending();
+      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      const request = this.asyncGeneratorFront(record);
+      if (request != 0) {
+        const promise = this.heap.slot(request, 2);
+        this.rejectPromise(asCell(promise), thrown);
+        this.asyncGeneratorPop(record);
+      }
+      this.asyncGeneratorResumeNext(gen);
+      return;
+    }
+    this.pushTempRoot(awaited);
+    const reaction = this.newReaction(REACTION_ASYNC_GEN_RETURN_DONE, undefinedValue(), undefinedValue(), gen);
+    this.attachReactions(asCell(awaited), reaction, reaction);
+    this.popTempRoot();
+  }
+
+  // AsyncGeneratorUnwrapYieldResumption: a return request into a body
+  // suspended at a yield awaits its value first; the body then resumes
+  // in return mode with it (or in throw mode with the rejection).
+  function asyncGeneratorAwaitResumeReturn(inout this, gen: u32, record: u32, value: Value): void {
+    this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+    this.pushTempRoot(value);
+    const awaited = this.promiseResolveValue(value);
+    this.popTempRoot();
+    if (this.pendingThrow) {
+      const thrown = this.takePending();
+      this.asyncGeneratorStep(gen, thrown, 1);
+      return;
+    }
+    this.pushTempRoot(awaited);
+    const reaction = this.newReaction(REACTION_ASYNC_GEN_RESUME_RETURN, undefinedValue(), undefinedValue(), gen);
+    this.attachReactions(asCell(awaited), reaction, reaction);
+    this.popTempRoot();
   }
 
   // Answer requests that need no body run; start the body for one that does.
@@ -4360,19 +4443,31 @@ export struct Runtime {
       const request = this.asyncGeneratorFront(record);
       if (request == 0) return;
       const state = asInt32(this.heap.slot(record, 0));
+      const unstarted = asInt32(this.heap.slot(record, 9)) == 4;
       const mode = u32(asInt32(this.heap.slot(request, 0)));
       const value = this.heap.slot(request, 1);
       const promise = this.heap.slot(request, 2);
-      if (state == GEN_COMPLETED || (state == GEN_START && mode != 0)) {
+      if (state == GEN_COMPLETED || (unstarted && mode != 0)) {
         this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+        if (mode == 2) {
+          // The value is awaited before the request settles.
+          this.asyncGeneratorAwaitReturn(gen, record, value);
+          return;
+        }
         if (mode == 1) {
           this.rejectPromise(asCell(promise), value);
         } else {
-          const produced = this.createIterResult(mode == 2 ? value : undefinedValue(), true);
+          const produced = this.createIterResult(undefinedValue(), true);
           this.resolvePromise(asCell(promise), produced);
         }
         this.asyncGeneratorPop(record);
         continue;
+      }
+      if (mode == 2) {
+        // Into a suspended body: the value is awaited, then the body
+        // returns it through its finally blocks.
+        this.asyncGeneratorAwaitResumeReturn(gen, record, value);
+        return;
       }
       this.asyncGeneratorStep(gen, value, mode);
       return;
@@ -4416,7 +4511,7 @@ export struct Runtime {
       return;
     }
     const kind = asInt32(this.heap.slot(record, 9));
-    if (kind == 2) {
+    if (kind == 2 || kind == 5) {
       // A delegated value answers the request as it is.
       const request = this.asyncGeneratorFront(record);
       if (request != 0) {
@@ -4826,9 +4921,10 @@ export struct Runtime {
             // after the body has run to its first await.
             const gen = this.frames[frameIndex].generator;
             this.suspendGenerator(frameIndex, ip, inst.a);
-            // A sync generator records that its body has not run (kind
-            // 4): a return before the first next() completes it as it is.
-            if (this.functions[usize(fi)].isGenerator && !this.functions[usize(fi)].isAsync) {
+            // A generator records that its body has not run (kind 4): a
+            // return or throw before the first next() completes it as
+            // it is, without running the body.
+            if (this.functions[usize(fi)].isGenerator) {
               const startRecord = this.generatorRecord(gen);
               this.heap.setSlot(startRecord, 9, int32Value(4));
             }
@@ -4892,11 +4988,18 @@ export struct Runtime {
               thrown = this.typeError(in message);
               throwing = true;
             } else {
-              const produced = this.reg(base, inst.b);
+              let produced = this.reg(base, inst.b);
               this.suspendGenerator(frameIndex, ip, inst.a);
               const gen = this.frames[frameIndex].generator;
               const record = this.generatorRecord(gen);
-              this.heap.setSlot(record, 9, int32Value(3));
+              if (this.functions[usize(fi)].isAsync) {
+                // An async delegation yields the delegate's value; the
+                // driver answers the request with it as it is.
+                this.heap.setSlot(record, 9, int32Value(5));
+                produced = this.createIterResult(produced, false);
+              } else {
+                this.heap.setSlot(record, 9, int32Value(3));
+              }
               const frame = this.popFrame();
               if (this.frameCount <= entryDepth) {
                 result = produced;

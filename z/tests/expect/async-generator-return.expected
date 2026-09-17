@@ -1,0 +1,10 @@
+t1 r={"value":"early","done":true} ran=false next={"done":true}
+t2 finally r={"value":"v","done":true}
+t3 r={"value":"late","done":true} rej=no
+t4a awaited,after-yield a={"value":"fin-yield","done":false} b={"value":"R","done":true}
+t4b RangeError {"done":true}
+t4c r={"value":"override","done":true}
+t5 caught boom r={"value":"recovered","done":false}
+t6 got second,cleanup | {"value":"a","done":false} {"value":"b","done":false} {"value":"R","done":true} {"done":true} throw:late-throw
+t7 n1:1,then-called,ret:T,true,n3:true
+t8 body,resolving,after-await,fin a={"value":1,"done":false} b={"value":"R","done":true}

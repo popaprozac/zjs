@@ -2335,9 +2335,10 @@ export struct Compiler {
       }
       const dst = this.allocReg();
       this.emit(instAB(Op.yieldOp, dst, value));
-      if (!this.isAsyncBody) {
+      {
         // Resumed by return(v): return v from here, through the finally
-        // blocks, as a return statement would.
+        // blocks, as a return statement would (an async generator's
+        // driver has awaited v by then).
         const skip = this.emit(instI16(Op.jmpIfNotReturn, 0));
         if (this.regionDepth > 0) {
           const savedFixed = this.fixedRegs;
@@ -3620,6 +3621,13 @@ export struct Compiler {
       let r: u8 = 0;
       if (n.left != NO_NODE) {
         r = this.compileExpr(in parser, inout runtime, n.left);
+        if (this.isAsyncGeneratorBody) {
+          // An async generator awaits what it returns, before its
+          // finally blocks run.
+          const awaited = this.allocReg();
+          this.emit(instAB(Op.awaitOp, awaited, r));
+          r = awaited;
+        }
       } else {
         r = this.allocReg();
         this.emit(instA(Op.loadUndefined, r));
