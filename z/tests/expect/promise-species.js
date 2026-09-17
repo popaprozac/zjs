@@ -133,5 +133,25 @@ Object.defineProperty(throwingCtor, "constructor", { get: function () { throw ne
 })();
 (async function* () { try { yield throwingCtor; } catch (e) { note("yield threw at the yield:", e.constructor.name); } })().next();
 
+// --- Promise[Symbol.species] itself replaced, redefined, deleted, restored ---
+var speciesDescriptor = Object.getOwnPropertyDescriptor(Promise, Symbol.species);
+var intrinsicReads = 0;
+Object.defineProperty(Promise, Symbol.species, { get: function () { intrinsicReads += 1; return speciesDescriptor.get.call(this); }, configurable: true });
+var afterReplace = Promise.resolve(1).then(function () {});
+note("replaced getter is read by then:", intrinsicReads, afterReplace instanceof Promise);
+Promise.resolve(1).finally(function () {});
+note("and by finally:", intrinsicReads);
+var elsewhereCalls = 0;
+var ElsewhereCounting = function (executor) { elsewhereCalls += 1; return new Promise(executor); };
+Object.defineProperty(Promise, Symbol.species, { value: ElsewhereCounting, configurable: true });
+Promise.resolve(1).then(function () {});
+note("data-property species is used:", elsewhereCalls);
+Object.defineProperty(Promise, Symbol.species, { value: 3, configurable: true });
+note("invalid species on Promise:", kind(function () { Promise.resolve(1).then(); }));
+delete Promise[Symbol.species];
+note("deleted species falls back:", Promise.resolve(1).then() instanceof Promise, Symbol.species in Promise);
+Object.defineProperty(Promise, Symbol.species, speciesDescriptor);
+note("restored:", Promise[Symbol.species] === Promise, Promise.resolve(1).then() instanceof Promise);
+
 function settle(n, done) { if (n == 0) { done(); } else { Promise.resolve().then(function () { settle(n - 1, done); }); } }
 settle(12, function () { console.log(log.join("\n")); });

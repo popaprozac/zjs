@@ -202,7 +202,9 @@ and never consult species, look `resolve` up once, invoke each
 element's own `then`, and close the iterator when a later step throws.
 `catch` and `finally` go through `this.then`. Only the intrinsic
 constructor is shortcut, since constructing it has no step a program
-can see; `await` and async bodies always use intrinsic promises, read
+can see, and the call to its species getter is skipped while that
+getter is the one the engine installed (it only returns its receiver;
+the `constructor` read before it is always made); `await` and async bodies always use intrinsic promises, read
 the awaited promise's `constructor` as PromiseResolve requires (a throw
 there is thrown at the `await`), and never call a native promise's own
 `then`. `Promise` itself makes its own object: the executor is checked

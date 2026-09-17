@@ -28,6 +28,12 @@ own then called with function function
 async result is intrinsic: true false
 await threw at the await: URIError
 yield threw at the yield: URIError
+replaced getter is read by then: 1 true
+and by finally: 3
+data-property species is used: 1
+invalid species on Promise: TypeError
+deleted species falls back: true false
+restored: true true
 onFinally ran
 subclass chain value 2
 finally throw replaces: finally threw

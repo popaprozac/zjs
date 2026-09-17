@@ -201,8 +201,7 @@ function promiseThen(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   const what: String = "Promise.prototype.then";
   const promise = requirePromise(inout runtime, thisValue, in what);
   if (promise == 0) return undefinedValue();
-  const intrinsic = cellValue(runtime.promiseCtor);
-  const ctor = runtime.speciesConstructor(thisValue, intrinsic);
+  const ctor = runtime.promiseSpeciesConstructor(thisValue);
   if (runtime.pendingThrow) return undefinedValue();
   const onFulfilled = runtime.argument(argsBase, argc, 0);
   const onRejected = runtime.argument(argsBase, argc, 1);
@@ -277,8 +276,7 @@ function promiseFinally(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     const message: String = "Promise.prototype.finally called on a non-object";
     return raiseType(inout runtime, in message);
   }
-  const intrinsic = cellValue(runtime.promiseCtor);
-  const ctor = runtime.speciesConstructor(thisValue, intrinsic);
+  const ctor = runtime.promiseSpeciesConstructor(thisValue);
   if (runtime.pendingThrow) return undefinedValue();
   const onFinally = runtime.argument(argsBase, argc, 0);
   let onFulfilled = onFinally;
@@ -543,6 +541,14 @@ export function installPromise(inout runtime: Runtime): void {
   const raceText: String = "race"; runtime.defineMethod(ctor, in raceText, promiseRace, 1);
   const withResolversText: String = "withResolvers"; runtime.defineMethod(ctor, in withResolversText, promiseWithResolvers, 0);
   defineSpecies(inout runtime, ctor);
+  // The getter just installed, remembered so its call can be skipped
+  // for as long as it stays in place.
+  const speciesBag = runtime.functionBag(ctor);
+  const symbolSpecies = runtime.symbolSpecies;
+  const speciesKey = runtime.propertyKey(symbolSpecies);
+  const speciesSlot = runtime.heap.objectFindSlot(speciesBag, speciesKey);
+  const speciesAccessor = runtime.heap.slot(speciesBag, u32(speciesSlot));
+  runtime.promiseSpeciesGetter = asCell(runtime.heap.slot(asCell(speciesAccessor), 0));
   const symbolToStringTag = runtime.symbolToStringTag;
   const tagKey = runtime.propertyKey(symbolToStringTag);
   const tagValue = runtime.internText(in promiseText);

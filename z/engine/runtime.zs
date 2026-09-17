@@ -298,6 +298,10 @@ export struct Runtime {
   // The intrinsic Promise constructor: the one constructor whose
   // capabilities the engine may make without observable steps.
   promiseCtor: u32;
+  // The getter installed as Promise[Symbol.species]. While it is still
+  // in place its call can be skipped: it returns its receiver and does
+  // nothing else, so nothing can tell.
+  promiseSpeciesGetter: u32;
   // The new target of a builtin construct call whose constructor makes
   // its own object; that constructor takes it on entry, so a plain call
   // finds undefined here.
@@ -3618,6 +3622,8 @@ export struct Runtime {
     this.heap.markHandle(promiseProto);
     const promiseCtor = this.promiseCtor;
     this.heap.markHandle(promiseCtor);
+    const promiseSpeciesGetter = this.promiseSpeciesGetter;
+    this.heap.markHandle(promiseSpeciesGetter);
     let job: usize = 0;
     while (job < this.jobs.length) {
       const queued = this.jobs[job];
@@ -4337,12 +4343,47 @@ export struct Runtime {
     return promise;
   }
 
+  // Whether Promise[Symbol.species] is still the accessor the engine
+  // installed, with its getter.
+  function promiseSpeciesPristine(inout this): boolean {
+    const bag = this.functionBag(this.promiseCtor);
+    if (bag == 0) return false;
+    const symbolSpecies = this.symbolSpecies;
+    const key = this.propertyKey(symbolSpecies);
+    const slot = this.heap.objectFindSlot(bag, key);
+    if (slot < 0) return false;
+    if ((this.heap.attrOf(bag, u32(slot)) & PROP_ACCESSOR) == 0) return false;
+    const accessor = this.heap.slot(bag, u32(slot));
+    if (!isCell(accessor) || asCell(accessor) == 0) return false;
+    const getter = this.heap.slot(asCell(accessor), 0);
+    return isCell(getter) && asCell(getter) == this.promiseSpeciesGetter;
+  }
+
+  // SpeciesConstructor(promise, %Promise%). The `constructor` read is
+  // always made. When it yields the intrinsic constructor and that
+  // constructor's species accessor is untouched, the answer is the
+  // intrinsic constructor and the getter call is skipped: the builtin
+  // getter only returns its receiver, so the call is not observable.
+  function promiseSpeciesConstructor(inout this, promise: Value): Value {
+    const atomConstructor = this.atomConstructor;
+    const ctor = this.getProperty(promise, cellValue(atomConstructor));
+    if (this.pendingThrow) return undefinedValue();
+    if (isCell(ctor) && asCell(ctor) == this.promiseCtor && this.promiseSpeciesPristine()) return ctor;
+    const intrinsic = cellValue(this.promiseCtor);
+    return this.speciesFromConstructor(ctor, intrinsic);
+  }
+
   // SpeciesConstructor(object, default): every read is observable, and
   // a throw is left pending.
   function speciesConstructor(inout this, object: Value, defaultCtor: Value): Value {
     const atomConstructor = this.atomConstructor;
     const ctor = this.getProperty(object, cellValue(atomConstructor));
     if (this.pendingThrow) return undefinedValue();
+    return this.speciesFromConstructor(ctor, defaultCtor);
+  }
+
+  // The rest of SpeciesConstructor, from the `constructor` value read.
+  function speciesFromConstructor(inout this, ctor: Value, defaultCtor: Value): Value {
     if (isUndefined(ctor)) return defaultCtor;
     if (!this.isObjectLike(ctor)) {
       const message: String = "object.constructor is not an object";
@@ -6333,7 +6374,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
