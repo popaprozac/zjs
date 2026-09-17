@@ -121,8 +121,14 @@ an array never given one pays a single link check), and a prototype
 chain may pass through arrays and functions as well as plain objects:
 reads carry the receiver through all of them, a write asks the chain
 for an inherited setter or a read-only property before creating an own
-one (for an absent index too, once the array has a prototype of its
-own), and `in`, `for`-`in`, `isPrototypeOf`, `instanceof`, and the
+one -- for an absent index of an ordinary array too, which asks
+Array.prototype and its ancestors as any assignment does, with push,
+unshift, splice, and fill assigning and literals, map, from, and
+defineProperty defining. That write takes a direct path only until any
+non-array object anywhere has been given an element; the heap records
+that when the property is made, whatever object it lands on, so a chain
+replaced afterwards is covered, and once set it stays set. `in`,
+`for`-`in`, `isPrototypeOf`, `instanceof`, and the
 cycle check follow the same chain. A function written as an object
 literal's method, getter, or setter has no [[Construct]] and no
 `prototype`, like a class method; the parser records that on the
@@ -487,7 +493,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, `Object.prototype.__proto__` and `__proto__` in object literals, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, naming an object-literal function from a computed key, elements defined on Array.prototype itself being consulted by a write to an absent index (an array with a prototype of its own does consult its chain), direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, `Object.prototype.__proto__` and `__proto__` in object literals, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, naming an object-literal function from a computed key, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and

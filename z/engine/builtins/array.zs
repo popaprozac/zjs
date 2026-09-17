@@ -227,7 +227,10 @@ function arrayIsArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 // --- Mutators ---
 
 function arrayPush(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  if (isArrayValue(in runtime, thisValue) && runtime.heap.flagsOf(asCell(thisValue)) == 0) {
+  // The direct path is for an ordinary array whose new elements no
+  // prototype could intercept: push assigns, so an inherited element
+  // setter would run (the general path, through Set, does that).
+  if (isArrayValue(in runtime, thisValue) && runtime.heap.flagsOf(asCell(thisValue)) == 0 && !runtime.heap.indexKeysDefined && runtime.heap.linkOf(asCell(thisValue)) == 0) {
     const array = asCell(thisValue);
     let index: u32 = 0;
     while (index < argc) {

@@ -1,0 +1,16 @@
+plain arrays first, before any index key exists anywhere: 5,1,,,4,5,false
+setter on Array.prototype, absent index: set q on 2,4,false,0|p||r,own,
+setter on Array.prototype, receiver is the array: true,0,1
+getter-only on Array.prototype: g,1,TypeError,TypeError,1
+non-writable data on Array.prototype: ro,0,false | TypeError | defined | defined,1 | 2
+writable data on Array.prototype creates an own element: own,true,5,inherited
+setter on Object.prototype: seven,0,false,obj,false
+replaced chain: Array.prototype re-parented onto an object with elements: mid,s,0,TypeError
+chain restored: writes are direct again: 1,2,7,
+mutation after the fast path has run: 21,late,22,false,b,0,now own,true
+existing own elements are untouched by the chain: again,1
+holes versus own elements: into hole,false,own,
+define semantics are separate from assignment: literal 2 3,4,5,6,7,8,10 defined push assignment only unshift assignment only splice assignment only fill assignment only
+an array with its own prototype still consults it: x,0,false
+a function holding an element in the chain: written,true,fn1
+collections inside inherited setters: {"v":"r","list":["r","r"]},4,false

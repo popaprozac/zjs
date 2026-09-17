@@ -79,6 +79,9 @@ export const FLAG_WIDE: u8 = 16;
 export const FLAG_HIDDEN: u8 = 32;
 // A symbol from the global registry (Symbol.for): not weakly holdable.
 export const FLAG_REGISTERED_SYMBOL: u8 = 64;
+// A string cell that is the canonical spelling of an array index, set
+// when it is interned: the key it makes names an element.
+export const FLAG_INDEX_KEY: u8 = 128;
 
 struct CellHeader {
   tag: u8;
@@ -207,6 +210,14 @@ export struct Heap {
   freeDictionaryCount: usize;
   // The property count past which an object leaves the class tree.
   dictThreshold: u32;
+  // Whether any object that is not an array has ever been given a
+  // property whose key names an array index. Until then a write to an
+  // absent index of an ordinary array can take the fast path: no
+  // prototype an array could inherit from holds an element. Once set it
+  // stays set, so a chain replaced later cannot bring in an element the
+  // fast path misses: whatever object holds one set this when it was
+  // given it.
+  indexKeysDefined: boolean;
   // Handles and string-table indices released by a sweep, reused before
   // the arrays grow. `freeHandleCount` / `freeStringCount` mark the live
   // extent, since Z's Array cannot pop.
@@ -636,6 +647,7 @@ export struct Heap {
       this.setSlot(handle, u32(existing), value);
       return;
     }
+    if ((this.headers[usize(atom)].flags & FLAG_INDEX_KEY) != 0) this.indexKeysDefined = true;
     const parentClass = this.headers[usize(handle)].payload;
     if ((parentClass & DICT_BIT) != 0) {
       this.dictionaryInsert(handle, parentClass & (DICT_BIT - 1), atom, value);
@@ -1858,7 +1870,7 @@ export function createHeap(): Heap {
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
-    dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD,
+    dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD, indexKeysDefined: false,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0, collectFloor: COLLECT_FLOOR, collectGrowthPercent: COLLECT_GROWTH_PERCENT,
   });
@@ -2386,7 +2398,8 @@ test "weak record: a value referring back to its own key is collected with it" {
   const record = heap.allocateWeakRecord(2);
   const key = heap.allocateObject(0);
   const value = heap.allocateObject(0);
-  heap.objectSet(value, 12345, cellValue(key));
+  const back = testNames(inout heap, 1);
+  heap.objectSet(value, back[0], cellValue(key));
   heap.weakPut(record, key, cellValue(value));
   let roots = Array<u32>();
   roots.push(record);
@@ -2420,7 +2433,8 @@ test "weak record: keys reached only through another record's value, in both dis
     const k1 = heap.allocateObject(0);
     const k2 = heap.allocateObject(0);
     const holder = heap.allocateObject(0);
-    heap.objectSet(holder, 777, cellValue(k2));
+    const link = testNames(inout heap, 1);
+    heap.objectSet(holder, link[0], cellValue(k2));
     const v2 = heap.allocateObject(0);
     heap.weakPut(a, k1, cellValue(holder));
     heap.weakPut(b, k2, cellValue(v2));
@@ -2452,7 +2466,8 @@ test "weak record: a record discovered through a value joins the fixpoint" {
   const b = heap.allocateWeakRecord(2);
   const k1 = heap.allocateObject(0);
   const carrier = heap.allocateObject(0);
-  heap.objectSet(carrier, 555, cellValue(b));
+  const via = testNames(inout heap, 1);
+  heap.objectSet(carrier, via[0], cellValue(b));
   const v = heap.allocateObject(0);
   heap.weakPut(a, k1, cellValue(carrier));
   heap.weakPut(b, k1, cellValue(v));
@@ -2479,11 +2494,12 @@ test "weak record: a long chain in reverse discovery order needs no repeated sca
     keys.push(heap.allocateObject(0));
     i = i + 1;
   }
+  const chainNames = testNames(inout heap, links);
   i = 0;
   while (i < links) {
     const record = heap.allocateWeakRecord(2);
     const holder = heap.allocateObject(0);
-    heap.objectSet(holder, 900 + i, cellValue(keys[usize(i + 1)]));
+    heap.objectSet(holder, chainNames[usize(i)], cellValue(keys[usize(i + 1)]));
     heap.weakPut(record, keys[usize(i)], cellValue(holder));
     records.push(record);
     i = i + 1;
