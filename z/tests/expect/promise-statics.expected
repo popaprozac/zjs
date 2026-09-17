@@ -1,0 +1,75 @@
+resolve on undefined: TypeError | on a non-constructor: TypeError | on a plain object: TypeError
+reject on undefined: TypeError | on a non-constructor: TypeError | on a plain object: TypeError
+withResolvers on undefined: TypeError | on a non-constructor: TypeError | on a plain object: TypeError
+all on undefined: TypeError | on a non-constructor: TypeError | on a plain object: TypeError
+allSettled on undefined: TypeError | on a non-constructor: TypeError | on a plain object: TypeError
+any on undefined: TypeError | on a non-constructor: TypeError | on a plain object: TypeError
+race on undefined: TypeError | on a non-constructor: TypeError | on a plain object: TypeError
+Sub.resolve: true true
+Sub.reject: true true
+Sub.withResolvers: true true
+Sub.all: true true
+Sub.allSettled: true true
+Sub.any: true true
+Sub.race: true true
+species reads by the statics themselves: only from catch()
+resolve constructor throws: RangeError | executor unused: TypeError
+reject constructor throws: RangeError | executor unused: TypeError
+withResolvers constructor throws: RangeError | executor unused: TypeError
+all constructor throws: RangeError | executor unused: TypeError
+allSettled constructor throws: RangeError | executor unused: TypeError
+any constructor throws: RangeError | executor unused: TypeError
+race constructor throws: RangeError | executor unused: TypeError
+resolve identity: true
+resolve with another constructor wraps: true
+resolve reads constructor: true constructor
+resolve with a throwing constructor read: EvalError
+Custom resolve: cv
+custom resolve: true
+Custom reject: cr
+custom reject: true
+custom withResolvers: true function function promise,resolve,reject
+Custom resolve: through the pair
+all returned a Custom: true
+allSettled returned a Custom: true
+any returned a Custom: true
+race returned a Custom: true
+all handlers: fulfill shared false | fulfill is capability's false | reject shared true | reject is capability's true | lengths 1 1
+all outcome:  | "again"
+allSettled handlers: fulfill shared false | fulfill is capability's false | reject shared false | reject is capability's false | lengths 1 1
+allSettled outcome: [{"status":"fulfilled","value":"a"},{"status":"rejected","reason":"b"}] | 
+any handlers: fulfill shared true | fulfill is capability's true | reject shared false | reject is capability's false | lengths 1 1
+any outcome: "again" | 
+race handlers: fulfill shared true | fulfill is capability's true | reject shared true | reject is capability's true | lengths 1 1
+race outcome: "again" | "again"
+race empty stays pending: true
+withResolvers settles once: wr1
+Custom resolve: any 1
+Custom resolve: race 1
+non-callable resolve rejects: TypeError | iterator untouched: true
+all then getter: then getter all | closed
+all resolve: resolve threw all | closed
+all next: next threw all | not closed
+allSettled then getter: then getter allSettled | closed
+allSettled resolve: resolve threw allSettled | closed
+allSettled next: next threw allSettled | not closed
+any then getter: then getter any | closed
+any resolve: resolve threw any | closed
+any next: next threw any | not closed
+race then getter: then getter race | closed
+race resolve: resolve threw race | closed
+race next: next threw race | not closed
+all, resolve throws: resolve threw
+allSettled, resolve throws: resolve threw
+all empty: true 0
+any empty: AggregateError 0
+Custom resolve: all 1,all thenable
+Custom resolve: [object Object],[object Object]
+Custom resolve: any thenable
+Custom resolve: race thenable
+all values: 1,2,3 | resolve reads: 1 | calls: Tracked:1,Tracked:2,Tracked:3
+allSettled: [{"status":"fulfilled","value":1},{"status":"rejected","reason":"x"}]
+any: AggregateError a,b false
+any value: 5
+race: lost
+all: 1,2,3

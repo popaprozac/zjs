@@ -300,240 +300,209 @@ function promiseFinally(inout runtime: Runtime, thisValue: Value, argsBase: u32,
 }
 
 // --- statics ---
+//
+// Each static builds its result from its receiver, not from
+// Symbol.species: `Promise.all.call(C, ...)` constructs C.
 
 function promiseResolveStatic(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   if (!runtime.isObjectLike(thisValue)) {
     const message: String = "Promise.resolve called on a non-object";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
-    return undefinedValue();
+    return raiseType(inout runtime, in message);
   }
-  return runtime.promiseResolveValue(runtime.argument(argsBase, argc, 0));
+  return promiseResolveWith(inout runtime, thisValue, runtime.argument(argsBase, argc, 0));
 }
 
 function promiseRejectStatic(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  if (!runtime.isObjectLike(thisValue)) {
-    const message: String = "Promise.reject called on a non-object";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
-    return undefinedValue();
+  const reason = runtime.argument(argsBase, argc, 0);
+  if (isIntrinsicConstructor(inout runtime, thisValue)) {
+    const promise = runtime.newPromise();
+    runtime.rejectPromise(asCell(promise), reason);
+    return promise;
   }
-  const promise = runtime.newPromise();
-  runtime.rejectPromise(asCell(promise), runtime.argument(argsBase, argc, 0));
-  return promise;
+  const capability = newPromiseCapability(inout runtime, thisValue);
+  if (capability == 0) return undefinedValue();
+  runtime.pushTempRoot(cellValue(capability));
+  const ignored = capabilitySettle(inout runtime, capability, reason, true);
+  runtime.popTempRoot();
+  if (runtime.pendingThrow) return undefinedValue();
+  return runtime.heap.slot(capability, 0);
 }
 
 function promiseWithResolvers(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const promise = runtime.newPromise();
-  runtime.pushTempRoot(promise);
-  const shared = runtime.newResolvingShared(promise);
-  runtime.pushTempRoot(shared);
-  const resolve = runtime.resolvingFunction(promise, shared, false);
-  runtime.pushTempRoot(resolve);
-  const reject = runtime.resolvingFunction(promise, shared, true);
-  runtime.pushTempRoot(reject);
+  const capability = newPromiseCapability(inout runtime, thisValue);
+  if (capability == 0) return undefinedValue();
   const objectProto = runtime.objectProto;
   const result = runtime.heap.allocateObject(objectProto);
   const promiseText: String = "promise";
   const promiseAtom = runtime.atomOf(in promiseText);
-  runtime.heap.objectDefine(result, promiseAtom, promise, PROP_DEFAULT);
+  runtime.heap.objectDefine(result, promiseAtom, runtime.heap.slot(capability, 0), PROP_DEFAULT);
   const resolveText: String = "resolve";
   const resolveAtom = runtime.atomOf(in resolveText);
-  runtime.heap.objectDefine(result, resolveAtom, resolve, PROP_DEFAULT);
+  runtime.heap.objectDefine(result, resolveAtom, runtime.heap.slot(capability, 1), PROP_DEFAULT);
   const rejectText: String = "reject";
   const rejectAtom = runtime.atomOf(in rejectText);
-  runtime.heap.objectDefine(result, rejectAtom, reject, PROP_DEFAULT);
-  runtime.popTempRoot();
-  runtime.popTempRoot();
-  runtime.popTempRoot();
-  runtime.popTempRoot();
+  runtime.heap.objectDefine(result, rejectAtom, runtime.heap.slot(capability, 2), PROP_DEFAULT);
   return cellValue(result);
 }
 
-// Promise.all / allSettled / any / race share one iteration: each
-// element is resolved to a promise whose settlement runs an element
-// handler bound to [aggregate, index]. The aggregate is a heap array:
-// [values, remaining, result promise, mode, errors].
+// Promise.all / allSettled / any / race share one iteration. Each
+// element is resolved through the receiver's own `resolve`, and its
+// `then` is invoked with the functions the mode calls for: element
+// functions the engine makes, or the capability's own resolve / reject.
+// The aggregate is a heap array [values, remaining, capability, mode];
+// an element function's bound data is [aggregate, index, called].
 const AGG_ALL: i32 = 0;
 const AGG_ALL_SETTLED: i32 = 1;
 const AGG_ANY: i32 = 2;
 const AGG_RACE: i32 = 3;
 
-function aggregateSettle(inout runtime: Runtime, aggregate: u32, index: u32, value: Value, rejected: boolean): void {
+// Every element has reported. `all` and `allSettled` resolve with the
+// values; `any` rejects with an AggregateError, which the loop raises
+// (its caller rejects with whatever is pending) and an element function
+// hands to reject itself.
+function aggregateFinish(inout runtime: Runtime, aggregate: u32, fromLoop: boolean): Value {
   const mode = asInt32(runtime.heap.slot(aggregate, 3));
-  const result = runtime.heap.slot(aggregate, 2);
-  const values = asCell(runtime.heap.slot(aggregate, 0));
-  if (mode == AGG_RACE) {
-    if (rejected) { runtime.rejectPromise(asCell(result), value); } else { runtime.resolvePromise(asCell(result), value); }
-    return;
+  const capability = asCell(runtime.heap.slot(aggregate, 2));
+  const values = runtime.heap.slot(aggregate, 0);
+  if (mode != AGG_ANY) return capabilitySettle(inout runtime, capability, values, false);
+  const message: String = "All promises were rejected";
+  const error = runtime.makeError(ERROR_KIND_AGGREGATE, bytesOf(in message));
+  const errorsText: String = "errors";
+  const errorsAtom = runtime.atomOf(in errorsText);
+  runtime.heap.objectDefine(asCell(error), errorsAtom, values, PROP_METHOD);
+  if (fromLoop) {
+    runtime.raise(error);
+    return undefinedValue();
   }
-  if (mode == AGG_ALL) {
-    if (rejected) {
-      runtime.rejectPromise(asCell(result), value);
-      return;
-    }
-    runtime.heap.setSlot(values, index, value);
-  } else if (mode == AGG_ALL_SETTLED) {
+  return capabilitySettle(inout runtime, capability, error, true);
+}
+
+function elementSettled(inout runtime: Runtime, argsBase: u32, argc: u32, callee: u32, rejected: boolean): Value {
+  const bound = asCell(runtime.heap.slot(callee, 0));
+  if (isTrue(runtime.heap.slot(bound, 2))) return undefinedValue();
+  runtime.heap.setSlot(bound, 2, booleanValue(true));
+  const aggregate = asCell(runtime.heap.slot(bound, 0));
+  const index = u32(asInt32(runtime.heap.slot(bound, 1)));
+  const mode = asInt32(runtime.heap.slot(aggregate, 3));
+  const values = asCell(runtime.heap.slot(aggregate, 0));
+  const value = runtime.argument(argsBase, argc, 0);
+  if (mode == AGG_ALL_SETTLED) {
     const objectProto = runtime.objectProto;
     const entry = runtime.heap.allocateObject(objectProto);
-    runtime.pushTempRoot(cellValue(entry));
     const statusText: String = "status";
     const statusAtom = runtime.atomOf(in statusText);
-    let label = undefinedValue();
-    let keyAtom: u32 = 0;
-    if (rejected) {
-      const rejectedText: String = "rejected";
-      label = runtime.internText(in rejectedText);
-      const reasonText: String = "reason";
-      keyAtom = runtime.atomOf(in reasonText);
-    } else {
-      const fulfilledText: String = "fulfilled";
-      label = runtime.internText(in fulfilledText);
-      const valueText: String = "value";
-      keyAtom = runtime.atomOf(in valueText);
-    }
+    const labelText: String = rejected ? "rejected" : "fulfilled";
+    const label = runtime.internText(in labelText);
+    const keyText: String = rejected ? "reason" : "value";
+    const keyAtom = runtime.atomOf(in keyText);
     runtime.heap.objectDefine(entry, statusAtom, label, PROP_DEFAULT);
     runtime.heap.objectDefine(entry, keyAtom, value, PROP_DEFAULT);
-    runtime.popTempRoot();
     runtime.heap.setSlot(values, index, cellValue(entry));
   } else {
-    // any: a fulfillment wins; rejections collect.
-    if (!rejected) {
-      runtime.resolvePromise(asCell(result), value);
-      return;
-    }
     runtime.heap.setSlot(values, index, value);
   }
   const remaining = asInt32(runtime.heap.slot(aggregate, 1)) - 1;
   runtime.heap.setSlot(aggregate, 1, int32Value(remaining));
-  if (remaining == 0) aggregateFinish(inout runtime, aggregate);
-}
-
-function aggregateFinish(inout runtime: Runtime, aggregate: u32): void {
-  const mode = asInt32(runtime.heap.slot(aggregate, 3));
-  const result = runtime.heap.slot(aggregate, 2);
-  const values = runtime.heap.slot(aggregate, 0);
-  if (mode == AGG_ANY) {
-    const message: String = "All promises were rejected";
-    const error = runtime.makeError(ERROR_KIND_AGGREGATE, bytesOf(in message));
-    runtime.pushTempRoot(error);
-    const errorsText: String = "errors";
-    const errorsAtom = runtime.atomOf(in errorsText);
-    runtime.heap.objectDefine(asCell(error), errorsAtom, values, PROP_METHOD);
-    runtime.popTempRoot();
-    runtime.rejectPromise(asCell(result), error);
-    return;
-  }
-  runtime.resolvePromise(asCell(result), values);
-}
-
-// Element handlers: the callee's bound data is [aggregate, index, done].
-function elementFulfilled(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const bound = asCell(runtime.heap.slot(callee, 0));
-  if (isTrue(runtime.heap.slot(bound, 2))) return undefinedValue();
-  runtime.heap.setSlot(bound, 2, booleanValue(true));
-  const aggregate = asCell(runtime.heap.slot(bound, 0));
-  const index = u32(asInt32(runtime.heap.slot(bound, 1)));
-  aggregateSettle(inout runtime, aggregate, index, runtime.argument(argsBase, argc, 0), false);
+  if (remaining == 0) return aggregateFinish(inout runtime, aggregate, false);
   return undefinedValue();
+}
+
+function elementFulfilled(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return elementSettled(inout runtime, argsBase, argc, callee, false);
 }
 
 function elementRejected(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const bound = asCell(runtime.heap.slot(callee, 0));
-  if (isTrue(runtime.heap.slot(bound, 2))) return undefinedValue();
-  runtime.heap.setSlot(bound, 2, booleanValue(true));
-  const aggregate = asCell(runtime.heap.slot(bound, 0));
-  const index = u32(asInt32(runtime.heap.slot(bound, 1)));
-  aggregateSettle(inout runtime, aggregate, index, runtime.argument(argsBase, argc, 0), true);
-  return undefinedValue();
+  return elementSettled(inout runtime, argsBase, argc, callee, true);
 }
 
 function aggregate(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, mode: i32): Value {
-  if (!runtime.isObjectLike(thisValue)) {
-    const message: String = "Promise combinator called on a non-object";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
-    return undefinedValue();
-  }
-  const result = runtime.newPromise();
-  runtime.pushTempRoot(result);
-  const record = runtime.heap.allocateArray(5);
+  const capability = newPromiseCapability(inout runtime, thisValue);
+  if (capability == 0) return undefinedValue();
+  runtime.pushTempRoot(cellValue(capability));
+  const record = runtime.heap.allocateArray(4);
   runtime.heap.setSlot(record, 0, cellValue(runtime.heap.allocateArray(0)));
   runtime.heap.setSlot(record, 1, int32Value(1));
-  runtime.heap.setSlot(record, 2, result);
+  runtime.heap.setSlot(record, 2, cellValue(capability));
   runtime.heap.setSlot(record, 3, int32Value(mode));
-  runtime.heap.setSlot(record, 4, undefinedValue());
   runtime.pushTempRoot(cellValue(record));
   const resolveText: String = "resolve";
   const resolveKey = runtime.internText(in resolveText);
   const promiseResolve = runtime.getProperty(thisValue, resolveKey);
-  let failed = runtime.pendingThrow;
-  if (!failed && !runtime.isCallable(promiseResolve)) {
+  if (!runtime.pendingThrow && !runtime.isCallable(promiseResolve)) {
     const message: String = "Promise resolve is not a function";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
-    failed = true;
+    const ignored = raiseType(inout runtime, in message);
   }
+  runtime.pushTempRoot(promiseResolve);
   let iterator = undefinedValue();
-  if (!failed) {
-    iterator = runtime.getIterator(runtime.argument(argsBase, argc, 0));
-    failed = runtime.pendingThrow;
-  }
-  let index: u32 = 0;
-  if (!failed) {
-    runtime.pushTempRoot(iterator);
+  if (!runtime.pendingThrow) iterator = runtime.getIterator(runtime.argument(argsBase, argc, 0));
+  runtime.pushTempRoot(iterator);
+  // Whether the iterator is finished with: it is closed on a throw only
+  // while it is still mid-iteration.
+  let exhausted = true;
+  if (!runtime.pendingThrow) {
+    exhausted = false;
+    let index: u32 = 0;
     while (true) {
       const item = runtime.iteratorStep(iterator);
-      if (runtime.pendingThrow || isDeleted(item)) break;
+      if (runtime.pendingThrow || isDeleted(item)) {
+        exhausted = true;
+        break;
+      }
       let resolveArgs = Array<Value>();
       resolveArgs.push(item);
       const element = runtime.callValue(promiseResolve, thisValue, move resolveArgs);
       if (runtime.pendingThrow) break;
       runtime.pushTempRoot(element);
-      const values = asCell(runtime.heap.slot(record, 0));
-      runtime.heap.arraySet(values, index, undefinedValue());
-      runtime.heap.setSlot(record, 1, int32Value(asInt32(runtime.heap.slot(record, 1)) + 1));
-      const bound = runtime.heap.allocateArray(3);
-      runtime.heap.setSlot(bound, 0, cellValue(record));
-      runtime.heap.setSlot(bound, 1, int32Value(i32(index)));
-      runtime.heap.setSlot(bound, 2, booleanValue(false));
-      runtime.pushTempRoot(cellValue(bound));
-      const name: String = "";
-      const onFulfilled = cellValue(runtime.defineHostFunction(elementFulfilled, cellValue(bound), 1, in name));
-      runtime.pushTempRoot(onFulfilled);
-      const onRejected = cellValue(runtime.defineHostFunction(elementRejected, cellValue(bound), 1, in name));
-      runtime.pushTempRoot(onRejected);
-      const thenText: String = "then";
-      const thenKey = runtime.internText(in thenText);
-      const then = runtime.getProperty(element, thenKey);
-      if (!runtime.pendingThrow) {
-        let thenArgs = Array<Value>();
-        thenArgs.push(onFulfilled);
-        thenArgs.push(onRejected);
-        runtime.callValue(then, element, move thenArgs);
+      let onFulfilled = runtime.heap.slot(capability, 1);
+      let onRejected = runtime.heap.slot(capability, 2);
+      if (mode != AGG_RACE) {
+        const values = asCell(runtime.heap.slot(record, 0));
+        runtime.heap.arraySet(values, index, undefinedValue());
+        runtime.heap.setSlot(record, 1, int32Value(asInt32(runtime.heap.slot(record, 1)) + 1));
+        const bound = runtime.heap.allocateArray(3);
+        runtime.heap.setSlot(bound, 0, cellValue(record));
+        runtime.heap.setSlot(bound, 1, int32Value(i32(index)));
+        runtime.heap.setSlot(bound, 2, booleanValue(false));
+        const name: String = "";
+        if (mode != AGG_ANY) onFulfilled = cellValue(runtime.defineHostFunction(elementFulfilled, cellValue(bound), 1, in name));
+        if (mode != AGG_ALL) onRejected = cellValue(runtime.defineHostFunction(elementRejected, cellValue(bound), 1, in name));
       }
-      runtime.popTempRoot();
-      runtime.popTempRoot();
-      runtime.popTempRoot();
+      let thenArgs = Array<Value>();
+      thenArgs.push(onFulfilled);
+      thenArgs.push(onRejected);
+      const ignored = invokeThen(inout runtime, element, move thenArgs);
       runtime.popTempRoot();
       if (runtime.pendingThrow) break;
       index = index + 1;
     }
-    runtime.popTempRoot();
-    failed = runtime.pendingThrow;
   }
-  if (failed) {
-    const thrown = runtime.takePending();
-    runtime.rejectPromise(asCell(result), thrown);
-  } else {
-    // The extra count taken before the loop: finish if nothing is pending.
+  if (!runtime.pendingThrow && mode != AGG_RACE) {
+    // The count taken before the loop is released: with nothing
+    // outstanding, the result settles now.
     const remaining = asInt32(runtime.heap.slot(record, 1)) - 1;
     runtime.heap.setSlot(record, 1, int32Value(remaining));
-    if (remaining == 0 && mode != AGG_RACE) aggregateFinish(inout runtime, record);
+    if (remaining == 0) {
+      const ignored = aggregateFinish(inout runtime, record, true);
+    }
+  }
+  if (runtime.pendingThrow) {
+    // The throw rejects the result; an iterator still mid-iteration is
+    // closed first, and the original throw stands whatever closing does.
+    const thrown = runtime.takePending();
+    runtime.pushTempRoot(thrown);
+    if (!exhausted) {
+      runtime.iteratorClose(iterator);
+      if (runtime.pendingThrow) { const dropped = runtime.takePending(); }
+    }
+    const ignored = capabilitySettle(inout runtime, capability, thrown, true);
+    runtime.popTempRoot();
   }
   runtime.popTempRoot();
   runtime.popTempRoot();
-  return result;
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  if (runtime.pendingThrow) return undefinedValue();
+  return runtime.heap.slot(capability, 0);
 }
 
 function promiseAll(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

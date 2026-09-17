@@ -1,0 +1,19 @@
+Collecting resolve: {"parts":true}
+Collecting reject: static reject
+Collecting resolve: {"from":"then","list":[1,2,3]}
+Collecting resolve: "pass"
+Collecting resolve: {"ignored":true}
+Collecting then: function 1
+Collecting resolve: {"value":{"ignored":true}}
+Collecting resolve: {"n":"any"}
+Collecting resolve: ["any"]
+Collecting resolve: {"n":"race"}
+Collecting resolve: ["race"]
+catch: boom
+Collecting resolve: [{"n":"all"},{"thenable":true},["all"]]
+Collecting resolve: [{"status":"fulfilled","value":{"n":"allSettled"}},{"status":"fulfilled","value":{"thenable":true}},{"status":"fulfilled","value":["allSettled"]}]
+Collecting resolve: {"thenable":true}
+Collecting resolve: {"thenable":true}
+async body: {"awaited":true}{"kept":[1,2,3]}
+subclass chain: {"next":2}
+subclass all: [{"next":2},"x"]
