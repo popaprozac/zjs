@@ -121,8 +121,16 @@ binds it inside itself. Generators: a generator object is an ordinary
 object holding a record under a hidden key; a call runs the parameter
 prologue and suspends at GeneratorStart, `yield` copies the frame's
 register window and open try handlers out, and `next` / `throw` / `return`
-push a fresh frame and copy them back. `yield*` delegates values (what
-`next` sends is not yet forwarded, nor is the delegate's final value).
+push a fresh frame and copy them back. `yield*` delegates in full: the
+delegate's result objects reach the caller as they are, `next(v)` /
+`throw(e)` / `return(v)` are forwarded to the delegate's methods (a
+delegate without `throw` is closed and the throw becomes a TypeError; one
+without `return`, or whose `return` finishes, makes the outer generator
+return through its finally blocks), and a delegate that finishes on
+`next` or `throw` hands its value to the expression. `return(v)` on a
+generator suspended at a plain `yield` re-enters it and returns `v` through
+its finally blocks (which may yield again or return something else); on an
+unstarted generator it completes at once.
 Keyed collections: `Map`, `Set`, `WeakMap`, `WeakSet` as ordinary objects
 holding a record under a hidden key -- keys and values in insertion order
 with a deleted marker, an open-addressed index hashed consistently with
@@ -380,8 +388,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, a `return` or `throw` sent to a
-delegating `yield*`, promise subclassing through species, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+Not yet: `RegExp.prototype.compile` and the legacy statics, promise subclassing through species, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and

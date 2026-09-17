@@ -180,6 +180,12 @@ export enum Op {
   exitEnv,         // a = env register: the frame's environment becomes that environment's parent.
   throwConstAssign, // throws a TypeError: assignment to a constant binding.
   checkThis,       // a = register: throws a ReferenceError when it holds an uninitialized `this` (a derived constructor before super() returns).
+  yieldDelegate,   // a = dst, b = result object: a generator yields a delegate's iterator result as it is; a receives what the resumption sends.
+  resumeMode,      // a = dst: how the generator was last resumed (0 next, 1 throw, 2 return), as an int32.
+  iterNextWith,    // a = result, b = iterator, c = value: iterator.next(value), checked to be an object.
+  iterThrowWith,   // a = result, b = iterator, c = value: iterator.throw(value); without one, closes the iterator and throws a TypeError.
+  iterReturnWith,  // a = result, b = iterator, c = value: iterator.return(value); without one, a done result holding the value.
+  jmpIfNotReturn,  // bc = offset: jumps unless the generator's last resumption was a return (after a plain yield: fall through into the return).
 }
 
 export struct Inst {
@@ -393,6 +399,12 @@ export function opCode(op: Op): i32 {
     exitEnv => 158;
     throwConstAssign => 159;
     checkThis => 160;
+    yieldDelegate => 161;
+    resumeMode => 162;
+    iterNextWith => 163;
+    iterThrowWith => 164;
+    iterReturnWith => 165;
+    jmpIfNotReturn => 166;
   };
 }
 

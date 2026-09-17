@@ -2573,6 +2573,37 @@ export struct Runtime {
 
   // IteratorClose: the iterator's `return`, if any; its result must be an
   // object.
+  // iterator.<method>(value) for a delegating yield*: the result object,
+  // or the deleted marker when the method is absent (`absent` set) or
+  // the call threw (pending).
+  function iteratorCallWith(inout this, iterator: Value, in name: String, value: Value, inout absent: boolean): Value {
+    absent = false;
+    const key = this.internText(in name);
+    const method = this.getProperty(iterator, key);
+    if (this.pendingThrow) return deletedValue();
+    if (isUndefined(method) || isNull(method)) {
+      absent = true;
+      return deletedValue();
+    }
+    if (!this.isCallable(method)) {
+      const message: String = `iterator.${name} is not a function`;
+      const error = this.typeError(in message);
+      this.raise(error);
+      return deletedValue();
+    }
+    let args = Array<Value>();
+    args.push(value);
+    const result = this.callValue(method, iterator, move args);
+    if (this.pendingThrow) return deletedValue();
+    if (!this.isObjectLike(result)) {
+      const message: String = "Iterator result is not an object";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return deletedValue();
+    }
+    return result;
+  }
+
   function iteratorClose(inout this, iterator: Value): void {
     if (!this.isObjectLike(iterator)) return;
     if (this.isPristineArrayIterator(iterator)) return;
@@ -2693,9 +2724,11 @@ export struct Runtime {
     const proto = this.prototypeOf(asCell(callee));
     const gen = this.heap.allocateObject(proto);
     // [state, callee, this, promise, saved regs, ip, resume dst, saved
-    // tries, env, suspension kind, request queue, queue cursor]; the
-    // queue exists for async generators only.
-    const record = this.heap.allocateArray(12);
+    // tries, env, suspension kind, request queue, queue cursor, resume
+    // mode]; the queue exists for async generators only. Suspension kind
+    // 3 is a delegating yield (yield*), which every resumption -- next,
+    // throw, return -- re-enters with its mode for the delegation loop.
+    const record = this.heap.allocateArray(13);
     this.heap.setSlot(record, 0, int32Value(GEN_START));
     this.heap.setSlot(record, 1, callee);
     this.heap.setSlot(record, 2, thisValue);
@@ -2706,6 +2739,7 @@ export struct Runtime {
     this.heap.setSlot(record, 9, int32Value(0));
     this.heap.setSlot(record, 10, undefinedValue());
     this.heap.setSlot(record, 11, int32Value(0));
+    this.heap.setSlot(record, 12, int32Value(0));
     const code = this.heap.functionIndex(asCell(callee));
     if (this.functions[usize(code)].isAsync && this.functions[usize(code)].isGenerator) {
       this.heap.setSlot(record, 10, cellValue(this.heap.allocateArray(0)));
@@ -2733,14 +2767,22 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    if (mode == 2) {
-      // A return injected at a yield: the body does not run again (its
-      // finally blocks are not run; a limitation).
+    const kind = asInt32(this.heap.slot(record, 9));
+    const delegating = kind == 3;
+    const callee = this.heap.slot(record, 1);
+    const asyncBody = this.functions[usize(this.heap.functionIndex(asCell(callee)))].isAsync;
+    if (mode == 2 && (kind == 4 || asyncBody)) {
+      // A return before the body ever ran completes the generator. So
+      // does one into an async generator's body (its finally blocks are
+      // not run: async delegation and return are a later checkpoint).
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
       return this.createIterResult(sent, true);
     }
+    // A return at a yield re-enters the body, which returns the value
+    // through its finally blocks (the compiler checks the mode after
+    // every yield); a delegating yield forwards it.
+    this.heap.setSlot(record, 12, int32Value(i32(mode)));
     this.heap.setSlot(record, 0, int32Value(GEN_RUNNING));
-    const callee = this.heap.slot(record, 1);
     const thisValue = this.heap.slot(record, 2);
     const entryDepth = this.frameCount;
     const savedTop = this.regTop;
@@ -2772,10 +2814,12 @@ export struct Runtime {
         t = t + 3;
       }
       const resumeDst = u8(asInt32(this.heap.slot(record, 6)));
-      if (mode == 0) {
-        this.setReg(base, resumeDst, sent);
-      } else {
+      if (mode == 1 && !delegating) {
         this.raise(sent);
+      } else {
+        // next and return deliver the value; a delegating yield takes a
+        // throw as a value too and forwards it.
+        this.setReg(base, resumeDst, sent);
       }
     }
     const top = usize(this.frameCount - 1);
@@ -4782,6 +4826,12 @@ export struct Runtime {
             // after the body has run to its first await.
             const gen = this.frames[frameIndex].generator;
             this.suspendGenerator(frameIndex, ip, inst.a);
+            // A sync generator records that its body has not run (kind
+            // 4): a return before the first next() completes it as it is.
+            if (this.functions[usize(fi)].isGenerator && !this.functions[usize(fi)].isAsync) {
+              const startRecord = this.generatorRecord(gen);
+              this.heap.setSlot(startRecord, 9, int32Value(4));
+            }
             const frame = this.popFrame();
             let produced = cellValue(gen);
             if (this.functions[usize(fi)].isAsync && !this.functions[usize(fi)].isGenerator) {
@@ -4830,6 +4880,108 @@ export struct Runtime {
               throwing = true;
             } else {
               this.setReg(base, inst.a, iterator);
+            }
+          }
+          yieldDelegate => {
+            // yield*: the delegate's result object goes to the caller as
+            // it is; a receives what the next resumption sends, and the
+            // record notes a delegating suspension so every resumption
+            // re-enters the loop with its mode.
+            if (this.frames[frameIndex].generator == 0) {
+              const message: String = "yield outside a generator";
+              thrown = this.typeError(in message);
+              throwing = true;
+            } else {
+              const produced = this.reg(base, inst.b);
+              this.suspendGenerator(frameIndex, ip, inst.a);
+              const gen = this.frames[frameIndex].generator;
+              const record = this.generatorRecord(gen);
+              this.heap.setSlot(record, 9, int32Value(3));
+              const frame = this.popFrame();
+              if (this.frameCount <= entryDepth) {
+                result = produced;
+              } else {
+                const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+                this.setReg(callerBase, frame.returnDst, produced);
+              }
+              returned = true;
+            }
+          }
+          jmpIfNotReturn => {
+            const gen = this.frames[frameIndex].generator;
+            let returning = false;
+            if (gen != 0) {
+              const record = this.generatorRecord(gen);
+              returning = asInt32(this.heap.slot(record, 12)) == 2;
+            }
+            if (!returning) ip = usize(i64(ip) + i64(bcI16(inst)));
+          }
+          resumeMode => {
+            const gen = this.frames[frameIndex].generator;
+            if (gen == 0) {
+              this.setReg(base, inst.a, int32Value(0));
+            } else {
+              const record = this.generatorRecord(gen);
+              const mode = this.heap.slot(record, 12);
+              this.setReg(base, inst.a, mode);
+            }
+          }
+          iterNextWith => {
+            const iterator = this.reg(base, inst.b);
+            const value = this.reg(base, inst.c);
+            const nextText: String = "next";
+            let absent = false;
+            const produced = this.iteratorCallWith(iterator, in nextText, value, inout absent);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else if (absent) {
+              const message: String = "iterator.next is not a function";
+              thrown = this.typeError(in message);
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, produced);
+            }
+          }
+          iterThrowWith => {
+            const iterator = this.reg(base, inst.b);
+            const value = this.reg(base, inst.c);
+            const throwText: String = "throw";
+            let absent = false;
+            const produced = this.iteratorCallWith(iterator, in throwText, value, inout absent);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else if (absent) {
+              // No throw method: close the delegate (its own throw wins),
+              // then the protocol violation is a TypeError.
+              this.iteratorClose(iterator);
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+              } else {
+                const message: String = "The iterator does not provide a 'throw' method";
+                thrown = this.typeError(in message);
+              }
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, produced);
+            }
+          }
+          iterReturnWith => {
+            const iterator = this.reg(base, inst.b);
+            const value = this.reg(base, inst.c);
+            const returnText: String = "return";
+            let absent = false;
+            const produced = this.iteratorCallWith(iterator, in returnText, value, inout absent);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else if (absent) {
+              // No return method: the outer generator returns the value.
+              const finished = this.createIterResult(value, true);
+              this.setReg(base, inst.a, finished);
+            } else {
+              this.setReg(base, inst.a, produced);
             }
           }
           yieldRaw => {

@@ -2261,25 +2261,69 @@ export struct Compiler {
         return dst;
       }
       if (n.boolValue) {
-        // yield*: yield everything the operand's iterator produces. What
-        // next() sends is not forwarded, and the delegate's final value
-        // is not the expression's (limitations).
+        // yield*: the delegate's results go to the caller as they are;
+        // each resumption is forwarded by its mode -- next(v) to
+        // next(v), throw(e) to throw(e) (a delegate without one is
+        // closed and the throw is a TypeError), return(v) to return(v)
+        // (a delegate without one, or one that finishes, makes this
+        // generator return, through its finally blocks); a delegate that
+        // finishes on next or throw hands its value to the expression.
         const iterable = this.compileExpr(in parser, inout runtime, n.left);
         const iterator = this.allocReg();
         this.emit(instAB(Op.iterGet, iterator, iterable));
-        const done = this.allocReg();
-        const value = this.allocReg();
-        const sent = this.allocReg();
-        if (sent + 1 > this.fixedRegs) this.fixedRegs = sent + 1;
+        const received = this.allocReg();
+        const mode = this.allocReg();
+        const result = this.allocReg();
+        if (result + 1 > this.fixedRegs) this.fixedRegs = result + 1;
+        this.emit(instA(Op.loadUndefined, received));
+        this.emit(instAI16(Op.loadInt, mode, 0));
+        const doneText: String = "done";
+        const doneAtom = runtime.atomOf(in doneText);
+        const valueText: String = "value";
+        const valueAtom = runtime.atomOf(in valueText);
         const loopTop = u32(this.code.length);
-        this.emit(instA(Op.loadUndefined, value));
-        this.emit(instABC(Op.iterStep, value, iterator, done));
-        const exit = this.emit(instAI16(Op.jmpIfTrue, done, 0));
-        this.emit(instAB(Op.yieldOp, sent, value));
+        const one = this.allocReg();
+        this.emit(instAI16(Op.loadInt, one, 1));
+        const isThrow = this.allocReg();
+        this.emit(instABC(Op.cmpStrictEq, isThrow, mode, one));
+        const toThrow = this.emit(instAI16(Op.jmpIfTrue, isThrow, 0));
+        const two = this.allocReg();
+        this.emit(instAI16(Op.loadInt, two, 2));
+        const isReturn = this.allocReg();
+        this.emit(instABC(Op.cmpStrictEq, isReturn, mode, two));
+        const toReturn = this.emit(instAI16(Op.jmpIfTrue, isReturn, 0));
+        this.emit(instABC(Op.iterNextWith, result, iterator, received));
+        const toCheck = this.emit(instI16(Op.jmp, 0));
+        this.patchJump(toThrow);
+        this.emit(instABC(Op.iterThrowWith, result, iterator, received));
+        const toCheck2 = this.emit(instI16(Op.jmp, 0));
+        this.patchJump(toReturn);
+        this.emit(instABC(Op.iterReturnWith, result, iterator, received));
+        const returnDone = this.allocReg();
+        this.emit(instABC(Op.loadProp, returnDone, result, this.nameSlot(doneAtom)));
+        const toYield = this.emit(instAI16(Op.jmpIfFalse, returnDone, 0));
+        // The delegate finished a return: this generator returns its value.
+        const returned = this.allocReg();
+        this.emit(instABC(Op.loadProp, returned, result, this.nameSlot(valueAtom)));
+        if (this.regionDepth > 0) {
+          const savedFixed = this.fixedRegs;
+          if (returned + 1 > this.fixedRegs) this.fixedRegs = returned + 1;
+          this.emitUnwind(in parser, inout runtime, 0);
+          this.fixedRegs = savedFixed;
+        }
+        this.emit(instA(Op.returnOp, returned));
+        this.patchJump(toCheck);
+        this.patchJump(toCheck2);
+        const done = this.allocReg();
+        this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
+        const finished = this.emit(instAI16(Op.jmpIfTrue, done, 0));
+        this.patchJump(toYield);
+        this.emit(instAB(Op.yieldDelegate, received, result));
+        this.emit(instA(Op.resumeMode, mode));
         this.emitJumpBack(loopTop);
-        this.patchJump(exit);
+        this.patchJump(finished);
         const dst = this.allocReg();
-        this.emit(instA(Op.loadUndefined, dst));
+        this.emit(instABC(Op.loadProp, dst, result, this.nameSlot(valueAtom)));
         return dst;
       }
       let value: u8 = 0;
@@ -2291,6 +2335,19 @@ export struct Compiler {
       }
       const dst = this.allocReg();
       this.emit(instAB(Op.yieldOp, dst, value));
+      if (!this.isAsyncBody) {
+        // Resumed by return(v): return v from here, through the finally
+        // blocks, as a return statement would.
+        const skip = this.emit(instI16(Op.jmpIfNotReturn, 0));
+        if (this.regionDepth > 0) {
+          const savedFixed = this.fixedRegs;
+          if (dst + 1 > this.fixedRegs) this.fixedRegs = dst + 1;
+          this.emitUnwind(in parser, inout runtime, 0);
+          this.fixedRegs = savedFixed;
+        }
+        this.emit(instA(Op.returnOp, dst));
+        this.patchJump(skip);
+      }
       return dst;
     }
     if (k == NodeKind.thisExpr) {
@@ -4278,9 +4335,10 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       compiler.emit(instA(Op.returnOp, r));
     }
   }
-  let needReturn = true;
-  if (compiler.code.length > 0 && compiler.code[compiler.code.length - 1].op == Op.returnOp) needReturn = false;
-  if (needReturn) {
+  // The fall-off-the-end return. Always emitted: a trailing return
+  // instruction may be a branch's target rather than the last statement
+  // (a yield's injected return, with the resumption jumping past it).
+  {
     const r = compiler.allocReg();
     compiler.emit(instA(Op.loadUndefined, r));
     compiler.emit(instA(Op.returnOp, r));
