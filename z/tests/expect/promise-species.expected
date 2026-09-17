@@ -1,0 +1,37 @@
+subclass instance: 1 true true
+then: 1 true
+catch: 1 true
+finally: 1 true
+species -> Promise: false true
+then reads: get constructor, get species, construct
+finally reads: get constructor, get species, get constructor, get species, construct
+catch reads: get constructor, get species, construct
+  default used: true
+species undefined: no throw
+  default used: true
+species null: no throw
+species number: TypeError
+species plain object: TypeError
+species arrow: TypeError
+species getter throws: RangeError RangeError
+constructor undefined: true
+constructor null: TypeError
+constructor number: TypeError
+constructor getter throws: EvalError EvalError
+then on a non-promise: TypeError
+finally on a non-object: TypeError
+catch forwards: then result undefined/function
+finally forwards: then result function/function
+finally, non-callable passes through: then result number/number
+own then called with undefined function
+own then called with function function
+async result is intrinsic: true false
+await threw at the await: URIError
+yield threw at the yield: URIError
+onFinally ran
+subclass chain value 2
+finally throw replaces: finally threw
+finally passes value: c | trace: then,construct,then,construct,onFinally,construct,then,construct,then,construct
+finally passes reason: why
+finally rejection replaces: finally rejected
+await trace: constructor read, Loud then, Loud construct, got n, awaited loud, Loud then, Loud construct | value loud

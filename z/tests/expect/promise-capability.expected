@@ -1,0 +1,37 @@
+call without new: TypeError
+call on null: TypeError
+call on a promise: TypeError
+call on a plain object: TypeError
+executor missing: TypeError
+executor not callable: TypeError
+prototype from new target: true false executor
+still a promise: no throw
+non-object prototype falls back: true
+bad executor with custom target: TypeError
+resolving functions: 1 1 "" "" true
+not constructors: TypeError false
+then returns the constructor's object: true true false
+executor function: 2 "" true false TypeError
+executor never called: TypeError
+called with nothing: TypeError
+resolve only: TypeError
+reject only: TypeError
+non-callable pair: TypeError
+twice, nothing first: no throw
+twice, functions first: TypeError
+twice, resolve first: TypeError
+constructor throws: RangeError
+second call threw TypeError
+executor error is the caller's: no throw
+executor throw -> thrown early
+resolve then throw -> kept
+repeated settlement -> first
+reject wins -> r1
+self resolution -> TypeError
+thenable.then called, reads 1
+poisoned then -> then getter
+custom resolve got value!
+custom reject got reason
+custom reject got handler threw
+throwing resolve called
+thenable -> assimilated

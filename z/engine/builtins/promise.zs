@@ -8,6 +8,12 @@ import { Runtime, ERROR_KIND_AGGREGATE } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, bytesOf } from "../heap.zs";
 import { defineSpecies } from "./collections.zs";
 
+function raiseType(inout runtime: Runtime, in message: String): Value {
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
+  return undefinedValue();
+}
+
 function requirePromise(inout runtime: Runtime, value: Value, in what: String): u32 {
   if (runtime.isPromise(value)) return asCell(value);
   const message: String = `${what} called on an incompatible receiver`;
@@ -16,111 +22,246 @@ function requirePromise(inout runtime: Runtime, value: Value, in what: String): 
   return 0;
 }
 
-// new Promise(executor)
-function constructPromise(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  if (!runtime.isObjectLike(thisValue)) {
-    const message: String = "Promise constructor cannot be invoked without 'new'";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
+function isIntrinsicConstructor(inout runtime: Runtime, ctor: Value): boolean {
+  return isCell(ctor) && asCell(ctor) == runtime.promiseCtor;
+}
+
+// --- Capabilities ---
+//
+// A capability is the heap array [promise, resolve, reject] that
+// NewPromiseCapability builds by constructing `ctor` with an executor
+// of the engine's own. The constructor is the program's: what it returns
+// need not be a promise the engine made, and the two functions are
+// whatever it chose to pass, so nothing here looks inside the promise.
+// The intrinsic constructor is the one exception: constructing it has
+// no step the program can see, so its capability is built directly.
+
+// The executor a constructor receives: it records the resolve / reject
+// pair, once. `callee`'s bound data is the capability.
+function capabilityExecutor(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const capability = asCell(runtime.heap.slot(callee, 0));
+  if (!isUndefined(runtime.heap.slot(capability, 1)) || !isUndefined(runtime.heap.slot(capability, 2))) {
+    const message: String = "Promise executor has already been given its functions";
+    return raiseType(inout runtime, in message);
+  }
+  runtime.heap.setSlot(capability, 1, runtime.argument(argsBase, argc, 0));
+  runtime.heap.setSlot(capability, 2, runtime.argument(argsBase, argc, 1));
+  return undefinedValue();
+}
+
+// NewPromiseCapability(ctor): the capability, or 0 with a throw pending.
+function newPromiseCapability(inout runtime: Runtime, ctor: Value): u32 {
+  if (!runtime.isConstructorValue(ctor)) {
+    const message: String = "Promise capability requires a constructor";
+    const ignored = raiseType(inout runtime, in message);
+    return 0;
+  }
+  const capability = runtime.heap.allocateArray(3);
+  runtime.heap.setSlot(capability, 0, undefinedValue());
+  runtime.heap.setSlot(capability, 1, undefinedValue());
+  runtime.heap.setSlot(capability, 2, undefinedValue());
+  runtime.pushTempRoot(cellValue(capability));
+  if (isIntrinsicConstructor(inout runtime, ctor)) {
+    const promise = runtime.newPromise();
+    runtime.heap.setSlot(capability, 0, promise);
+    const shared = runtime.newResolvingShared(promise);
+    runtime.pushTempRoot(shared);
+    const resolve = runtime.resolvingFunction(promise, shared, false);
+    runtime.heap.setSlot(capability, 1, resolve);
+    const reject = runtime.resolvingFunction(promise, shared, true);
+    runtime.heap.setSlot(capability, 2, reject);
+    runtime.popTempRoot();
+    runtime.popTempRoot();
+    return capability;
+  }
+  const name: String = "";
+  const executor = runtime.defineHostFunction(capabilityExecutor, cellValue(capability), 2, in name);
+  let args = Array<Value>();
+  args.push(cellValue(executor));
+  runtime.pushTempRoot(ctor);
+  const promise = runtime.constructValue(ctor, move args, ctor);
+  runtime.popTempRoot();
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    return 0;
+  }
+  if (!runtime.isCallable(runtime.heap.slot(capability, 1)) || !runtime.isCallable(runtime.heap.slot(capability, 2))) {
+    runtime.popTempRoot();
+    const message: String = "Promise constructor did not supply resolve and reject functions";
+    const ignored = raiseType(inout runtime, in message);
+    return 0;
+  }
+  runtime.heap.setSlot(capability, 0, promise);
+  runtime.popTempRoot();
+  return capability;
+}
+
+// Call a capability's resolve or reject function; a throw is left pending.
+function capabilitySettle(inout runtime: Runtime, capability: u32, value: Value, isReject: boolean): Value {
+  const settle = runtime.heap.slot(capability, isReject ? 2 : 1);
+  let args = Array<Value>();
+  args.push(value);
+  return runtime.callValue(settle, undefinedValue(), move args);
+}
+
+// PromiseResolve(ctor, value): a promise whose `constructor` is `ctor`
+// as-is, anything else resolved into a new capability of `ctor`.
+function promiseResolveWith(inout runtime: Runtime, ctor: Value, value: Value): Value {
+  if (isIntrinsicConstructor(inout runtime, ctor)) return runtime.promiseResolveValue(value);
+  runtime.pushTempRoot(value);
+  if (runtime.isPromise(value)) {
+    const atomConstructor = runtime.atomConstructor;
+    const held = runtime.getProperty(value, cellValue(atomConstructor));
+    if (runtime.pendingThrow || runtime.sameValue(held, ctor)) {
+      runtime.popTempRoot();
+      return runtime.pendingThrow ? undefinedValue() : value;
+    }
+  }
+  const capability = newPromiseCapability(inout runtime, ctor);
+  if (capability == 0) {
+    runtime.popTempRoot();
     return undefinedValue();
+  }
+  runtime.pushTempRoot(cellValue(capability));
+  const ignored = capabilitySettle(inout runtime, capability, value, false);
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  if (runtime.pendingThrow) return undefinedValue();
+  return runtime.heap.slot(capability, 0);
+}
+
+// Invoke(target, "then", args): the lookup and the call are both the
+// program's to observe.
+function invokeThen(inout runtime: Runtime, target: Value, args: Array<Value>): Value {
+  // A `then` getter may collect: the arguments are not in registers yet.
+  let index: usize = 0;
+  while (index < args.length) {
+    runtime.pushTempRoot(args[index]);
+    index = index + 1;
+  }
+  const thenText: String = "then";
+  const thenKey = runtime.internText(in thenText);
+  const then = runtime.getProperty(target, thenKey);
+  while (index > 0) {
+    runtime.popTempRoot();
+    index = index - 1;
+  }
+  if (runtime.pendingThrow) return undefinedValue();
+  return runtime.callValue(then, target, move args);
+}
+
+// new Promise(executor). The constructor makes its own object, so the
+// executor is checked before the new target's `prototype` is read.
+function constructPromise(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const newTarget = runtime.takeHostNewTarget();
+  if (isUndefined(newTarget)) {
+    const message: String = "Promise constructor cannot be invoked without 'new'";
+    return raiseType(inout runtime, in message);
   }
   const executor = runtime.argument(argsBase, argc, 0);
   if (!runtime.isCallable(executor)) {
     const message: String = "Promise resolver is not a function";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
-    return undefinedValue();
+    return raiseType(inout runtime, in message);
   }
-  // The object new made, with a fresh record attached.
-  const object = asCell(thisValue);
-  const proto = runtime.heap.objectProto(object);
-  const fresh = runtime.newPromiseWithProto(proto);
-  const atomPromiseRecord = runtime.atomPromiseRecord;
-  const recordSlot = runtime.heap.objectFindSlot(asCell(fresh), atomPromiseRecord);
-  const record = runtime.heap.slot(asCell(fresh), u32(recordSlot));
-  runtime.heap.objectDefine(object, atomPromiseRecord, record, PROP_NONE);
-  const shared = runtime.newResolvingShared(thisValue);
+  let proto = runtime.promiseProto;
+  if (!isIntrinsicConstructor(inout runtime, newTarget)) {
+    const atomPrototype = runtime.atomPrototype;
+    const held = runtime.getProperty(newTarget, cellValue(atomPrototype));
+    if (runtime.pendingThrow) return undefinedValue();
+    if (runtime.isObjectLike(held)) proto = asCell(held);
+  }
+  const promise = runtime.newPromiseWithProto(proto);
+  runtime.pushTempRoot(promise);
+  const shared = runtime.newResolvingShared(promise);
   runtime.pushTempRoot(shared);
-  const resolve = runtime.resolvingFunction(thisValue, shared, false);
+  const resolve = runtime.resolvingFunction(promise, shared, false);
   runtime.pushTempRoot(resolve);
-  const reject = runtime.resolvingFunction(thisValue, shared, true);
+  const reject = runtime.resolvingFunction(promise, shared, true);
   runtime.pushTempRoot(reject);
   let args = Array<Value>();
   args.push(resolve);
   args.push(reject);
-  runtime.callValue(executor, undefinedValue(), move args);
+  const ignored = runtime.callValue(executor, undefinedValue(), move args);
   if (runtime.pendingThrow) {
     const thrown = runtime.takePending();
     let rejectArgs = Array<Value>();
     rejectArgs.push(thrown);
-    runtime.callValue(reject, undefinedValue(), move rejectArgs);
+    const dropped = runtime.callValue(reject, undefinedValue(), move rejectArgs);
   }
   runtime.popTempRoot();
   runtime.popTempRoot();
   runtime.popTempRoot();
-  return thisValue;
+  runtime.popTempRoot();
+  return promise;
 }
 
+// then(onFulfilled, onRejected): the derived promise comes from the
+// receiver's species. The intrinsic constructor's is settled directly;
+// any other's is reached only through its capability.
 function promiseThen(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const what: String = "Promise.prototype.then";
   const promise = requirePromise(inout runtime, thisValue, in what);
   if (promise == 0) return undefinedValue();
-  const derived = runtime.newPromise();
-  runtime.performThen(promise, runtime.argument(argsBase, argc, 0), runtime.argument(argsBase, argc, 1), derived);
-  return derived;
+  const intrinsic = cellValue(runtime.promiseCtor);
+  const ctor = runtime.speciesConstructor(thisValue, intrinsic);
+  if (runtime.pendingThrow) return undefinedValue();
+  const onFulfilled = runtime.argument(argsBase, argc, 0);
+  const onRejected = runtime.argument(argsBase, argc, 1);
+  if (isIntrinsicConstructor(inout runtime, ctor)) {
+    const derived = runtime.newPromise();
+    runtime.performThen(promise, onFulfilled, onRejected, derived);
+    return derived;
+  }
+  const capability = newPromiseCapability(inout runtime, ctor);
+  if (capability == 0) return undefinedValue();
+  runtime.performThen(promise, onFulfilled, onRejected, cellValue(capability));
+  return runtime.heap.slot(capability, 0);
 }
 
 // catch(onRejected) is this.then(undefined, onRejected).
 function promiseCatch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const thenText: String = "then";
-  const thenKey = runtime.internText(in thenText);
-  const then = runtime.getProperty(thisValue, thenKey);
-  if (runtime.pendingThrow) return undefinedValue();
   let args = Array<Value>();
   args.push(undefinedValue());
   args.push(runtime.argument(argsBase, argc, 0));
-  return runtime.callValue(then, thisValue, move args);
+  return invokeThen(inout runtime, thisValue, move args);
 }
 
-// finally(onFinally): then with handlers that run onFinally and pass the
-// original outcome through; the callee's bound data is onFinally.
-function finallyFulfilled(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const onFinally = runtime.heap.slot(callee, 0);
-  const value = runtime.argument(argsBase, argc, 0);
-  runtime.pushTempRoot(value);
+// finally(onFinally): then with handlers that run onFinally, resolve its
+// result through the receiver's species constructor, and pass the
+// original outcome on. Their bound data is [onFinally, constructor].
+function finallySettled(inout runtime: Runtime, argsBase: u32, argc: u32, callee: u32, isReject: boolean): Value {
+  const bound = asCell(runtime.heap.slot(callee, 0));
+  const onFinally = runtime.heap.slot(bound, 0);
+  const ctor = runtime.heap.slot(bound, 1);
+  const outcome = runtime.argument(argsBase, argc, 0);
+  runtime.pushTempRoot(outcome);
   const produced = runtime.callValue(onFinally, undefinedValue(), Array<Value>());
-  runtime.popTempRoot();
-  if (runtime.pendingThrow) return undefinedValue();
-  // The result waits for onFinally's promise, then yields the value.
-  const settled = runtime.promiseResolveValue(produced);
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
+  const settled = promiseResolveWith(inout runtime, ctor, produced);
+  if (runtime.pendingThrow) {
+    runtime.popTempRoot();
+    return undefinedValue();
+  }
   runtime.pushTempRoot(settled);
-  const derived = runtime.newPromise();
-  runtime.pushTempRoot(derived);
   const name: String = "";
-  const valueThunk = runtime.defineHostFunction(returnBound, value, 0, in name);
-  runtime.performThen(asCell(settled), cellValue(valueThunk), undefinedValue(), derived);
+  const pass = runtime.defineHostFunction(isReject ? throwBound : returnBound, outcome, 0, in name);
+  let args = Array<Value>();
+  args.push(cellValue(pass));
+  const result = invokeThen(inout runtime, settled, move args);
   runtime.popTempRoot();
   runtime.popTempRoot();
-  return derived;
+  return result;
+}
+
+function finallyFulfilled(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return finallySettled(inout runtime, argsBase, argc, callee, false);
 }
 
 function finallyRejected(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const onFinally = runtime.heap.slot(callee, 0);
-  const reason = runtime.argument(argsBase, argc, 0);
-  runtime.pushTempRoot(reason);
-  const produced = runtime.callValue(onFinally, undefinedValue(), Array<Value>());
-  runtime.popTempRoot();
-  if (runtime.pendingThrow) return undefinedValue();
-  const settled = runtime.promiseResolveValue(produced);
-  runtime.pushTempRoot(settled);
-  const derived = runtime.newPromise();
-  runtime.pushTempRoot(derived);
-  const name: String = "";
-  const thrower = runtime.defineHostFunction(throwBound, reason, 0, in name);
-  runtime.performThen(asCell(settled), cellValue(thrower), undefinedValue(), derived);
-  runtime.popTempRoot();
-  runtime.popTempRoot();
-  return derived;
+  return finallySettled(inout runtime, argsBase, argc, callee, true);
 }
 
 function returnBound(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -136,35 +277,26 @@ function throwBound(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
 function promiseFinally(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   if (!runtime.isObjectLike(thisValue)) {
     const message: String = "Promise.prototype.finally called on a non-object";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
-    return undefinedValue();
+    return raiseType(inout runtime, in message);
   }
+  const intrinsic = cellValue(runtime.promiseCtor);
+  const ctor = runtime.speciesConstructor(thisValue, intrinsic);
+  if (runtime.pendingThrow) return undefinedValue();
   const onFinally = runtime.argument(argsBase, argc, 0);
   let onFulfilled = onFinally;
   let onRejected = onFinally;
   if (runtime.isCallable(onFinally)) {
+    const bound = runtime.heap.allocateArray(2);
+    runtime.heap.setSlot(bound, 0, onFinally);
+    runtime.heap.setSlot(bound, 1, ctor);
     const name: String = "";
-    onFulfilled = cellValue(runtime.defineHostFunction(finallyFulfilled, onFinally, 1, in name));
-    runtime.pushTempRoot(onFulfilled);
-    onRejected = cellValue(runtime.defineHostFunction(finallyRejected, onFinally, 1, in name));
-    runtime.popTempRoot();
+    onFulfilled = cellValue(runtime.defineHostFunction(finallyFulfilled, cellValue(bound), 1, in name));
+    onRejected = cellValue(runtime.defineHostFunction(finallyRejected, cellValue(bound), 1, in name));
   }
-  runtime.pushTempRoot(onFulfilled);
-  runtime.pushTempRoot(onRejected);
-  const thenText: String = "then";
-  const thenKey = runtime.internText(in thenText);
-  const then = runtime.getProperty(thisValue, thenKey);
-  let result = undefinedValue();
-  if (!runtime.pendingThrow) {
-    let args = Array<Value>();
-    args.push(onFulfilled);
-    args.push(onRejected);
-    result = runtime.callValue(then, thisValue, move args);
-  }
-  runtime.popTempRoot();
-  runtime.popTempRoot();
-  return result;
+  let args = Array<Value>();
+  args.push(onFulfilled);
+  args.push(onRejected);
+  return invokeThen(inout runtime, thisValue, move args);
 }
 
 // --- statics ---
@@ -422,7 +554,8 @@ export function installPromise(inout runtime: Runtime): void {
   runtime.promiseProto = runtime.heap.allocateObject(objectProto);
   const promiseProto = runtime.promiseProto;
   const promiseText: String = "Promise";
-  const ctor = runtime.defineConstructor(constructPromise, undefinedValue(), 1, in promiseText);
+  const ctor = runtime.defineAllocatingConstructor(constructPromise, undefinedValue(), 1, in promiseText);
+  runtime.promiseCtor = ctor;
   runtime.heap.setLink(ctor, promiseProto);
   const atomConstructor = runtime.atomConstructor;
   runtime.defineOwnAttr(promiseProto, atomConstructor, cellValue(ctor), PROP_METHOD);

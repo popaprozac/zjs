@@ -276,6 +276,13 @@ export struct Runtime {
   // Promises: %Promise.prototype%, the hidden key of a promise's record,
   // and the job queue (each job a heap array) with its read cursor.
   promiseProto: u32;
+  // The intrinsic Promise constructor: the one constructor whose
+  // capabilities the engine may make without observable steps.
+  promiseCtor: u32;
+  // The new target of a builtin construct call whose constructor makes
+  // its own object; that constructor takes it on entry, so a plain call
+  // finds undefined here.
+  hostNewTarget: Value;
   atomPromiseRecord: u32;
   atomErrorData: u32;
   atomDateValue: u32;
@@ -2971,11 +2978,51 @@ export struct Runtime {
     return handle;
   }
 
+  // Register a builtin constructor that makes its own object: it is
+  // called with no `this`, and takes the new target from the runtime, so
+  // it can tell a construct from a call and order the `prototype` read
+  // among its own checks. Slot 4 holds an integer for these.
+  function defineAllocatingConstructor(inout this, fn: HostFunction, bound: Value, length: u32, in name: String): u32 {
+    const handle = this.defineHostFunction(fn, bound, length, in name);
+    this.heap.setSlot(handle, 4, int32Value(1));
+    return handle;
+  }
+
+  function hostMakesOwnObject(handle: u32): boolean {
+    return isInt32(this.heap.slot(handle, 4));
+  }
+
+  // The new target of the construct call being entered, or undefined
+  // for a plain call; reading it clears it.
+  function takeHostNewTarget(inout this): Value {
+    const target = this.hostNewTarget;
+    this.hostNewTarget = undefinedValue();
+    return target;
+  }
+
+  // `new` applied directly to a builtin constructor, which is then its
+  // own new target. A throw is left pending.
+  function constructHostDirect(inout this, callee: u32, argsBase: u32, argc: u32): Value {
+    const builtin = this.heap.hostFunctionId(callee);
+    if (this.hostMakesOwnObject(callee)) {
+      this.hostNewTarget = cellValue(callee);
+      return this.callHost(builtin, undefinedValue(), argsBase, argc, callee);
+    }
+    const proto = this.prototypeOf(callee);
+    const created = cellValue(this.heap.allocateObject(proto));
+    const outcome = this.callHost(builtin, created, argsBase, argc, callee);
+    if (this.pendingThrow) return undefinedValue();
+    return this.isObjectLike(outcome) ? outcome : created;
+  }
+
   function isConstructorValue(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0) return false;
     const handle = asCell(value);
     const tag = this.heap.tagOf(handle);
-    if (tag == TAG_HOST_FUNCTION) return isTrue(this.heap.slot(handle, 4));
+    if (tag == TAG_HOST_FUNCTION) {
+      const mark = this.heap.slot(handle, 4);
+      return isTrue(mark) || isInt32(mark);
+    }
     if (tag == TAG_FUNCTION || tag == TAG_CLOSURE) {
       const code = this.heap.functionIndex(handle);
       return !this.functions[usize(code)].isArrow && !this.functions[usize(code)].isGenerator && !this.functions[usize(code)].isAsync && !this.functions[usize(code)].isMethod;
@@ -3121,6 +3168,12 @@ export struct Runtime {
     }
     let outcome = undefinedValue();
     if (this.isHostFunctionValue(callee)) {
+      if (this.hostMakesOwnObject(asCell(callee))) {
+        this.hostNewTarget = newTarget;
+        outcome = this.callValue(callee, undefinedValue(), move args);
+        if (this.pendingThrow) return undefinedValue();
+        return outcome;
+      }
       // The new target's `prototype` if it is an object, else the
       // builtin's own.
       const atomPrototype = this.atomPrototype;
@@ -3521,6 +3574,8 @@ export struct Runtime {
     this.heap.markValue(symbolSplit);
     const promiseProto = this.promiseProto;
     this.heap.markHandle(promiseProto);
+    const promiseCtor = this.promiseCtor;
+    this.heap.markHandle(promiseCtor);
     let job: usize = 0;
     while (job < this.jobs.length) {
       const queued = this.jobs[job];
@@ -4065,10 +4120,18 @@ export struct Runtime {
   //
   // A promise is an ordinary object holding a record under a hidden key:
   // [state, result, fulfill reactions, reject reactions, handled]. A
-  // reaction is [kind, handler, derived promise, generator]: kind 0 runs
-  // a JavaScript handler and settles the derived promise with its
-  // result; kind 1 resumes an async function. Jobs are heap arrays
-  // [kind, a, b, c] in a queue the host drains after each script.
+  // reaction is [kind, handler, destination, generator]: kind 0 runs a
+  // JavaScript handler and settles the destination with its result;
+  // kind 1 resumes an async function. Jobs are heap arrays [kind, a, b, c]
+  // in a queue the host drains after each script.
+  //
+  // A destination is one of three things. A promise the engine made for
+  // itself (await, async bodies, a `then` whose species is the intrinsic
+  // constructor) is settled directly: nothing the program can see stands
+  // between the reaction and that record. A capability made through a
+  // constructor the program chose is the array [promise, resolve,
+  // reject], and only its two functions are ever called; its promise may
+  // be any object at all. Undefined means nobody is waiting.
 
   function isPromise(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return false;
@@ -4212,15 +4275,68 @@ export struct Runtime {
     this.heap.setSlot(record, 4, booleanValue(true));
   }
 
-  // PromiseResolve(%Promise%, value): a promise as-is, anything else
-  // wrapped in a new one.
+  // PromiseResolve(%Promise%, value): a promise whose `constructor` is
+  // the intrinsic one as-is, anything else wrapped in a new promise. The
+  // `constructor` read is the program's to observe, and its throw is
+  // left pending.
   function promiseResolveValue(inout this, value: Value): Value {
-    if (this.isPromise(value)) return value;
+    if (this.isPromise(value)) {
+      const atomConstructor = this.atomConstructor;
+      this.pushTempRoot(value);
+      const held = this.getProperty(value, cellValue(atomConstructor));
+      this.popTempRoot();
+      if (this.pendingThrow) return undefinedValue();
+      if (isCell(held) && asCell(held) == this.promiseCtor) return value;
+    }
     const promise = this.newPromise();
     this.pushTempRoot(promise);
     this.resolvePromise(asCell(promise), value);
     this.popTempRoot();
     return promise;
+  }
+
+  // SpeciesConstructor(object, default): every read is observable, and
+  // a throw is left pending.
+  function speciesConstructor(inout this, object: Value, defaultCtor: Value): Value {
+    const atomConstructor = this.atomConstructor;
+    const ctor = this.getProperty(object, cellValue(atomConstructor));
+    if (this.pendingThrow) return undefinedValue();
+    if (isUndefined(ctor)) return defaultCtor;
+    if (!this.isObjectLike(ctor)) {
+      const message: String = "object.constructor is not an object";
+      const error = this.typeError(in message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    const symbolSpecies = this.symbolSpecies;
+    const species = this.getProperty(ctor, symbolSpecies);
+    if (this.pendingThrow) return undefinedValue();
+    if (isUndefined(species) || isNull(species)) return defaultCtor;
+    if (this.isConstructorValue(species)) return species;
+    const message: String = "object.constructor[Symbol.species] is not a constructor";
+    const error = this.typeError(in message);
+    this.raise(error);
+    return undefinedValue();
+  }
+
+  // Settle a reaction's destination (see the note above): directly for
+  // an engine promise, through the capability's own function otherwise.
+  // A throw from that function is left pending for the job to drop.
+  function settleDestination(inout this, destination: Value, value: Value, isReject: boolean): void {
+    if (!isCell(destination) || asCell(destination) == 0) return;
+    const handle = asCell(destination);
+    if (this.heap.isObject(handle)) {
+      if (isReject) {
+        this.rejectPromise(handle, value);
+      } else {
+        this.resolvePromise(handle, value);
+      }
+      return;
+    }
+    const settle = this.heap.slot(handle, isReject ? 2 : 1);
+    let args = Array<Value>();
+    args.push(value);
+    const ignored = this.callValue(settle, undefinedValue(), move args);
   }
 
   // The resolve / reject function pair for a promise, sharing an
@@ -4365,15 +4481,10 @@ export struct Runtime {
       return;
     }
     const handler = this.heap.slot(reaction, 1);
-    const derived = this.heap.slot(reaction, 2);
+    const destination = this.heap.slot(reaction, 2);
     if (!this.isCallable(handler)) {
-      if (this.isPromise(derived)) {
-        if (isReject) {
-          this.rejectPromise(asCell(derived), argument);
-        } else {
-          this.fulfillPromise(asCell(derived), argument);
-        }
-      }
+      // No handler: the outcome passes through to the destination.
+      this.settleDestination(destination, argument, isReject);
       return;
     }
     let args = Array<Value>();
@@ -4381,10 +4492,10 @@ export struct Runtime {
     const produced = this.callValue(handler, undefinedValue(), move args);
     if (this.pendingThrow) {
       const thrown = this.takePending();
-      if (this.isPromise(derived)) this.rejectPromise(asCell(derived), thrown);
+      this.settleDestination(destination, thrown, true);
       return;
     }
-    if (this.isPromise(derived)) this.resolvePromise(asCell(derived), produced);
+    this.settleDestination(destination, produced, false);
   }
 
   // Drive an async function: resume its body; a completed body settles
@@ -4408,9 +4519,19 @@ export struct Runtime {
       this.resolvePromise(asCell(promise), value);
       return;
     }
+    // The `constructor` read may run the program: the body is between
+    // its frame and its reaction here, so it is held explicitly.
+    this.pushTempRoot(cellValue(gen));
     this.pushTempRoot(value);
     const awaited = this.promiseResolveValue(value);
     this.popTempRoot();
+    this.popTempRoot();
+    if (this.pendingThrow) {
+      // The awaited promise's `constructor` read threw: the await throws.
+      const thrown = this.takePending();
+      this.asyncStep(gen, thrown, 1);
+      return;
+    }
     this.pushTempRoot(awaited);
     const reaction = this.newReaction(REACTION_ASYNC, undefinedValue(), undefinedValue(), gen);
     this.attachReactions(asCell(awaited), reaction, reaction);
@@ -4470,11 +4591,15 @@ export struct Runtime {
   // not running awaits its value, then settles the request with it.
   function asyncGeneratorAwaitReturn(inout this, gen: u32, record: u32, value: Value): void {
     this.heap.setSlot(record, 0, int32Value(GEN_AWAITING_RETURN));
+    // The `constructor` read may run the program: the body is between
+    // its frame and its reaction here, so it is held explicitly.
+    this.pushTempRoot(cellValue(gen));
     this.pushTempRoot(value);
     const awaited = this.promiseResolveValue(value);
     this.popTempRoot();
+    this.popTempRoot();
     if (this.pendingThrow) {
-      // A thenable whose `then` access throws: the request is rejected.
+      // The value's `constructor` read threw: the request is rejected.
       const thrown = this.takePending();
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
       const request = this.asyncGeneratorFront(record);
@@ -4497,8 +4622,12 @@ export struct Runtime {
   // in return mode with it (or in throw mode with the rejection).
   function asyncGeneratorAwaitResumeReturn(inout this, gen: u32, record: u32, value: Value): void {
     this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+    // The `constructor` read may run the program: the body is between
+    // its frame and its reaction here, so it is held explicitly.
+    this.pushTempRoot(cellValue(gen));
     this.pushTempRoot(value);
     const awaited = this.promiseResolveValue(value);
+    this.popTempRoot();
     this.popTempRoot();
     if (this.pendingThrow) {
       const thrown = this.takePending();
@@ -4603,9 +4732,19 @@ export struct Runtime {
     // A yield awaits its value before answering; nothing else resumes
     // the body meanwhile.
     if (kind == 0) this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+    // The `constructor` read may run the program: the body is between
+    // its frame and its reaction here, so it is held explicitly.
+    this.pushTempRoot(cellValue(gen));
     this.pushTempRoot(value);
     const awaited = this.promiseResolveValue(value);
     this.popTempRoot();
+    this.popTempRoot();
+    if (this.pendingThrow) {
+      // The `constructor` read threw: the await or yield throws.
+      const thrown = this.takePending();
+      this.asyncGeneratorStep(gen, thrown, 1);
+      return;
+    }
     this.pushTempRoot(awaited);
     const reaction = this.newReaction(kind == 1 ? REACTION_ASYNC_GEN_AWAIT : REACTION_ASYNC_GEN_YIELD, undefinedValue(), undefinedValue(), gen);
     this.attachReactions(asCell(awaited), reaction, reaction);
@@ -4973,15 +5112,11 @@ export struct Runtime {
                 throwing = true;
               }
             } else if (this.isHostFunctionValue(callee)) {
-              const proto = this.prototypeOf(asCell(callee));
-              const created = cellValue(this.heap.allocateObject(proto));
-              const builtin = this.heap.hostFunctionId(asCell(callee));
-              const outcome = this.callHost(builtin, created, argsBase, argc, asCell(callee));
+              const produced = this.constructHostDirect(asCell(callee), argsBase, argc);
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
               } else {
-                const produced = this.isObjectLike(outcome) ? outcome : created;
                 this.setReg(base, inst.a, produced);
               }
             } else {
@@ -5915,15 +6050,9 @@ export struct Runtime {
                     throwing = true;
                   }
                 } else {
-                  const proto = this.prototypeOf(asCell(callee));
-                  const created = cellValue(this.heap.allocateObject(proto));
-                  const builtin = this.heap.hostFunctionId(asCell(callee));
-                  const outcome = this.callHost(builtin, created, argsBase, argc, asCell(callee));
+                  const produced = this.constructHostDirect(asCell(callee), argsBase, argc);
                   this.regTop = argsBase;
-                  if (!this.pendingThrow) {
-                    const produced = this.isObjectLike(outcome) ? outcome : created;
-                    this.setReg(base, inst.a, produced);
-                  }
+                  if (!this.pendingThrow) this.setReg(base, inst.a, produced);
                 }
               } else if (this.isCompiledCallable(callee)) {
                 this.frames[frameIndex].ip = ip;
@@ -6163,7 +6292,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
@@ -6740,6 +6869,12 @@ function asyncFromSyncRequest(inout runtime: Runtime, thisValue: Value, argsBase
   runtime.pushTempRoot(value);
   const settled = runtime.promiseResolveValue(value);
   runtime.popTempRoot();
+  if (runtime.pendingThrow) {
+    const thrown = runtime.takePending();
+    runtime.rejectPromise(asCell(promise), thrown);
+    runtime.popTempRoot();
+    return promise;
+  }
   runtime.pushTempRoot(settled);
   const name: String = "";
   const unwrap = runtime.defineHostFunction(asyncFromSyncUnwrap, booleanValue(isDone), 1, in name);
