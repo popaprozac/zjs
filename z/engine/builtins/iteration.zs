@@ -113,10 +113,7 @@ function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   const count = runtime.heap.arrayLength(array);
   let index: u32 = 0;
   while (index < count) {
-    let args = Array<Value>();
-    args.push(runtime.heap.arrayGet(array, index));
-    args.push(int32Value(i32(index)));
-    const mapped = runtime.callValue(mapFn, runtime.argument(argsBase, argc, 2), move args);
+    const mapped = runtime.callValue2(mapFn, runtime.argument(argsBase, argc, 2), runtime.heap.arrayGet(array, index), int32Value(i32(index)));
     if (runtime.pendingThrow) {
       runtime.popTempRoot();
       return undefinedValue();

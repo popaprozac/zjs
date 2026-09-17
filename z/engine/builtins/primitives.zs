@@ -675,9 +675,7 @@ function stringMatchLike(inout runtime: Runtime, thisValue: Value, argsBase: u32
     const matcher = symbolMethod(inout runtime, regexp, symbol);
     if (runtime.pendingThrow) return undefinedValue();
     if (!isUndefined(matcher)) {
-      let args = Array<Value>();
-      args.push(thisValue);
-      return runtime.callValue(matcher, regexp, move args);
+      return runtime.callValue1(matcher, regexp, thisValue);
     }
   }
   const text = runtime.toStringValue(thisValue);
@@ -1000,10 +998,7 @@ function stringReplaceAll(inout runtime: Runtime, thisValue: Value, argsBase: u3
     const replacer = symbolMethod(inout runtime, searchArgument, symbolReplace);
     if (runtime.pendingThrow) return undefinedValue();
     if (!isUndefined(replacer)) {
-      let args = Array<Value>();
-      args.push(thisValue);
-      args.push(runtime.argument(argsBase, argc, 1));
-      return runtime.callValue(replacer, searchArgument, move args);
+      return runtime.callValue2(replacer, searchArgument, thisValue, runtime.argument(argsBase, argc, 1));
     }
   }
   const handle = thisStringHandle(inout runtime, thisValue, in text);
@@ -1369,10 +1364,7 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   const splitter = symbolMethod(inout runtime, separatorArgument, symbolSplit);
   if (runtime.pendingThrow) return undefinedValue();
   if (!isUndefined(splitter)) {
-    let args = Array<Value>();
-    args.push(thisValue);
-    args.push(runtime.argument(argsBase, argc, 1));
-    return runtime.callValue(splitter, separatorArgument, move args);
+    return runtime.callValue2(splitter, separatorArgument, thisValue, runtime.argument(argsBase, argc, 1));
   }
   const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();
@@ -1466,10 +1458,7 @@ function stringReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const replacer = symbolMethod(inout runtime, searchArgument, symbolReplace);
   if (runtime.pendingThrow) return undefinedValue();
   if (!isUndefined(replacer)) {
-    let args = Array<Value>();
-    args.push(thisValue);
-    args.push(runtime.argument(argsBase, argc, 1));
-    return runtime.callValue(replacer, searchArgument, move args);
+    return runtime.callValue2(replacer, searchArgument, thisValue, runtime.argument(argsBase, argc, 1));
   }
   const handle = thisStringHandle(inout runtime, thisValue, in text);
   if (runtime.pendingThrow) return undefinedValue();

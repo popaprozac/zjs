@@ -189,7 +189,7 @@ function objectToLocaleString(inout runtime: Runtime, thisValue: Value, argsBase
   const key = runtime.internText(in toStringText);
   const method = runtime.getProperty(thisValue, key);
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.callValue(method, thisValue, Array<Value>());
+  return runtime.callValue0(method, thisValue);
 }
 
 // Object.prototype.hasOwnProperty
@@ -290,9 +290,7 @@ function errorStackSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
       runtime.raise(error);
       return undefinedValue();
     }
-    let args = Array<Value>();
-    args.push(value);
-    const ignored = runtime.callValue(ownSetter, thisValue, move args);
+    const ignored = runtime.callValue1(ownSetter, thisValue, value);
     return undefinedValue();
   }
   if ((current.attr & PROP_WRITABLE) == 0) {

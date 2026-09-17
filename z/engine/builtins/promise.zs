@@ -98,9 +98,7 @@ function newPromiseCapability(inout runtime: Runtime, ctor: Value): u32 {
 // Call a capability's resolve or reject function; a throw is left pending.
 function capabilitySettle(inout runtime: Runtime, capability: u32, value: Value, isReject: boolean): Value {
   const settle = runtime.heap.slot(capability, isReject ? 2 : 1);
-  let args = Array<Value>();
-  args.push(value);
-  return runtime.callValue(settle, undefinedValue(), move args);
+  return runtime.callValue1(settle, undefinedValue(), value);
 }
 
 // PromiseResolve(ctor, value): a promise whose `constructor` is `ctor`
@@ -129,23 +127,20 @@ function promiseResolveWith(inout runtime: Runtime, ctor: Value, value: Value): 
   return runtime.heap.slot(capability, 0);
 }
 
-// Invoke(target, "then", args): the lookup and the call are both the
-// program's to observe.
-function invokeThen(inout runtime: Runtime, target: Value, args: Array<Value>): Value {
+// Invoke(target, "then", ...): the lookup and the call are both the
+// program's to observe. `count` is how many arguments the call passes,
+// one or two, since that is observable too.
+function invokeThen(inout runtime: Runtime, target: Value, first: Value, second: Value, count: u32): Value {
   // A `then` getter may collect: the arguments are not in registers yet.
-  let index: usize = 0;
-  while (index < args.length) {
-    runtime.pushTempRoot(args[index]);
-    index = index + 1;
-  }
+  runtime.pushTempRoot(first);
+  runtime.pushTempRoot(second);
   const thenKey = cellValue(runtime.atomThen);
   const then = runtime.getProperty(target, thenKey);
-  while (index > 0) {
-    runtime.popTempRoot();
-    index = index - 1;
-  }
+  runtime.popTempRoot();
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.callValue(then, target, move args);
+  if (count == 1) return runtime.callValue1(then, target, first);
+  return runtime.callValue2(then, target, first, second);
 }
 
 // new Promise(executor). The constructor makes its own object, so the
@@ -176,15 +171,10 @@ function constructPromise(inout runtime: Runtime, thisValue: Value, argsBase: u3
   runtime.pushTempRoot(resolve);
   const reject = runtime.resolvingFunction(promise, shared, true);
   runtime.pushTempRoot(reject);
-  let args = Array<Value>();
-  args.push(resolve);
-  args.push(reject);
-  const ignored = runtime.callValue(executor, undefinedValue(), move args);
+  const ignored = runtime.callValue2(executor, undefinedValue(), resolve, reject);
   if (runtime.pendingThrow) {
     const thrown = runtime.takePending();
-    let rejectArgs = Array<Value>();
-    rejectArgs.push(thrown);
-    const dropped = runtime.callValue(reject, undefinedValue(), move rejectArgs);
+    const dropped = runtime.callValue1(reject, undefinedValue(), thrown);
   }
   runtime.popTempRoot();
   runtime.popTempRoot();
@@ -217,10 +207,7 @@ function promiseThen(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
 
 // catch(onRejected) is this.then(undefined, onRejected).
 function promiseCatch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  let args = Array<Value>();
-  args.push(undefinedValue());
-  args.push(runtime.argument(argsBase, argc, 0));
-  return invokeThen(inout runtime, thisValue, move args);
+  return invokeThen(inout runtime, thisValue, undefinedValue(), runtime.argument(argsBase, argc, 0), 2);
 }
 
 // finally(onFinally): then with handlers that run onFinally, resolve its
@@ -232,7 +219,7 @@ function finallySettled(inout runtime: Runtime, argsBase: u32, argc: u32, callee
   const ctor = runtime.heap.slot(bound, 1);
   const outcome = runtime.argument(argsBase, argc, 0);
   runtime.pushTempRoot(outcome);
-  const produced = runtime.callValue(onFinally, undefinedValue(), Array<Value>());
+  const produced = runtime.callValue0(onFinally, undefinedValue());
   if (runtime.pendingThrow) {
     runtime.popTempRoot();
     return undefinedValue();
@@ -244,9 +231,7 @@ function finallySettled(inout runtime: Runtime, argsBase: u32, argc: u32, callee
   }
   runtime.pushTempRoot(settled);
   const pass = runtime.newSharedHost(isReject ? HOST_THROW_BOUND : HOST_RETURN_BOUND, outcome, 0);
-  let args = Array<Value>();
-  args.push(cellValue(pass));
-  const result = invokeThen(inout runtime, settled, move args);
+  const result = invokeThen(inout runtime, settled, cellValue(pass), undefinedValue(), 1);
   runtime.popTempRoot();
   runtime.popTempRoot();
   return result;
@@ -287,10 +272,7 @@ function promiseFinally(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     onFulfilled = cellValue(runtime.newSharedHost(HOST_FINALLY_FULFILLED, cellValue(bound), 1));
     onRejected = cellValue(runtime.newSharedHost(HOST_FINALLY_REJECTED, cellValue(bound), 1));
   }
-  let args = Array<Value>();
-  args.push(onFulfilled);
-  args.push(onRejected);
-  return invokeThen(inout runtime, thisValue, move args);
+  return invokeThen(inout runtime, thisValue, onFulfilled, onRejected, 2);
 }
 
 // --- statics ---
@@ -440,9 +422,7 @@ function aggregate(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
         exhausted = true;
         break;
       }
-      let resolveArgs = Array<Value>();
-      resolveArgs.push(item);
-      const element = runtime.callValue(promiseResolve, thisValue, move resolveArgs);
+      const element = runtime.callValue1(promiseResolve, thisValue, item);
       if (runtime.pendingThrow) break;
       runtime.pushTempRoot(element);
       let onFulfilled = runtime.heap.slot(capability, 1);
@@ -458,10 +438,7 @@ function aggregate(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
         if (mode != AGG_ANY) onFulfilled = cellValue(runtime.newSharedHost(HOST_ELEMENT_FULFILLED, cellValue(bound), 1));
         if (mode != AGG_ALL) onRejected = cellValue(runtime.newSharedHost(HOST_ELEMENT_REJECTED, cellValue(bound), 1));
       }
-      let thenArgs = Array<Value>();
-      thenArgs.push(onFulfilled);
-      thenArgs.push(onRejected);
-      const ignored = invokeThen(inout runtime, element, move thenArgs);
+      const ignored = invokeThen(inout runtime, element, onFulfilled, onRejected, 2);
       runtime.popTempRoot();
       if (runtime.pendingThrow) break;
       index = index + 1;

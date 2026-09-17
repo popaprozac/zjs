@@ -1261,7 +1261,7 @@ export struct Runtime {
           if ((this.heap.attrOf(current, u32(slot)) & PROP_ACCESSOR) != 0) {
             const getter = this.heap.slot(asCell(value), 0);
             if (!this.isCallable(getter)) return undefinedValue();
-            return this.callValue(getter, receiver, Array<Value>());
+            return this.callValue0(getter, receiver);
           }
           return value;
         }
@@ -1502,7 +1502,7 @@ export struct Runtime {
             if ((this.heap.attrOf(bag, u32(slot)) & PROP_ACCESSOR) == 0) return held;
             const getter = this.heap.slot(asCell(held), 0);
             if (!this.isCallable(getter)) return undefinedValue();
-            return this.callValue(getter, receiver, Array<Value>());
+            return this.callValue0(getter, receiver);
           }
         }
       }
@@ -1548,9 +1548,7 @@ export struct Runtime {
           if ((attr & PROP_ACCESSOR) != 0) {
             const setter = this.heap.slot(asCell(this.heap.slot(holder, u32(slot))), 1);
             if (!this.isCallable(setter)) return SET_REFUSED;
-            let args = Array<Value>();
-            args.push(value);
-            const ignored = this.callValue(setter, receiver, move args);
+            const ignored = this.callValue1(setter, receiver, value);
             return SET_DONE;
           }
           return (attr & PROP_WRITABLE) == 0 ? SET_REFUSED : SET_NOT_INHERITED;
@@ -1569,7 +1567,7 @@ export struct Runtime {
     if ((this.heap.attrOf(array, index) & PROP_ACCESSOR) == 0) return held;
     const getter = this.heap.slot(asCell(held), 0);
     if (!this.isCallable(getter)) return undefinedValue();
-    return this.callValue(getter, receiver, Array<Value>());
+    return this.callValue0(getter, receiver);
   }
 
   // The length an array may take from a value: its ToNumber must be an
@@ -1616,9 +1614,7 @@ export struct Runtime {
           if ((attr & PROP_ACCESSOR) != 0) {
             const setter = this.heap.slot(asCell(this.heap.arrayGet(handle, u32(index))), 1);
             if (!this.isCallable(setter)) return false;
-            let args = Array<Value>();
-            args.push(value);
-            this.callValue(setter, object, move args);
+            this.callValue1(setter, object, value);
             return true;
           }
           if ((attr & PROP_WRITABLE) == 0) return false;
@@ -1709,9 +1705,7 @@ export struct Runtime {
           if ((attr & PROP_ACCESSOR) != 0) {
             const setter = this.heap.slot(asCell(held), 1);
             if (!this.isCallable(setter)) return false;
-            let args = Array<Value>();
-            args.push(value);
-            this.callValue(setter, receiver, move args);
+            this.callValue1(setter, receiver, value);
             return true;
           }
           if ((attr & PROP_WRITABLE) == 0) return false;
@@ -2277,9 +2271,7 @@ export struct Runtime {
     // it usually finds is not, so its work is done here directly.
     if (isCell(handler) && asCell(handler) == this.hasInstanceBuiltin && this.hasInstanceBuiltin != 0) return this.ordinaryHasInstance(target, value);
     if (!isUndefined(handler) && !isNull(handler)) {
-      let args = Array<Value>();
-      args.push(value);
-      const verdict = this.callValue(handler, target, move args);
+      const verdict = this.callValue1(handler, target, value);
       if (this.pendingThrow) return false;
       return this.toBooleanValue(verdict);
     }
@@ -2695,7 +2687,7 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    const iterator = this.callValue(method, value, Array<Value>());
+    const iterator = this.callValue0(method, value);
     if (this.pendingThrow) return undefinedValue();
     if (!this.isObjectLike(iterator)) {
       const message: String = "Result of the Symbol.iterator method is not an object";
@@ -2730,7 +2722,7 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    const iterator = this.callValue(method, value, Array<Value>());
+    const iterator = this.callValue0(method, value);
     if (this.pendingThrow) return undefinedValue();
     if (!this.isObjectLike(iterator)) {
       const message: String = "Result of the Symbol.asyncIterator method is not an object";
@@ -2762,7 +2754,7 @@ export struct Runtime {
       this.raise(error);
       return deletedValue();
     }
-    const result = this.callValue(next, iterator, Array<Value>());
+    const result = this.callValue0(next, iterator);
     if (this.pendingThrow) return deletedValue();
     if (!this.isObjectLike(result)) {
       const message: String = "Iterator result is not an object";
@@ -2809,9 +2801,7 @@ export struct Runtime {
       this.raise(error);
       return deletedValue();
     }
-    let args = Array<Value>();
-    args.push(value);
-    const result = this.callValue(method, iterator, move args);
+    const result = this.callValue1(method, iterator, value);
     if (this.pendingThrow) return deletedValue();
     if (!this.isObjectLike(result)) {
       const message: String = "Iterator result is not an object";
@@ -2846,9 +2836,7 @@ export struct Runtime {
       this.raise(error);
       return deletedValue();
     }
-    let args = Array<Value>();
-    args.push(value);
-    const result = this.callValue(method, iterator, move args);
+    const result = this.callValue1(method, iterator, value);
     if (this.pendingThrow) return deletedValue();
     return result;
   }
@@ -2866,7 +2854,7 @@ export struct Runtime {
       this.raise(error);
       return;
     }
-    const result = this.callValue(method, iterator, Array<Value>());
+    const result = this.callValue0(method, iterator);
     if (this.pendingThrow) return;
     if (!this.isObjectLike(result)) {
       const message: String = "iterator.return result is not an object";
@@ -3349,6 +3337,35 @@ export struct Runtime {
       index = index + 1;
     }
     this.regTop = argsBase + argc;
+    return this.callPlaced(callee, thisValue, argsBase, argc);
+  }
+
+  // The same with a known few arguments, placed straight into the
+  // registers a call reads them from: no vector is built to carry them.
+  function callValue0(inout this, callee: Value, thisValue: Value): Value {
+    const argsBase = this.regTop;
+    return this.callPlaced(callee, thisValue, argsBase, 0);
+  }
+
+  function callValue1(inout this, callee: Value, thisValue: Value, first: Value): Value {
+    const argsBase = this.regTop;
+    while (this.regStack.length < usize(argsBase + 1)) { this.regStack.push(undefinedValue()); }
+    this.regStack[usize(argsBase)] = first;
+    this.regTop = argsBase + 1;
+    return this.callPlaced(callee, thisValue, argsBase, 1);
+  }
+
+  function callValue2(inout this, callee: Value, thisValue: Value, first: Value, second: Value): Value {
+    const argsBase = this.regTop;
+    while (this.regStack.length < usize(argsBase + 2)) { this.regStack.push(undefinedValue()); }
+    this.regStack[usize(argsBase)] = first;
+    this.regStack[usize(argsBase + 1)] = second;
+    this.regTop = argsBase + 2;
+    return this.callPlaced(callee, thisValue, argsBase, 2);
+  }
+
+  // The call itself, its arguments already in registers from argsBase.
+  function callPlaced(inout this, callee: Value, thisValue: Value, argsBase: u32, argc: u32): Value {
     let outcome = undefinedValue();
     if (this.isHostFunctionValue(callee)) {
       const handle = asCell(callee);
@@ -3457,9 +3474,7 @@ export struct Runtime {
       let hintText: String = "default";
       if (hint == HINT_STRING) hintText = "string";
       if (hint == HINT_NUMBER) hintText = "number";
-      let args = Array<Value>();
-      args.push(this.internText(in hintText));
-      const produced = this.callValue(exotic, value, move args);
+      const produced = this.callValue1(exotic, value, this.internText(in hintText));
       if (this.pendingThrow) return undefinedValue();
       if (this.isObjectLike(produced)) {
         const message: String = "Cannot convert object to primitive value";
@@ -3499,7 +3514,7 @@ export struct Runtime {
     const method = this.getProperty(object, key);
     if (this.pendingThrow) return undefinedValue();
     if (!this.isCallable(method)) return deletedValue();
-    const result = this.callValue(method, object, Array<Value>());
+    const result = this.callValue0(method, object);
     if (this.pendingThrow) return undefinedValue();
     if (this.isObjectLike(result)) return deletedValue();
     return result;
@@ -4620,9 +4635,7 @@ export struct Runtime {
       return;
     }
     const settle = this.heap.slot(handle, isReject ? 2 : 1);
-    let args = Array<Value>();
-    args.push(value);
-    const ignored = this.callValue(settle, undefinedValue(), move args);
+    const ignored = this.callValue1(settle, undefinedValue(), value);
   }
 
   // The resolve / reject function pair for a promise, sharing an
@@ -4668,10 +4681,7 @@ export struct Runtime {
         this.pushTempRoot(resolve);
         const reject = this.resolvingFunction(promise, shared, true);
         this.pushTempRoot(reject);
-        let args = Array<Value>();
-        args.push(resolve);
-        args.push(reject);
-        this.callValue(then, thenable, move args);
+        this.callValue2(then, thenable, resolve, reject);
         if (this.pendingThrow) {
           const thrown = this.takePending();
           if (!isTrue(this.heap.slot(asCell(shared), 1))) {
@@ -4772,9 +4782,7 @@ export struct Runtime {
       this.settleDestination(destination, argument, isReject);
       return;
     }
-    let args = Array<Value>();
-    args.push(argument);
-    const produced = this.callValue(handler, undefinedValue(), move args);
+    const produced = this.callValue1(handler, undefinedValue(), argument);
     if (this.pendingThrow) {
       const thrown = this.takePending();
       this.settleDestination(destination, thrown, true);

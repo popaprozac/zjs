@@ -1127,7 +1127,7 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
           runtime.raise(error);
           break;
         }
-        const produced = runtime.callValue(method, element, Array<Value>());
+        const produced = runtime.callValue0(method, element);
         runtime.popTempRoot();
         if (runtime.pendingThrow) break;
         text = runtime.toStringValue(produced);
@@ -1163,13 +1163,13 @@ function arrayToString(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
   let result = undefinedValue();
   if (runtime.isCallable(method)) {
-    result = runtime.callValue(method, object, Array<Value>());
+    result = runtime.callValue0(method, object);
   } else {
     const objectProto = runtime.objectProto;
     const toStringText: String = "toString";
     const toStringKey = runtime.internText(in toStringText);
     const fallback = runtime.getProperty(cellValue(objectProto), toStringKey);
-    if (!runtime.pendingThrow) result = runtime.callValue(fallback, object, Array<Value>());
+    if (!runtime.pendingThrow) result = runtime.callValue0(fallback, object);
   }
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
@@ -1185,10 +1185,7 @@ function sortCompare(inout runtime: Runtime, comparator: Value, x: Value, y: Val
   if (isUndefined(x)) return 1.0;
   if (isUndefined(y)) return -1.0;
   if (!isUndefined(comparator)) {
-    let args = Array<Value>();
-    args.push(x);
-    args.push(y);
-    const verdict = runtime.callValue(comparator, undefinedValue(), move args);
+    const verdict = runtime.callValue2(comparator, undefinedValue(), x, y);
     if (runtime.pendingThrow) return 0.0;
     const number = runtime.toNumberValue(verdict);
     if (runtime.pendingThrow) return 0.0;

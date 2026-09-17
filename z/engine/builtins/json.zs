@@ -319,10 +319,7 @@ function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Valu
     }
     runtime.popTempRoot();
   }
-  let args = Array<Value>();
-  args.push(key);
-  args.push(value);
-  return runtime.callValue(reviver, holder, move args);
+  return runtime.callValue2(reviver, holder, key, value);
 }
 
 function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

@@ -822,16 +822,14 @@ function recordSize(in runtime: Runtime, record: u32): f64 {
 
 // Call the other set's `has` with one element.
 function otherHas(inout runtime: Runtime, in other: SetRecord, element: Value): boolean {
-  let args = Array<Value>();
-  args.push(element);
-  const result = runtime.callValue(other.has, other.set, move args);
+  const result = runtime.callValue1(other.has, other.set, element);
   if (runtime.pendingThrow) return false;
   return runtime.toBooleanValue(result);
 }
 
 // The iterator from the other set's `keys`.
 function otherKeys(inout runtime: Runtime, in other: SetRecord): Value {
-  const iterator = runtime.callValue(other.keys, other.set, Array<Value>());
+  const iterator = runtime.callValue0(other.keys, other.set);
   if (runtime.pendingThrow) return undefinedValue();
   if (!runtime.isObjectLike(iterator)) {
     const message: String = "Set operation argument's keys() did not return an object";

@@ -284,9 +284,7 @@ function regexpExec(inout runtime: Runtime, rx: Value, input: Value): Value {
   if (runtime.pendingThrow) return undefinedValue();
   const builtin = runtime.regexExecFn;
   if (runtime.isCallable(exec) && !(isCell(exec) && asCell(exec) == builtin)) {
-    let args = Array<Value>();
-    args.push(input);
-    const result = runtime.callValue(exec, rx, move args);
+    const result = runtime.callValue1(exec, rx, input);
     if (runtime.pendingThrow) return undefinedValue();
     if (!runtime.isObjectLike(result) && !isNull(result)) {
       const message: String = "RegExp exec method returned something other than an Object or null";

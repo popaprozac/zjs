@@ -950,7 +950,7 @@ function dateToJson(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
     runtime.raise(error);
     return undefinedValue();
   }
-  return runtime.callValue(method, thisValue, Array<Value>());
+  return runtime.callValue0(method, thisValue);
 }
 
 function hintIs(in bytes: Array<u8>, in text: String): boolean {
