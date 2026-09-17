@@ -1122,29 +1122,37 @@ inside the lock callback) is gone.
 ---
 
 
-## G38 — An array cannot be cut to a length, or report its capacity
+## G38 — An array cannot be cut to a length
 
-**Status:** `proposed` · **Size:** small · **Priority:** low
+**Status:** `proposed` — not approved; the operation needs its own API
+and ownership deliberation (what happens to the elements above the cut,
+and under which borrows it is available). · **Size:** small · **Priority:** low
 **Confirmed:** z-lang `ad43b117` · **Blocks:** no
 **Found:** the allocation and collection checkpoint: shrinking the heap's
 handle table and the job queue after a burst.
 
+**Correction.** This entry first also claimed that an array's capacity
+cannot be read. That was wrong: `array.capacity` exists at `ad43b117`
+(the checker accepts it on dynamic arrays and
+`tests/fixtures/array-capacity.zs` exercises it). The original probe asked
+for `truncate` and `capacity` in one program, the compiler stopped at
+`truncate`, and the rejection was read as covering both. The probe is now
+two: `array-capacity-read` lands, `array-truncate` is rejected. The engine
+reads `capacity` to report the storage it retains.
+
 `Array<T>` can `clear()` (capacity kept) and `pop()` one element, returning
 an `Option<T>` that must be bound. It cannot be shortened to a given length
-in one step, and its capacity cannot be read. After a burst the engine's
-handle table holds millions of dead entries above a few thousand live
-ones; cutting it back by `pop` is millions of calls, and with no capacity
-to read the engine cannot tell how much storage an array it means to keep
-is holding.
+in one step. After a burst the engine's handle table holds millions of
+dead entries above a few thousand live ones; cutting it back by `pop` is
+millions of calls.
 
-The engine does not need either to work: it keeps a logical extent beside
+The engine does not need this to work: it keeps a logical extent beside
 each such array (the table's, the job queue's), overwrites the entries
 above it, and rebuilds the array with `withCapacity` when the extent falls
-under a quarter of the size the storage was made for, tracked by hand.
-That is arguably the better design for a hot table. The ask is small and
-illustrative: `array.truncate(length)` destroying the elements above it in
-reverse order and keeping the allocation, as `clear()` does for all of
-them, and a read-only `array.capacity`.
+under a quarter of what the storage was made for. That is arguably the
+better design for a hot table. The illustrative shape is
+`array.truncate(length)`, destroying the elements above it in reverse
+order and keeping the allocation, as `clear()` does for all of them.
 
 Minimal reproduction: probe `array-truncate`.
 

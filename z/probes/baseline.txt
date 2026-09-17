@@ -1,4 +1,5 @@
 # probe status at z-lang ad43b117 (clean). Written by run.sh --record.
+array-capacity-read LANDED
 array-capacity LANDED
 array-pop LANDED
 array-truncate COMPILER-REJECTED
