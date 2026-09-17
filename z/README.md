@@ -202,9 +202,18 @@ fresh per evaluation. Anonymous class expressions take the name of what
 they initialize; identifier names with unicode escapes decode (`l\u0065t`
 names the identifier `let` and never opens a declaration).
 Promises and async: a promise is an ordinary object holding a record
-under a hidden key (state, result, the two reaction lists, handled);
-reactions and jobs are heap arrays, and the runtime drains its job
-queue after each script, before control returns to the host. An async
+under a hidden key: state, result, reactions, handled. The reactions
+slot holds nothing while nothing waits, the one reaction while one
+does, and a list from the second on; a reaction is one cell carrying
+the handler for each outcome, its destination, and the body an async
+reaction resumes. A job is four values in a queue that reuses its own
+storage, not a cell; the runtime drains the queue after each script,
+before control returns to the host, and a job that has run holds
+nothing. An async body hands its driver a value and a flag rather than
+an iterator result, a suspension reuses the register array the last
+one filled, and awaiting a value that is not an object queues the
+continuation directly (the promise the specification wraps it in cannot
+be observed, and the job lands in the same place). An async
 function is a coroutine on the generator machinery: its call runs the
 body to the first `await` and returns a promise; each await parks a
 continuation reaction on the awaited value's promise; completion or an
@@ -334,8 +343,22 @@ Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
 realm, compiled code's constants and property names); sweeping frees dead
 headers onto a free list for reuse and compacts every live cell's slots into
-a fresh arena, so an object that outgrew its range leaves no permanent hole
-and nothing outside the heap needs updating. The atom table is weak. It runs
+another arena, so an object that outgrew its range leaves no permanent hole
+and nothing outside the heap needs updating. That arena is sized once,
+for the slots traced plus what the next cycle is expected to allocate;
+while it is under about nine megabytes the two arenas change places at
+every collection and neither is allocated again, and a larger heap sizes
+a fresh one and frees the old. The handle table has an extent: when a
+large table's survivors all sit in its lowest quarter a sweep cuts the
+extent back to the highest of them, takes the handles above it off the
+free list, and rebuilds a table left far larger than it needs, so a
+collection after a burst costs what is alive. A sweep visits handles
+from the top down, which lists what it frees highest first, so
+allocation reuses the lowest handles and survivors gather low. A
+collection is due after a number of cells allocated: twice what
+survived the last one, and never fewer than 4,096 (see
+[docs/allocation.md](docs/allocation.md) for what that floor costs and
+buys). The atom table is weak. It runs
 at instruction boundaries only -- returns and loop back edges -- so no value
 is ever held only in a Z local across a collection. The ABI smoke test runs a
 200,000-iteration allocating loop and checks the heap stays bounded.
@@ -541,11 +564,17 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
 ./z/gc-check.sh                   # collector checks on engine counters (z/tests/gc)
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 ./z/spike/run.sh                  # Phase 0 measurements
-./z/build/zjsz run [--dict-threshold N] [--stats] [--expose-gc] file.js
+./z/build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--gc-floor N] [--gc-growth P] [--expose-gc] file.js
                                   # --dict-threshold: property count at which an
                                   #   object leaves its hidden class (measurement)
                                   # --stats: slots, cells, dictionaries, collections,
                                   #   weak entries cleared, ephemeron passes
+                                  # --gc-stats: times every collection; prints their
+                                  #   count, total, pause percentiles, cells and
+                                  #   slots allocated, engine storage in use
+                                  # --gc-floor, --gc-growth: the collection policy's
+                                  #   floor in cells and survivor multiple in
+                                  #   percent (measurement)
                                   # --expose-gc: a global gc() that collects (tests)
 
 cd ~/code/z-lang && bun run z test ~/code/zjs/z/engine/heap.zs   # unit tests
