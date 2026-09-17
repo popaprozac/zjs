@@ -1,0 +1,31 @@
+set on a function: true,s,function,true,true
+the prototype property is untouched: true,true,true,false
+to a plain object: 1,true,undefined,F,0
+to null: ,undefined,F,1,false,called,false
+back from null: function,true
+direct cycle: throws TypeError
+cycle through objects: throws TypeError
+itself: throws TypeError
+Reflect statuses: true,false,false,false,true,true,
+not extensible: true,false,TypeError,true
+frozen: false,true
+Reflect argument checks: TypeError,TypeError,TypeError,TypeError
+Object argument checks: number,TypeError,TypeError,TypeError,TypeError,string
+Reflect on plain objects: false,true,,true,true,false
+Reflect.setPrototypeOf itself: function,true,false,true,2,setPrototypeOf
+a class re-parented: statics and super(): A,A.s,B,B.s,true,false
+re-parented to null, a non-constructor, a function: TypeError,TypeError,1
+extends null: true,,TypeError
+builtin, bound, arrow, class targets: function,function,function,function,function
+an inherited accessor sees the receiver: true
+species through a re-parented function: true,function,true
+an inherited static setter runs against the receiver: 5,false,
+an inherited read-only static refuses the write: TypeError,1,false
+the same, sloppy: 1,false
+a setter reached through a re-parented function: 8,false
+a setter on Function.prototype: 3,false
+a getter-only accessor refuses, an inherited writable creates an own: TypeError,2,1,true
+has through the chain: true,true,false
+an own undefined hides what is inherited: ,,,,true,true
+getPrototypeOf primitives: true,true,true,true,true,true
+isPrototypeOf through functions: true,true,true,true,false

@@ -284,7 +284,9 @@ function objectGetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase
     runtime.raise(error);
     return undefinedValue();
   }
-  const proto = runtime.protoOfValue(target);
+  // A primitive answers as its wrapper would.
+  let proto = runtime.protoOfValue(target);
+  if (!runtime.isObjectLike(target) && !runtime.isStringValue(target)) proto = runtime.primitiveProto(target);
   if (proto == 0) return nullValue();
   return cellValue(proto);
 }
@@ -292,6 +294,12 @@ function objectGetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase
 function objectSetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const target = runtime.argument(argsBase, argc, 0);
   const proto = runtime.argument(argsBase, argc, 1);
+  if (isUndefined(target) || isNull(target)) {
+    const message: String = "Object.setPrototypeOf called on null or undefined";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
   if (!runtime.isObjectLike(proto) && !isNull(proto)) {
     const message: String = "Object prototype may only be an Object or null";
     const error = runtime.typeError(in message);
@@ -299,28 +307,12 @@ function objectSetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase
     return undefinedValue();
   }
   if (!runtime.isObjectLike(target)) return target;
-  const handle = asCell(target);
-  if (!runtime.heap.isObject(handle)) return target;
-  const wanted: u32 = isNull(proto) ? 0 : asCell(proto);
-  if (runtime.heap.objectProto(handle) == wanted) return target;
-  if (!runtime.isExtensible(target)) {
-    const message: String = "Object is not extensible";
+  if (!runtime.setPrototypeOfValue(target, proto)) {
+    const message: String = runtime.isExtensible(target) ? "Cyclic prototype chain" : "Object is not extensible";
     const error = runtime.typeError(in message);
     runtime.raise(error);
     return undefinedValue();
   }
-  // No cycles.
-  let current = wanted;
-  while (current != 0) {
-    if (current == handle) {
-      const message: String = "Cyclic __proto__ value";
-      const error = runtime.typeError(in message);
-      runtime.raise(error);
-      return undefinedValue();
-    }
-    current = runtime.heap.objectProto(current);
-  }
-  runtime.heap.setObjectProto(handle, wanted);
   return target;
 }
 

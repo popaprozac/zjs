@@ -5,7 +5,7 @@
 // so one Z function serves the whole family. Error.prototype carries
 // `name`, `message`, and `toString`; the subclasses' prototypes inherit
 // from it with their own `name`.
-import { Value, undefinedValue, booleanValue, cellValue, asCell, isCell, isUndefined, isInt32, asInt32, int32Value, isNumber } from "../value.zs";
+import { Value, undefinedValue, booleanValue, cellValue, asCell, isCell, isUndefined, isNull, isInt32, asInt32, int32Value, isNumber } from "../value.zs";
 import { thread } from "std/thread";
 import { Runtime, ERROR_KIND_ERROR, ERROR_KIND_AGGREGATE, ERROR_KIND_COUNT, errorKindName } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE, PROP_DEFAULT, PROP_WRITABLE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
@@ -201,11 +201,18 @@ function objectHasOwnProperty(inout runtime: Runtime, thisValue: Value, argsBase
 // Object.prototype.isPrototypeOf
 function objectIsPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const candidate = runtime.argument(argsBase, argc, 0);
-  if (!runtime.isObjectLike(thisValue) || !runtime.isObjectLike(candidate)) return booleanValue(false);
+  if (!runtime.isObjectLike(candidate)) return booleanValue(false);
+  if (isUndefined(thisValue) || isNull(thisValue)) {
+    const message: String = "Object.prototype.isPrototypeOf called on null or undefined";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  if (!runtime.isObjectLike(thisValue)) return booleanValue(false);
   let current = runtime.protoOfValue(candidate);
   while (current != 0) {
     if (current == asCell(thisValue)) return booleanValue(true);
-    current = runtime.heap.objectProto(current);
+    current = runtime.protoOfValue(cellValue(current));
   }
   return booleanValue(false);
 }

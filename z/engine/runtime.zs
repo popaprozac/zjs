@@ -102,6 +102,11 @@ export const HOST_ELEMENT_FULFILLED: usize = 8;
 export const HOST_ELEMENT_REJECTED: usize = 9;
 export const HOST_BOUND_TRAMPOLINE: usize = 10;
 
+// What a function's [[Prototype]] chain answered to a [[Set]].
+const SET_NOT_INHERITED: i32 = 0;
+const SET_DONE: i32 = 1;
+const SET_REFUSED: i32 = 2;
+
 const JOB_REACTION: i32 = 0;
 const JOB_THENABLE: i32 = 1;
 // The drained front of the job queue is dropped once it is this long
@@ -288,7 +293,6 @@ export struct Runtime {
   // constructor, the home object of a method (for `super`), an arrow's
   // captured `new.target`, and a constructor's own [[Prototype]] when it
   // is not Function.prototype.
-  atomClassParent: u32;
   atomHome: u32;
   atomNewTarget: u32;
   atomFunctionProto: u32;
@@ -566,11 +570,14 @@ export struct Runtime {
     this.heap.objectDefine(bag, atom, value, PROP_NONE);
   }
 
-  // A function's [[Prototype]]: Function.prototype unless a class set
-  // its parent constructor.
+  // A function's [[Prototype]] -- the object it inherits from, which is
+  // not its `prototype` property. Function.prototype unless it was given
+  // another: a class's parent constructor, a bound function's target's
+  // own, or whatever setPrototypeOf installed, null (0) included.
   function functionProtoOf(handle: u32): u32 {
     const atomFunctionProto = this.atomFunctionProto;
     const override = this.functionHidden(handle, atomFunctionProto);
+    if (isNull(override)) return 0;
     if (isCell(override) && asCell(override) != 0) return asCell(override);
     return this.functionProto;
   }
@@ -1453,10 +1460,12 @@ export struct Runtime {
     let handle = start;
     while (true) {
       const tag = this.heap.tagOf(handle);
+      // An own property wins whatever it holds: one whose value is
+      // undefined still hides the virtual property and the parent's.
       const bag = this.functionBag(handle);
       if (bag != 0) {
-        const own = this.lookupProperty(bag, atom, receiver);
-        if (!isUndefined(own)) return own;
+        const slot = this.heap.objectFindSlot(bag, atom);
+        if (slot >= 0 && !isDeleted(this.heap.slot(bag, u32(slot)))) return this.lookupProperty(bag, atom, receiver);
       }
       if (atom == this.atomPrototype && this.functionHasPrototype(cellValue(handle))) return cellValue(this.prototypeOf(handle));
       if (!this.functionVirtualDeleted(handle, atom)) {
@@ -1470,6 +1479,7 @@ export struct Runtime {
         }
       }
       const functionProto = this.functionProtoOf(handle);
+      if (functionProto == 0) return undefinedValue();
       if (this.heap.isObject(functionProto)) return this.lookupProperty(functionProto, atom, receiver);
       const protoTag = this.heap.tagOf(functionProto);
       if (protoTag != TAG_FUNCTION && protoTag != TAG_HOST_FUNCTION && protoTag != TAG_CLOSURE) return this.getProperty(cellValue(functionProto), key);
@@ -1480,6 +1490,40 @@ export struct Runtime {
 
   // [[Set]]. Writes to primitives are silently dropped, as in sloppy
   // mode; attribute and setter checks arrive with property descriptors.
+  // [[Set]] on a function that does not own `atom`: the first holder
+  // along its [[Prototype]] chain, function cells and then objects. A
+  // setter there is called with the receiver (SET_DONE); a setterless
+  // accessor or a read-only property refuses (SET_REFUSED); anything
+  // else, or nothing, leaves the caller to create an own property.
+  function setThroughFunctionChain(inout this, start: u32, atom: u32, value: Value, receiver: Value): i32 {
+    let current = this.functionProtoOf(start);
+    while (current != 0) {
+      const tag = this.heap.tagOf(current);
+      const isFunction = tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
+      if (!isFunction && tag != TAG_OBJECT) return SET_NOT_INHERITED;
+      const holder: u32 = isFunction ? this.functionBag(current) : current;
+      if (holder != 0) {
+        const slot = this.heap.objectFindSlot(holder, atom);
+        if (slot >= 0 && !isDeleted(this.heap.slot(holder, u32(slot)))) {
+          const attr = this.heap.attrOf(holder, u32(slot));
+          if ((attr & PROP_ACCESSOR) != 0) {
+            const setter = this.heap.slot(asCell(this.heap.slot(holder, u32(slot))), 1);
+            if (!this.isCallable(setter)) return SET_REFUSED;
+            let args = Array<Value>();
+            args.push(value);
+            const ignored = this.callValue(setter, receiver, move args);
+            return SET_DONE;
+          }
+          return (attr & PROP_WRITABLE) == 0 ? SET_REFUSED : SET_NOT_INHERITED;
+        }
+      }
+      // A function cell's virtual `length` and `name` are read-only.
+      if (isFunction && (atom == this.atomLength || atom == this.atomName) && !this.functionVirtualDeleted(current, atom)) return SET_REFUSED;
+      current = isFunction ? this.functionProtoOf(current) : this.heap.objectProto(current);
+    }
+    return SET_NOT_INHERITED;
+  }
+
   // An array element, through its getter when the slot is an accessor.
   function elementValue(inout this, array: u32, index: u32, receiver: Value): Value {
     const held = this.heap.arrayGet(array, index);
@@ -1576,6 +1620,13 @@ export struct Runtime {
       }
       if (atom == this.atomLength || atom == this.atomName) {
         if (this.functionBagHas(handle, atom) == false) return false;
+      }
+      // Not an own property: what the [[Prototype]] chain holds decides.
+      // An inherited setter runs against this function, an inherited
+      // read-only property refuses the write.
+      if (this.functionBagHas(handle, atom) == false) {
+        const inherited = this.setThroughFunctionChain(handle, atom, value, object);
+        if (inherited != SET_NOT_INHERITED) return inherited == SET_DONE;
       }
       const bag = this.ensureFunctionBag(handle);
       if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0 && this.heap.objectFindSlot(bag, atom) < 0) return false;
@@ -2098,6 +2149,7 @@ export struct Runtime {
     const bag = this.functionBag(handle);
     if (bag != 0 && this.heap.objectFindSlot(bag, atom) >= 0) return true;
     const functionProto = this.functionProtoOf(handle);
+    if (functionProto == 0) return false;
     return this.hasProperty(cellValue(functionProto), key);
   }
 
@@ -2155,6 +2207,33 @@ export struct Runtime {
       current = this.heap.objectProto(current);
     }
     return false;
+  }
+
+  // OrdinarySetPrototypeOf for the values whose [[Prototype]] the engine
+  // can change: plain objects and function objects. `proto` is an object
+  // or null. False when the target is not extensible or the change would
+  // close a cycle. Other exotic values keep the prototype they have and
+  // report success, as before.
+  function setPrototypeOfValue(inout this, target: Value, proto: Value): boolean {
+    const handle = asCell(target);
+    const wanted: u32 = isNull(proto) ? 0 : asCell(proto);
+    if (this.protoOfValue(target) == wanted) return true;
+    const tag = this.heap.tagOf(handle);
+    const isFunction = tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
+    if (tag != TAG_OBJECT && !isFunction) return true;
+    if (!this.isExtensible(target)) return false;
+    let current = wanted;
+    while (current != 0) {
+      if (current == handle) return false;
+      current = this.protoOfValue(cellValue(current));
+    }
+    if (tag == TAG_OBJECT) {
+      this.heap.setObjectProto(handle, wanted);
+    } else {
+      const atomFunctionProto = this.atomFunctionProto;
+      this.setFunctionHidden(handle, atomFunctionProto, proto);
+    }
+    return true;
   }
 
   // The prototype a value inherits from, for instanceof: 0 for none.
@@ -3391,7 +3470,6 @@ export struct Runtime {
     mapIter.push(109);
     mapIter.push(105);
     this.atomMapIter = this.hiddenAtomBytes(move mapIter);
-    this.atomClassParent = this.hiddenAtom(99, 112);
     this.atomHome = this.hiddenAtom(104, 111);
     this.atomNewTarget = this.hiddenAtom(110, 116);
     this.atomFunctionProto = this.hiddenAtom(102, 112);
@@ -3564,8 +3642,6 @@ export struct Runtime {
     this.heap.markHandle(atomMapRecord);
     const atomMapIter = this.atomMapIter;
     this.heap.markHandle(atomMapIter);
-    const atomClassParent = this.atomClassParent;
-    this.heap.markHandle(atomClassParent);
     const atomHome = this.atomHome;
     this.heap.markHandle(atomHome);
     const atomNewTarget = this.atomNewTarget;
@@ -4029,8 +4105,10 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    const atomClassParent = this.atomClassParent;
-    const parent = this.functionHidden(asCell(callee), atomClassParent);
+    // GetSuperConstructor: the active function's [[Prototype]] now, so a
+    // class re-parented with setPrototypeOf constructs its new parent.
+    const parentHandle = this.functionProtoOf(asCell(callee));
+    const parent = parentHandle == 0 ? nullValue() : cellValue(parentHandle);
     if (!this.isConstructorValue(parent)) {
       const message: String = "Super constructor is not a constructor";
       const error = this.typeError(in message);
@@ -6165,8 +6243,6 @@ export struct Runtime {
                 const parent = this.reg(base, inst.c);
                 if (isNull(parent)) {
                   this.heap.setObjectProto(protoHandle, 0);
-                  const atomClassParent = this.atomClassParent;
-                  this.setFunctionHidden(ctorHandle, atomClassParent, nullValue());
                 } else if (!this.isConstructorValue(parent)) {
                   const message: String = "Class extends value is not a constructor or null";
                   thrown = this.typeError(in message);
@@ -6186,9 +6262,7 @@ export struct Runtime {
                     failed = true;
                   } else {
                     this.heap.setObjectProto(protoHandle, isNull(parentProto) ? 0 : asCell(parentProto));
-                    const atomClassParent = this.atomClassParent;
                     const atomFunctionProto = this.atomFunctionProto;
-                    this.setFunctionHidden(ctorHandle, atomClassParent, parent);
                     this.setFunctionHidden(ctorHandle, atomFunctionProto, parent);
                   }
                 }
@@ -6374,7 +6448,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomClassParent: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

@@ -95,6 +95,22 @@ function reflectGetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBas
   return cellValue(proto);
 }
 
+// Reflect.setPrototypeOf(target, proto): the status, never a throw for
+// a refused change.
+function reflectSetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const target = runtime.argument(argsBase, argc, 0);
+  const method: String = "setPrototypeOf";
+  if (!requireTarget(inout runtime, target, in method)) return undefinedValue();
+  const proto = runtime.argument(argsBase, argc, 1);
+  if (!runtime.isObjectLike(proto) && !isNull(proto)) {
+    const message: String = "Object prototype may only be an Object or null";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  return booleanValue(runtime.setPrototypeOfValue(target, proto));
+}
+
 function reflectHas(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const target = runtime.argument(argsBase, argc, 0);
   const method: String = "has";
@@ -148,6 +164,7 @@ export function installReflect(inout runtime: Runtime): void {
   const constructText: String = "construct"; runtime.defineMethod(reflect, in constructText, reflectConstruct, 2);
   const ownKeysText: String = "ownKeys"; runtime.defineMethod(reflect, in ownKeysText, reflectOwnKeys, 1);
   const getPrototypeOfText: String = "getPrototypeOf"; runtime.defineMethod(reflect, in getPrototypeOfText, reflectGetPrototypeOf, 1);
+  const setPrototypeOfText: String = "setPrototypeOf"; runtime.defineMethod(reflect, in setPrototypeOfText, reflectSetPrototypeOf, 2);
   const hasText: String = "has"; runtime.defineMethod(reflect, in hasText, reflectHas, 2);
   const getText: String = "get"; runtime.defineMethod(reflect, in getText, reflectGet, 2);
   const setText: String = "set"; runtime.defineMethod(reflect, in setText, reflectSet, 3);
