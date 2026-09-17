@@ -1,0 +1,25 @@
+set and get: true,p,4,2,true,false,undefined,true,false
+keep array methods by chaining: 4,1,2,3,9,true,2,4,6,18
+inherited setter, named key: 5,false,true
+inherited readonly, named key: TypeError,1,false
+inherited index getter through a hole: from proto 3,true,false,1|from proto 3|3
+inherited index setter on an absent index: set x,0,false
+null prototype: ,undefined,3,2,true,false,true,true,false,1-2-3
+back from null: function,true
+cycle direct: throws TypeError
+cycle through object and function: false
+self: false
+non-extensible: true,false,TypeError,true
+frozen and sealed: false,false,true
+array as prototype of object: 10,20,2,n,function,false,true,true,false
+array as prototype of array: a0,b1,b2,1,a0,function
+array as prototype of function: 7,t,0,function,undefined
+for-in and keys: 0,inherited,0,[1],0,length
+iteration and spread with custom proto: 1,2,3,1,2,3,custom,TypeError
+proto chain methods see the array: 18,3
+__proto__-free checks: [object Array],true,true
+setPrototypeOf same value: true,true
+arguments and other exotics: 1,2,a,undefined,2,2,2
+a prototype held only by its array survives: only through the array,6,{"v":[1,2]},3,true
+many arrays, each with its own prototype, under churn: 0:1:0 100:101:100 200:201:200 300:301:300 400:401:400 500:501:500 600:601:600 700:701:700 800:801:800 900:901:900 1000:1001:1000 1100:1101:1100 1200:1201:1200 1300:1301:1300 1400:1401:1400 1500:1501:1500 1600:1601:1600 1700:1701:1700 1800:1801:1800 1900:1901:1900
+a replaced prototype is let go, the new one kept: ,,function
