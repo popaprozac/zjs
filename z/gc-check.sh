@@ -26,5 +26,11 @@ echo "gc: async: $(echo "$out" | head -1); collections $collections"
 echo "$out" | grep -q "^ab,y1,y2,d1,d2x,end:d3y" || { echo "gc: FAIL async bodies under pressure"; fail=1; }
 [ "$collections" -ge 3 ] || { echo "gc: FAIL too few collections in async pressure ($collections)"; fail=1; }
 
+out="$("$ZJSZ" run --stats "$HERE/tests/gc/job-release.js" 2>&1)"
+cells="$(stat "$out" cells)"
+echo "gc: jobs: $(echo "$out" | head -1); cells $cells"
+echo "$out" | grep -q "^settled 5000250000 100000" || { echo "gc: FAIL settle loop result"; fail=1; }
+[ "$cells" -lt 20000 ] || { echo "gc: FAIL finished jobs are still held ($cells cells)"; fail=1; }
+
 [ "$fail" = 0 ] && echo "gc: ok"
 exit $fail

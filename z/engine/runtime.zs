@@ -88,6 +88,9 @@ export const PROMISE_FULFILLED: i32 = 1;
 export const PROMISE_REJECTED: i32 = 2;
 const JOB_REACTION: i32 = 0;
 const JOB_THENABLE: i32 = 1;
+// The drained front of the job queue is dropped once it is this long
+// and at least half the queue.
+const JOB_COMPACT_AT: usize = 1024;
 export const REACTION_HANDLER: i32 = 0;
 export const REACTION_ASYNC: i32 = 1;
 export const REACTION_ASYNC_GEN_AWAIT: i32 = 2;
@@ -4235,11 +4238,19 @@ export struct Runtime {
     return cellValue(shared);
   }
 
-  // Run every queued job, including those queued while running.
+  // Run every queued job, including those queued while running. A job
+  // that has run keeps nothing alive: its queue slot is cleared as it is
+  // taken, the job is held for its own run only, and the drained front
+  // of a long queue is dropped, so a program that settles promises
+  // forever runs in bounded memory.
   function runJobs(inout this): void {
     while (this.jobCursor < this.jobs.length) {
-      const job = asCell(this.jobs[this.jobCursor]);
+      const queued = this.jobs[this.jobCursor];
+      this.jobs[this.jobCursor] = undefinedValue();
       this.jobCursor = this.jobCursor + 1;
+      if (this.jobCursor >= JOB_COMPACT_AT && this.jobCursor * 2 >= this.jobs.length) this.compactJobs();
+      this.pushTempRoot(queued);
+      const job = asCell(queued);
       const kind = asInt32(this.heap.slot(job, 0));
       if (kind == JOB_REACTION) {
         const reaction = asCell(this.heap.slot(job, 1));
@@ -4272,8 +4283,20 @@ export struct Runtime {
         this.popTempRoot();
       }
       if (this.pendingThrow) { const dropped = this.takePending(); }
+      this.popTempRoot();
     }
     this.jobs = Array<Value>();
+    this.jobCursor = 0;
+  }
+
+  function compactJobs(inout this): void {
+    let rest = Array<Value>.withCapacity(this.jobs.length - this.jobCursor);
+    let index = this.jobCursor;
+    while (index < this.jobs.length) {
+      rest.push(this.jobs[index]);
+      index = index + 1;
+    }
+    this.jobs = move rest;
     this.jobCursor = 0;
   }
 
