@@ -1407,14 +1407,25 @@ export struct Runtime {
       const stringProto = this.stringProto;
       return this.lookupProperty(stringProto, atom, object);
     }
-    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
-      const atom = this.propertyKey(key);
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.functionGet(handle, key, object);
+    return undefinedValue();
+  }
+
+  // [[Get]] on a function cell. A class constructor's [[Prototype]] is
+  // its parent constructor, itself a function cell with virtual
+  // properties, so the walk continues there with the receiver unchanged:
+  // an inherited accessor runs against the function the read began on.
+  function functionGet(inout this, start: u32, key: Value, receiver: Value): Value {
+    const atom = this.propertyKey(key);
+    let handle = start;
+    while (true) {
+      const tag = this.heap.tagOf(handle);
       const bag = this.functionBag(handle);
       if (bag != 0) {
-        const own = this.lookupProperty(bag, atom, object);
+        const own = this.lookupProperty(bag, atom, receiver);
         if (!isUndefined(own)) return own;
       }
-      if (atom == this.atomPrototype && this.functionHasPrototype(object)) return cellValue(this.prototypeOf(handle));
+      if (atom == this.atomPrototype && this.functionHasPrototype(cellValue(handle))) return cellValue(this.prototypeOf(handle));
       if (!this.functionVirtualDeleted(handle, atom)) {
         if (tag == TAG_HOST_FUNCTION) {
           if (atom == this.atomLength) return this.heap.slot(handle, 1);
@@ -1425,11 +1436,11 @@ export struct Runtime {
           if (atom == this.atomName) return this.functionName(code);
         }
       }
-      // A class constructor's [[Prototype]] is its parent constructor,
-      // itself a function cell with virtual properties.
       const functionProto = this.functionProtoOf(handle);
-      if (!this.heap.isObject(functionProto)) return this.getProperty(cellValue(functionProto), key);
-      return this.lookupProperty(functionProto, atom, object);
+      if (this.heap.isObject(functionProto)) return this.lookupProperty(functionProto, atom, receiver);
+      const protoTag = this.heap.tagOf(functionProto);
+      if (protoTag != TAG_FUNCTION && protoTag != TAG_HOST_FUNCTION && protoTag != TAG_CLOSURE) return this.getProperty(cellValue(functionProto), key);
+      handle = functionProto;
     }
     return undefinedValue();
   }
