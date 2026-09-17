@@ -362,6 +362,9 @@ export struct Runtime {
   // nanoseconds, in order. Nothing is read from the clock otherwise.
   gcTiming: boolean;
   gcPauses: Array<f64>;
+  // Whether the async body last resumed finished, beside the value it
+  // handed back (see resumeResult).
+  resumeDone: boolean;
   atomIterSource: u32;
   atomIterIndex: u32;
   atomIterKind: u32;
@@ -2585,6 +2588,19 @@ export struct Runtime {
   // --- Iteration ---
 
   // { value, done }
+  // What a suspended or finished body hands whoever resumed it. A
+  // generator's resumer is the program, which gets an iterator result.
+  // An async body's is always the engine's own driver, so it takes the
+  // value as it is, with `resumeDone` beside it: no object is made only
+  // to be taken apart again.
+  function resumeResult(inout this, isAsync: boolean, value: Value, done: boolean): Value {
+    if (isAsync) {
+      this.resumeDone = done;
+      return value;
+    }
+    return this.createIterResult(value, done);
+  }
+
   function createIterResult(inout this, value: Value, done: boolean): Value {
     const objectProto = this.objectProto;
     const result = this.heap.allocateObject(objectProto);
@@ -2987,6 +3003,11 @@ export struct Runtime {
 
   // Resume with next (mode 0), throw (1), or return (2). The result is
   // the iterator result the body produced; a throw is left pending.
+  function generatorIsAsync(record: u32): boolean {
+    const callee = this.heap.slot(record, 1);
+    return this.functions[usize(this.heap.functionIndex(asCell(callee)))].isAsync;
+  }
+
   function generatorResume(inout this, gen: u32, sent: Value, mode: u32): Value {
     const record = this.generatorRecord(gen);
     const state = asInt32(this.heap.slot(record, 0));
@@ -2995,7 +3016,8 @@ export struct Runtime {
         this.raise(sent);
         return undefinedValue();
       }
-      return this.createIterResult(mode == 2 ? sent : undefinedValue(), true);
+      const finishedAsync = this.generatorIsAsync(record);
+      return this.resumeResult(finishedAsync, mode == 2 ? sent : undefinedValue(), true);
     }
     if (state == GEN_RUNNING) {
       const message: String = "Generator is already running";
@@ -3011,7 +3033,8 @@ export struct Runtime {
       // async generator's driver settles such a request itself, after
       // awaiting the value, and never resumes here).
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
-      return this.createIterResult(sent, true);
+      const unstartedAsync = this.generatorIsAsync(record);
+      return this.resumeResult(unstartedAsync, sent, true);
     }
     // A return at a yield re-enters the body, which returns the value
     // through its finally blocks (the compiler checks the mode after
@@ -3038,8 +3061,9 @@ export struct Runtime {
       this.frames[top].env = u32(asInt32(this.heap.slot(record, 8)));
       this.frames[top].callee = callee;
       this.hostThis = thisValue;
-      const tries = asCell(this.heap.slot(record, 7));
-      const pairs = this.heap.arrayLength(tries);
+      const heldTries = this.heap.slot(record, 7);
+      const tries: u32 = isCell(heldTries) ? asCell(heldTries) : 0;
+      const pairs: u32 = tries == 0 ? 0 : this.heap.arrayLength(tries);
       let t: u32 = 0;
       while (t + 2 < pairs) {
         const catchIp = usize(asInt32(this.heap.slot(tries, t)));
@@ -3062,7 +3086,7 @@ export struct Runtime {
     const result = this.runFrames(entryDepth);
     this.regTop = savedTop;
     if (result.isThrow) {
-      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      this.completeGenerator(gen);
       this.raise(result.value);
       return undefinedValue();
     }
@@ -3076,7 +3100,15 @@ export struct Runtime {
     const record = this.generatorRecord(gen);
     const base = this.frames[frameIndex].regsBase;
     const count = this.frames[frameIndex].regCount;
-    const saved = this.heap.allocateArray(count);
+    // The registers go back into the array the last suspension filled,
+    // which has been idle since they were restored from it.
+    const previous = this.heap.slot(record, 4);
+    let saved: u32 = 0;
+    if (isCell(previous) && asCell(previous) != 0 && this.heap.arrayLength(asCell(previous)) == count) {
+      saved = asCell(previous);
+    } else {
+      saved = this.heap.allocateArray(count);
+    }
     let index: u32 = 0;
     while (index < count) {
       const held = this.regStack[usize(base + index)];
@@ -3088,26 +3120,34 @@ export struct Runtime {
     this.heap.setSlot(record, 6, int32Value(i32(resumeDst)));
     const env = this.frames[frameIndex].env;
     this.heap.setSlot(record, 8, int32Value(i32(env)));
-    // The frame's handlers, bottom-up, then popped.
-    const tries = this.heap.allocateArray(0);
+    // The frame's handlers, bottom-up, then popped; most suspensions
+    // have none, and then nothing is made to hold them.
     let first = this.tryDepth;
     while (first > 0 && this.tryStack[usize(first - 1)].frameIndex == u32(frameIndex)) { first = first - 1; }
-    let t = first;
-    while (t < this.tryDepth) {
-      const length = this.heap.arrayLength(tries);
-      this.heap.arraySet(tries, length, int32Value(i32(this.tryStack[usize(t)].catchIp)));
-      this.heap.arraySet(tries, length + 1, int32Value(i32(this.tryStack[usize(t)].catchReg)));
-      this.heap.arraySet(tries, length + 2, int32Value(i32(this.tryStack[usize(t)].env)));
-      t = t + 1;
+    if (first == this.tryDepth) {
+      this.heap.setSlot(record, 7, undefinedValue());
+    } else {
+      const tries = this.heap.allocateArray(0);
+      let t = first;
+      while (t < this.tryDepth) {
+        const length = this.heap.arrayLength(tries);
+        this.heap.arraySet(tries, length, int32Value(i32(this.tryStack[usize(t)].catchIp)));
+        this.heap.arraySet(tries, length + 1, int32Value(i32(this.tryStack[usize(t)].catchReg)));
+        this.heap.arraySet(tries, length + 2, int32Value(i32(this.tryStack[usize(t)].env)));
+        t = t + 1;
+      }
+      this.tryDepth = first;
+      this.heap.setSlot(record, 7, cellValue(tries));
     }
-    this.tryDepth = first;
-    this.heap.setSlot(record, 7, cellValue(tries));
     this.heap.setSlot(record, 0, int32Value(GEN_YIELDED));
   }
 
+  // A finished body lets go of the registers and handlers it had saved.
   function completeGenerator(inout this, gen: u32): void {
     const record = this.generatorRecord(gen);
     this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+    this.heap.setSlot(record, 4, undefinedValue());
+    this.heap.setSlot(record, 7, undefinedValue());
   }
 
   // --- Builtins ---
@@ -4827,11 +4867,8 @@ export struct Runtime {
       this.rejectPromise(asCell(promise), thrown);
       return;
     }
-    const doneKey = cellValue(this.atomDone);
-    const done = this.getProperty(outcome, doneKey);
-    const valueKey = cellValue(this.atomValue);
-    const value = this.getProperty(outcome, valueKey);
-    if (this.toBooleanValue(done)) {
+    const value = outcome;
+    if (this.resumeDone) {
       this.resolvePromise(asCell(promise), value);
       return;
     }
@@ -5010,11 +5047,8 @@ export struct Runtime {
       this.asyncGeneratorResumeNext(gen);
       return;
     }
-    const doneKey = cellValue(this.atomDone);
-    const done = this.getProperty(outcome, doneKey);
-    const valueKey = cellValue(this.atomValue);
-    const value = this.getProperty(outcome, valueKey);
-    if (this.toBooleanValue(done)) {
+    const value = outcome;
+    if (this.resumeDone) {
       this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
       const request = this.asyncGeneratorFront(record);
       if (request != 0) {
@@ -5481,7 +5515,8 @@ export struct Runtime {
               const gen = this.frames[frameIndex].generator;
               const record = this.generatorRecord(gen);
               this.heap.setSlot(record, 9, int32Value(0));
-              const produced = this.createIterResult(yielded, false);
+              const yieldingAsync = this.functions[usize(fi)].isAsync;
+              const produced = this.resumeResult(yieldingAsync, yielded, false);
               const frame = this.popFrame();
               if (this.frameCount <= entryDepth) {
                 result = produced;
@@ -5520,7 +5555,7 @@ export struct Runtime {
                 // An async delegation yields the delegate's value; the
                 // driver answers the request with it as it is.
                 this.heap.setSlot(record, 9, int32Value(5));
-                produced = this.createIterResult(produced, false);
+                this.resumeDone = false;
               } else {
                 this.heap.setSlot(record, 9, int32Value(3));
               }
@@ -5680,7 +5715,9 @@ export struct Runtime {
               const gen = this.frames[frameIndex].generator;
               const record = this.generatorRecord(gen);
               this.heap.setSlot(record, 9, int32Value(2));
-              const produced = this.createIterResult(yielded, false);
+              // Only an async generator delegates this way: its driver takes the value.
+              this.resumeDone = false;
+              const produced = yielded;
               const frame = this.popFrame();
               if (this.frameCount <= entryDepth) {
                 result = produced;
@@ -5705,7 +5742,8 @@ export struct Runtime {
               const record = this.generatorRecord(gen);
               this.heap.setSlot(record, 9, int32Value(1));
               this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
-              const produced = this.createIterResult(awaited, false);
+              this.resumeDone = false;
+              const produced = awaited;
               const frame = this.popFrame();
               if (this.frameCount <= entryDepth) {
                 result = produced;
@@ -5721,7 +5759,8 @@ export struct Runtime {
             const frame = this.popFrame();
             if (frame.generator != 0) {
               this.completeGenerator(frame.generator);
-              value = this.createIterResult(value, true);
+              const finishedAsync = this.functions[usize(frame.functionIndex)].isAsync;
+              value = this.resumeResult(finishedAsync, value, true);
             }
             // A constructor call yields its object unless it returned one; a
             // derived constructor must have called super() by now, and may
@@ -6586,7 +6625,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, gcTiming: false, gcPauses: Array<f64>(),
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, gcTiming: false, gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
