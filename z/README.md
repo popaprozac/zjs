@@ -189,6 +189,28 @@ request, an `await` parks the body, and completion answers the rest as
 done. `Promise.prototype.then` / `catch` / `finally`, `resolve` /
 `reject` / `all` / `allSettled` / `any` / `race` / `withResolvers`,
 species, `%AsyncIteratorPrototype%`, and `%AsyncGeneratorPrototype%`.
+Promise construction is constructor-generic. A capability is the array
+[promise, resolve, reject] that NewPromiseCapability fills by
+constructing the chosen constructor with an executor of the engine's
+own (length 2, callable once with functions); what the constructor
+returns need not be a promise the engine made, so a reaction's
+destination is either an engine promise, settled directly, or such a
+capability, reached only by calling its two functions. `then` and
+`finally` take their constructor from the receiver's species (every
+read observable, in order); the statics take it from their receiver
+and never consult species, look `resolve` up once, invoke each
+element's own `then`, and close the iterator when a later step throws.
+`catch` and `finally` go through `this.then`. Only the intrinsic
+constructor is shortcut, since constructing it has no step a program
+can see; `await` and async bodies always use intrinsic promises, read
+the awaited promise's `constructor` as PromiseResolve requires (a throw
+there is thrown at the `await`), and never call a native promise's own
+`then`. `Promise` itself makes its own object: the executor is checked
+before the new target's `prototype` is read, and a plain call throws
+whatever `this` is. A job that has run is released as the queue drains
+and run-time builtins (resolving and element functions, bound
+functions) share one host-table entry each, so a program that settles
+promises indefinitely runs in bounded memory.
 The `zjsz` tool supplies `console`. Optional chains: a spine of member,
 element, and call links with a `?.` short-circuits as a whole through
 one exit. A private name read or written on a value that lacks it
@@ -396,7 +418,7 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, promise subclassing through species, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, bound functions' exact construct behaviour (they expose a `prototype`, and `instanceof` does not see through them), `Object.setPrototypeOf` on a function, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and

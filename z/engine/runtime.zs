@@ -86,6 +86,22 @@ export const ERROR_KIND_COUNT: u32 = 8;
 export const PROMISE_PENDING: i32 = 0;
 export const PROMISE_FULFILLED: i32 = 1;
 export const PROMISE_REJECTED: i32 = 2;
+// Builtins whose instances are made while the program runs: resolving
+// functions, element functions, bound functions. Each is registered in
+// the host table once, and an instance is a cell sharing that entry, so
+// making one grows nothing but the heap the collector manages.
+export const HOST_PROMISE_RESOLVE: usize = 0;
+export const HOST_PROMISE_REJECT: usize = 1;
+export const HOST_ASYNC_FROM_SYNC_UNWRAP: usize = 2;
+export const HOST_CAPABILITY_EXECUTOR: usize = 3;
+export const HOST_RETURN_BOUND: usize = 4;
+export const HOST_THROW_BOUND: usize = 5;
+export const HOST_FINALLY_FULFILLED: usize = 6;
+export const HOST_FINALLY_REJECTED: usize = 7;
+export const HOST_ELEMENT_FULFILLED: usize = 8;
+export const HOST_ELEMENT_REJECTED: usize = 9;
+export const HOST_BOUND_TRAMPOLINE: usize = 10;
+
 const JOB_REACTION: i32 = 0;
 const JOB_THENABLE: i32 = 1;
 // The drained front of the job queue is dropped once it is this long
@@ -227,6 +243,9 @@ export struct Runtime {
   lastResult: Value;
   // Builtins, indexed by a host function cell's payload.
   hostTable: Array<HostFunction>;
+  // Host table entries of the builtins instantiated at run time, by the
+  // HOST_ constants.
+  sharedHosts: Array<u32>;
   // The global object: `this` at the top level and in sloppy calls; its
   // properties fall through to the globals table.
   globalObject: u32;
@@ -2971,6 +2990,29 @@ export struct Runtime {
     return handle;
   }
 
+  // Register a builtin that will be instantiated at run time.
+  function registerSharedHost(inout this, which: usize, fn: HostFunction): void {
+    while (this.sharedHosts.length <= which) { this.sharedHosts.push(0); }
+    this.hostTable.push(fn);
+    this.sharedHosts[which] = u32(this.hostTable.length - 1);
+  }
+
+  // An instance of a registered builtin, anonymous unless named.
+  function newSharedHost(inout this, which: usize, bound: Value, length: u32): u32 {
+    return this.newSharedHostNamed(which, bound, length, Array<u16>());
+  }
+
+  function newSharedHostNamed(inout this, which: usize, bound: Value, length: u32, nameUnits: Array<u16>): u32 {
+    const id = this.sharedHosts[which];
+    const handle = this.heap.allocateHostFunction(id);
+    this.heap.setSlot(handle, 0, bound);
+    this.heap.setSlot(handle, 1, int32Value(i32(length)));
+    const nameValue = this.internUnitsValue(move nameUnits);
+    this.heap.setSlot(handle, 2, nameValue);
+    this.heap.setSlot(handle, 4, booleanValue(false));
+    return handle;
+  }
+
   // Register a builtin constructor.
   function defineConstructor(inout this, fn: HostFunction, bound: Value, length: u32, in name: String): u32 {
     const handle = this.defineHostFunction(fn, bound, length, in name);
@@ -4342,8 +4384,7 @@ export struct Runtime {
   // The resolve / reject function pair for a promise, sharing an
   // "already resolved" record: [promise, resolved].
   function resolvingFunction(inout this, promise: Value, shared: Value, isReject: boolean): Value {
-    const name: String = "";
-    const fn = this.defineHostFunction(isReject ? promiseRejectFunction : promiseResolveFunction, shared, 1, in name);
+    const fn = this.newSharedHost(isReject ? HOST_PROMISE_REJECT : HOST_PROMISE_RESOLVE, shared, 1);
     return cellValue(fn);
   }
 
@@ -6288,7 +6329,7 @@ export function createRuntime(): Runtime {
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
     randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
-    hostTable: Array<HostFunction>(), globalObject: 0, tempRoots: Array<Value>(),
+    hostTable: Array<HostFunction>(), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
@@ -6297,6 +6338,9 @@ export function createRuntime(): Runtime {
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
   runtime.installIntrinsics();
+  runtime.registerSharedHost(HOST_PROMISE_RESOLVE, promiseResolveFunction);
+  runtime.registerSharedHost(HOST_PROMISE_REJECT, promiseRejectFunction);
+  runtime.registerSharedHost(HOST_ASYNC_FROM_SYNC_UNWRAP, asyncFromSyncUnwrap);
   return runtime;
 }
 
@@ -6876,8 +6920,7 @@ function asyncFromSyncRequest(inout runtime: Runtime, thisValue: Value, argsBase
     return promise;
   }
   runtime.pushTempRoot(settled);
-  const name: String = "";
-  const unwrap = runtime.defineHostFunction(asyncFromSyncUnwrap, booleanValue(isDone), 1, in name);
+  const unwrap = runtime.newSharedHost(HOST_ASYNC_FROM_SYNC_UNWRAP, booleanValue(isDone), 1);
   runtime.performThen(asCell(settled), cellValue(unwrap), undefinedValue(), promise);
   runtime.popTempRoot();
   runtime.popTempRoot();

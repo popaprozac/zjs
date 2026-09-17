@@ -4,7 +4,7 @@
 // functions; this module is the JavaScript-facing surface over it.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isTrue } from "../value.zs";
-import { Runtime, ERROR_KIND_AGGREGATE } from "../runtime.zs";
+import { Runtime, ERROR_KIND_AGGREGATE, HOST_CAPABILITY_EXECUTOR, HOST_RETURN_BOUND, HOST_THROW_BOUND, HOST_FINALLY_FULFILLED, HOST_FINALLY_REJECTED, HOST_ELEMENT_FULFILLED, HOST_ELEMENT_REJECTED } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, bytesOf } from "../heap.zs";
 import { defineSpecies } from "./collections.zs";
 
@@ -74,8 +74,7 @@ function newPromiseCapability(inout runtime: Runtime, ctor: Value): u32 {
     runtime.popTempRoot();
     return capability;
   }
-  const name: String = "";
-  const executor = runtime.defineHostFunction(capabilityExecutor, cellValue(capability), 2, in name);
+  const executor = runtime.newSharedHost(HOST_CAPABILITY_EXECUTOR, cellValue(capability), 2);
   let args = Array<Value>();
   args.push(cellValue(executor));
   runtime.pushTempRoot(ctor);
@@ -246,8 +245,7 @@ function finallySettled(inout runtime: Runtime, argsBase: u32, argc: u32, callee
     return undefinedValue();
   }
   runtime.pushTempRoot(settled);
-  const name: String = "";
-  const pass = runtime.defineHostFunction(isReject ? throwBound : returnBound, outcome, 0, in name);
+  const pass = runtime.newSharedHost(isReject ? HOST_THROW_BOUND : HOST_RETURN_BOUND, outcome, 0);
   let args = Array<Value>();
   args.push(cellValue(pass));
   const result = invokeThen(inout runtime, settled, move args);
@@ -289,9 +287,8 @@ function promiseFinally(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     const bound = runtime.heap.allocateArray(2);
     runtime.heap.setSlot(bound, 0, onFinally);
     runtime.heap.setSlot(bound, 1, ctor);
-    const name: String = "";
-    onFulfilled = cellValue(runtime.defineHostFunction(finallyFulfilled, cellValue(bound), 1, in name));
-    onRejected = cellValue(runtime.defineHostFunction(finallyRejected, cellValue(bound), 1, in name));
+    onFulfilled = cellValue(runtime.newSharedHost(HOST_FINALLY_FULFILLED, cellValue(bound), 1));
+    onRejected = cellValue(runtime.newSharedHost(HOST_FINALLY_REJECTED, cellValue(bound), 1));
   }
   let args = Array<Value>();
   args.push(onFulfilled);
@@ -463,9 +460,8 @@ function aggregate(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
         runtime.heap.setSlot(bound, 0, cellValue(record));
         runtime.heap.setSlot(bound, 1, int32Value(i32(index)));
         runtime.heap.setSlot(bound, 2, booleanValue(false));
-        const name: String = "";
-        if (mode != AGG_ANY) onFulfilled = cellValue(runtime.defineHostFunction(elementFulfilled, cellValue(bound), 1, in name));
-        if (mode != AGG_ALL) onRejected = cellValue(runtime.defineHostFunction(elementRejected, cellValue(bound), 1, in name));
+        if (mode != AGG_ANY) onFulfilled = cellValue(runtime.newSharedHost(HOST_ELEMENT_FULFILLED, cellValue(bound), 1));
+        if (mode != AGG_ALL) onRejected = cellValue(runtime.newSharedHost(HOST_ELEMENT_REJECTED, cellValue(bound), 1));
       }
       let thenArgs = Array<Value>();
       thenArgs.push(onFulfilled);
@@ -519,6 +515,13 @@ function promiseRace(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
 }
 
 export function installPromise(inout runtime: Runtime): void {
+  runtime.registerSharedHost(HOST_CAPABILITY_EXECUTOR, capabilityExecutor);
+  runtime.registerSharedHost(HOST_RETURN_BOUND, returnBound);
+  runtime.registerSharedHost(HOST_THROW_BOUND, throwBound);
+  runtime.registerSharedHost(HOST_FINALLY_FULFILLED, finallyFulfilled);
+  runtime.registerSharedHost(HOST_FINALLY_REJECTED, finallyRejected);
+  runtime.registerSharedHost(HOST_ELEMENT_FULFILLED, elementFulfilled);
+  runtime.registerSharedHost(HOST_ELEMENT_REJECTED, elementRejected);
   const objectProto = runtime.objectProto;
   runtime.promiseProto = runtime.heap.allocateObject(objectProto);
   const promiseProto = runtime.promiseProto;

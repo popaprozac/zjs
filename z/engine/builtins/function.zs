@@ -2,7 +2,7 @@
 import { unitsOf } from "../text.zs";
 import { Value, undefinedValue, cellValue, int32Value, booleanValue, asCell, isCell, isUndefined, isNull } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime } from "../runtime.zs";
+import { Runtime, HOST_BOUND_TRAMPOLINE } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 import { parseProgram } from "../parser.zs";
 import { compileProgram } from "../compiler.zs";
@@ -96,7 +96,7 @@ function functionBind(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
       k = k + 1;
     }
   }
-  const bound = runtime.defineHostFunctionUnits(boundTrampoline, cellValue(record), remaining, move nameBytes);
+  const bound = runtime.newSharedHostNamed(HOST_BOUND_TRAMPOLINE, cellValue(record), remaining, move nameBytes);
   if (runtime.isConstructorValue(thisValue)) runtime.heap.setSlot(bound, 4, booleanValue(true));
   return cellValue(bound);
 }
@@ -200,6 +200,7 @@ function functionToString(inout runtime: Runtime, thisValue: Value, argsBase: u3
 }
 
 export function installFunction(inout runtime: Runtime): void {
+  runtime.registerSharedHost(HOST_BOUND_TRAMPOLINE, boundTrampoline);
   const functionProto = runtime.functionProto;
   const functionText: String = "Function";
   const ctor = runtime.defineConstructor(constructFunction, undefinedValue(), 1, in functionText);
