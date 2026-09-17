@@ -113,6 +113,8 @@ const JOB_THENABLE: i32 = 1;
 // The drained front of the job queue is dropped once it is this long
 // (in values, four to a job) and at least half the queue.
 const JOB_COMPACT_AT: usize = 4096;
+// Queue storage up to this many values is kept between drains.
+const JOB_STORAGE_KEPT: usize = 65536;
 export const REACTION_HANDLER: i32 = 0;
 export const REACTION_ASYNC: i32 = 1;
 export const REACTION_ASYNC_GEN_AWAIT: i32 = 2;
@@ -358,6 +360,9 @@ export struct Runtime {
   atomSyncIterator: u32;
   jobs: Array<Value>;
   jobCursor: usize;
+  // One past the last queued value. The array behind the queue may be
+  // longer: it is storage kept for reuse, and nothing past this is a job.
+  jobEnd: usize;
   // Collection timing, off unless the host turns it on: each pause in
   // nanoseconds, in order. Nothing is read from the clock otherwise.
   gcTiming: boolean;
@@ -3869,7 +3874,7 @@ export struct Runtime {
     const promiseSpeciesGetter = this.promiseSpeciesGetter;
     this.heap.markHandle(promiseSpeciesGetter);
     let job: usize = 0;
-    while (job < this.jobs.length) {
+    while (job < this.jobEnd) {
       const queued = this.jobs[job];
       this.heap.markValue(queued);
       job = job + 1;
@@ -4479,10 +4484,19 @@ export struct Runtime {
   }
 
   function enqueueJob(inout this, kind: i32, a: Value, b: Value, c: Value): void {
-    this.jobs.push(int32Value(kind));
-    this.jobs.push(a);
-    this.jobs.push(b);
-    this.jobs.push(c);
+    this.queueValue(int32Value(kind));
+    this.queueValue(a);
+    this.queueValue(b);
+    this.queueValue(c);
+  }
+
+  function queueValue(inout this, value: Value): void {
+    if (this.jobEnd < this.jobs.length) {
+      this.jobs[this.jobEnd] = value;
+    } else {
+      this.jobs.push(value);
+    }
+    this.jobEnd = this.jobEnd + 1;
   }
 
   function settlePromise(inout this, handle: u32, state: i32, value: Value): void {
@@ -4713,7 +4727,7 @@ export struct Runtime {
   // of a long queue is dropped, so a program that settles promises
   // forever runs in bounded memory.
   function runJobs(inout this): void {
-    while (this.jobCursor < this.jobs.length) {
+    while (this.jobCursor < this.jobEnd) {
       const at = this.jobCursor;
       const kind = asInt32(this.jobs[at]);
       const first = this.jobs[at + 1];
@@ -4723,7 +4737,7 @@ export struct Runtime {
       this.jobs[at + 2] = undefinedValue();
       this.jobs[at + 3] = undefinedValue();
       this.jobCursor = at + 4;
-      if (this.jobCursor >= JOB_COMPACT_AT && this.jobCursor * 2 >= this.jobs.length) this.compactJobs();
+      if (this.jobCursor >= JOB_COMPACT_AT && this.jobCursor * 2 >= this.jobEnd) this.compactJobs();
       // The job's values are held for its own run only.
       this.pushTempRoot(first);
       this.pushTempRoot(second);
@@ -4757,20 +4771,24 @@ export struct Runtime {
       this.popTempRoot();
       this.popTempRoot();
     }
-    this.jobs = Array<Value>();
+    // Drained. The storage is kept for the next drain unless a burst
+    // left it large.
+    if (this.jobs.length > JOB_STORAGE_KEPT) this.jobs = Array<Value>();
     this.jobCursor = 0;
+    this.jobEnd = 0;
   }
 
+  // The jobs still waiting move to the front of the same storage.
   function compactJobs(inout this): void {
-    // Room to refill to the next compaction without growing again.
-    let rest = Array<Value>.withCapacity(this.jobs.length - this.jobCursor + JOB_COMPACT_AT * 2);
+    let to: usize = 0;
     let index = this.jobCursor;
-    while (index < this.jobs.length) {
-      rest.push(this.jobs[index]);
+    while (index < this.jobEnd) {
+      this.jobs[to] = this.jobs[index];
+      to = to + 1;
       index = index + 1;
     }
-    this.jobs = move rest;
     this.jobCursor = 0;
+    this.jobEnd = to;
   }
 
   function runReaction(inout this, reaction: u32, argument: Value, isReject: boolean): void {
@@ -6641,7 +6659,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, gcTiming: false, gcPauses: Array<f64>(), resumeDone: false,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: createRegexBackend(), symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
