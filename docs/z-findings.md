@@ -1518,8 +1518,8 @@ Minimal reproduction: probe `native/unused-binding-rebound-later`.
   `z test`; the eval oracle agrees on 54/54 files, the lexer and parser
   oracles on 24/24 each. The same revision's Stage 0 build passes every
   gate including the lifecycle test. A test262 A/B of the Stage 0 `zjsz`
-  against the native one, both at `0d05140d`, is recorded when it
-  finishes. Nothing in the tree changed.
+  against the native one, both at `0d05140d`: 53,330 tests, no test
+  changes outcome in either direction. Nothing in the tree changed.
 - Aside, no probe: the native compiler accepts `return` inside a
   `deinit` body, which Stage 0 rejects (`deinit cannot contain
   "return"`). The parity gap is in the other direction and is noted
