@@ -1435,8 +1435,8 @@ find the header.
 
 ## G46 — Native compiler: a method calling a function value with `inout this` passes the receiver's address twice
 
-**Status:** `proposed` — one of the three C-emission failures that are
-the next first failure of the native engine build · **Size:** small ·
+**Status:** `implemented` — z-lang `0d05140d`; the probe lands; not yet
+consumer-verified · **Size:** small ·
 **Confirmed:** native compiler bootstrapped from z-lang `ef1ae30d`; Stage
 0 at `ef1ae30d` accepts · **Blocks:** the native build of the engine, at
 one site (`runtime.zs`, `callHost`).
@@ -1456,7 +1456,8 @@ Minimal reproduction: probe `native/function-value-called-with-inout-this`
 
 ## G47 — Native compiler: a named function passed directly as an argument of function type
 
-**Status:** `proposed` · **Size:** small · **Confirmed:** native compiler
+**Status:** `implemented` — z-lang `0d05140d`; the probe lands; not yet
+consumer-verified · **Size:** small · **Confirmed:** native compiler
 bootstrapped from z-lang `ef1ae30d`; Stage 0 at `ef1ae30d` accepts ·
 **Blocks:** the native build of the engine, at 95 sites (every builtin
 installation).
@@ -1478,7 +1479,8 @@ Minimal reproduction: probe `native/named-function-as-argument`.
 
 ## G48 — Native compiler: an unused binding loses its unused attribute when its name is bound again later
 
-**Status:** `proposed` · **Size:** small · **Confirmed:** native compiler
+**Status:** `implemented` — z-lang `0d05140d`; the probe lands; not yet
+consumer-verified · **Size:** small · **Confirmed:** native compiler
 bootstrapped from z-lang `ef1ae30d`; Stage 0 at `ef1ae30d` accepts ·
 **Blocks:** the native build of the engine, at two sites
 (`builtins/array.zs`, `pop` and `shift`).
@@ -1497,6 +1499,70 @@ the attribute, so the emitter's unused analysis is keyed by name rather
 than by binding.
 
 Minimal reproduction: probe `native/unused-binding-rebound-later`.
+
+### Checkpoint `0d05140d` (2026-09-18): the engine builds natively; the first gate fails
+
+- Clone: an isolated clone of z-lang at
+  `0d05140da1d8bd9e6c5680bb61fdd13d9181a778` (branch
+  `codex/native-compiler-parity`), clean before and after. Bootstrap:
+  fixed point, 155 s; `sha256(z)` =
+  `e414eb910d7249756a5222ba8b3c2cb51f8e0b9d006c75622aae99a2055c8790`,
+  the digest Codex published.
+- Probes: G39–G48, all eleven `LANDED`; Stage 0 at `0d05140d` accepts each.
+- Engine, worktree at ZJS `7cb1443`, `Z_BIN=<out>/z ./z/build.sh`:
+  `libzjsz.a`, the shim, `libzjs.a`, and the lifecycle test all build.
+  The first gate, the lifecycle test, dies with `SIGTRAP` inside
+  `free` on its first worker thread (G49 below). Run by hand past it:
+  `zjsz` builds and runs; the 20 node-recorded expectations pass; the
+  five collector checks pass; the 61 unit tests pass under the native
+  `z test`; the eval oracle agrees on 54/54 files, the lexer and parser
+  oracles on 24/24 each. The same revision's Stage 0 build passes every
+  gate including the lifecycle test. A test262 A/B of the Stage 0 `zjsz`
+  against the native one, both at `0d05140d`, is recorded when it
+  finishes. Nothing in the tree changed.
+- Aside, no probe: the native compiler accepts `return` inside a
+  `deinit` body, which Stage 0 rejects (`deinit cannot contain
+  "return"`). The parity gap is in the other direction and is noted
+  here only.
+- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`.
+
+## G49 — Native compiler: a reference handed out of a lock callback is not retained
+
+**Status:** `proposed` — the first native gate failure; the lifecycle
+test's first worker thread · **Size:** medium (ARC ownership through a
+lock callback) · **Confirmed:** native compiler bootstrapped from z-lang
+`0d05140d`; Stage 0 at `0d05140d` runs it correctly · **Blocks:** the
+native lifecycle gate, and any embedding: every ABI call admits its
+context this way.
+
+Under Guard Malloc, an unoptimized build of the lifecycle library
+faults at:
+
+```
+Z_Context_retain(borrowed=<freed>) at zjsz.c:4957        __atomic_add_fetch(&value->_z_refcount, 1, ...)
+  z_stage1_mutex_with_lock_retain_14_body                (the `withLock` callback in `retain`)
+  retain(handle=1)                                       z/engine/lib.zs:96
+  zjs_z_had_error(handle=1)                              z/engine/lib.zs:207
+  first_context                                          z/tests/lifecycle_test.c:238
+```
+
+The registry keeps `slots: Array<Option<Context>>` behind a `Mutex`.
+`retain(handle)` enters `withLock((in registry) => …)`, matches the
+slot, and returns `Option<Context>.some(context)`; the caller uses the
+context and drops it. Natively the returned reference carries no
+retain, so the caller's drop takes one from the stored instance: the
+context survives `zjs_z_new_context` and one `zjs_z_eval`, and the
+`zjs_z_had_error` after it retains freed memory. Stage 0 retains on the
+way out, as the ownership model says a `some(item)` built from a
+borrowed element must.
+
+The probe stores one instance, whose field's `deinit` counts in C, hands
+it out twice, and checks the count is still zero: Stage 0 `ok`; native
+exit 4, the instance destroyed after the second hand-out while still
+stored. Single-threaded, no `Once`, no C export: the lock callback is
+the whole shape.
+
+Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
 
 ## G10 — Z is macOS-only
 
