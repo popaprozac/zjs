@@ -1373,6 +1373,50 @@ Minimal reproduction: probe `native/private-aggregate-through-export`
 (with `native/modules/private-aggregate.zs`).
 
 
+### Checkpoint `b7ccb839` (2026-09-17)
+
+- Clone: an isolated clone of z-lang at
+  `b7ccb83916e79549932df4b8d88cb7dc554b77fd` (branch
+  `codex/native-compiler-parity`), clean before and after. Bootstrap:
+  fixed point, 95 s; `sha256(z)` =
+  `d7a34c78415a663ff26d5eda1539dd9939b65458c47c63639ee90f9a8edee2d7`,
+  the digest Codex published.
+- Probes: G39–G44, all six `LANDED`; Stage 0 at `b7ccb839` accepts each.
+- Engine: worktree at ZJS `32d2b67`; `Z_BIN=<out>/z ./z/build.sh` gets
+  through native checking and lowering of the whole engine and stops in
+  the C it emitted, on G45. Nothing in the tree changed.
+- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`.
+
+## G45 — Native compiler: a native header is not found from the module that imports it
+
+**Status:** `proposed` — the next first failure of the native engine
+build after G43 and G44 · **Size:** small (the toolchain command) ·
+**Confirmed:** native compiler bootstrapped from z-lang `b7ccb839`; Stage
+0 at `b7ccb839` accepts · **Blocks:** the native build of the engine, at
+the C compile of its one translation unit.
+
+```
+z/engine/.z-cache/build/zjsz.c:15:10: fatal error: 'clock.h' file not found
+   15 | #include "clock.h"
+```
+
+`builtins/date.zs` imports `native from "clock.h"`, the header beside
+it; `runtime.zs`, one directory up, imports the same header as
+`"./builtins/clock.h"`. Stage 0 emits the spellings as written and
+compiles with `-I` for the directory of every module in the graph, so
+both resolve. The native driver emits them as written and compiles
+against the entry module's directory only: the runtime's spelling
+resolves, the builtin's does not, and neither does the module-relative
+`"./clock.h"`. A header is named relative to the module that imports it,
+as a module import is; the fix is the include path, or emitting the
+resolved path.
+
+Minimal reproduction: probes `native/native-header-beside-module` (bare
+name) and `native/native-header-relative-to-module` (`./` form), both
+importing a module under `native/modules/nested/` that imports the
+header beside it. Both are `BACKEND-REJECTED`: Z accepts, clang cannot
+find the header.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

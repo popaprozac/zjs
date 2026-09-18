@@ -21,7 +21,8 @@
 #   COMPILER-REJECTED  `z check` refused it (the gap is open); an internal
 #                      compiler error is reported as such, it is a compiler
 #                      defect and not a diagnostic
-#   BACKEND-REJECTED   Z accepted it, the generated C did not build
+#   BACKEND-REJECTED   Z accepted it, the generated C did not build (the gap
+#                      is open, in emission or the toolchain command)
 #   RUNTIME-FAIL n     built, and an assertion failed: the probe's exit code
 #   CRASH sig n        built, and the program died of a signal (a trap, abort)
 #   TIMEOUT            exceeded PROBE_TIMEOUT seconds (default 60)
@@ -53,7 +54,7 @@ for probe in "$HERE"/*.zs; do
     status="COMPILER-REJECTED"; open=$((open+1))
     detail="$(grep -oE 'internal compiler error.*|error.*' "$log" | head -1 | sed "s#$HERE/##g" | cut -c1-88)"
   elif ! (cd "$HERE" && bounded "$Z_BIN" build "$probe" "$bin") >>"$log" 2>&1; then
-    status="BACKEND-REJECTED"; other=$((other+1))
+    status="BACKEND-REJECTED"; open=$((open+1))
     detail="$(grep -oE '\.c:[0-9]+:[0-9]+: error: .*|error.*' "$log" | head -1 | cut -c1-72)"
   else
     bounded "$bin" >>"$log" 2>&1; rc=$?
@@ -66,4 +67,4 @@ for probe in "$HERE"/*.zs; do
   printf "  %-36s %-18s %s%s\n" "$name" "$status" "$detail" "${stage0:+   [$stage0]}"
 done
 echo
-echo "landed: $landed   open (compiler-rejected): $open   other: $other"
+echo "landed: $landed   open (compiler- or backend-rejected): $open   other (failed, crashed, timed out): $other"
