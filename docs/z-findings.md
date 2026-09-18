@@ -1390,10 +1390,10 @@ Minimal reproduction: probe `native/private-aggregate-through-export`
 
 ## G45 — Native compiler: a native header is not found from the module that imports it
 
-**Status:** `proposed` — the next first failure of the native engine
-build after G43 and G44 · **Size:** small (the toolchain command) ·
+**Status:** `implemented` — z-lang `ef1ae30d`; both probes land; not yet
+consumer-verified · **Size:** small (the toolchain command) ·
 **Confirmed:** native compiler bootstrapped from z-lang `b7ccb839`; Stage
-0 at `b7ccb839` accepts · **Blocks:** the native build of the engine, at
+0 at `b7ccb839` accepts · **Blocked:** the native build of the engine, at
 the C compile of its one translation unit.
 
 ```
@@ -1417,6 +1417,86 @@ name) and `native/native-header-relative-to-module` (`./` form), both
 importing a module under `native/modules/nested/` that imports the
 header beside it. Both are `BACKEND-REJECTED`: Z accepts, clang cannot
 find the header.
+
+### Checkpoint `ef1ae30d` (2026-09-18)
+
+- Clone: an isolated clone of z-lang at
+  `ef1ae30dcfece015afd9fd40af2d206c2a4f4d95` (branch
+  `codex/native-compiler-parity`), clean before and after. Bootstrap:
+  fixed point, 144 s; `sha256(z)` =
+  `cd94c8f56ae973106ff6928148a0feaedbe2808a629a109fbf7bccf96242719e`,
+  the digest Codex published.
+- Probes: G39–G45, all eight `LANDED`; Stage 0 at `ef1ae30d` accepts each.
+- Engine: worktree at ZJS `3878b3b`; `Z_BIN=<out>/z ./z/build.sh` emits
+  the engine's C and clang rejects it. Compiling that C again without
+  its `#line` directives and with no error limit gives every error:
+  95 of G47, 2 of G48, 1 of G46. Nothing in the tree changed.
+- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`.
+
+## G46 — Native compiler: a method calling a function value with `inout this` passes the receiver's address twice
+
+**Status:** `proposed` — one of the three C-emission failures that are
+the next first failure of the native engine build · **Size:** small ·
+**Confirmed:** native compiler bootstrapped from z-lang `ef1ae30d`; Stage
+0 at `ef1ae30d` accepts · **Blocks:** the native build of the engine, at
+one site (`runtime.zs`, `callHost`).
+
+```
+zjsz.c: error: incompatible pointer types passing 'Z_Runtime **' to parameter of type 'Z_Runtime *'; remove &
+  Z_Function_..._call(fn, &(self), thisValue, argsBase, argc, callee);
+```
+
+`callHost(inout this, …)` does `fn(inout this, thisValue, argsBase,
+argc, callee)`. In a method the receiver is already a pointer; the
+emitter takes its address again for the `inout` argument of a function
+value. A direct call with `inout this` is emitted correctly.
+
+Minimal reproduction: probe `native/function-value-called-with-inout-this`
+(the function value arrives bound, so G47 is not in its way).
+
+## G47 — Native compiler: a named function passed directly as an argument of function type
+
+**Status:** `proposed` · **Size:** small · **Confirmed:** native compiler
+bootstrapped from z-lang `ef1ae30d`; Stage 0 at `ef1ae30d` accepts ·
+**Blocks:** the native build of the engine, at 95 sites (every builtin
+installation).
+
+```
+zjsz.c: error: passing 'Z_Value (Z_Runtime *, Z_Value, uint32_t, uint32_t, uint32_t)' to parameter of incompatible type 'Z_Function_...'
+  method(&((*runtime)), arrayProto, &(flatMapText), Z_Function_..._retain(arrayFlatMap), 1);
+```
+
+`method(inout runtime, arrayProto, in flatMapText, arrayFlatMap, 1)`
+names a function where a `HostFunction` value is wanted. The emitter
+wraps the bare C function in the handle type's `_retain` instead of
+making the static callable handle it makes when the same function is
+bound to a typed `const` first (that spelling is accepted and runs). A
+value-only signature `(n: i32) => i32` fails the same way, with and
+without a `type` alias, and with `on thread.any`.
+
+Minimal reproduction: probe `native/named-function-as-argument`.
+
+## G48 — Native compiler: an unused binding loses its unused attribute when its name is bound again later
+
+**Status:** `proposed` · **Size:** small · **Confirmed:** native compiler
+bootstrapped from z-lang `ef1ae30d`; Stage 0 at `ef1ae30d` accepts ·
+**Blocks:** the native build of the engine, at two sites
+(`builtins/array.zs`, `pop` and `shift`).
+
+```
+zjsz.c: error: unused variable 'ok' [-Werror,-Wunused-variable]
+    const bool ok = setLength(&((*runtime)), object, 0.0);
+```
+
+Both functions bind `const ok = setLength(…)` in an early-return block
+and never read it (Z has no discard statement), then bind `let ok =
+deleteIndex(…)` afterwards and read that. An unused binding alone is
+emitted with `__attribute__((unused))` and compiles; when the name is
+bound again later in the function, the first binding is emitted without
+the attribute, so the emitter's unused analysis is keyed by name rather
+than by binding.
+
+Minimal reproduction: probe `native/unused-binding-rebound-later`.
 
 ## G10 — Z is macOS-only
 
