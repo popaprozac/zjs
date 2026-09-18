@@ -42,7 +42,7 @@ if [ -n "${Z_LANG:-}" ]; then
 fi
 echo
 
-landed=0; open=0; other=0
+landed=0; open=0; other=0; kinds=""
 # Helper modules a probe imports live under modules/ and are not probes.
 for probe in "$HERE"/*.zs; do
   name="$(basename "$probe" .zs)"; log="$RESULTS/$name.log"; bin="$RESULTS/$name.bin"
@@ -64,7 +64,10 @@ for probe in "$HERE"/*.zs; do
     else status="RUNTIME-FAIL"; other=$((other+1)); detail="exit $rc"
     fi
   fi
+  [ "$status" = LANDED ] || kinds="$kinds $status"
   printf "  %-36s %-18s %s%s\n" "$name" "$status" "$detail" "${stage0:+   [$stage0]}"
 done
 echo
-echo "landed: $landed   open (compiler- or backend-rejected): $open   other (failed, crashed, timed out): $other"
+# Every probe that did not land is an open gap; the kinds say where it is open.
+breakdown="$(echo "$kinds" | tr ' ' '\n' | grep . | sort | uniq -c | awk '{printf "%s%d %s", sep, $1, $2; sep=", "}')"
+echo "landed: $landed   open: $((open+other))${breakdown:+ ($breakdown)}"
