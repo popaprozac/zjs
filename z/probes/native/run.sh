@@ -18,7 +18,9 @@
 #
 # Outcomes, never collapsed into one:
 #   LANDED             compiled natively and ran clean
-#   COMPILER-REJECTED  `z check` refused it (the gap is open)
+#   COMPILER-REJECTED  `z check` refused it (the gap is open); an internal
+#                      compiler error is reported as such, it is a compiler
+#                      defect and not a diagnostic
 #   BACKEND-REJECTED   Z accepted it, the generated C did not build
 #   RUNTIME-FAIL n     built, and an assertion failed: the probe's exit code
 #   CRASH sig n        built, and the program died of a signal (a trap, abort)
@@ -40,6 +42,7 @@ fi
 echo
 
 landed=0; open=0; other=0
+# Helper modules a probe imports live under modules/ and are not probes.
 for probe in "$HERE"/*.zs; do
   name="$(basename "$probe" .zs)"; log="$RESULTS/$name.log"; bin="$RESULTS/$name.bin"
   stage0=""
@@ -48,7 +51,7 @@ for probe in "$HERE"/*.zs; do
   fi
   if ! (cd "$HERE" && bounded "$Z_BIN" check "$probe") >"$log" 2>&1; then
     status="COMPILER-REJECTED"; open=$((open+1))
-    detail="$(grep -o 'error.*' "$log" | head -1 | cut -c1-72)"
+    detail="$(grep -oE 'internal compiler error.*|error.*' "$log" | head -1 | sed "s#$HERE/##g" | cut -c1-88)"
   elif ! (cd "$HERE" && bounded "$Z_BIN" build "$probe" "$bin") >>"$log" 2>&1; then
     status="BACKEND-REJECTED"; other=$((other+1))
     detail="$(grep -oE '\.c:[0-9]+:[0-9]+: error: .*|error.*' "$log" | head -1 | cut -c1-72)"

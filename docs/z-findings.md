@@ -1158,11 +1158,13 @@ Minimal reproduction: probe `array-truncate`.
 
 ## G39 — Native compiler: a slice's length is not a `usize` as a `withCapacity` argument
 
-**Status:** `approved` — a native-compiler fix, first of the four
-(G39 → G41 → G40 → G42); no language API or engine change proposed ·
+**Status:** `implemented` — z-lang `31ac3e1a` (branch
+`codex/native-compiler-parity`): the probe lands with a compiler
+bootstrapped from a clean clone of that revision; not yet
+consumer-verified, since the engine build stops later (G43) ·
 **Size:** small · **Confirmed:** native compiler bootstrapped from z-lang
 `ad43b117` (provenance below), and still at `9439181a`; Stage 0 at
-`ad43b117` accepts · **Blocks:** the native build of the engine, at its
+`ad43b117` accepts · **Blocked:** the native build of the engine, at its
 first module.
 
 **Acceptance:** `Slice<T>.length` is `usize` in direct arguments, in
@@ -1188,9 +1190,11 @@ Minimal reproduction: probe `native/slice-length-as-capacity`.
 
 ## G40 — Native compiler: a `deinit` cannot call an `inout this` method of a field
 
-**Status:** `approved` — third of the four · **Size:** small ·
-**Confirmed:** native compiler from `ad43b117`, and still at `9439181a`;
-Stage 0 accepts · **Blocks:** the native build of the engine (its teardown).
+**Status:** `implemented` — z-lang `31ac3e1a`; the probe lands (releases
+counted exactly once, with and without placement); not yet
+consumer-verified · **Size:** small · **Confirmed:** native compiler from
+`ad43b117`, and still at `9439181a`; Stage 0 accepts · **Blocked:** the
+native build of the engine (its teardown).
 
 **Acceptance:** a deinit receives the mutable access its teardown needs,
 with and without executor placement, and the cleanup runs exactly once
@@ -1213,10 +1217,11 @@ Minimal reproduction: probe `native/deinit-calls-field-inout-method`.
 
 ## G41 — Native compiler: an `inout` borrow of one field with a read of another in one call
 
-**Status:** `approved` — second of the four · **Size:** medium (a
-loan-checker rule) · **Confirmed:** native compiler from `ad43b117`, and
-still at `9439181a`; Stage 0 accepts · **Blocks:** the native build of the
-engine, at many sites.
+**Status:** `implemented` — z-lang `31ac3e1a`; the probe lands; not yet
+consumer-verified · **Size:** medium (a loan-checker rule) ·
+**Confirmed:** native compiler from `ad43b117`, and still at `9439181a`;
+Stage 0 accepts · **Blocked:** the native build of the engine, at many
+sites.
 
 **Acceptance:** sibling-field precision for independently owned storage,
 with negative cases for genuinely overlapping loans, ancestor and
@@ -1245,10 +1250,10 @@ Minimal reproduction: probe `native/disjoint-fields-in-one-call`.
 
 ## G42 — Native compiler: element comparison inside a generic function over `Array<T>`
 
-**Status:** `approved` — fourth of the four · **Size:** medium ·
-**Confirmed:** native compiler from `ad43b117`, and still at `9439181a`;
-Stage 0 accepts · **Blocks:** the native build of the engine's string
-builtins.
+**Status:** `implemented` — z-lang `31ac3e1a`; the probe lands; not yet
+consumer-verified · **Size:** medium · **Confirmed:** native compiler
+from `ad43b117`, and still at `9439181a`; Stage 0 accepts · **Blocked:**
+the native build of the engine's string builtins.
 
 **Acceptance:** checks that depend on `T` are deferred to the concrete
 specialization, and an invalid specialization is still rejected. The
@@ -1301,6 +1306,72 @@ The ZJS source stays as it is: these are native-compiler fixes. When an
 upstream checkpoint lands, the four probes and the whole engine build are
 rerun and the next first failure is reported, without accumulating
 workarounds in the engine. The pinned Stage 0 build remains the baseline.
+
+### Checkpoint `31ac3e1a` (2026-09-17)
+
+- Clone: an isolated clone of z-lang at
+  `31ac3e1aa3baa64fc1ad339d62be56aff0f2fcb0` (branch
+  `codex/native-compiler-parity`, nine commits past the pin), clean
+  before and after. Bootstrap `bun run bootstrap <out>/z`: fixed point,
+  82 s; `sha256(z)` = `c2d2b39ba489791bfef5476dbce1d27291cd17226c2a39b230e55a14251bf88c`,
+  byte-identical to the binary Codex published at
+  `/private/tmp/z-parity-checkpoint/z`.
+- Probes: G39, G40, G41, G42 all `LANDED` (compiled, ran clean), Stage 0
+  at `31ac3e1a` accepts each.
+- Engine: worktree at ZJS `480e3a9` (engine sources unchanged since
+  `bab46de`); `Z_BIN=<out>/z ./z/build.sh` stops at `z build z/engine`
+  with G43. Exploring one step further in the worktree only (the literal
+  replaced by an element read, then the private struct exported) met G44
+  twice, at `heap.zs`'s `HiddenClass` and `runtime.zs`'s `Global`; both
+  edits reverted, nothing in the tree.
+- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`, and every engine
+  gate result remains Stage 0 evidence at the pin.
+
+## G43 — Native compiler: an integer literal is not an element inside a generic over `Array<T>`
+
+**Status:** `proposed` — the next first failure of the native engine
+build after G39–G42 · **Size:** small · **Confirmed:** native compiler
+bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a` accepts ·
+**Blocks:** the native build of the engine, in `builtins/primitives.zs`.
+
+```
+z/engine/builtins/primitives.zs:943:21: error: expected T, found i32
+        joined.push(36);
+```
+
+`expandReplacement<T>` serves the Latin-1 and UTF-16 replacement paths
+with one body and pushes `$` (36) into an `Array<T>`; it is instantiated
+at `u8` and `u16` only. Native sema accepts the comparison `element == 36`
+in the same body since `31ac3e1a` and rejects the literal as a `push`
+argument. Stage 0 gives the literal the element type in both positions.
+
+Minimal reproduction: probe `native/literal-as-generic-element`.
+
+## G44 — Native compiler: an internal error lowering a private aggregate read through an exported struct
+
+**Status:** `proposed` · **Size:** medium · **Confirmed:** native
+compiler bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a`
+accepts · **Blocks:** the native build of the engine, at least twice
+(`heap.zs` → `runtime.zs`, `runtime.zs` → `builtins/primitives.zs`).
+
+```
+internal compiler error: native lowering: z/engine/runtime.zs: native module lowering could not resolve type __z_module_4_HiddenClass against 7 local aggregate(s), 0 local enum(s), and 349 imported type(s)
+```
+
+`heap.zs` keeps `struct HiddenClass` private and exports `Heap`, whose
+field `classes: Array<HiddenClass>` the runtime walks
+(`this.heap.classes[index].transitionName`). Calling the exported
+struct's methods from the importing module lowers; reading the field's
+elements there does not, and the failure is an internal compiler error
+rather than a diagnostic. `runtime.zs`'s private `Global`, read as
+`runtime.globals[slot].value` from the builtins, fails the same way. If
+the rule is that a private aggregate may not be read across the module
+boundary, a diagnostic with the site is the fix; Stage 0 accepts the
+read, so parity says lowering should.
+
+Minimal reproduction: probe `native/private-aggregate-through-export`
+(with `native/modules/private-aggregate.zs`).
+
 
 ## G10 — Z is macOS-only
 
