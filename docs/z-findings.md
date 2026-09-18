@@ -1329,10 +1329,10 @@ workarounds in the engine. The pinned Stage 0 build remains the baseline.
 
 ## G43 — Native compiler: an integer literal is not an element inside a generic over `Array<T>`
 
-**Status:** `proposed` — the next first failure of the native engine
-build after G39–G42 · **Size:** small · **Confirmed:** native compiler
+**Status:** `implemented` — z-lang `b7ccb839`; the probe lands; not yet
+consumer-verified · **Size:** small · **Confirmed:** native compiler
 bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a` accepts ·
-**Blocks:** the native build of the engine, in `builtins/primitives.zs`.
+**Blocked:** the native build of the engine, in `builtins/primitives.zs`.
 
 ```
 z/engine/builtins/primitives.zs:943:21: error: expected T, found i32
@@ -1349,10 +1349,11 @@ Minimal reproduction: probe `native/literal-as-generic-element`.
 
 ## G44 — Native compiler: an internal error lowering a private aggregate read through an exported struct
 
-**Status:** `proposed` · **Size:** medium · **Confirmed:** native
-compiler bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a`
-accepts · **Blocks:** the native build of the engine, at least twice
-(`heap.zs` → `runtime.zs`, `runtime.zs` → `builtins/primitives.zs`).
+**Status:** `implemented` — z-lang `b7ccb839`; the probe lands; not yet
+consumer-verified · **Size:** medium · **Confirmed:** native compiler
+bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a` accepts ·
+**Blocked:** the native build of the engine, at least twice (`heap.zs` →
+`runtime.zs`, `runtime.zs` → `builtins/primitives.zs`).
 
 ```
 internal compiler error: native lowering: z/engine/runtime.zs: native module lowering could not resolve type __z_module_4_HiddenClass against 7 local aggregate(s), 0 local enum(s), and 349 imported type(s)
