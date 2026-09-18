@@ -1589,8 +1589,8 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   async generator value 366 vs 372, small-live-set churn 70 vs 68, churn
   against 300,000 retained 180 vs 173). Both drivers hand the same C to
   the same clang at `-O2`; the differences are run-to-run.
-- A test262 A/B of the Stage 0 `zjsz` against the native one, both at
-  `9755f564`, is recorded below when it finishes.
+- test262, the Stage 0 `zjsz` against the native one, both at
+  `9755f564`: 53,330 tests, no test changes outcome in either direction.
 - Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`, and the results
   above are native evidence at `9755f564`, not consumer verification of
   the pin.
