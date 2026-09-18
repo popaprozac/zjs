@@ -21,8 +21,8 @@ fi
 if ! zc run "$HERE/tools/tokdump-z/main.zs" --release -- /dev/null >"$OUT/build.log" 2>&1; then
   echo "Z dump tool failed to build:" >&2; grep -v '^\$' "$OUT/build.log" | head -8 >&2; exit 2
 fi
-Z_DUMP="$(ls -t "$HERE/tools/tokdump-z/.z-cache/run/" | grep -v '\.c$' | head -1)"
-Z_DUMP="$HERE/tools/tokdump-z/.z-cache/run/$Z_DUMP"
+# The executable `z run` left in its cache, whichever driver built it.
+Z_DUMP="$(find "$HERE/tools/tokdump-z/.z-cache/run" -maxdepth 1 -type f -perm +111 -print0 | xargs -0 ls -t | head -1)"
 
 targets=("$@"); [ ${#targets[@]} -gt 0 ] || targets=("$ROOT/src/stdlib" "$ROOT/tests/wintercg")
 files=()
