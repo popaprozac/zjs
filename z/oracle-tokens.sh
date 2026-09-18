@@ -5,11 +5,11 @@
 #   ./z/oracle-tokens.sh [file-or-dir ...]     default corpus: src/stdlib tests/wintercg
 set -uo pipefail
 
-Z_LANG="${Z_LANG:-$HOME/code/z-lang}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 OUT="$HERE/build/tokens"
 mkdir -p "$OUT"
+. "$HERE/zc.sh"
 
 if [ ! -x "$HERE/build/tokdump-ref" ]; then
   clang -std=c11 -O2 -o "$HERE/build/tokdump-ref" "$HERE/tools/tokdump-ref.c" "$ROOT/build/libzjs.a" \
@@ -18,7 +18,7 @@ fi
 
 # Build the Z dump once as a native binary via `z run --release` on a
 # throwaway input, then reuse the cached executable for every file.
-if ! (cd "$Z_LANG" && bun run z run "$HERE/tools/tokdump-z/main.zs" --release -- /dev/null) >"$OUT/build.log" 2>&1; then
+if ! zc run "$HERE/tools/tokdump-z/main.zs" --release -- /dev/null >"$OUT/build.log" 2>&1; then
   echo "Z dump tool failed to build:" >&2; grep -v '^\$' "$OUT/build.log" | head -8 >&2; exit 2
 fi
 Z_DUMP="$(ls -t "$HERE/tools/tokdump-z/.z-cache/run/" | grep -v '\.c$' | head -1)"

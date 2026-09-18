@@ -575,7 +575,8 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
 ## Commands
 
 ```sh
-./z/build.sh                      # engine + shim + libzjs.a + runner
+./z/build.sh                      # engine + shim + libzjs.a + runner (Stage 0 in $Z_LANG)
+Z_BIN=<native z> ./z/build.sh     # the same, built by a native compiler binary (z/zc.sh)
 ./z/build/loop_smoke              # ABI round-trip assertions
 ./z/oracle.sh                     # differential oracle, synthetic corpus
 ./z/oracle.sh vendor/test262/test/language/expressions   # real corpus
@@ -585,6 +586,7 @@ evidence `z/tests/lifecycle_test.c` produces on every build.
 ./z/expect.sh                     # expectation cases recorded from node (z/tests/expect)
 ./z/gc-check.sh                   # collector checks on engine counters (z/tests/gc)
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
+Z_BIN=<native z> ./z/probes/native/run.sh   # programs Stage 0 accepts that a native compiler rejects
 ./z/spike/run.sh                  # Phase 0 measurements
 ./z/build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats] [--gc-floor N] [--gc-growth P] [--expose-gc] file.js
                                   # --dict-threshold: property count at which an

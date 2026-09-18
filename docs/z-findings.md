@@ -1156,6 +1156,114 @@ order and keeping the allocation, as `clear()` does for all of them.
 
 Minimal reproduction: probe `array-truncate`.
 
+## G39 — Native compiler: a slice's length is not a `usize` as a `withCapacity` argument
+
+**Status:** `proposed` · **Size:** small · **Priority:** high for the native
+checkpoint · **Confirmed:** native compiler bootstrapped from z-lang
+`ad43b117` (provenance below); Stage 0 at `ad43b117` accepts · **Blocks:**
+the native build of the engine, at its first module.
+
+**Found:** the native-compiler validation checkpoint (2026-09-17): the
+first diagnostic of `z build z/engine` under the bootstrapped native `z`.
+
+```
+z/engine/lib.zs:196:45: error: Array.withCapacity requires usize, found
+  let bytes = Array<u8>.withCapacity(source.length);
+```
+
+`source` is a `Slice<u8>` parameter. Native sema gives `source.length` no
+type here (the diagnostic prints an empty type name, which is a second,
+smaller defect), while binding it first, `const count: usize =
+source.length;`, is accepted by both compilers. An array's own `length`
+in the same position is accepted natively.
+
+Minimal reproduction: probe `native/slice-length-as-capacity`.
+
+## G40 — Native compiler: a `deinit` cannot call an `inout this` method of a field
+
+**Status:** `proposed` · **Size:** small · **Priority:** high for the native
+checkpoint · **Confirmed:** native compiler from `ad43b117`; Stage 0 accepts
+· **Blocks:** the native build of the engine (its teardown).
+
+```
+z/engine/runtime.zs:1218:10: error: mutable method "release" cannot be called through immutable binding "this"
+    this.regexBackend.release();
+```
+
+The runtime's `deinit on thread.any` releases the regex backend, whose
+`release(inout this)` frees every compiled pattern and the native context
+and resets the fields. Native sema treats `this` inside `deinit` as an
+immutable binding; Stage 0 treats it as mutable, which is the only reading
+under which a deinit can release what its fields own. The same rejection
+occurs without the thread placement.
+
+Minimal reproduction: probe `native/deinit-calls-field-inout-method`.
+
+## G41 — Native compiler: an `inout` borrow of one field with a read of another in one call
+
+**Status:** `proposed` · **Size:** medium (a loan-checker rule) · **Priority:**
+high for the native checkpoint · **Confirmed:** native compiler from
+`ad43b117`; Stage 0 accepts · **Blocks:** the native build of the engine,
+at many sites.
+
+```
+z/engine/heap.zs:1231:46: error: overlapping inout and value uses of "this.pendingNext" and "this" in one call are not allowed
+    this.pendingNext.push(this.pendingBuckets[usize(bucket)]);
+```
+
+The receiver is borrowed mutably through one field and an argument reads
+a different field. Stage 0 accepts this because the fields are disjoint
+storage; native sema widens the read to `this` and reports an overlap.
+Binding the read to a local first is accepted by both. The shape "call a
+mutating method on one field with another field's value" occurs across
+the engine (the heap, the parser writing into its AST, the compiler
+pushing into its tables); the exact count was not established because
+the native driver stops at the first error.
+
+Minimal reproduction: probe `native/disjoint-fields-in-one-call`.
+
+## G42 — Native compiler: element comparison inside a generic function over `Array<T>`
+
+**Status:** `proposed` · **Size:** medium · **Priority:** high for the native
+checkpoint · **Confirmed:** native compiler from `ad43b117`; Stage 0 accepts
+· **Blocks:** the native build of the engine's string builtins.
+
+```
+z/engine/builtins/primitives.zs:487:31: error: operator != requires matching comparable operands
+      if (haystack[start + k] != needle[k]) matched = false;
+```
+
+`findBytes<T>(in haystack: Array<T>, in needle: Array<T>, ...)` serves the
+Latin-1 and the UTF-16 string paths with one body; it is instantiated at
+`u8` and `u16` only. Native sema checks the generic body before
+specialization and finds no comparability for `T`; Stage 0 checks the
+instantiations. Five generic functions in `primitives.zs` share the
+pattern (`findBytes`, `findLastIn`, `endsWithIn`, `appendAll`,
+`expandReplacement`).
+
+Minimal reproduction: probe `native/generic-element-comparison`.
+
+### Provenance of the native-compiler confirmations (G39–G42)
+
+- z-lang clone: an isolated clone at `ad43b117b4122589f41322bd943e4cdb4a342eb3`,
+  `git status --porcelain` empty before and after; the shared checkout was
+  not read or written.
+- Bootstrap: `bun run bootstrap <out>/z` in that clone (bun 1.3.14, Apple
+  clang 17.0.0); fixed point reached, generation two's C byte-identical to
+  the seed (13,192,974 bytes); 81 s.
+  `z version` → `z 0.1.0-dev revision 2026-08-31.1 compiler-api 2`.
+  `sha256(z)` = `5ebaf446ed0ac298419319d1cec7d9b285a3ccc1e494a059e5ed0a7ee3d9eee6`;
+  `sha256(z.c)` = `c25ccf5fd39d435030717feb1398518d93ab96bc5b244eae819b3a0054513823`.
+- Engine: a detached worktree at ZJS `bab46de` (the engine sources are the
+  same at the commits since, which touched measurements and build scripts
+  only); `Z_BIN=<out>/z ./z/build.sh`, which fails at step 1, `z build
+  z/engine`, with G39. G40–G42 were found by binding G39's length to a
+  local, giving the backend a teardown that does not reset its fields, and
+  binding G41's read to a local, in the worktree only; none of that is in
+  the tree, and no engine semantics were changed.
+- Each probe: rejected by `<out>/z run`, accepted by `bun run z run` in the
+  clean clone (`z/probes/native/run.sh`).
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

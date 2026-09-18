@@ -6,10 +6,10 @@
 #   ./z/oracle-eval.sh [file-or-dir ...]    default corpus: z/tests/eval-corpus
 set -uo pipefail
 
-Z_LANG="${Z_LANG:-$HOME/code/z-lang}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 OUT="$HERE/build/eval"
+. "$HERE/zc.sh"
 mkdir -p "$OUT"
 
 if [ ! -x "$HERE/build/evaldump-ref" ]; then
@@ -18,7 +18,7 @@ if [ ! -x "$HERE/build/evaldump-ref" ]; then
 fi
 
 "$HERE/native.sh" >/dev/null
-if ! (cd "$Z_LANG" && bun run z build "$HERE/tools/evaldump-z" --release) >"$OUT/build.log" 2>&1; then
+if ! zc build "$HERE/tools/evaldump-z" --release >"$OUT/build.log" 2>&1; then
   echo "Z dump tool failed to build:" >&2; grep -v '^\$' "$OUT/build.log" | head -8 >&2; exit 2
 fi
 Z_DUMP="$HERE/tools/evaldump-z/build/evaldump-z"

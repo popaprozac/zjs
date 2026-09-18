@@ -63,6 +63,9 @@ in z-lang's.
 - On `TIMEOUT` the alarm kills the compiler process, but a probe binary it
   already launched can be orphaned and keep running. Kill it by name.
 - Stage 0 only. Probes run through `bun run z`, not the native compiler; a
-  pass is not a claim of native-compiler parity.
+  pass is not a claim of native-compiler parity. The probes under
+  `native/` are the other direction: programs Stage 0 accepts at the pin
+  that a native compiler bootstrapped from the same revision rejects, run
+  with `Z_BIN=<native z> ./z/probes/native/run.sh`.
 - Detail columns are the first matching diagnostic line, truncated. Read the
   log for the full output.

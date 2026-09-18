@@ -5,18 +5,18 @@
 #   ./z/oracle-ast.sh [file-or-dir ...]     default corpus: src/stdlib tests/wintercg
 set -uo pipefail
 
-Z_LANG="${Z_LANG:-$HOME/code/z-lang}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 OUT="$HERE/build/ast"
 mkdir -p "$OUT"
+. "$HERE/zc.sh"
 
 if [ ! -x "$HERE/build/astdump-ref" ]; then
   clang -std=c11 -O2 -o "$HERE/build/astdump-ref" "$HERE/tools/astdump-ref.c" "$ROOT/build/libzjs.a" \
     -lm -framework Foundation -framework Security -fobjc-arc -lz || exit 2
 fi
 
-if ! (cd "$Z_LANG" && bun run z run "$HERE/tools/astdump-z/main.zs" --release -- /dev/null) >"$OUT/build.log" 2>&1; then
+if ! zc run "$HERE/tools/astdump-z/main.zs" --release -- /dev/null >"$OUT/build.log" 2>&1; then
   echo "Z dump tool failed to build:" >&2; grep -v '^\$' "$OUT/build.log" | head -8 >&2; exit 2
 fi
 Z_DUMP="$HERE/tools/astdump-z/.z-cache/run/$(ls -t "$HERE/tools/astdump-z/.z-cache/run/" | grep -v '\.c$' | head -1)"
