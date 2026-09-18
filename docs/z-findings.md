@@ -1158,10 +1158,17 @@ Minimal reproduction: probe `array-truncate`.
 
 ## G39 — Native compiler: a slice's length is not a `usize` as a `withCapacity` argument
 
-**Status:** `proposed` · **Size:** small · **Priority:** high for the native
-checkpoint · **Confirmed:** native compiler bootstrapped from z-lang
-`ad43b117` (provenance below); Stage 0 at `ad43b117` accepts · **Blocks:**
-the native build of the engine, at its first module.
+**Status:** `approved` — a native-compiler fix, first of the four
+(G39 → G41 → G40 → G42); no language API or engine change proposed ·
+**Size:** small · **Confirmed:** native compiler bootstrapped from z-lang
+`ad43b117` (provenance below), and still at `9439181a`; Stage 0 at
+`ad43b117` accepts · **Blocks:** the native build of the engine, at its
+first module.
+
+**Acceptance:** `Slice<T>.length` is `usize` in direct arguments, in
+arithmetic, and through inferred bindings, including slice aliases and
+generic contexts where they apply; the empty type name in the diagnostic
+is corrected too; `withCapacity` is not special-cased.
 
 **Found:** the native-compiler validation checkpoint (2026-09-17): the
 first diagnostic of `z build z/engine` under the bootstrapped native `z`.
@@ -1181,9 +1188,14 @@ Minimal reproduction: probe `native/slice-length-as-capacity`.
 
 ## G40 — Native compiler: a `deinit` cannot call an `inout this` method of a field
 
-**Status:** `proposed` · **Size:** small · **Priority:** high for the native
-checkpoint · **Confirmed:** native compiler from `ad43b117`; Stage 0 accepts
-· **Blocks:** the native build of the engine (its teardown).
+**Status:** `approved` — third of the four · **Size:** small ·
+**Confirmed:** native compiler from `ad43b117`, and still at `9439181a`;
+Stage 0 accepts · **Blocks:** the native build of the engine (its teardown).
+
+**Acceptance:** a deinit receives the mutable access its teardown needs,
+with and without executor placement, and the cleanup runs exactly once
+per value; ordinary immutable-receiver and executor restrictions stay.
+The probe counts the releases from C and checks two values twice.
 
 ```
 z/engine/runtime.zs:1218:10: error: mutable method "release" cannot be called through immutable binding "this"
@@ -1201,10 +1213,19 @@ Minimal reproduction: probe `native/deinit-calls-field-inout-method`.
 
 ## G41 — Native compiler: an `inout` borrow of one field with a read of another in one call
 
-**Status:** `proposed` · **Size:** medium (a loan-checker rule) · **Priority:**
-high for the native checkpoint · **Confirmed:** native compiler from
-`ad43b117`; Stage 0 accepts · **Blocks:** the native build of the engine,
-at many sites.
+**Status:** `approved` — second of the four · **Size:** medium (a
+loan-checker rule) · **Confirmed:** native compiler from `ad43b117`, and
+still at `9439181a`; Stage 0 accepts · **Blocks:** the native build of the
+engine, at many sites.
+
+**Acceptance:** sibling-field precision for independently owned storage,
+with negative cases for genuinely overlapping loans, ancestor and
+descendant storage, and storage that may alias through a shared ARC
+identity; different field names alone are not a proof of disjointness.
+The rejected shape is narrower than first written: an argument that
+reads a scalar sibling field, or that calls an immutable method of
+`this`, is already accepted natively; an indexed read of a sibling array
+(`this.buckets[bucket]`) is what widens to `this`.
 
 ```
 z/engine/heap.zs:1231:46: error: overlapping inout and value uses of "this.pendingNext" and "this" in one call are not allowed
@@ -1224,9 +1245,15 @@ Minimal reproduction: probe `native/disjoint-fields-in-one-call`.
 
 ## G42 — Native compiler: element comparison inside a generic function over `Array<T>`
 
-**Status:** `proposed` · **Size:** medium · **Priority:** high for the native
-checkpoint · **Confirmed:** native compiler from `ad43b117`; Stage 0 accepts
-· **Blocks:** the native build of the engine's string builtins.
+**Status:** `approved` — fourth of the four · **Size:** medium ·
+**Confirmed:** native compiler from `ad43b117`, and still at `9439181a`;
+Stage 0 accepts · **Blocks:** the native build of the engine's string
+builtins.
+
+**Acceptance:** checks that depend on `T` are deferred to the concrete
+specialization, and an invalid specialization is still rejected. The
+probe compares distinct arrays for both outcomes with `==` and `!=` at
+`u8` and `u16`, and runs the engine's search shape over both.
 
 ```
 z/engine/builtins/primitives.zs:487:31: error: operator != requires matching comparable operands
@@ -1261,8 +1288,19 @@ Minimal reproduction: probe `native/generic-element-comparison`.
   local, giving the backend a teardown that does not reset its fields, and
   binding G41's read to a local, in the worktree only; none of that is in
   the tree, and no engine semantics were changed.
-- Each probe: rejected by `<out>/z run`, accepted by `bun run z run` in the
-  clean clone (`z/probes/native/run.sh`).
+- Each probe: rejected by `<out>/z check`, accepted by `bun run z check`
+  in the clean clone (`Z_BIN=<out>/z Z_LANG=<clone> z/probes/native/run.sh`,
+  which reports both and tells compiler rejection, backend rejection,
+  a failed assertion, a crash, and a timeout apart).
+- Exploratory, not the pin: a bootstrap from the shared checkout's
+  committed `9439181a` (an isolated clone of that commit, eight commits
+  past the pin) rejects all four the same way, and the engine build stops
+  at the same line.
+
+The ZJS source stays as it is: these are native-compiler fixes. When an
+upstream checkpoint lands, the four probes and the whole engine build are
+rerun and the next first failure is reported, without accumulating
+workarounds in the engine. The pinned Stage 0 build remains the baseline.
 
 ## G10 — Z is macOS-only
 
