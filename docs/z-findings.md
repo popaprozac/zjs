@@ -1528,8 +1528,8 @@ Minimal reproduction: probe `native/unused-binding-rebound-later`.
 
 ## G49 — Native compiler: a reference handed out of a lock callback is not retained
 
-**Status:** `proposed` — the first native gate failure; the lifecycle
-test's first worker thread · **Size:** medium (ARC ownership through a
+**Status:** `implemented` — z-lang `9755f564`; the probe lands and the
+lifecycle gate passes natively; not yet consumer-verified · **Size:** medium (ARC ownership through a
 lock callback) · **Confirmed:** native compiler bootstrapped from z-lang
 `0d05140d`; Stage 0 at `0d05140d` runs it correctly · **Blocks:** the
 native lifecycle gate, and any embedding: every ABI call admits its
@@ -1563,6 +1563,37 @@ stored. Single-threaded, no `Once`, no C export: the lock callback is
 the whole shape.
 
 Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
+
+### Checkpoint `9755f564` (2026-09-18): every gate passes natively
+
+- Clone: an isolated clone of z-lang at
+  `9755f5646ac22748bab69e9c63a86e806419d748` (branch
+  `codex/native-compiler-parity`), clean before and after. Bootstrap:
+  fixed point, 131 s; `sha256(z)` =
+  `a4d483d290116b42bc680cf144699d1dc2be8e96d9e27672aa42648a538c018c`,
+  the digest Codex published.
+- Probes: G39–G49, all twelve `LANDED`; Stage 0 at `9755f564` accepts each.
+- Engine, worktree at ZJS `c7f624c`, `Z_BIN=<out>/z ./z/build.sh`: the
+  whole script passes — the lifecycle test (1,000 cycles, free after
+  admission, shutdown on a worker), the 20 node-recorded expectations,
+  the five collector checks. By hand: the 61 unit tests under the native
+  `z test`; the eval, lexer, and parser oracles 54/54, 24/24, 24/24. The
+  same revision's Stage 0 build passes the same gates.
+- Size: the native driver's `libzjsz.a` is 1.23 MB against Stage 0's
+  2.24 MB, and its `__TEXT` 844 KB against 1.82 MB; Stage 0 compiles with
+  `-g`, the native driver does not, so the archives are not the same
+  thing. The linked `zjsz` has the same 672 KB of `__TEXT` from either.
+- Throughput, the allocation workloads, interleaved medians of seven
+  with startup subtracted: the native build is within −2.6% to +3.6% of
+  the Stage 0 build per operation (await of a primitive 80 vs 80 ns,
+  async generator value 366 vs 372, small-live-set churn 70 vs 68, churn
+  against 300,000 retained 180 vs 173). Both drivers hand the same C to
+  the same clang at `-O2`; the differences are run-to-run.
+- A test262 A/B of the Stage 0 `zjsz` against the native one, both at
+  `9755f564`, is recorded below when it finishes.
+- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`, and the results
+  above are native evidence at `9755f564`, not consumer verification of
+  the pin.
 
 ## G10 — Z is macOS-only
 
