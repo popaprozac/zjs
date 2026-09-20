@@ -24,6 +24,10 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
+Since 2026-09-20 the pin is `9755f564`, at which the engine also builds
+with the native compiler and passes every gate (see the checkpoints under
+G49); the Stage 0 build at the pin remains the baseline the gates and
+measurements are stated against.
 
 Two operating rules, per the agreed handoff model:
 
@@ -1158,10 +1162,7 @@ Minimal reproduction: probe `array-truncate`.
 
 ## G39 — Native compiler: a slice's length is not a `usize` as a `withCapacity` argument
 
-**Status:** `implemented` — z-lang `31ac3e1a` (branch
-`codex/native-compiler-parity`): the probe lands with a compiler
-bootstrapped from a clean clone of that revision; not yet
-consumer-verified, since the engine build stops later (G43) ·
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below), since the engine build stops later (G43) ·
 **Size:** small · **Confirmed:** native compiler bootstrapped from z-lang
 `ad43b117` (provenance below), and still at `9439181a`; Stage 0 at
 `ad43b117` accepts · **Blocked:** the native build of the engine, at its
@@ -1190,9 +1191,7 @@ Minimal reproduction: probe `native/slice-length-as-capacity`.
 
 ## G40 — Native compiler: a `deinit` cannot call an `inout this` method of a field
 
-**Status:** `implemented` — z-lang `31ac3e1a`; the probe lands (releases
-counted exactly once, with and without placement); not yet
-consumer-verified · **Size:** small · **Confirmed:** native compiler from
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** small · **Confirmed:** native compiler from
 `ad43b117`, and still at `9439181a`; Stage 0 accepts · **Blocked:** the
 native build of the engine (its teardown).
 
@@ -1217,8 +1216,7 @@ Minimal reproduction: probe `native/deinit-calls-field-inout-method`.
 
 ## G41 — Native compiler: an `inout` borrow of one field with a read of another in one call
 
-**Status:** `implemented` — z-lang `31ac3e1a`; the probe lands; not yet
-consumer-verified · **Size:** medium (a loan-checker rule) ·
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** medium (a loan-checker rule) ·
 **Confirmed:** native compiler from `ad43b117`, and still at `9439181a`;
 Stage 0 accepts · **Blocked:** the native build of the engine, at many
 sites.
@@ -1250,8 +1248,7 @@ Minimal reproduction: probe `native/disjoint-fields-in-one-call`.
 
 ## G42 — Native compiler: element comparison inside a generic function over `Array<T>`
 
-**Status:** `implemented` — z-lang `31ac3e1a`; the probe lands; not yet
-consumer-verified · **Size:** medium · **Confirmed:** native compiler
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** medium · **Confirmed:** native compiler
 from `ad43b117`, and still at `9439181a`; Stage 0 accepts · **Blocked:**
 the native build of the engine's string builtins.
 
@@ -1329,8 +1326,7 @@ workarounds in the engine. The pinned Stage 0 build remains the baseline.
 
 ## G43 — Native compiler: an integer literal is not an element inside a generic over `Array<T>`
 
-**Status:** `implemented` — z-lang `b7ccb839`; the probe lands; not yet
-consumer-verified · **Size:** small · **Confirmed:** native compiler
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** small · **Confirmed:** native compiler
 bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a` accepts ·
 **Blocked:** the native build of the engine, in `builtins/primitives.zs`.
 
@@ -1349,8 +1345,7 @@ Minimal reproduction: probe `native/literal-as-generic-element`.
 
 ## G44 — Native compiler: an internal error lowering a private aggregate read through an exported struct
 
-**Status:** `implemented` — z-lang `b7ccb839`; the probe lands; not yet
-consumer-verified · **Size:** medium · **Confirmed:** native compiler
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** medium · **Confirmed:** native compiler
 bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a` accepts ·
 **Blocked:** the native build of the engine, at least twice (`heap.zs` →
 `runtime.zs`, `runtime.zs` → `builtins/primitives.zs`).
@@ -1390,8 +1385,7 @@ Minimal reproduction: probe `native/private-aggregate-through-export`
 
 ## G45 — Native compiler: a native header is not found from the module that imports it
 
-**Status:** `implemented` — z-lang `ef1ae30d`; both probes land; not yet
-consumer-verified · **Size:** small (the toolchain command) ·
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** small (the toolchain command) ·
 **Confirmed:** native compiler bootstrapped from z-lang `b7ccb839`; Stage
 0 at `b7ccb839` accepts · **Blocked:** the native build of the engine, at
 the C compile of its one translation unit.
@@ -1435,8 +1429,7 @@ find the header.
 
 ## G46 — Native compiler: a method calling a function value with `inout this` passes the receiver's address twice
 
-**Status:** `implemented` — z-lang `0d05140d`; the probe lands; not yet
-consumer-verified · **Size:** small ·
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** small ·
 **Confirmed:** native compiler bootstrapped from z-lang `ef1ae30d`; Stage
 0 at `ef1ae30d` accepts · **Blocks:** the native build of the engine, at
 one site (`runtime.zs`, `callHost`).
@@ -1456,8 +1449,7 @@ Minimal reproduction: probe `native/function-value-called-with-inout-this`
 
 ## G47 — Native compiler: a named function passed directly as an argument of function type
 
-**Status:** `implemented` — z-lang `0d05140d`; the probe lands; not yet
-consumer-verified · **Size:** small · **Confirmed:** native compiler
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** small · **Confirmed:** native compiler
 bootstrapped from z-lang `ef1ae30d`; Stage 0 at `ef1ae30d` accepts ·
 **Blocks:** the native build of the engine, at 95 sites (every builtin
 installation).
@@ -1479,8 +1471,7 @@ Minimal reproduction: probe `native/named-function-as-argument`.
 
 ## G48 — Native compiler: an unused binding loses its unused attribute when its name is bound again later
 
-**Status:** `implemented` — z-lang `0d05140d`; the probe lands; not yet
-consumer-verified · **Size:** small · **Confirmed:** native compiler
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** small · **Confirmed:** native compiler
 bootstrapped from z-lang `ef1ae30d`; Stage 0 at `ef1ae30d` accepts ·
 **Blocks:** the native build of the engine, at two sites
 (`builtins/array.zs`, `pop` and `shift`).
@@ -1528,8 +1519,7 @@ Minimal reproduction: probe `native/unused-binding-rebound-later`.
 
 ## G49 — Native compiler: a reference handed out of a lock callback is not retained
 
-**Status:** `implemented` — z-lang `9755f564`; the probe lands and the
-lifecycle gate passes natively; not yet consumer-verified · **Size:** medium (ARC ownership through a
+**Status:** `consumer-verified` — ZJS pinned z-lang `9755f564` on 2026-09-20 with the native build passing every gate (the checkpoint below) · **Size:** medium (ARC ownership through a
 lock callback) · **Confirmed:** native compiler bootstrapped from z-lang
 `0d05140d`; Stage 0 at `0d05140d` runs it correctly · **Blocks:** the
 native lifecycle gate, and any embedding: every ABI call admits its
@@ -1591,9 +1581,17 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   the same clang at `-O2`; the differences are run-to-run.
 - test262, the Stage 0 `zjsz` against the native one, both at
   `9755f564`: 53,330 tests, no test changes outcome in either direction.
-- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`, and the results
-  above are native evidence at `9755f564`, not consumer verification of
-  the pin.
+- The pin, since 2026-09-20: `z/Z_LANG_REVISION` is `9755f564`
+  (`9755f5646ac22748bab69e9c63a86e806419d748`, on
+  `codex/native-compiler-parity`, not yet on z-lang `main`; Codex will
+  recommend the next pin after integrating `main`'s five newer commits
+  and verifying the combination). At the new pin the Stage 0 build
+  passes the same gates as the native one — lifecycle, 20 expectations,
+  collector, 61 unit tests, oracles 54/54, 24/24, 24/24 — and the Stage 0
+  probes are unchanged from `ad43b117`: 19 landed, 10 not, no regression.
+  The allocation figures in `z/docs/allocation.md` stay at `ad43b117`,
+  the revision their results were measured with, which `stages.json`
+  names on its own.
 
 ## G10 — Z is macOS-only
 

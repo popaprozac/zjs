@@ -15,6 +15,9 @@ What is behind [docs/allocation.md](../../docs/allocation.md).
 Evidence level: every binary was built by the Stage 0 compiler (the
 TypeScript compiler run under bun) at the z-lang revision in
 `stages.json`. Nothing here was measured with a native compiler build.
+That revision is the one the results were measured with; it moves only
+when the results are re-recorded, and can trail the tree's pin in
+`z/Z_LANG_REVISION`.
 
 What the runner refuses, and what it records:
 
