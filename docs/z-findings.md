@@ -1589,6 +1589,9 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   passes the same gates as the native one — lifecycle, 20 expectations,
   collector, 61 unit tests, oracles 54/54, 24/24, 24/24 — and the Stage 0
   probes are unchanged from `ad43b117`: 19 landed, 10 not, no regression.
+  test262, the Stage 0 `zjsz` built at `ad43b117` against the one built
+  at `9755f564`, the same engine source: 53,330 tests, no test changes
+  outcome in either direction.
   The allocation figures in `z/docs/allocation.md` stay at `ad43b117`,
   the revision their results were measured with, which `stages.json`
   names on its own.
