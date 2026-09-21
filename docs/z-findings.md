@@ -1596,6 +1596,28 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   the revision their results were measured with, which `stages.json`
   names on its own.
 
+### Checkpoint `bdc237d2` (2026-09-20): the integrated compiler, every gate passes
+
+- Clone: an isolated clone of z-lang at
+  `bdc237d2bc2ef34a6a183141ac9306d5b7759921` (branch
+  `codex/native-compiler-parity`; the merge of z-lang `main` through
+  `5ace0295` into the parity fixes, six commits past the pin `9755f564`,
+  which is its ancestor), clean before and after. Bootstrap: fixed
+  point, 146 s; `sha256(z)` =
+  `82e73739134fb055d9df09a2dca1e5c30ff6d9db53423c10a95ed6aa002086db`,
+  the digest Codex published.
+- Probes: G39–G49, all twelve `LANDED`; Stage 0 at `bdc237d2` accepts each.
+- Engine, worktree at ZJS `1c79596`, `Z_BIN=<out>/z ./z/build.sh`: passes
+  end to end (lifecycle, 20 expectations, collector); by hand the 61 unit
+  tests under the native `z test` and the oracles 54/54, 24/24, 24/24.
+  The Stage 0 build at `bdc237d2` passes the same gates; the Stage 0
+  probes are unchanged (19 landed, 10 not, no regression; an unverified
+  run, since the pin is `9755f564`).
+- test262, the Stage 0 `zjsz` against the native one, both at
+  `bdc237d2`: recorded below when it finishes.
+- The pin stays `9755f564` until Codex recommends the integrated
+  revision; nothing in the engine changed.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic
