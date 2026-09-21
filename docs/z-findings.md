@@ -24,10 +24,11 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-09-20 the pin is `9755f564`, at which the engine also builds
-with the native compiler and passes every gate (see the checkpoints under
-G49); the Stage 0 build at the pin remains the baseline the gates and
-measurements are stated against.
+Since 2026-09-21 the pin is `bdc237d2` (before it, `9755f564` from
+2026-09-20), at which the engine also builds with the native compiler and
+passes every gate (see the checkpoints under G49); the Stage 0 build at
+the pin remains the baseline the gates and measurements are stated
+against.
 
 Two operating rules, per the agreed handoff model:
 
@@ -1616,13 +1617,26 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
 - test262, the Stage 0 `zjsz` against the native one, both at
   `bdc237d2`: 53,330 tests, no test changes outcome in either direction.
   The linked `zjsz` has the same size from each driver as at `9755f564`.
-- Throughput at `bdc237d2` was not measured: the machine carried a load
-  average near 75 from an unrelated encode during the window, and the
-  interleaved medians drifted by a third between rounds. The `9755f564`
-  comparison (within ±4%) stands; a quiet-machine rerun at the next pin
-  is the figure to state.
-- The pin stays `9755f564` until Codex recommends the integrated
-  revision; nothing in the engine changed.
+- Throughput, measured the next day on a quiet machine, the four
+  builds (Stage 0 and native at `9755f564` and at `bdc237d2`)
+  interleaved, medians of seven with startup subtracted, ns per
+  operation: await of a primitive 81 / 85 / 82 / 82; async generator
+  value 373 / 364 / 377 / 366; combinator element 519 / 513 / 517 / 508;
+  small-live-set churn 67 / 70 / 67 / 69; churn against 300,000 retained
+  175 / 181 / 174 / 181. The integrated compiler emits the same cost as
+  `9755f564`, and native stays within ±4% of Stage 0. An earlier attempt
+  under a load average near 75 from an unrelated encode drifted by a
+  third between rounds and was discarded.
+- The pin, since 2026-09-21: `z/Z_LANG_REVISION` is `bdc237d2`
+  (`bdc237d2bc2ef34a6a183141ac9306d5b7759921`, on
+  `codex/native-compiler-parity`, the exact commit pinned before it
+  lands on `main`). The Stage 0 build at the new pin passes lifecycle,
+  the 20 expectations, the collector checks, the 61 unit tests, and the
+  oracles 54/54, 24/24, 24/24; the Stage 0 probes are unchanged (19
+  landed, 10 not, no regression) and their baseline is re-recorded at
+  the pin. test262, the Stage 0 `zjsz` at `9755f564` against the one at
+  `bdc237d2`, the same engine source: recorded when it finishes.
+  Nothing in the engine changed.
 
 ## G10 — Z is macOS-only
 

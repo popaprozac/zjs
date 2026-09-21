@@ -1,4 +1,4 @@
-# probe status at z-lang 9755f564 (clean). Written by run.sh --record.
+# probe status at z-lang bdc237d2 (clean). Written by run.sh --record.
 array-capacity-read LANDED
 array-capacity LANDED
 array-pop LANDED
