@@ -1614,7 +1614,13 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   probes are unchanged (19 landed, 10 not, no regression; an unverified
   run, since the pin is `9755f564`).
 - test262, the Stage 0 `zjsz` against the native one, both at
-  `bdc237d2`: recorded below when it finishes.
+  `bdc237d2`: 53,330 tests, no test changes outcome in either direction.
+  The linked `zjsz` has the same size from each driver as at `9755f564`.
+- Throughput at `bdc237d2` was not measured: the machine carried a load
+  average near 75 from an unrelated encode during the window, and the
+  interleaved medians drifted by a third between rounds. The `9755f564`
+  comparison (within ±4%) stands; a quiet-machine rerun at the next pin
+  is the figure to state.
 - The pin stays `9755f564` until Codex recommends the integrated
   revision; nothing in the engine changed.
 
