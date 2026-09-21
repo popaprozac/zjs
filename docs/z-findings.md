@@ -1635,7 +1635,8 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   oracles 54/54, 24/24, 24/24; the Stage 0 probes are unchanged (19
   landed, 10 not, no regression) and their baseline is re-recorded at
   the pin. test262, the Stage 0 `zjsz` at `9755f564` against the one at
-  `bdc237d2`, the same engine source: recorded when it finishes.
+  `bdc237d2`, the same engine source: 53,330 tests, no test changes
+  outcome in either direction.
   Nothing in the engine changed.
 
 ## G10 — Z is macOS-only
