@@ -1584,9 +1584,8 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   `9755f564`: 53,330 tests, no test changes outcome in either direction.
 - The pin, since 2026-09-20: `z/Z_LANG_REVISION` is `9755f564`
   (`9755f5646ac22748bab69e9c63a86e806419d748`, on
-  `codex/native-compiler-parity`, not yet on z-lang `main`; Codex will
-  recommend the next pin after integrating `main`'s five newer commits
-  and verifying the combination). At the new pin the Stage 0 build
+  `codex/native-compiler-parity` at the time; superseded by `bdc237d2`
+  the next day). At the new pin the Stage 0 build
   passes the same gates as the native one — lifecycle, 20 expectations,
   collector, 61 unit tests, oracles 54/54, 24/24, 24/24 — and the Stage 0
   probes are unchanged from `ad43b117`: 19 landed, 10 not, no regression.
@@ -1629,8 +1628,9 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   third between rounds and was discarded.
 - The pin, since 2026-09-21: `z/Z_LANG_REVISION` is `bdc237d2`
   (`bdc237d2bc2ef34a6a183141ac9306d5b7759921`, on
-  `codex/native-compiler-parity`, the exact commit pinned before it
-  lands on `main`). The Stage 0 build at the new pin passes lifecycle,
+  `codex/native-compiler-parity`, which landed on z-lang `main` by
+  fast-forward on 2026-09-21, so the pinned commit is exactly the one on
+  `main`). The Stage 0 build at the new pin passes lifecycle,
   the 20 expectations, the collector checks, the 61 unit tests, and the
   oracles 54/54, 24/24, 24/24; the Stage 0 probes are unchanged (19
   landed, 10 not, no regression) and their baseline is re-recorded at
