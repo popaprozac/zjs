@@ -493,7 +493,22 @@ throw line, log output -- decode to a Z `String`, replacing each maximal
 invalid subsequence with U+FFFD so the result always satisfies String's
 valid-UTF-8 invariant and is never mistaken for the original bytes.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, `Object.prototype.__proto__` and `__proto__` in object literals, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, naming an object-literal function from a computed key, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+Annex B on objects: `Object.prototype.__proto__` is the accessor pair
+(`get __proto__` / `set __proto__`, configurable, not enumerable; a
+non-object value or a primitive receiver is ignored by the setter, a
+refused change throws), `__defineGetter__` / `__defineSetter__` define an
+enumerable configurable accessor keeping the other side of an existing
+one and throw on a non-callable, a non-configurable property, or a
+non-extensible receiver, and `__lookupGetter__` / `__lookupSetter__` walk
+the chain to the first own property and answer its side or undefined. In
+a literal, the colon form `__proto__: value` (not computed, not
+shorthand, not a method or accessor) sets the prototype when the value
+is an object or null and is ignored otherwise; a second such form is a
+SyntaxError, while a computed or shorthand `__proto__` defines an own
+property. `%Object.prototype%` keeps its null prototype: setting it to
+anything else is refused.
+
+Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, naming an object-literal function from a computed key, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and

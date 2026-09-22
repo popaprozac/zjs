@@ -2411,6 +2411,9 @@ export struct Runtime {
     const handle = asCell(target);
     const wanted: u32 = isNull(proto) ? 0 : asCell(proto);
     if (this.protoOfValue(target) == wanted) return true;
+    // %Object.prototype% is an immutable prototype exotic object: only the
+    // prototype it already has, null, is accepted.
+    if (handle == this.objectProto) return false;
     const tag = this.heap.tagOf(handle);
     const isFunction = tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
     if (tag != TAG_OBJECT && tag != TAG_ARRAY && !isFunction) return true;
@@ -6577,6 +6580,16 @@ export struct Runtime {
               const operandC = this.reg(base, inst.c);
               const equal = this.strictEquals(operandB, operandC);
               this.setReg(base, inst.a, booleanValue(op == Op.cmpStrictEq ? equal : !equal));
+            } else if (op == Op.setProto) {
+              // A literal's `__proto__: value`: an object or null becomes the
+              // prototype, anything else is ignored. The literal is fresh, so
+              // the change is never refused.
+              const object = this.reg(base, inst.a);
+              const proto = this.reg(base, inst.b);
+              if (this.isObjectLike(proto) || isNull(proto)) {
+                if (!this.setPrototypeOfValue(object, proto)) {
+                }
+              }
             } else if (op == Op.defineGetter || op == Op.defineSetter) {
               const object = this.reg(base, inst.a);
               const key = this.reg(base, inst.b);

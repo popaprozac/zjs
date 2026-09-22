@@ -276,6 +276,127 @@ function objectGetOwnPropertySymbols(inout runtime: Runtime, thisValue: Value, a
   return collectKeys(inout runtime, argsBase, argc, KEYS_SYMBOLS);
 }
 
+// --- Annex B: Object.prototype.__proto__ and the legacy accessor functions ---
+
+// get __proto__: the prototype of ToObject(this), null for none.
+function objectProtoGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const object = runtime.toObjectValue(thisValue);
+  if (runtime.pendingThrow) return undefinedValue();
+  const proto = runtime.protoOfValue(object);
+  if (proto == 0) return nullValue();
+  return cellValue(proto);
+}
+
+// set __proto__: a value that is neither an object nor null is ignored, as
+// is a primitive receiver; a refused change (a cycle, a non-extensible or
+// immutable-prototype receiver) throws.
+function objectProtoSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  if (isUndefined(thisValue) || isNull(thisValue)) {
+    const message: String = "Cannot convert undefined or null to object";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const proto = runtime.argument(argsBase, argc, 0);
+  if (!runtime.isObjectLike(proto) && !isNull(proto)) return undefinedValue();
+  if (!runtime.isObjectLike(thisValue)) return undefinedValue();
+  if (!runtime.setPrototypeOfValue(thisValue, proto)) {
+    const message: String = runtime.isExtensible(thisValue) ? "Cyclic __proto__ value" : "Object is not extensible";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+  }
+  return undefinedValue();
+}
+
+// ToPropertyKey once, so a key with side effects is converted a single
+// time whichever helpers see it afterwards.
+function legacyKey(inout runtime: Runtime, key: Value): Value {
+  if (runtime.isStringValue(key) || runtime.isSymbolValue(key)) return key;
+  return runtime.toStringValue(key);
+}
+
+// __defineGetter__ / __defineSetter__: DefinePropertyOrThrow of an
+// enumerable, configurable accessor with the one side given; the other
+// side of an existing accessor is kept.
+function defineLegacyAccessor(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, isGetter: boolean): Value {
+  const object = runtime.toObjectValue(thisValue);
+  if (runtime.pendingThrow) return undefinedValue();
+  const fn = runtime.argument(argsBase, argc, 1);
+  if (!runtime.isCallable(fn)) {
+    if (isGetter) {
+      const message: String = "Getter must be a function";
+      const error = runtime.typeError(in message);
+      runtime.raise(error);
+    } else {
+      const message: String = "Setter must be a function";
+      const error = runtime.typeError(in message);
+      runtime.raise(error);
+    }
+    return undefinedValue();
+  }
+  const key = legacyKey(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  const atom = runtime.propertyKey(key);
+  const target = runtime.definitionTarget(asCell(object), atom);
+  if (target == 0) return undefinedValue();
+  const current = runtime.ownSlotDescriptor(target, atom);
+  if (current.present) {
+    if ((current.attr & PROP_CONFIGURABLE) == 0) {
+      const message: String = "Cannot redefine property";
+      const error = runtime.typeError(in message);
+      runtime.raise(error);
+      return undefinedValue();
+    }
+  } else if (!runtime.isExtensible(object)) {
+    const message: String = "Cannot define property, object is not extensible";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  runtime.defineAccessorAttr(object, key, isGetter ? fn : undefinedValue(), isGetter ? undefinedValue() : fn, isGetter, PROP_ENUMERABLE | PROP_CONFIGURABLE | PROP_ACCESSOR);
+  return undefinedValue();
+}
+
+function objectDefineGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return defineLegacyAccessor(inout runtime, thisValue, argsBase, argc, true);
+}
+
+function objectDefineSetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return defineLegacyAccessor(inout runtime, thisValue, argsBase, argc, false);
+}
+
+// __lookupGetter__ / __lookupSetter__: the side of the first accessor
+// found on the chain from ToObject(this); undefined past a data property
+// or the end of the chain.
+function lookupLegacyAccessor(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, isGetter: boolean): Value {
+  const object = runtime.toObjectValue(thisValue);
+  if (runtime.pendingThrow) return undefinedValue();
+  const key = legacyKey(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  let current = object;
+  let looking = true;
+  while (looking) {
+    const desc = runtime.getOwnDescriptor(current, key);
+    if (runtime.pendingThrow) return undefinedValue();
+    if (desc.present) {
+      if ((desc.attr & PROP_ACCESSOR) == 0) return undefinedValue();
+      return isGetter ? desc.getter : desc.setter;
+    }
+    const proto = runtime.protoOfValue(current);
+    if (proto == 0) looking = false;
+    else current = cellValue(proto);
+  }
+  return undefinedValue();
+}
+
+function objectLookupGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return lookupLegacyAccessor(inout runtime, thisValue, argsBase, argc, true);
+}
+
+function objectLookupSetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return lookupLegacyAccessor(inout runtime, thisValue, argsBase, argc, false);
+}
+
 function objectGetPrototypeOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const target = runtime.argument(argsBase, argc, 0);
   if (isUndefined(target) || isNull(target)) {
@@ -563,4 +684,21 @@ export function installObject(inout runtime: Runtime): void {
   runtime.defineMethod(ctor, in fromEntriesText, objectFromEntries, 1);
   const propertyIsEnumerableText: String = "propertyIsEnumerable";
   runtime.defineMethod(objectProto, in propertyIsEnumerableText, objectPropertyIsEnumerable, 1);
+  // Annex B: the __proto__ accessor and the four legacy accessor functions.
+  const getProtoText: String = "get __proto__";
+  const protoGetter = runtime.defineHostFunction(objectProtoGet, undefinedValue(), 0, in getProtoText);
+  const setProtoText: String = "set __proto__";
+  const protoSetter = runtime.defineHostFunction(objectProtoSet, undefinedValue(), 1, in setProtoText);
+  const protoAccessor = runtime.heap.allocateAccessor(cellValue(protoGetter), cellValue(protoSetter));
+  const protoText: String = "__proto__";
+  const atomProto = runtime.atomOf(in protoText);
+  runtime.heap.objectDefine(objectProto, atomProto, cellValue(protoAccessor), PROP_CONFIGURABLE | PROP_ACCESSOR);
+  const defineGetterText: String = "__defineGetter__";
+  runtime.defineMethod(objectProto, in defineGetterText, objectDefineGetter, 2);
+  const defineSetterText: String = "__defineSetter__";
+  runtime.defineMethod(objectProto, in defineSetterText, objectDefineSetter, 2);
+  const lookupGetterText: String = "__lookupGetter__";
+  runtime.defineMethod(objectProto, in lookupGetterText, objectLookupGetter, 1);
+  const lookupSetterText: String = "__lookupSetter__";
+  runtime.defineMethod(objectProto, in lookupSetterText, objectLookupSetter, 1);
 }

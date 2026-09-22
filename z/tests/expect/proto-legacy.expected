@@ -1,0 +1,36 @@
+literal proto: true own keys own
+literal string key: true
+literal null: true
+literal non-object ignored: true own false
+computed is own: true true
+shorthand is own: true
+method is own: true true
+proto function unnamed: true
+duplicate: SyntaxError
+duplicate with computed: ok
+permitted in pattern: ok
+accessor: function/function enumerable false configurable true names get __proto__|set __proto__ lengths 0|1
+get on object: true on primitive: true on null: TypeError
+set on object: true
+set non-object ignored: true
+set on primitive: ok on undefined: TypeError
+set cycle: TypeError
+set immutable: TypeError ok
+set sealed: TypeError
+defineGetter: 42 enumerable true configurable true setter true
+defineSetter: 9 getter true
+define keeps other side: true function
+define over data: now accessor
+define non-callable: TypeError TypeError
+define non-configurable: TypeError
+define on null: TypeError
+key converted once: 1 by object key
+define key abrupt: RangeError
+symbol key: sym true
+lookupGetter own: true through proto: true
+lookupSetter: function true
+lookup data property stops: true
+lookup shadowed by data: true
+lookup absent: true on primitive: true on null: TypeError
+lookup key abrupt: RangeError
+functions: __defineGetter__:__defineGetter__/2/falsetruetrue __defineSetter__:__defineSetter__/2/falsetruetrue __lookupGetter__:__lookupGetter__/1/falsetruetrue __lookupSetter__:__lookupSetter__/1/falsetruetrue

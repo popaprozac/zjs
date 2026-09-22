@@ -2484,6 +2484,12 @@ export struct Compiler {
     if (k == NodeKind.object) {
       const dst = this.allocReg();
       this.emit(instA(Op.newObject, dst));
+      // Annex B: the colon form `__proto__: value` (not computed, not
+      // shorthand, not a method or accessor) sets the literal's
+      // [[Prototype]] instead of defining a property, and may appear once.
+      const protoText: String = "__proto__";
+      const atomProto = runtime.atomOf(in protoText);
+      let sawProto = false;
       let i: u32 = 0;
       while (i < n.childrenCount) {
         const propertyIndex = parser.ast.child(node, i);
@@ -2505,6 +2511,18 @@ export struct Compiler {
           key = this.compileExpr(in parser, inout runtime, property.third);
         } else {
           const atom = this.propertyNameAtom(in parser, inout runtime, property.nameStart, property.nameLength);
+          if (atom == atomProto && property.boolValue && property.op != TokenKind.kwGet && property.op != TokenKind.kwSet) {
+            if (sawProto) {
+              this.hadError = true;
+              return 0;
+            }
+            sawProto = true;
+            const proto = this.compileExpr(in parser, inout runtime, property.left);
+            this.emit(instAB(Op.setProto, dst, proto));
+            this.nextReg = dst + 1;
+            i = i + 1;
+            continue;
+          }
           key = this.emitKey(atom);
           let prefix: u32 = 0;
           if (property.op == TokenKind.kwGet) prefix = 1;
