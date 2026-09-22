@@ -1662,7 +1662,7 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   514 / 504; churn against 300,000 retained 171 / 178 / 171 / 177. No
   change in cost.
 - test262, the Stage 0 `zjsz` against the native one, both at
-  `2b70aea4`: recorded below when it finishes.
+  `2b70aea4`: 53,330 tests, no test changes outcome in either direction.
 - The pin stays `bdc237d2`: the candidate passes everything, and moving
   the pin is a decision, not a consequence. Nothing in the engine changed.
 
