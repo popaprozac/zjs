@@ -1992,6 +1992,22 @@ export struct Compiler {
   // Each returns the register holding the result.
 
   // Name the anonymous function the next expression defines.
+  // IsAnonymousFunctionDefinition: a function, arrow, or class expression
+  // without a name of its own, through any parentheses.
+  function isAnonymousDefinition(in parser: Parser, node: u32): boolean {
+    let current = node;
+    while (current != NO_NODE) {
+      const n = parser.ast.node(current);
+      if (n.kind == NodeKind.paren) {
+        current = n.left;
+        continue;
+      }
+      if (n.kind == NodeKind.functionExpr || n.kind == NodeKind.arrowFunc || n.kind == NodeKind.classExpr) return n.nameLength == 0;
+      return false;
+    }
+    return false;
+  }
+
   function nameNext(inout this, nameStart: u32, nameLength: u32, prefix: u32): void {
     this.pendingNameStart = nameStart;
     this.pendingNameLength = nameLength;
@@ -2536,6 +2552,13 @@ export struct Compiler {
           }
         }
         const value = this.compileExpr(in parser, inout runtime, property.left);
+        if (property.third != NO_NODE && this.isAnonymousDefinition(in parser, property.left)) {
+          // NamedEvaluation with a key known only at run time.
+          let prefix: u8 = 0;
+          if (property.op == TokenKind.kwGet) prefix = 1;
+          if (property.op == TokenKind.kwSet) prefix = 2;
+          this.emit(instABC(Op.setFunctionName, value, key, prefix));
+        }
         if (property.op == TokenKind.kwGet) {
           this.emit(instABC(Op.defineGetter, dst, key, value));
         } else if (property.op == TokenKind.kwSet) {

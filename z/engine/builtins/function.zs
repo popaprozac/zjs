@@ -1,9 +1,10 @@
 // Function.prototype: call and apply.
 import { unitsOf } from "../text.zs";
+import { appendBytes } from "../runtime.zs";
 import { Value, undefinedValue, nullValue, cellValue, int32Value, doubleValue, booleanValue, asCell, isCell, isUndefined, isNull, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, HOST_BOUND_TRAMPOLINE, truncateDouble } from "../runtime.zs";
-import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
+import { Runtime, HostFunction, HOST_BOUND_TRAMPOLINE, truncateDouble } from "../runtime.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
 import { parseProgram } from "../parser.zs";
 import { compileProgram } from "../compiler.zs";
 
@@ -256,6 +257,52 @@ export function installFunction(inout runtime: Runtime): void {
   const hasInstanceFn = runtime.defineHostFunction(functionHasInstance, undefinedValue(), 1, in hasInstanceName);
   const symbolHasInstanceBound = runtime.symbolHasInstance;
   const hasInstanceKey = runtime.propertyKey(symbolHasInstanceBound);
-  runtime.heap.objectDefine(functionProto, hasInstanceKey, cellValue(hasInstanceFn), PROP_NONE);
+  runtime.defineOwnAttr(functionProto, hasInstanceKey, cellValue(hasInstanceFn), PROP_NONE);
   runtime.hasInstanceBuiltin = hasInstanceFn;
+
+  // The `caller` and `arguments` accessors on Function.prototype, shaped as
+  // V8 has them: reading through a sloppy ordinary function answers null,
+  // writing through one is ignored, and anything else (a strict function,
+  // an arrow, a method, a class, a generator, a bound function, a
+  // non-function) throws. No function has either as an own property.
+  defineRestricted(inout runtime, functionProto, "caller", restrictedCallerGet, restrictedCallerSet);
+  defineRestricted(inout runtime, functionProto, "arguments", restrictedArgumentsGet, restrictedArgumentsSet);
 }
+
+function defineRestricted(inout runtime: Runtime, target: u32, in name: String, get: HostFunction, set: HostFunction): void {
+  const getPrefix: String = "get ";
+  let getterName = bytesOf(in getPrefix);
+  appendBytes(inout getterName, bytesOf(in name));
+  const getter = runtime.defineHostFunctionBytes(get, undefinedValue(), 0, move getterName);
+  const setPrefix: String = "set ";
+  let setterName = bytesOf(in setPrefix);
+  appendBytes(inout setterName, bytesOf(in name));
+  const setter = runtime.defineHostFunctionBytes(set, undefinedValue(), 1, move setterName);
+  const accessor = runtime.heap.allocateAccessor(cellValue(getter), cellValue(setter));
+  runtime.defineOwnAttr(target, runtime.atomOf(in name), cellValue(accessor), PROP_CONFIGURABLE | PROP_ACCESSOR);
+}
+
+function restrictedAccess(inout runtime: Runtime, thisValue: Value, isGet: boolean): Value {
+  if (isCell(thisValue) && runtime.isLegacyFunction(asCell(thisValue))) return isGet ? nullValue() : undefinedValue();
+  const message: String = "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them";
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
+  return undefinedValue();
+}
+
+function restrictedCallerGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return restrictedAccess(inout runtime, thisValue, true);
+}
+
+function restrictedCallerSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return restrictedAccess(inout runtime, thisValue, false);
+}
+
+function restrictedArgumentsGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return restrictedAccess(inout runtime, thisValue, true);
+}
+
+function restrictedArgumentsSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return restrictedAccess(inout runtime, thisValue, false);
+}
+

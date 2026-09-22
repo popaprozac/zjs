@@ -508,7 +508,22 @@ SyntaxError, while a computed or shorthand `__proto__` defines an own
 property. `%Object.prototype%` keeps its null prototype: setting it to
 anything else is refused.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, the `caller` / `arguments` poison accessors on Function.prototype, a callable %Function.prototype%, naming an object-literal function from a computed key, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+`%Function.prototype%` is itself a function: called with anything it
+returns undefined, its `name` is `""` and `length` 0, it has no
+`prototype`, and its own [[Prototype]] is `%Object.prototype%`. It
+carries the restricted `caller` and `arguments` accessors, shaped as V8
+has them rather than as the one %ThrowTypeError% intrinsic the
+specification names: reading either through a sloppy ordinary function
+answers null (no function ever has them as own properties, and the
+actual caller is never reported), writing through one is ignored, and
+anything else (a strict function, an arrow, a method, a class, a
+generator, a bound function, a non-function) throws a TypeError. An
+object literal's computed key names the anonymous function, arrow, or
+class it defines (a symbol as `[description]`, an accessor with its
+`get ` or `set ` prefix), converting the key once, unless the value
+already has an own `name`.
+
+Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and

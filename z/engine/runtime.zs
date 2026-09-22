@@ -1784,6 +1784,17 @@ export struct Runtime {
 
   // Whether a virtual property of a function (`length`, `name`,
   // `prototype`) was deleted: its bag then holds a deleted marker.
+  // Annex B: a sloppy ordinary function (not an arrow, method, class,
+  // generator, or async function) is one whose `caller` and `arguments`
+  // read as null through Function.prototype instead of throwing.
+  function isLegacyFunction(handle: u32): boolean {
+    const tag = this.heap.tagOf(handle);
+    if (tag != TAG_FUNCTION && tag != TAG_CLOSURE) return false;
+    const code = usize(this.heap.functionIndex(handle));
+    if (this.functions[code].strict || this.functions[code].isArrow || this.functions[code].isMethod) return false;
+    return !this.functions[code].isGenerator && !this.functions[code].isAsync && !this.functions[code].isClassConstructor;
+  }
+
   function functionVirtualDeleted(handle: u32, atom: u32): boolean {
     const bag = this.functionBag(handle);
     if (bag == 0) return false;
@@ -1915,6 +1926,33 @@ export struct Runtime {
       return absentProperty();
     }
     return absentProperty();
+  }
+
+  // SetFunctionName's string for a property key: a symbol's description in
+  // brackets (nothing for none), any other key as a string, and the
+  // accessor prefix when there is one.
+  function functionNameFromKey(inout this, key: Value, prefix: u32): Value {
+    let text = Array<u8>();
+    if (prefix == 1) {
+      const getPrefix: String = "get ";
+      appendBytes(inout text, bytesOf(in getPrefix));
+    } else if (prefix == 2) {
+      const setPrefix: String = "set ";
+      appendBytes(inout text, bytesOf(in setPrefix));
+    }
+    if (this.isSymbolValue(key)) {
+      const description = this.heap.symbolDescription(asCell(key));
+      if (this.isStringValue(description)) {
+        text.push(91);
+        appendBytes(inout text, this.heap.stringUtf8(asCell(description)));
+        text.push(93);
+      }
+    } else {
+      const string = this.toStringValue(key);
+      if (this.pendingThrow) return undefinedValue();
+      appendBytes(inout text, this.heap.stringUtf8(asCell(string)));
+    }
+    return this.newStringUtf8(move text);
   }
 
   // A compiled function's name: the declared one, or the empty string.
@@ -3836,7 +3874,13 @@ export struct Runtime {
     this.atomSyncIterator = this.hiddenAtom(115, 105);
     this.objectProto = this.heap.allocateObject(0);
     const objectProto = this.objectProto;
-    this.functionProto = this.heap.allocateObject(objectProto);
+    // %Function.prototype% is itself a function: called with anything, it
+    // returns undefined. Its own [[Prototype]] is %Object.prototype%.
+    const noName: String = "";
+    const functionProto = this.defineHostFunction(functionPrototypeCall, undefinedValue(), 0, in noName);
+    this.functionProto = functionProto;
+    const atomFunctionProto = this.atomFunctionProto;
+    this.setFunctionHidden(functionProto, atomFunctionProto, cellValue(objectProto));
     this.arrayProto = this.heap.allocateObject(objectProto);
     this.stringProto = this.heap.allocateObject(objectProto);
     this.numberProto = this.heap.allocateObject(objectProto);
@@ -6580,6 +6624,28 @@ export struct Runtime {
               const operandC = this.reg(base, inst.c);
               const equal = this.strictEquals(operandB, operandC);
               this.setReg(base, inst.a, booleanValue(op == Op.cmpStrictEq ? equal : !equal));
+            } else if (op == Op.setFunctionName) {
+              // NamedEvaluation for a computed key: the function made for the
+              // value takes the key as its name (a symbol as "[description]",
+              // an accessor with its "get " or "set " prefix), unless it has
+              // an own name of its own already.
+              const fn = this.reg(base, inst.a);
+              const key = this.reg(base, inst.b);
+              const atomName = this.atomName;
+              // The key is converted to a property key here, once, and the
+              // string put back for the definition that follows.
+              let propertyKey = key;
+              if (!this.isStringValue(key) && !this.isSymbolValue(key)) {
+                propertyKey = this.toStringValue(key);
+                if (!this.pendingThrow) this.setReg(base, inst.b, propertyKey);
+              }
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+              } else if (this.isCompiledCallable(fn) && !this.functionBagHas(asCell(fn), atomName) && !this.functionVirtualDeleted(asCell(fn), atomName)) {
+                const name = this.functionNameFromKey(propertyKey, u32(inst.c));
+                this.defineOwnAttr(asCell(fn), atomName, name, PROP_CONFIGURABLE);
+              }
             } else if (op == Op.setProto) {
               // A literal's `__proto__: value`: an object or null becomes the
               // prototype, anything else is ignored. The literal is fresh, so
@@ -7369,6 +7435,11 @@ test "display decoding replaces each maximal invalid subpart with U+FFFD" {
 
 // The resolve function of a promise: the first call wins, later ones
 // are ignored. `callee`'s bound data is the shared [promise, resolved].
+// %Function.prototype% called: any arguments, undefined back.
+function functionPrototypeCall(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return undefinedValue();
+}
+
 function promiseResolveFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const shared = asCell(runtime.heap.slot(callee, 0));
   if (isTrue(runtime.heap.slot(shared, 1))) return undefinedValue();

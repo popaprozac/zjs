@@ -1,0 +1,13 @@
+callable: function true true "" 0 false [object Function] true
+construct: TypeError
+still the prototype: true true true
+restricted accessors: function/function function/function enumerable false configurable true TypeError TypeError
+strict function: get TypeError TypeError set TypeError TypeError own falsefalse
+no own caller/arguments: false,false,false,false,false,false,false
+class caller: TypeError method arguments: TypeError bound: TypeError generator: TypeError
+sloppy function: own falsefalse reads true true in true delete true set ignored ok
+accessor on non-function: TypeError TypeError
+computed names: "computed" "computedArrow" "computedClass" "computedMethod" "[described]" "" "2" "computedParen" "keeps"
+accessor names: "get computedGet" "set computedSet"
+name attributes: writable false enumerable false configurable true
+key converted once for naming: 1 "once"
