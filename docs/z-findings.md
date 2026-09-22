@@ -890,7 +890,7 @@ G21 (bytes out to native) and G26 (bytes to String, now landed).
 
 ## G31 — Checked indexing and arithmetic cost the interpreter loop about a tenth
 
-**Status:** `proposed` · **Size:** medium · **Priority:** high
+**Status:** `proposed` — Codex (2026-09-21): unchecked indexing remains a separate design deliberation, not an approved API; the measured cost stands as the case for it
 **Confirmed:** z-lang `93611fe5`, measured · **Blocks:** no
 **Found:** the performance spike after classes.
 
@@ -1010,7 +1010,7 @@ engine uses neither pattern.
 
 ## G33 — A byte buffer cannot cross to native code as a pointer and length
 
-**Status:** `proposed` · **Size:** medium · **Priority:** medium
+**Status:** `approved` — Codex's next upstream checkpoint (2026-09-21): native parity for the existing `.zd` byte-buffer pointer/length projection; the probe and the engine's regex path are the acceptance
 **Confirmed:** z-lang `69397510` · **Blocks:** no
 **Found:** the RegExp slice, handing patterns and inputs to the vendored
 matcher.
@@ -1646,8 +1646,9 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   the pin `bdc237d2`, its ancestor: native host-loop wakeups and nominal
   ARC identity in call-access checking, found by Zapp), clean before and
   after. Bootstrap: fixed point, 91 s; `sha256(z)` =
-  `0f958791f8ac537e56792f537e6704b18581bf0f7530e2bd0b87f214d6c7e832`
-  (Codex published no digest for this revision; this is the first).
+  `0f958791f8ac537e56792f537e6704b18581bf0f7530e2bd0b87f214d6c7e832`,
+  which Codex then reproduced from its own clean clone (Bun 1.3.14,
+  Apple clang 17): an exact match.
 - Probes: G39–G49, all twelve `LANDED`; Stage 0 at `2b70aea4` accepts each.
   Stage 0 probes unchanged (19 landed, 10 not, no regression; an
   unverified run, since the pin is `bdc237d2`).
