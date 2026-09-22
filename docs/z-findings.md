@@ -1639,6 +1639,33 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   outcome in either direction.
   Nothing in the engine changed.
 
+### Candidate `2b70aea4` (2026-09-21): verified, pin not moved
+
+- Clone: an isolated clone of z-lang at
+  `2b70aea4d27bf644de54ea2d2ed157c0093ba6c6` (on `main`, one commit past
+  the pin `bdc237d2`, its ancestor: native host-loop wakeups and nominal
+  ARC identity in call-access checking, found by Zapp), clean before and
+  after. Bootstrap: fixed point, 91 s; `sha256(z)` =
+  `0f958791f8ac537e56792f537e6704b18581bf0f7530e2bd0b87f214d6c7e832`
+  (Codex published no digest for this revision; this is the first).
+- Probes: G39–G49, all twelve `LANDED`; Stage 0 at `2b70aea4` accepts each.
+  Stage 0 probes unchanged (19 landed, 10 not, no regression; an
+  unverified run, since the pin is `bdc237d2`).
+- Engine, worktree at ZJS `c78f2a2`, `Z_BIN=<out>/z ./z/build.sh`: passes
+  end to end (lifecycle, 20 expectations, collector); the 61 unit tests
+  under the native `z test`; oracles 54/54, 24/24, 24/24. The Stage 0
+  build at `2b70aea4` passes the same gates.
+- Throughput, quiet machine (load 5), Stage 0 and native at `bdc237d2`
+  and at `2b70aea4` interleaved, medians of seven, startup subtracted,
+  ns per operation: await of a primitive 79 / 80 / 79 / 81; async
+  generator value 371 / 364 / 375 / 369; combinator element 509 / 501 /
+  514 / 504; churn against 300,000 retained 171 / 178 / 171 / 177. No
+  change in cost.
+- test262, the Stage 0 `zjsz` against the native one, both at
+  `2b70aea4`: recorded below when it finishes.
+- The pin stays `bdc237d2`: the candidate passes everything, and moving
+  the pin is a decision, not a consequence. Nothing in the engine changed.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic
