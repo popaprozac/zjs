@@ -83,7 +83,9 @@ prototype methods, `eval` (global scope), `parseInt` / `parseFloat` /
 fall through to the globals table. ToPrimitive runs `valueOf` / `toString`,
 so `"" + obj` and `obj + 1` follow user code. Top-level and sloppy-call
 `this` are the global object. Then `Boolean`, `Number` (with `toString`
-in any radix, `toFixed`, the `is*` predicates and constants), `String`
+in any radix, `toFixed`, `toExponential`, and `toPrecision` on the
+double's exact decimal expansion with a tie rounded to the larger integer
+as the specification asks, the `is*` predicates and constants), `String`
 (the byte-string prototype: `charAt` through `split`, `replace` with a
 string pattern), wrapper objects keyed by an unforgeable hidden atom, and
 `Math` in full over the C library with a xorshift `random`. Then property

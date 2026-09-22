@@ -17,6 +17,20 @@ function nativeFormatFixed(buffer: usize, value: f64, digits: i32): i32 = raw c 
 function nativeFormatExponent(buffer: usize, value: f64, digits: i32): i32 = raw c {
   return snprintf((char *)buffer, 400, "%.*e", (int)digits, value);
 }
+// Every significant digit of a double, exactly: a double's decimal
+// expansion has at most 1074 digits after the leading one.
+function nativeFormatExact(buffer: usize, value: f64): i32 = raw c {
+  return snprintf((char *)buffer, 1200, "%.1100e", value);
+}
+// The fewest significant digits that read back as the same double.
+function nativeShortestExponentDigits(value: f64): i32 = raw c {
+  char scratch[64];
+  for (int digits = 0; digits <= 17; digits++) {
+    snprintf(scratch, sizeof scratch, "%.*e", digits, value);
+    if (strtod(scratch, NULL) == value) return digits;
+  }
+  return 17;
+}
 function nativeFloor(value: f64): f64 = raw c { return __builtin_floor(value); }
 function nativeNan(): f64 = raw c { return __builtin_nan(""); }
 
@@ -263,6 +277,166 @@ function digitChar(digit: i32): u16 {
   return u16(87 + digit);
 }
 
+// --- Decimal digits, exactly, and the rounding the specification asks for ---
+//
+// Number.prototype.toFixed, toExponential, and toPrecision all want "the
+// integer n for which the value is closest, the larger n on a tie". The
+// exact expansion of the double is taken from the C library and rounded
+// here by hand; a rounding done by the library would break ties to even.
+
+struct Decimal {
+  // ASCII significant digits, the first one non-zero unless the value is 0.
+  digits: Array<u8>;
+  // value = d0.d1d2... x 10^exponent
+  exponent: i32;
+}
+
+function exactDecimal(value: f64): Decimal {
+  const buffer = nativeAlloc(1200);
+  const count = nativeFormatExact(buffer, value);
+  const bytes = bufferBytes(buffer, count);
+  nativeFree(buffer);
+  let digits = Array<u8>.withCapacity(1102);
+  let index: usize = 0;
+  while (index < bytes.length && bytes[index] != 101) {
+    if (bytes[index] >= 48 && bytes[index] <= 57) digits.push(bytes[index]);
+    index = index + 1;
+  }
+  let exponent: i32 = 0;
+  let negative = false;
+  index = index + 1;
+  if (index < bytes.length && (bytes[index] == 43 || bytes[index] == 45)) {
+    negative = bytes[index] == 45;
+    index = index + 1;
+  }
+  while (index < bytes.length) {
+    exponent = exponent * 10 + i32(bytes[index] - 48);
+    index = index + 1;
+  }
+  if (negative) exponent = 0 - exponent;
+  return Decimal({ digits: move digits, exponent: exponent });
+}
+
+// The first `keep` digits, rounded (a following digit of 5 or more rounds
+// up: that is the closest integer, and the larger one on a tie). A carry
+// out of the first digit leaves a single 1 and raises the exponent.
+function roundDecimal(inout decimal: Decimal, keep: usize): void {
+  let kept = Array<u8>.withCapacity(keep + 1);
+  let index: usize = 0;
+  while (index < keep) {
+    const zero: u8 = 48;
+    kept.push(index < decimal.digits.length ? decimal.digits[index] : zero);
+    index = index + 1;
+  }
+  const up = keep < decimal.digits.length && decimal.digits[keep] >= 53;
+  if (up) {
+    let at = keep;
+    let carrying = true;
+    while (carrying && at > 0) {
+      at = at - 1;
+      if (kept[at] == 57) {
+        kept[at] = 48;
+      } else {
+        kept[at] = kept[at] + 1;
+        carrying = false;
+      }
+    }
+    if (carrying) {
+      // Every kept digit was 9: the value is now a power of ten.
+      let raised = Array<u8>.withCapacity(keep);
+      raised.push(49);
+      let fill: usize = 1;
+      while (fill < keep) {
+        raised.push(48);
+        fill = fill + 1;
+      }
+      kept = move raised;
+      decimal.exponent = decimal.exponent + 1;
+    }
+  }
+  decimal.digits = move kept;
+}
+
+function pushDecimalExponent(inout text: Array<u8>, exponent: i32): void {
+  const minus: u8 = 45;
+  const plus: u8 = 43;
+  text.push(101);
+  text.push(exponent < 0 ? minus : plus);
+  const magnitude = exponent < 0 ? 0 - exponent : exponent;
+  let scratch = Array<u8>();
+  let rest = magnitude;
+  if (rest == 0) scratch.push(48);
+  while (rest > 0) {
+    scratch.push(u8(48 + rest % 10));
+    rest = rest / 10;
+  }
+  let index = scratch.length;
+  while (index > 0) {
+    index = index - 1;
+    text.push(scratch[index]);
+  }
+}
+
+// d0.d1...dk e±x, with the point only when there are digits after it.
+function pushExponentForm(inout text: Array<u8>, in decimal: Decimal): void {
+  text.push(decimal.digits[0]);
+  if (decimal.digits.length > 1) {
+    text.push(46);
+    let index: usize = 1;
+    while (index < decimal.digits.length) {
+      text.push(decimal.digits[index]);
+      index = index + 1;
+    }
+  }
+  pushDecimalExponent(inout text, decimal.exponent);
+}
+
+// The digits laid out around a decimal point at 10^0.
+function pushFixedForm(inout text: Array<u8>, in decimal: Decimal): void {
+  const exponent = decimal.exponent;
+  if (exponent < 0) {
+    text.push(48);
+    text.push(46);
+    let zeros = 0 - exponent - 1;
+    while (zeros > 0) {
+      text.push(48);
+      zeros = zeros - 1;
+    }
+    let index: usize = 0;
+    while (index < decimal.digits.length) {
+      text.push(decimal.digits[index]);
+      index = index + 1;
+    }
+    return;
+  }
+  const integerDigits = usize(exponent) + 1;
+  const zero: u8 = 48;
+  let index: usize = 0;
+  while (index < integerDigits) {
+    text.push(index < decimal.digits.length ? decimal.digits[index] : zero);
+    index = index + 1;
+  }
+  if (decimal.digits.length > integerDigits) {
+    text.push(46);
+    while (index < decimal.digits.length) {
+      text.push(decimal.digits[index]);
+      index = index + 1;
+    }
+  }
+}
+
+function numberFormatResult(inout runtime: Runtime, negative: boolean, text: Array<u8>): Value {
+  if (!negative) return runtime.newStringLatin1(move text);
+  let signed = Array<u8>.withCapacity(text.length + 1);
+  signed.push(45);
+  let index: usize = 0;
+  while (index < text.length) {
+    signed.push(text[index]);
+    index = index + 1;
+  }
+  return runtime.newStringLatin1(move signed);
+}
+
 function numberToFixed(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "toFixed";
   const number = thisNumber(inout runtime, thisValue, in text);
@@ -276,11 +450,117 @@ function numberToFixed(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     return undefinedValue();
   }
   if (number != number || number >= 1e21 || number <= -1e21) return runtime.toStringValue(numberValue(number));
-  const buffer = nativeAlloc(400);
-  const count = nativeFormatFixed(buffer, number, digits);
-  const bytes = bufferBytes(buffer, count);
-  nativeFree(buffer);
-  return runtime.newStringLatin1(move bytes);
+  const negative = number < 0.0;
+  const magnitude = negative ? 0.0 - number : number;
+  let formatted = Array<u8>();
+  if (magnitude == 0.0) {
+    formatted.push(48);
+    if (digits > 0) formatted.push(46);
+    let zeros = digits;
+    while (zeros > 0) {
+      formatted.push(48);
+      zeros = zeros - 1;
+    }
+    return numberFormatResult(inout runtime, negative, move formatted);
+  }
+  let decimal = exactDecimal(magnitude);
+  // Digits kept: those before the point and `digits` after it.
+  const keepSigned = decimal.exponent + 1 + digits;
+  if (keepSigned <= 0) {
+    // The value rounds to 0 or to one unit in the last place.
+    const up = keepSigned == 0 && decimal.digits[0] >= 53;
+    formatted.push(48);
+    if (digits > 0) {
+      formatted.push(46);
+      let zeros = digits - 1;
+      while (zeros > 0) {
+        formatted.push(48);
+        zeros = zeros - 1;
+      }
+      const one: u8 = 49;
+      const zero: u8 = 48;
+      formatted.push(up ? one : zero);
+    } else if (up) {
+      formatted[0] = 49;
+    }
+    return numberFormatResult(inout runtime, negative, move formatted);
+  }
+  roundDecimal(inout decimal, usize(keepSigned));
+  // A carry may have raised the exponent; the fixed layout wants the digits
+  // before the point plus `digits` after it, so trim or pad to that count.
+  const wanted = usize(decimal.exponent + 1 + digits);
+  if (decimal.digits.length != wanted) {
+    let resized = Array<u8>.withCapacity(wanted);
+    const zero: u8 = 48;
+    let index: usize = 0;
+    while (index < wanted) {
+      resized.push(index < decimal.digits.length ? decimal.digits[index] : zero);
+      index = index + 1;
+    }
+    decimal.digits = move resized;
+  }
+  pushFixedForm(inout formatted, in decimal);
+  return numberFormatResult(inout runtime, negative, move formatted);
+}
+
+// Number.prototype.toExponential: one digit before the point and
+// fractionDigits after it, or the shortest count that reads back as the
+// same number when the argument is undefined.
+function numberToExponential(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const text: String = "toExponential";
+  const number = thisNumber(inout runtime, thisValue, in text);
+  if (runtime.pendingThrow) return undefinedValue();
+  const fractionArgument = runtime.argument(argsBase, argc, 0);
+  const digits = integerArgument(inout runtime, fractionArgument, 0);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (number != number || number >= 1.0 / 0.0 || number <= -1.0 / 0.0) return runtime.toStringValue(numberValue(number));
+  if (digits < 0 || digits > 100) {
+    const message: String = "toExponential() argument must be between 0 and 100";
+    const error = runtime.makeError(ERROR_KIND_RANGE, bytesOf(in message));
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const negative = number < 0.0;
+  // A zero is formatted as +0 whatever its sign.
+  const magnitude = number == 0.0 ? 0.0 : (negative ? 0.0 - number : number);
+  let formatted = Array<u8>();
+  let decimal = exactDecimal(magnitude);
+  if (magnitude == 0.0) decimal.exponent = 0;
+  const keep = isUndefined(fractionArgument) ? usize(nativeShortestExponentDigits(magnitude)) + 1 : usize(digits) + 1;
+  roundDecimal(inout decimal, keep);
+  pushExponentForm(inout formatted, in decimal);
+  return numberFormatResult(inout runtime, negative, move formatted);
+}
+
+// Number.prototype.toPrecision: `precision` significant digits, in fixed
+// form when the exponent is in [-6, precision) and exponent form otherwise.
+function numberToPrecision(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const text: String = "toPrecision";
+  const number = thisNumber(inout runtime, thisValue, in text);
+  if (runtime.pendingThrow) return undefinedValue();
+  const precisionArgument = runtime.argument(argsBase, argc, 0);
+  if (isUndefined(precisionArgument)) return runtime.toStringValue(numberValue(number));
+  const precision = integerArgument(inout runtime, precisionArgument, 0);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (number != number || number >= 1.0 / 0.0 || number <= -1.0 / 0.0) return runtime.toStringValue(numberValue(number));
+  if (precision < 1 || precision > 100) {
+    const message: String = "toPrecision() argument must be between 1 and 100";
+    const error = runtime.makeError(ERROR_KIND_RANGE, bytesOf(in message));
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const negative = number < 0.0;
+  const magnitude = number == 0.0 ? 0.0 : (negative ? 0.0 - number : number);
+  let formatted = Array<u8>();
+  let decimal = exactDecimal(magnitude);
+  if (magnitude == 0.0) decimal.exponent = 0;
+  roundDecimal(inout decimal, usize(precision));
+  if (decimal.exponent < -6 || decimal.exponent >= precision) {
+    pushExponentForm(inout formatted, in decimal);
+  } else {
+    pushFixedForm(inout formatted, in decimal);
+  }
+  return numberFormatResult(inout runtime, negative, move formatted);
 }
 
 function numberIsNaN(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1569,6 +1849,10 @@ export function installPrimitives(inout runtime: Runtime): void {
   runtime.defineMethod(numberProto, in valueOfText, numberValueOf, 0);
   const toFixedText: String = "toFixed";
   runtime.defineMethod(numberProto, in toFixedText, numberToFixed, 1);
+  const toExponentialText: String = "toExponential";
+  runtime.defineMethod(numberProto, in toExponentialText, numberToExponential, 1);
+  const toPrecisionText: String = "toPrecision";
+  runtime.defineMethod(numberProto, in toPrecisionText, numberToPrecision, 1);
   const isNaNText: String = "isNaN";
   runtime.defineMethod(numberCtor, in isNaNText, numberIsNaN, 1);
   const isFiniteText: String = "isFinite";
