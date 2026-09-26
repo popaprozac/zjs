@@ -395,7 +395,9 @@ Places the corpus deliberately steps around, where the reference is wrong and
 the Z engine follows the specification: a property write to `undefined`
 throws a TypeError (the reference drops it); `Error.prototype.message` is
 `""` (the reference has no such property); `for`-`in` over a string visits
-its indices (the reference visits nothing); a postfix `++` on a property
+its indices (the reference visits nothing); `for`-`in` over an object
+visits its integer-like names first, in ascending order, as its own keys
+are listed (the reference keeps insertion order); a postfix `++` on a property
 holding a string yields its numeric value (the reference concatenates);
 `Map()` without `new` throws a TypeError (the reference returns
 undefined); `Map.prototype[@@iterator]` is `entries` and

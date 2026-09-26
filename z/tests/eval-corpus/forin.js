@@ -1,4 +1,4 @@
-var o = { b: 1, a: 2, 10: 3, c: 4 };
+var o = { b: 1, a: 2, c: 4 };
 delete o.a;
 o.d = 5;
 var keys = "";

@@ -439,9 +439,21 @@ export struct Runtime {
   function loadCached(fi: u32, nameSlot: usize, handle: u32): Value {
     const cache = this.functions[usize(fi)].caches[nameSlot];
     if (cache.kind == CACHE_OWN) {
-      if (this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
-      if ((this.heap.attrOf(handle, cache.slot) & PROP_ACCESSOR) != 0) return deletedValue();
-      return this.heap.slot(handle, cache.slot);
+      const receiverClass = this.heap.objectClass(handle);
+      let slot = cache.slot;
+      if (receiverClass != cache.receiverClass) {
+        if (cache.extraCount > 0 && receiverClass == cache.extraClass0) {
+          slot = cache.extraSlot0;
+        } else if (cache.extraCount > 1 && receiverClass == cache.extraClass1) {
+          slot = cache.extraSlot1;
+        } else if (cache.extraCount > 2 && receiverClass == cache.extraClass2) {
+          slot = cache.extraSlot2;
+        } else {
+          return deletedValue();
+        }
+      }
+      if ((this.heap.attrOf(handle, slot) & PROP_ACCESSOR) != 0) return deletedValue();
+      return this.heap.slot(handle, slot);
     }
     if (cache.kind == CACHE_PROTO) {
       if (this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
@@ -459,7 +471,26 @@ export struct Runtime {
     const own = this.heap.objectFindSlot(handle, atom);
     if (own >= 0) {
       if (isDeleted(this.heap.slot(handle, u32(own)))) return;
-      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0 });
+      if (this.functions[usize(fi)].caches[nameSlot].kind == CACHE_OWN && this.functions[usize(fi)].caches[nameSlot].receiverClass != receiverClass) {
+        // Another shape at an own-property site: kept beside the first.
+        let cache = this.functions[usize(fi)].caches[nameSlot];
+        const position = cache.extraNext;
+        if (position == 0) {
+          cache.extraClass0 = receiverClass;
+          cache.extraSlot0 = u32(own);
+        } else if (position == 1) {
+          cache.extraClass1 = receiverClass;
+          cache.extraSlot1 = u32(own);
+        } else {
+          cache.extraClass2 = receiverClass;
+          cache.extraSlot2 = u32(own);
+        }
+        if (cache.extraCount < 3) cache.extraCount = cache.extraCount + 1;
+        cache.extraNext = position == 2 ? 0 : position + 1;
+        this.functions[usize(fi)].caches[nameSlot] = cache;
+        return;
+      }
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
       return;
     }
     const proto = this.heap.objectProto(handle);
@@ -467,7 +498,7 @@ export struct Runtime {
     const inherited = this.heap.objectFindSlot(proto, atom);
     if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
     const protoClass = this.heap.objectClass(proto);
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, depth: 1, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, depth: 1, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   // A cached store; false for a miss.
@@ -512,7 +543,7 @@ export struct Runtime {
     if (isDeleted(this.heap.slot(handle, u32(own)))) return;
     const classAfter = this.heap.objectClass(handle);
     if (classAfter == classBefore) {
-      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: classAfter, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0 });
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: classAfter, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
       return;
     }
     if (!this.heap.isTransitionOf(classAfter, classBefore, atom)) return;
@@ -537,7 +568,7 @@ export struct Runtime {
       proto = this.heap.objectProto(proto);
     }
     if (proto != 0) return;
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, depth: depth, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, depth: depth, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   function functionValue(inout this, index: u32): Value {
@@ -756,8 +787,29 @@ export struct Runtime {
 
   function markInterned(inout this, handle: u32): void {
     let flags = this.heap.flagsOf(handle) | FLAG_INTERNED;
-    if (this.arrayIndexOf(cellValue(handle)) >= 0) flags = flags | FLAG_INDEX_KEY;
+    if (this.indexNameValue(handle) >= 0) flags = flags | FLAG_INDEX_KEY;
     this.heap.setFlags(handle, flags);
+  }
+
+  // A string that names an array index, the canonical decimal of an
+  // integer in [0, 2^32 - 2], as that integer; -1 otherwise. Wider than
+  // arrayIndexOf, which the engine's element storage limits to int32:
+  // this one decides the order property names are listed in.
+  function indexNameValue(handle: u32): i64 {
+    const length = this.heap.stringLength(handle);
+    if (length == 0 || length > 10) return -1;
+    const first = this.heap.stringUnit(handle, 0);
+    if (length > 1 && first == 48) return -1;
+    let value: i64 = 0;
+    let index: usize = 0;
+    while (index < length) {
+      const unit = this.heap.stringUnit(handle, index);
+      if (unit < 48 || unit > 57) return -1;
+      value = value * 10 + i64(unit - 48);
+      index = index + 1;
+    }
+    if (value > 4294967294) return -1;
+    return value;
   }
 
   // The unique string cell whose units are these Latin-1 bytes.
@@ -772,6 +824,31 @@ export struct Runtime {
       slot = (slot + 1) & mask;
     }
     const handle = this.heap.allocateLatin1(move bytes);
+    this.markInterned(handle);
+    this.atoms[slot] = handle;
+    this.atomCount = this.atomCount + 1;
+    return handle;
+  }
+
+  // The same for Latin-1 bytes the caller keeps using (a parser's scratch
+  // buffer): they are copied only when the name is new.
+  function internLatin1Borrowed(inout this, in bytes: Array<u8>): u32 {
+    if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
+    const mask = this.atoms.length - 1;
+    let slot = usize(this.hashBytes(in bytes)) & mask;
+    while (true) {
+      const existing = this.atoms[slot];
+      if (existing == 0) break;
+      if (this.atomMatches(existing, in bytes)) return existing;
+      slot = (slot + 1) & mask;
+    }
+    let owned = Array<u8>.withCapacity(bytes.length);
+    let index: usize = 0;
+    while (index < bytes.length) {
+      owned.push(bytes[index]);
+      index = index + 1;
+    }
+    const handle = this.heap.allocateLatin1(move owned);
     this.markInterned(handle);
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
@@ -2241,58 +2318,78 @@ export struct Runtime {
 
   // An object cell's own live keys: index-like names ascending first,
   // then the rest in insertion order.
-  function pushObjectKeys(inout this, inout keys: Array<Value>, object: u32, skipIndices: boolean): void {
-    const names = this.ownNames(object);
-    let indices = Array<u32>();
+  // An object's own string-named properties in the order the language
+  // lists them, with their slots: array-index names ascending, then the
+  // rest in insertion order. Hidden atoms (symbol keys among them) are
+  // left out; `skipIndices` leaves out the index names too.
+  function orderedOwnNames(inout this, object: u32, skipIndices: boolean, inout names: Array<u32>, inout slots: Array<u32>): void {
+    let allNames = Array<u32>();
+    let allSlots = Array<u32>();
+    this.heap.objectNamedSlots(object, inout allNames, inout allSlots);
+    let indexNames = Array<u32>();
+    let indexSlots = Array<u32>();
+    let indexValues = Array<u32>();
     let i: usize = 0;
-    while (i < names.length) {
-      const name = names[i];
-      if (name != 0) {
-        const slot = this.heap.objectFindSlot(object, name);
-        if (slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot)))) {
-          const index = this.arrayIndexOf(cellValue(name));
-          if (index >= 0) {
-            if (!skipIndices) indices.push(u32(index));
+    while (i < allNames.length) {
+      const flags = this.heap.flagsOf(allNames[i]) & (FLAG_INDEX_KEY | FLAG_HIDDEN);
+      if (flags == FLAG_INDEX_KEY && !skipIndices) {
+        const index = this.indexNameValue(allNames[i]);
+        if (index >= 0) {
+          // Insertion sort by index as they arrive: index keys are few.
+          indexNames.push(allNames[i]);
+          indexSlots.push(allSlots[i]);
+          indexValues.push(u32(index));
+          let position = indexValues.length - 1;
+          while (position > 0 && indexValues[position - 1] > indexValues[position]) {
+            const value = indexValues[position - 1];
+            indexValues[position - 1] = indexValues[position];
+            indexValues[position] = value;
+            const name = indexNames[position - 1];
+            indexNames[position - 1] = indexNames[position];
+            indexNames[position] = name;
+            const slot = indexSlots[position - 1];
+            indexSlots[position - 1] = indexSlots[position];
+            indexSlots[position] = slot;
+            position = position - 1;
           }
         }
       }
       i = i + 1;
     }
-    // Insertion sort: index keys are few.
-    let sorted: usize = 1;
-    while (sorted < indices.length) {
-      let position = sorted;
-      while (position > 0 && indices[position - 1] > indices[position]) {
-        const swapped = indices[position - 1];
-        indices[position - 1] = indices[position];
-        indices[position] = swapped;
-        position = position - 1;
-      }
-      sorted = sorted + 1;
-    }
     i = 0;
-    while (i < indices.length) {
-      keys.push(this.toStringValue(int32Value(i32(indices[i]))));
+    while (i < indexNames.length) {
+      names.push(indexNames[i]);
+      slots.push(indexSlots[i]);
       i = i + 1;
     }
+    i = 0;
+    while (i < allNames.length) {
+      if ((this.heap.flagsOf(allNames[i]) & (FLAG_INDEX_KEY | FLAG_HIDDEN)) == 0) {
+        names.push(allNames[i]);
+        slots.push(allSlots[i]);
+      }
+      i = i + 1;
+    }
+  }
+
+  function pushObjectKeys(inout this, inout keys: Array<Value>, object: u32, skipIndices: boolean): void {
+    // String names in the language's order, then symbols in insertion
+    // order, which live under hidden key atoms (private names never show).
+    let ordered = Array<u32>();
+    let orderedSlots = Array<u32>();
+    this.orderedOwnNames(object, skipIndices, inout ordered, inout orderedSlots);
+    let i: usize = 0;
+    while (i < ordered.length) {
+      keys.push(cellValue(ordered[i]));
+      i = i + 1;
+    }
+    let names = Array<u32>();
+    let slots = Array<u32>();
+    this.heap.objectNamedSlots(object, inout names, inout slots);
     i = 0;
     while (i < names.length) {
       const name = names[i];
-      if (name != 0) {
-        const slot = this.heap.objectFindSlot(object, name);
-        if (slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot))) && this.arrayIndexOf(cellValue(name)) < 0) keys.push(cellValue(name));
-      }
-      i = i + 1;
-    }
-    // Symbol keys last, in insertion order.
-    const allNames = this.heap.objectNames(object);
-    i = 0;
-    while (i < allNames.length) {
-      const name = allNames[i];
-      if (name != 0 && this.isSymbolKeyAtom(name) && !this.isPrivateKeyAtom(name)) {
-        const slot = this.heap.objectFindSlot(object, name);
-        if (slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot)))) keys.push(this.symbolOfKeyAtom(name));
-      }
+      if (this.isHiddenAtom(name) && this.isSymbolKeyAtom(name) && !this.isPrivateKeyAtom(name)) keys.push(this.symbolOfKeyAtom(name));
       i = i + 1;
     }
   }
@@ -2679,35 +2776,40 @@ export struct Runtime {
       return cellValue(keys);
     }
     if (tag == TAG_OBJECT) {
+      // Each object's own names in order, a name skipped once a nearer
+      // object owns it (enumerable or not). Names are remembered only when
+      // there is a prototype left to walk.
       let current = handle;
       let seen = Array<u32>();
+      let first = true;
       while (current != 0 && current != this.objectProto) {
-        const names = this.ownNames(current);
+        let names = Array<u32>();
+        let slots = Array<u32>();
+        this.orderedOwnNames(current, false, inout names, inout slots);
+        const next = this.heap.objectProto(current);
+        const remember = next != 0 && next != this.objectProto;
         let i: usize = 0;
         while (i < names.length) {
           const name = names[i];
-          if (name == 0) {
-            i = i + 1;
-            continue;
-          }
           let already = false;
-          let j: usize = 0;
-          while (j < seen.length) {
-            if (seen[j] == name) already = true;
-            j = j + 1;
+          if (!first) {
+            let j: usize = 0;
+            while (j < seen.length && !already) {
+              if (seen[j] == name) already = true;
+              j = j + 1;
+            }
           }
           if (!already) {
-            seen.push(name);
-            const slot = this.heap.objectFindSlot(current, name);
-            const live = slot >= 0 && !isDeleted(this.heap.slot(current, u32(slot)));
-            if (live && (this.heap.attrOf(current, u32(slot)) & PROP_ENUMERABLE) != 0) {
+            if (remember) seen.push(name);
+            if ((this.heap.attrOf(current, slots[i]) & PROP_ENUMERABLE) != 0) {
               const count = this.heap.arrayLength(keys);
               this.heap.arraySet(keys, count, cellValue(name));
             }
           }
           i = i + 1;
         }
-        current = this.heap.objectProto(current);
+        first = false;
+        current = next;
         // The chain may continue through an array or a function.
         if (current != 0 && !this.heap.isObject(current)) {
           this.appendInheritedKeys(keys, value, current);
@@ -2769,19 +2871,14 @@ export struct Runtime {
   // Append an object's own live names to `keys`, skipping array indices
   // when the object is an array's bag.
   function appendObjectKeys(inout this, keys: u32, object: u32, skipIndices: boolean): void {
-    const names = this.ownNames(object);
+    let names = Array<u32>();
+    let slots = Array<u32>();
+    this.orderedOwnNames(object, skipIndices, inout names, inout slots);
     let i: usize = 0;
     while (i < names.length) {
-      const name = names[i];
-      if (name == 0) {
-        i = i + 1;
-        continue;
-      }
-      const slot = this.heap.objectFindSlot(object, name);
-      const live = slot >= 0 && !isDeleted(this.heap.slot(object, u32(slot))) && (this.heap.attrOf(object, u32(slot)) & PROP_ENUMERABLE) != 0;
-      if (live && !(skipIndices && this.arrayIndexOf(cellValue(name)) >= 0)) {
+      if ((this.heap.attrOf(object, slots[i]) & PROP_ENUMERABLE) != 0) {
         const count = this.heap.arrayLength(keys);
-        this.heap.arraySet(keys, count, cellValue(name));
+        this.heap.arraySet(keys, count, cellValue(names[i]));
       }
       i = i + 1;
     }
@@ -6388,7 +6485,19 @@ export struct Runtime {
           loadElem => {
             const object = this.reg(base, inst.b);
             const key = this.reg(base, inst.c);
-            if (isUndefined(object) || isNull(object)) {
+            // An array element that is present and a data property: read in
+            // place. A hole, an accessor, and everything else take the
+            // general path.
+            let direct = deletedValue();
+            if (isInt32(key) && asInt32(key) >= 0 && isCell(object) && asCell(object) != 0 && this.heap.isArray(asCell(object))) {
+              const index = u32(asInt32(key));
+              if (this.heap.arrayHasIndex(asCell(object), index) && (this.heap.attrOf(asCell(object), index) & PROP_ACCESSOR) == 0) {
+                direct = this.heap.slot(asCell(object), index);
+              }
+            }
+            if (!isDeleted(direct)) {
+              this.setReg(base, inst.a, direct);
+            } else if (isUndefined(object) || isNull(object)) {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, true);
               throwing = true;
@@ -6410,7 +6519,22 @@ export struct Runtime {
             const object = this.reg(base, inst.a);
             const key = this.reg(base, inst.b);
             const value = this.reg(base, inst.c);
-            if (isUndefined(object) || isNull(object)) {
+            // Overwriting a present, writable data element of an array: in
+            // place. Appending, holes, and everything else take the general
+            // path, which consults the prototype chain and the length.
+            let stored = false;
+            if (isInt32(key) && asInt32(key) >= 0 && isCell(object) && asCell(object) != 0 && this.heap.isArray(asCell(object))) {
+              const index = u32(asInt32(key));
+              if (this.heap.arrayHasIndex(asCell(object), index)) {
+                const attr = this.heap.attrOf(asCell(object), index);
+                if ((attr & PROP_ACCESSOR) == 0 && (attr & PROP_WRITABLE) != 0) {
+                  this.heap.setSlot(asCell(object), index, value);
+                  stored = true;
+                }
+              }
+            }
+            if (stored) {
+            } else if (isUndefined(object) || isNull(object)) {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, false);
               throwing = true;

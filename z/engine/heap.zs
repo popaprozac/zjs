@@ -700,6 +700,36 @@ export struct Heap {
 
   // The object's own names in insertion order, whatever its
   // representation; a class-mode slot that holds nothing yet is skipped.
+  // An object's own properties as (name, value slot) pairs in insertion
+  // order, deleted ones left out: what enumerating its keys needs without
+  // finding each name's slot again.
+  function objectNamedSlots(handle: u32, inout names: Array<u32>, inout slots: Array<u32>): void {
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & DICT_BIT) != 0) {
+      const used = this.dictionaries[usize(payload & (DICT_BIT - 1))].used;
+      let pair: u32 = 0;
+      while (pair < used) {
+        const key = this.slot(handle, pair * 2);
+        if (!isDeleted(key) && !isDeleted(this.slot(handle, pair * 2 + 1))) {
+          names.push(asCell(key));
+          slots.push(pair * 2 + 1);
+        }
+        pair = pair + 1;
+      }
+      return;
+    }
+    const byClass = this.objectNames(handle);
+    let slot: u32 = 0;
+    while (usize(slot) < byClass.length) {
+      const name = byClass[usize(slot)];
+      if (name != 0 && !isDeleted(this.slot(handle, slot))) {
+        names.push(name);
+        slots.push(slot);
+      }
+      slot = slot + 1;
+    }
+  }
+
   function objectNames(handle: u32): Array<u32> {
     let names = Array<u32>();
     const payload = this.headers[usize(handle)].payload;

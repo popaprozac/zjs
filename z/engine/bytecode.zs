@@ -445,10 +445,21 @@ export struct PropertyCache {
   proto1Class: u32;
   proto2: u32;
   proto2Class: u32;
+  // A read site that sees own properties on several shapes keeps up to
+  // three more (class, slot) pairs beside the first, replaced in turn
+  // once full: a polymorphic site stops missing.
+  extraCount: u8;
+  extraNext: u8;
+  extraClass0: u32;
+  extraSlot0: u32;
+  extraClass1: u32;
+  extraSlot1: u32;
+  extraClass2: u32;
+  extraSlot2: u32;
 }
 
 export function emptyCache(): PropertyCache {
-  return PropertyCache({ kind: CACHE_EMPTY, depth: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0 });
+  return PropertyCache({ kind: CACHE_EMPTY, depth: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
 }
 
 // One compiled function. Fields beyond the code and constants are added
