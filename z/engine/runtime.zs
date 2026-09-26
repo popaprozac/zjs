@@ -5505,29 +5505,46 @@ export struct Runtime {
               }
             }
           }
+          // Two int32s, the loop-counter case, compare without a call.
           cmpLt => {
             const operandB = this.reg(base, inst.b);
             const operandC = this.reg(base, inst.c);
-            const outcome = this.lessThan(operandB, operandC, false);
-            this.setReg(base, inst.a, booleanValue(outcome));
+            if (isInt32(operandB) && isInt32(operandC)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) < asInt32(operandC)));
+            } else {
+              const outcome = this.lessThan(operandB, operandC, false);
+              this.setReg(base, inst.a, booleanValue(outcome));
+            }
           }
           cmpLe => {
             const operandB = this.reg(base, inst.b);
             const operandC = this.reg(base, inst.c);
-            const outcome = this.lessThan(operandB, operandC, true);
-            this.setReg(base, inst.a, booleanValue(outcome));
+            if (isInt32(operandB) && isInt32(operandC)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) <= asInt32(operandC)));
+            } else {
+              const outcome = this.lessThan(operandB, operandC, true);
+              this.setReg(base, inst.a, booleanValue(outcome));
+            }
           }
           cmpGt => {
             const operandC = this.reg(base, inst.c);
             const operandB = this.reg(base, inst.b);
-            const outcome = this.lessThan(operandC, operandB, false);
-            this.setReg(base, inst.a, booleanValue(outcome));
+            if (isInt32(operandB) && isInt32(operandC)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) > asInt32(operandC)));
+            } else {
+              const outcome = this.lessThan(operandC, operandB, false);
+              this.setReg(base, inst.a, booleanValue(outcome));
+            }
           }
           cmpGe => {
             const operandC = this.reg(base, inst.c);
             const operandB = this.reg(base, inst.b);
-            const outcome = this.lessThan(operandC, operandB, true);
-            this.setReg(base, inst.a, booleanValue(outcome));
+            if (isInt32(operandB) && isInt32(operandC)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) >= asInt32(operandC)));
+            } else {
+              const outcome = this.lessThan(operandC, operandB, true);
+              this.setReg(base, inst.a, booleanValue(outcome));
+            }
           }
           jmp => {
             const offset = bcI16(inst);
@@ -5539,13 +5556,16 @@ export struct Runtime {
               this.collectGarbage();
             }
           }
+          // A boolean, what a comparison leaves, branches without a call.
           jmpIfTrue => {
             const operandA = this.reg(base, inst.a);
-            if (this.toBooleanValue(operandA)) ip = usize(i64(ip) + i64(bcI16(inst)));
+            const taken = isBoolean(operandA) ? isTrue(operandA) : this.toBooleanValue(operandA);
+            if (taken) ip = usize(i64(ip) + i64(bcI16(inst)));
           }
           jmpIfFalse => {
             const operandA = this.reg(base, inst.a);
-            if (!this.toBooleanValue(operandA)) ip = usize(i64(ip) + i64(bcI16(inst)));
+            const taken = isBoolean(operandA) ? !isTrue(operandA) : !this.toBooleanValue(operandA);
+            if (taken) ip = usize(i64(ip) + i64(bcI16(inst)));
           }
           jmpIfNotNullish => {
             const tested = this.reg(base, inst.a);
