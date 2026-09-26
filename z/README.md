@@ -6,12 +6,16 @@ The Z rewrite of the ZJS engine. Design:
 `src/` (Zen-c) remains the shipping engine and the behavioral oracle. This tree
 is built beside it, never on top of it.
 
-## Status — Phases 4–5 in progress: the engine evaluates JavaScript
+The goals, in order: small, with web APIs and the like opt-in; the fastest
+engine without a JIT, iOS included; embeddable and portable the way QuickJS
+is; a JIT, opt-in, last. Where the engine stands against each, measured:
+[`docs/goals.md`](docs/goals.md).
 
-The loop works end to end: the **unmodified** `tests/test262_runner.c` links
-against a Z-implemented `libzjs.a` and runs. It reports 0 passed, because no
-JavaScript is evaluated yet. Every phase after this is about making that
-number climb.
+## Status — the engine evaluates JavaScript
+
+The **unmodified** `tests/test262_runner.c` links against the Z-implemented
+`libzjs.a`, and on the curated test262 subset the Z engine passes more tests
+than the Zen-c reference. The history of how it got here follows.
 
 Phase 2 added the foundation the interpreter will sit on — NaN-boxed values
 and a handle-based cell heap, with each context owning its own heap. 12 unit
