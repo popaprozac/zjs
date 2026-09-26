@@ -18,6 +18,10 @@ Engines, each measured only when it is present:
                                            iOS runs when JIT is unavailable
   v8-jitless   node --jitless              V8's Ignition interpreter
   quickjs      qjs                         QuickJS, if a qjs is on PATH
+  hermes       hermes -Xes6-class          Hermes from source, if hermes is on PATH
+  hermes-hbc   hvm -Xes6-class (.hbc)      Hermes on bytecode precompiled with
+                                           hermesc -O before timing, as a React
+                                           Native app ships it
 """
 import json, math, os, shutil, statistics, sys, tempfile, time
 from pathlib import Path
@@ -46,7 +50,18 @@ def engines():
         found["v8-jitless"] = lambda path: ["node", "--jitless", path]
     if shutil.which("qjs"):
         found["quickjs"] = lambda path: ["qjs", path]
+    # Hermes 0.13 parses classes only with -Xes6-class.
+    if shutil.which("hermes"):
+        found["hermes"] = lambda path: ["hermes", "-Xes6-class", path]
+    if shutil.which("hermesc") and shutil.which("hvm"):
+        found["hermes-hbc"] = lambda path: ["hvm", "-Xes6-class", path + ".hbc"]
     return found
+
+
+def precompile(commands, path):
+    """Bytecode for the engines that run it, made before any timing."""
+    if "hermes-hbc" in commands:
+        runner.run(["hermesc", "-Xes6-class", "-O", "-emit-binary", "-out", path + ".hbc", path])
 
 
 def measure(commands, path):
@@ -71,11 +86,13 @@ def main():
     tmp = Path(tempfile.mkdtemp(prefix="zjs-speed-"))
     empty = tmp / "empty.js"
     empty.write_text("var result = 0;" + PRINT)
+    precompile(commands, str(empty))
     startup = measure(commands, str(empty))
     rows = {}
     for kernel in sorted(KERNELS.glob("*.js")):
         path = tmp / kernel.name
         path.write_text(kernel.read_text() + PRINT)
+        precompile(commands, str(path))
         timed = measure(commands, str(path))
         reference = timed.get("zjsz", {}).get("checksum")
         row = {}

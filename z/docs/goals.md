@@ -52,32 +52,36 @@ the minimal context and the default one are the same engine.
 
 ## 2. Speed
 
-`z/bench/speed` (`results/2026-09-26.json`), milliseconds per kernel with
-each engine's startup subtracted, median of five interleaved runs, load
-average 4.7:
+`z/bench/speed` (`results/2026-09-26-hermes.json`), milliseconds per
+kernel with each engine's startup subtracted, median of five interleaved
+runs, load average 4.2. Hermes is 0.13.0, run from source and on bytecode
+`hermesc -O` made beforehand:
 
-| Kernel | zjsz | Zen-c reference | QuickJS | JSC, no JIT | V8, jitless |
-|---|---|---|---|---|---|
-| allocation | 40 | 47 | 44 | 22 | 22 |
-| arrays | 173 | 163 | 151 | 177 | 83 |
-| calls | 17 | 16 | 11 | 10 | 11 |
-| closures | 35 | 49 | 33 | 22 | 19 |
-| json | 50 | 34 | 43 | 8 | 12 |
-| maps | 52 | 7,698 | 54 | 56 | 48 |
-| polymorphic | 20 | 28 | 17 | 21 | 17 |
-| properties | 46 | 63 | 41 | 24 | 33 |
-| regexp | 27 | 40 | 19 | 16 | 17 |
-| strings | 23 | 40 | 18 | 9 | 8 |
-| startup | 2.5 | 4.5 | 2.8 | 5.1 | 27.2 |
-| geometric mean, relative to zjsz | 1.00 | 1.92 | 0.86 | 0.58 | 0.55 |
+| Kernel | zjsz | Zen-c reference | QuickJS | Hermes | Hermes, precompiled | JSC, no JIT | V8, jitless |
+|---|---|---|---|---|---|---|---|
+| allocation | 39 | 46 | 43 | 35 | 34 | 22 | 20 |
+| arrays | 167 | 158 | 145 | 306 | 304 | 172 | 81 |
+| calls | 17 | 15 | 10 | 9 | 8 | 9 | 9 |
+| closures | 35 | 47 | 32 | 13 | 13 | 21 | 17 |
+| json | 49 | 33 | 42 | 32 | 32 | 8 | 12 |
+| maps | 52 | 7,574 | 53 | 52 | 52 | 56 | 49 |
+| polymorphic | 20 | 29 | 17 | 21 | 21 | 22 | 17 |
+| properties | 46 | 63 | 40 | 32 | 32 | 25 | 31 |
+| regexp | 27 | 40 | 19 | 29 | 28 | 16 | 17 |
+| strings | 23 | 40 | 17 | 15 | 15 | 9 | 9 |
+| startup | 2.4 | 4.5 | 3.1 | 4.4 | 4.1 | 5.3 | 26.5 |
+| geometric mean, relative to zjsz | 1.00 | 1.90 | 0.84 | 0.80 | 0.78 | 0.58 | 0.54 |
 
-Over these kernels QuickJS is 1.16 times faster than the engine,
-JavaScriptCore's interpreter 1.7 times, and V8's 1.8 times; on
-2026-09-25 (`results/2026-09-25.json`, when the kernels still ran at the
-top level) they were 2.2, 3.3, and 4.5 times. The engine is ahead of
-QuickJS on allocation and Map and Set, level on closures, and starts
-fastest. The largest gaps left: JSON (6x JavaScriptCore), strings (2.6x),
-calls (1.7x), and regular expressions (1.6x).
+Over these kernels QuickJS is 1.19 times faster than the engine, Hermes
+1.25 (1.28 precompiled), JavaScriptCore's interpreter 1.7, and V8's 1.9;
+on 2026-09-25 (`results/2026-09-25.json`, when the kernels still ran at
+the top level) QuickJS, JavaScriptCore, and V8 were 2.2, 3.3, and 4.5
+times faster. The engine is level with the others on Map and Set, ahead
+of Hermes on arrays and regular expressions, and starts fastest. The
+Hermes VM alone is 2.75 MB of code and 3.34 MB with its compiler (arm64),
+against the engine's 0.69 MB minimal embedder. The largest gaps left:
+JSON (6x JavaScriptCore), closures (2.7x Hermes), strings (2.6x),
+calls (2.1x). The plan to close them is [levers.md](levers.md).
 
 Tried and not kept: direct-threaded dispatch (computed goto), measured by
 rewriting the generated C by hand, was slower on Apple silicon

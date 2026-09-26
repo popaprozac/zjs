@@ -20,12 +20,15 @@ Engines, each measured only when present:
 | `jsc-nojit` | `jsc --useJIT=false` | JavaScriptCore's interpreter, what iOS runs when JIT is unavailable |
 | `v8-jitless` | `node --jitless` | V8's Ignition interpreter |
 | `quickjs` | `qjs` | QuickJS, when a `qjs` is on PATH |
+| `hermes` | `hermes -Xes6-class` | Hermes run from source, when `hermes` is on PATH |
+| `hermes-hbc` | `hvm -Xes6-class` | Hermes on bytecode `hermesc -O` made before timing, the way a React Native app ships it |
 
 The kernels are written for this suite, each with its work inside a
 function, as most code runs (`results/2026-09-25.json` was recorded with an
 earlier version that ran at the top level, where every variable is a
 global; `results/2026-09-26.json` is the first with QuickJS beside the
-others). They are small on purpose: each
+others, and `results/2026-09-26-hermes.json` adds Hermes). They are small
+on purpose: each
 isolates one cost (calls, property access, closures, arrays, strings,
 allocation, JSON, regular expressions, Map and Set), so a regression or a
 win points at a subsystem. They are not a substitute for real programs.
