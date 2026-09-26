@@ -937,24 +937,28 @@ export struct Runtime {
     return handle;
   }
 
-  // ToNumber of a string: the specification's whitespace beyond ASCII
-  // trims like a space; any other unit above ASCII makes it NaN.
+  // ToNumber of a string (StringToNumber): white space trimmed, then the
+  // literal read from the string's storage in place when it is narrow.
   function stringValueToNumber(handle: u32): f64 {
-    const length = this.heap.stringLength(handle);
-    let bytes = Array<u8>.withCapacity(length);
-    let index: usize = 0;
-    while (index < length) {
-      const unit = this.heap.stringUnit(handle, index);
-      if (unit < 0x80) {
-        bytes.push(u8(unit));
-      } else if (isJsSpace(unit)) {
-        bytes.push(32);
-      } else {
-        return nativeNan();
-      }
-      index = index + 1;
+    let start: usize = 0;
+    let end = this.heap.stringLength(handle);
+    while (start < end && isJsSpace(this.heap.stringUnit(handle, start))) { start = start + 1; }
+    while (end > start && isJsSpace(this.heap.stringUnit(handle, end - 1))) { end = end - 1; }
+    if (!this.heap.isWideString(handle)) {
+      const buffer = usize(this.heap.stringBuffer(handle));
+      return numericLiteralValue(this.heap.strings[buffer], start, end);
     }
-    return stringToNumber(in bytes);
+    // A wide string's literal is ASCII or it is no number.
+    let bytes = Array<u8>.withCapacity(end - start);
+    let at = start;
+    while (at < end) {
+      const unit = this.heap.stringUnit(handle, at);
+      if (unit >= 0x80) return nativeNan();
+      bytes.push(u8(unit));
+      at = at + 1;
+    }
+    const length = bytes.length;
+    return numericLiteralValue(bytes, 0, length);
   }
 
   // --- Objects and properties ---
@@ -7499,18 +7503,16 @@ function nativeFormatInt32(buffer: usize, value: i32): void = raw c {
   snprintf((char *)buffer, 32, "%d", (int)value);
 }
 
-// The reference's ToString(Number): integral values within 1e15 print as
-// integers, integral values below 1e21 through %.0f, and everything else
-// through the shortest digit string that round-trips.
+// ToString(Number): integral values within 1e15 print as integers, and
+// everything else through the shortest digit string that round-trips, laid
+// out as Number::toString says (an integer above 2^53 is its shortest
+// digits and zeros, not its exact value).
 function nativeFormatDouble(buffer: usize, value: f64): void = raw c {
   char *out = (char *)buffer;
   if (value != value) { snprintf(out, 64, "NaN"); return; }
   if (__builtin_isinf(value)) { snprintf(out, 64, value > 0 ? "Infinity" : "-Infinity"); return; }
   if (value == (double)(long long)value && value >= -1e15 && value <= 1e15) {
     snprintf(out, 64, "%lld", (long long)value); return;
-  }
-  if (value == __builtin_floor(value) && __builtin_fabs(value) < 1e21) {
-    snprintf(out, 64, "%.0f", value); return;
   }
   /* Shortest round-trip digits, then ECMA-262 Number::toString layout. */
   char digits[40];
@@ -7550,33 +7552,6 @@ function nativeFormatDouble(buffer: usize, value: f64): void = raw c {
     w += snprintf(w, 8, "%d", ex);
   }
   *w = 0;
-}
-
-// StringToNumber: JS whitespace trimmed, empty is 0, strtod must consume
-// everything, and only the exact spelling "Infinity" may be infinite.
-function nativeParseNumber(buffer: usize, length: usize, outOk: usize): f64 = raw c {
-  const char *p = (const char *)buffer;
-  const char *end = p + length;
-  int *ok = (int *)outOk;
-  while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == '\v' || *p == '\f')) p++;
-  if (p == end) { *ok = 1; return 0.0; }
-  char *ep = NULL;
-  double parsed = strtod(p, &ep);
-  while (ep < end && (*ep == ' ' || *ep == '\t' || *ep == '\n' || *ep == '\r' || *ep == '\v' || *ep == '\f')) ep++;
-  *ok = (ep == end && ep != p) ? 1 : 0;
-  if (*ok && __builtin_isinf(parsed)) {
-    const char *q = p;
-    if (q < end && (*q == '+' || *q == '-')) q++;
-    if (!(end - q >= 8 && memcmp(q, "Infinity", 8) == 0
-          && (q + 8 == end || q[8] == ' ' || q[8] == '\t' || q[8] == '\n' || q[8] == '\r' || q[8] == '\v' || q[8] == '\f'))) {
-      *ok = 0;
-    }
-  }
-  return parsed;
-}
-
-function nativeReadInt(buffer: usize): i32 = raw c {
-  return *(int *)buffer;
 }
 
 // A Z String from a JavaScript string's bytes, by way of a NUL-terminated
@@ -7706,21 +7681,185 @@ export function doubleToString(value: f64): String {
   return text;
 }
 
+// StringToNumber over ASCII text: white space trimmed, then the literal.
 export function stringToNumber(in bytes: Array<u8>): f64 {
-  const length = bytes.length;
-  const buffer = nativeAlloc(length + 1);
-  let index: usize = 0;
-  while (index < length) {
-    nativeStoreByte(buffer, index, bytes[index]);
-    index = index + 1;
+  let start: usize = 0;
+  let end = bytes.length;
+  while (start < end && isAsciiSpace(bytes[start])) { start = start + 1; }
+  while (end > start && isAsciiSpace(bytes[end - 1])) { end = end - 1; }
+  return numericLiteralValue(bytes, start, end);
+}
+
+function isAsciiSpace(byte: u8): boolean {
+  return byte == 32 || (byte >= 9 && byte <= 13);
+}
+
+// The value of a StrNumericLiteral in bytes [start, end), white space
+// already trimmed: empty is 0; `0x`, `0o`, and `0b` integers, unsigned;
+// `Infinity`, signed or not; else a signed decimal literal, or NaN.
+export function numericLiteralValue(bytes: Slice<u8>, start: usize, end: usize): f64 {
+  if (start >= end) return 0.0;
+  const first = bytes[start];
+  if (first == 48 && end - start > 2) {
+    const marker = bytes[start + 1] | 0x20;
+    if (marker == 120) return radixIntegerValue(bytes, start + 2, end, 4);
+    if (marker == 111) return radixIntegerValue(bytes, start + 2, end, 3);
+    if (marker == 98) return radixIntegerValue(bytes, start + 2, end, 1);
   }
-  const okCell = nativeAlloc(4);
-  const parsed = nativeParseNumber(buffer, length, okCell);
-  const ok = nativeReadInt(okCell);
-  nativeFree(okCell);
-  nativeFree(buffer);
-  if (ok != 0) return parsed;
-  return nativeNan();
+  let at = start;
+  const negative = first == 45;
+  if (first == 43 || first == 45) at = at + 1;
+  if (end - at == 8 && spellsInfinity(bytes, at)) return negative ? -1.0 / 0.0 : 1.0 / 0.0;
+  const digitsStart = at;
+  // Up to 19 significant digits as an integer, and the power of ten
+  // that scales it; any digit past those only makes the value inexact.
+  let mantissa: u64 = 0;
+  let significant: u32 = 0;
+  let inexact = false;
+  let scale: i64 = 0;
+  let digits: usize = 0;
+  while (at < end && bytes[at] >= 48 && bytes[at] <= 57) {
+    if (significant < 19) {
+      mantissa = mantissa * 10 + u64(bytes[at] - 48);
+      if (mantissa != 0) significant = significant + 1;
+    } else {
+      scale = scale + 1;
+      if (bytes[at] != 48) inexact = true;
+    }
+    digits = digits + 1;
+    at = at + 1;
+  }
+  if (at < end && bytes[at] == 46) {
+    at = at + 1;
+    while (at < end && bytes[at] >= 48 && bytes[at] <= 57) {
+      if (significant < 19) {
+        mantissa = mantissa * 10 + u64(bytes[at] - 48);
+        if (mantissa != 0) significant = significant + 1;
+        scale = scale - 1;
+      } else if (bytes[at] != 48) {
+        inexact = true;
+      }
+      digits = digits + 1;
+      at = at + 1;
+    }
+  }
+  if (digits == 0) return nativeNan();
+  if (at < end && (bytes[at] | 0x20) == 101) {
+    at = at + 1;
+    let exponentNegative = false;
+    if (at < end && (bytes[at] == 43 || bytes[at] == 45)) {
+      exponentNegative = bytes[at] == 45;
+      at = at + 1;
+    }
+    if (at == end) return nativeNan();
+    let exponent: i64 = 0;
+    while (at < end) {
+      if (bytes[at] < 48 || bytes[at] > 57) return nativeNan();
+      // Past any exponent a double can show, more digits change nothing.
+      if (exponent < 100000) exponent = exponent * 10 + i64(bytes[at] - 48);
+      at = at + 1;
+    }
+    scale = exponentNegative ? scale - exponent : scale + exponent;
+  }
+  if (at != end) return nativeNan();
+  // Exact when the digits fit a double's significand and the scale is a
+  // power of ten a double holds exactly: the one multiply or divide is
+  // the one rounding. Anything longer goes to the C library's correctly
+  // rounded conversion, given only the validated decimal text.
+  let value = 0.0;
+  if (mantissa == 0 && !inexact) {
+    value = 0.0;
+  } else if (!inexact && mantissa <= 9007199254740992 && scale >= -22 && scale <= 22) {
+    value = f64(mantissa);
+    if (scale > 0) value = value * powerOfTen(u32(scale));
+    if (scale < 0) value = value / powerOfTen(u32(-scale));
+  } else {
+    const length = end - digitsStart;
+    const buffer = nativeAlloc(length + 1);
+    let k: usize = 0;
+    while (k < length) {
+      nativeStoreByte(buffer, k, bytes[digitsStart + k]);
+      k = k + 1;
+    }
+    value = nativeParseDecimal(buffer);
+    nativeFree(buffer);
+  }
+  return negative ? -value : value;
+}
+
+function spellsInfinity(bytes: Slice<u8>, at: usize): boolean {
+  const word: String = "Infinity";
+  const spelled = bytesOf(in word);
+  let k: usize = 0;
+  while (k < 8) {
+    if (bytes[at + k] != spelled[k]) return false;
+    k = k + 1;
+  }
+  return true;
+}
+
+// 10^n for n up to 22, each exactly a double.
+function powerOfTen(n: u32): f64 {
+  let value = 1.0;
+  let k: u32 = 0;
+  while (k < n) {
+    value = value * 10.0;
+    k = k + 1;
+  }
+  return value;
+}
+
+// The unsigned integer in bytes [start, end), in a radix of 2 to the
+// `bits`, rounded to the nearest double (ties to even) as the
+// specification rounds its exact value; NaN for no digits or a foreign
+// one.
+function radixIntegerValue(bytes: Slice<u8>, start: usize, end: usize, bits: u32): f64 {
+  if (start >= end) return nativeNan();
+  const radix = u32(1) << bits;
+  let held: u64 = 0;
+  let dropped: i64 = 0;
+  let sticky = false;
+  let at = start;
+  while (at < end) {
+    const digit = radixDigit(bytes[at]);
+    if (digit >= radix) return nativeNan();
+    // The leading 60-odd bits are kept; later ones only count and round.
+    if ((held >> (64 - u64(bits))) == 0) {
+      held = (held << u64(bits)) | u64(digit);
+    } else {
+      dropped = dropped + i64(bits);
+      if (digit != 0) sticky = true;
+    }
+    at = at + 1;
+  }
+  if (held <= 9007199254740992) return f64(held);
+  let width: u64 = 0;
+  while (width < 64 && (held >> width) != 0) { width = width + 1; }
+  const shift = width - 53;
+  let kept = held >> shift;
+  const rest = held & ((u64(1) << shift) - 1);
+  const half = u64(1) << (shift - 1);
+  if (rest > half || (rest == half && (sticky || (kept & 1) == 1))) kept = kept + 1;
+  let value = f64(kept);
+  let exponent = i64(shift) + dropped;
+  while (exponent > 0 && value < 1.0 / 0.0) {
+    value = value * 2.0;
+    exponent = exponent - 1;
+  }
+  return value;
+}
+
+function radixDigit(byte: u8): u32 {
+  if (byte >= 48 && byte <= 57) return u32(byte - 48);
+  const lower = byte | 0x20;
+  if (lower >= 97 && lower <= 122) return u32(lower - 97) + 10;
+  return 99;
+}
+
+// A validated unsigned decimal literal, NUL-terminated, to the nearest
+// double: C's strtod, which rounds correctly and overflows to infinity.
+function nativeParseDecimal(buffer: usize): f64 = raw c {
+  return strtod((const char *)buffer, NULL);
 }
 
 test "number formatting follows the reference" {

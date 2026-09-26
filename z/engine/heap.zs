@@ -1703,6 +1703,11 @@ export struct Heap {
     return this.stringUnitsSlice(handle, 0, length);
   }
 
+  // The buffer in `strings` a string's storage is in.
+  function stringBuffer(handle: u32): u32 {
+    return this.headers[usize(handle)].payload;
+  }
+
   // The raw storage: Latin-1 bytes, or two bytes per unit when wide.
   function stringStorageLength(handle: u32): usize {
     return usize(this.headers[usize(handle)].slotStart);
