@@ -4570,13 +4570,29 @@ export struct Runtime {
   // --- Frames ---
 
   function pushFrame(inout this, functionIndex: u32, returnDst: u8): void {
+    this.openFrame(functionIndex, returnDst, 0, 0, undefinedValue(), 0, undefinedValue(), 0);
+  }
+
+  // A frame for compiled function `functionIndex` on top of the stack:
+  // its registers above the caller's, the parameters taken from the `argc`
+  // arguments at `argsBase` and every other register undefined, each
+  // written once, and the frame itself stored in one piece. The frame's
+  // register base.
+  function openFrame(inout this, functionIndex: u32, returnDst: u8, argsBase: u32, argc: u32, constructThis: Value, env: u32, callee: Value, generator: u32): u32 {
     let regCount = this.functions[usize(functionIndex)].registerCount;
     const paramCount = this.functions[usize(functionIndex)].paramCount;
     if (regCount < paramCount) regCount = paramCount;
     const base = this.regTop;
     const needed = usize(base + regCount);
     while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    // The arguments lie below the stack top, so below `base`.
+    const copied = argc < paramCount ? argc : paramCount;
     let i: u32 = 0;
+    while (i < copied) {
+      const passed = this.regStack[usize(argsBase + i)];
+      this.regStack[usize(base + i)] = passed;
+      i = i + 1;
+    }
     while (i < regCount) {
       this.regStack[usize(base + i)] = undefinedValue();
       i = i + 1;
@@ -4584,8 +4600,8 @@ export struct Runtime {
     this.regTop = base + regCount;
     const frame = Frame({
       functionIndex: functionIndex, ip: 0, regsBase: base, regCount: regCount, returnDst: returnDst,
-      savedThis: this.hostThis, tryDepthAtEntry: this.tryDepth, constructThis: undefinedValue(),
-      env: 0, callee: undefinedValue(), argsBase: 0, argc: 0, generator: 0, newTarget: undefinedValue(),
+      savedThis: this.hostThis, tryDepthAtEntry: this.tryDepth, constructThis: constructThis,
+      env: env, callee: callee, argsBase: argsBase, argc: argc, generator: generator, newTarget: undefinedValue(),
     });
     if (usize(this.frameCount) < this.frames.length) {
       this.frames[usize(this.frameCount)] = frame;
@@ -4593,6 +4609,7 @@ export struct Runtime {
       this.frames.push(frame);
     }
     this.frameCount = this.frameCount + 1;
+    return base;
   }
 
   function popFrame(inout this): Frame {
@@ -4629,11 +4646,10 @@ export struct Runtime {
     // suspends and hands the caller the generator object.
     let generator: u32 = 0;
     if (this.functions[usize(target)].isGenerator || this.functions[usize(target)].isAsync) generator = asCell(this.createGenerator(callee, thisValue));
-    this.enterFunction(target, returnDst, boundThis, argsBase, argc, constructThis);
-    const top = usize(this.frameCount - 1);
-    this.frames[top].env = env;
-    this.frames[top].callee = callee;
-    this.frames[top].generator = generator;
+    const calleeBase = this.openFrame(target, returnDst, argsBase, argc, constructThis, env, callee, generator);
+    this.hostThis = boundThis;
+    const thisReg = this.functions[usize(target)].thisReg;
+    if (thisReg >= 0) this.setReg(calleeBase, u8(thisReg), boundThis);
     return true;
   }
 
@@ -4726,28 +4742,6 @@ export struct Runtime {
     }
     const atomName = this.atomName;
     this.defineOwnAttr(asCell(fn), atomName, this.newStringUtf8(move name), PROP_CONFIGURABLE);
-  }
-
-  // Push a call to a compiled function: arguments from the caller's
-  // registers, `this` bound, the constructed object (if any) recorded.
-  function enterFunction(inout this, target: u32, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): void {
-    this.pushFrame(target, returnDst);
-    const top = usize(this.frameCount - 1);
-    const calleeBase = this.frames[top].regsBase;
-    const paramCount = this.functions[usize(target)].paramCount;
-    const copied = argc < paramCount ? argc : paramCount;
-    let arg: u32 = 0;
-    while (arg < copied) {
-      const passed = this.regStack[usize(argsBase + arg)];
-      this.regStack[usize(calleeBase + arg)] = passed;
-      arg = arg + 1;
-    }
-    this.hostThis = thisValue;
-    this.frames[top].constructThis = constructThis;
-    this.frames[top].argsBase = argsBase;
-    this.frames[top].argc = argc;
-    const thisReg = this.functions[usize(target)].thisReg;
-    if (thisReg >= 0) this.setReg(calleeBase, u8(thisReg), thisValue);
   }
 
   function pushTry(inout this, catchIp: usize, catchReg: u8): void {
