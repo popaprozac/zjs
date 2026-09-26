@@ -6,6 +6,7 @@ array-pop LANDED
 array-truncate COMPILER-REJECTED
 byte-literal COMPILER-REJECTED
 enum-integer-code COMPILER-REJECTED
+f64-decimal-text COMPILER-REJECTED
 field-view-borrow LANDED
 float-bits LANDED
 in-borrow-with-field-read COMPILER-REJECTED

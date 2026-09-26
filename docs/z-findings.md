@@ -1726,6 +1726,49 @@ time, and platform branches on the target's OS and pointer width.
 
 No probe: this is a design request, not a missing method.
 
+## G52 — No locale-independent conversion between f64 and decimal text
+
+**Status:** `proposed` · **Size:** medium · **Priority:** high for
+embedding · **Confirmed:** z-lang `bdc237d2`, Stage 0 · **Blocks:** no
+(the engine is correct in the C locale)
+
+Every number the engine prints or reads goes through the C library:
+`snprintf` for ToString(Number) (up to 17 formatting passes, each checked
+with `strtod`, to find the shortest digits), `toFixed`, `toExponential`,
+and `toPrecision`; `strtod` for numeric literals in source, `JSON.parse`,
+`parseFloat`, and long decimals in ToNumber. Both follow the host's
+`LC_NUMERIC`. An embedder that calls `setlocale(LC_ALL, "")` in a
+comma-decimal locale gets a different language: run in `de_DE.UTF-8`,
+the literal `1.25` reads as 1, `String(0.1)` prints `0,1`,
+`JSON.parse('2.5')`, `parseFloat('3.75')`, and `(123.456).toPrecision(4)`
+are wrong, while the same engine in the C locale matches node. Embedding
+next to a UI toolkit that sets the locale is the ordinary case, not an
+edge.
+
+Z has the same exposure: string interpolation of an `f64` is
+`snprintf("%.17g")` in the current locale (and 17 digits, not the
+shortest: `0.1` is `0.10000000000000001`), and the derived JSON codec
+works around the locale by creating a C locale and switching to it with
+`uselocale` on every number.
+
+The ask is two std functions, portable and independent of the C locale:
+
+- the shortest decimal digits that round-trip an `f64`, with the decimal
+  exponent, leaving the layout to the caller (JavaScript, JSON, and Z's
+  interpolation lay digits out differently); a fixed-digit-count variant
+  for `toFixed` and `toPrecision` would complete it;
+- a correctly rounded parse of a decimal literal from bytes (a
+  `Slice<u8>`), overflowing to infinity and underflowing to zero.
+
+Ryū or Schubfach for the first and Eisel–Lemire with a big-integer
+fallback for the second are the usual choices; either direction could
+also be written in Z once and shared. The engine would drop its `raw c`
+number blocks for them, and interpolation and JSON in Z would get the
+same fix.
+
+Minimal reproduction: probe `f64-decimal-text` (`COMPILER-REJECTED`:
+unknown standard module; the module and names are a proposal).
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic
