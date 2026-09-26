@@ -1,0 +1,37 @@
+# Jitless speed
+
+The Z engine against the jit-less engines an embedder would otherwise
+choose, on ten small kernels. The engine's goal is to be the fastest
+engine that runs without a JIT, which is what every iOS app gets; these
+kernels are how that is tracked.
+
+| | |
+|---|---|
+| `kernels/` | One program per kind of work. Each ends by assigning `result`; the runner prints it, and an engine whose checksum differs from the Z engine's gets no time. |
+| `run.py` | Runs every engine present, median of `RUNS` (default 5) interleaved runs less that engine's startup, and prints a table; with a path, also writes JSON. |
+| `results/` | Recorded runs, with the date, the load average, and each engine's startup. |
+
+Engines, each measured only when present:
+
+| Name | Command | What it is |
+|---|---|---|
+| `zjsz` | `z/build/zjsz run` | the Z engine (`ZJSZ=` points at another build) |
+| `zjs-ref` | `z/build/zjs-ref run` | the Zen-c reference engine |
+| `jsc-nojit` | `jsc --useJIT=false` | JavaScriptCore's interpreter, what iOS runs when JIT is unavailable |
+| `v8-jitless` | `node --jitless` | V8's Ignition interpreter |
+| `quickjs` | `qjs` | QuickJS, when a `qjs` is on PATH |
+
+The kernels are written for this suite. They are small on purpose: each
+isolates one cost (calls, property access, closures, arrays, strings,
+allocation, JSON, regular expressions, Map and Set), so a regression or a
+win points at a subsystem. They are not a substitute for real programs.
+
+The `vs zjsz` row is the geometric mean over the kernels of each engine's
+time divided by the Z engine's: below 1 means that engine is faster.
+Timing wants a quiet machine; the load average is recorded with every run,
+and figures taken above a load of a few are for ratios, not absolutes.
+
+```
+./z/build.sh
+./z/bench/speed/run.py z/bench/speed/results/<date>.json
+```
