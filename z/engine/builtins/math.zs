@@ -3,7 +3,7 @@
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, isNumber, isInt32, asInt32 } from "../value.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE } from "../heap.zs";
-import { Runtime, toNumber, toInt32, toUint32, isIntegralDouble, truncateDouble } from "../runtime.zs";
+import { Runtime, toNumber, toInt32, toUint32, isIntegralDouble, truncateDouble, numberExponentiate } from "../runtime.zs";
 
 function nativeMath1(op: i32, x: f64): f64 = raw c {
   switch (op) {
@@ -37,9 +37,8 @@ function nativeMath1(op: i32, x: f64): f64 = raw c {
 }
 function nativeMath2(op: i32, x: f64, y: f64): f64 = raw c {
   switch (op) {
-    case 0: return __builtin_pow(x, y);
-    case 1: return __builtin_atan2(x, y);
-    case 2: return __builtin_hypot(x, y);
+    case 0: return __builtin_atan2(x, y);
+    case 1: return __builtin_hypot(x, y);
     default: return x;
   }
 }
@@ -125,11 +124,7 @@ function mathPow(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: 
   if (runtime.pendingThrow) return undefinedValue();
   const y = numberArgument(inout runtime, argsBase, argc, 1);
   if (runtime.pendingThrow) return undefinedValue();
-  // ECMAScript: an exponent of NaN, or a base of +-1 with an infinite
-  // exponent, is NaN where C says otherwise.
-  if (y != y) return doubleValue(nativeNan());
-  if ((x == 1.0 || x == -1.0) && (y == 1.0 / 0.0 || y == -1.0 / 0.0)) return doubleValue(nativeNan());
-  return numberValue(nativeMath2(0, x, y));
+  return numberValue(numberExponentiate(x, y));
 }
 
 function mathAtan2(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -137,7 +132,7 @@ function mathAtan2(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   if (runtime.pendingThrow) return undefinedValue();
   const x = numberArgument(inout runtime, argsBase, argc, 1);
   if (runtime.pendingThrow) return undefinedValue();
-  return numberValue(nativeMath2(1, y, x));
+  return numberValue(nativeMath2(0, y, x));
 }
 
 function mathHypot(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

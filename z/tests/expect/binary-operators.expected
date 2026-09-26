@@ -1,0 +1,4 @@
+order: 4 4 15 42 3.5 3 8 2 2 7 5 abcdefghijklmnopqrstuw
+left throws: -:stopped *:stopped /:stopped %:stopped **:stopped |:stopped &:stopped ^:stopped <<:stopped >>:stopped >>>:stopped +:stopped <:stopped >=:stopped
+exponent: NaN NaN NaN NaN 8 5e-324 NaN Infinity -Infinity 1 NaN NaN 32
+small literals: 1820130816 -3 0 0 -3 1820130821 1676144640 -2147483648 455032704 -1 910065408 4294967293 2147483646 12 16 0 0 -2147483648 -2147483648 4294967295 4294967295 0 120

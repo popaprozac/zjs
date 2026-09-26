@@ -179,5 +179,11 @@ export function opName(op: Op): String {
     inc => "inc";
     dec => "dec";
     toNumeric => "toNumeric";
+    bitOrImm => "bitOrImm";
+    bitAndImm => "bitAndImm";
+    bitXorImm => "bitXorImm";
+    shlImm => "shlImm";
+    shrImm => "shrImm";
+    uShrImm => "uShrImm";
   };
 }

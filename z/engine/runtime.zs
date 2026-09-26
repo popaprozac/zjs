@@ -5938,8 +5938,11 @@ export struct Runtime {
             this.setReg(base, inst.a, operand8);
           }
           pow => {
-            const operand9 = doubleValue(nativePow(toNumber(this.reg(base, inst.b)), toNumber(this.reg(base, inst.c))));
-            this.setReg(base, inst.a, operand9);
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
+            const rawC = this.reg(base, inst.c);
+            const numberC = this.numericOperand(rawC);
+            this.setReg(base, inst.a, doubleValue(numberExponentiate(toNumber(numberB), toNumber(numberC))));
           }
           neg => {
             const rawB = this.reg(base, inst.b);
@@ -5982,30 +5985,79 @@ export struct Runtime {
             const operand15 = int32Value(toInt32(numberB) ^ toInt32(numberC));
             this.setReg(base, inst.a, operand15);
           }
+          bitOrImm => {
+            const rawB = this.reg(base, inst.b);
+            if (isInt32(rawB)) {
+              this.setReg(base, inst.a, int32Value(asInt32(rawB) | immediateOf(inst.c)));
+            } else {
+              const numberB = this.numericOperand(rawB);
+              this.setReg(base, inst.a, int32Value(toInt32(numberB) | immediateOf(inst.c)));
+            }
+          }
+          bitAndImm => {
+            const rawB = this.reg(base, inst.b);
+            if (isInt32(rawB)) {
+              this.setReg(base, inst.a, int32Value(asInt32(rawB) & immediateOf(inst.c)));
+            } else {
+              const numberB = this.numericOperand(rawB);
+              this.setReg(base, inst.a, int32Value(toInt32(numberB) & immediateOf(inst.c)));
+            }
+          }
+          bitXorImm => {
+            const rawB = this.reg(base, inst.b);
+            if (isInt32(rawB)) {
+              this.setReg(base, inst.a, int32Value(asInt32(rawB) ^ immediateOf(inst.c)));
+            } else {
+              const numberB = this.numericOperand(rawB);
+              this.setReg(base, inst.a, int32Value(toInt32(numberB) ^ immediateOf(inst.c)));
+            }
+          }
+          shlImm => {
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
+            const shift = u32(inst.c) & 31;
+            this.setReg(base, inst.a, int32Value(i32.fromBits(shiftLeft32(toInt32(numberB).toBits(), shift))));
+          }
+          shrImm => {
+            const rawB = this.reg(base, inst.b);
+            const shift = u32(inst.c) & 31;
+            if (isInt32(rawB)) {
+              this.setReg(base, inst.a, int32Value(asInt32(rawB) >> i32(shift)));
+            } else {
+              const numberB = this.numericOperand(rawB);
+              this.setReg(base, inst.a, int32Value(toInt32(numberB) >> i32(shift)));
+            }
+          }
+          uShrImm => {
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
+            const shift = u32(inst.c) & 31;
+            this.setReg(base, inst.a, uint32ToValue(toUint32(numberB) >> shift));
+          }
           shl => {
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
             const rawC = this.reg(base, inst.c);
             const numberC = this.numericOperand(rawC);
             const shift = u32(toUint32(numberC) & 31);
-            const rawB = this.reg(base, inst.b);
-            const numberB = this.numericOperand(rawB);
             const operand16 = int32Value(i32.fromBits(shiftLeft32(toInt32(numberB).toBits(), shift)));
             this.setReg(base, inst.a, operand16);
           }
           shr => {
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
             const rawC = this.reg(base, inst.c);
             const numberC = this.numericOperand(rawC);
             const shift = u32(toUint32(numberC) & 31);
-            const rawB = this.reg(base, inst.b);
-            const numberB = this.numericOperand(rawB);
             const operand17 = int32Value(toInt32(numberB) >> i32(shift));
             this.setReg(base, inst.a, operand17);
           }
           uShr => {
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
             const rawC = this.reg(base, inst.c);
             const numberC = this.numericOperand(rawC);
             const shift = u32(toUint32(numberC) & 31);
-            const rawB = this.reg(base, inst.b);
-            const numberB = this.numericOperand(rawB);
             const shifted = toUint32(numberB) >> shift;
             this.setReg(base, inst.a, uint32ToValue(shifted));
           }
@@ -7346,6 +7398,14 @@ export function createRuntime(): Runtime {
 
 function nativePow(base: f64, exponent: f64): f64 = raw c {
   return __builtin_pow(base, exponent);
+}
+
+// Number::exponentiate: C's pow, except that an exponent of NaN, or a
+// base of 1 or -1 with an infinite exponent, is NaN.
+export function numberExponentiate(base: f64, exponent: f64): f64 {
+  if (exponent != exponent) return nativeNan();
+  if ((base == 1.0 || base == -1.0) && (exponent == 1.0 / 0.0 || exponent == -1.0 / 0.0)) return nativeNan();
+  return nativePow(base, exponent);
 }
 
 function nativeFmod(a: f64, b: f64): f64 = raw c {

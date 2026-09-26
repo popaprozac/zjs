@@ -194,6 +194,14 @@ export enum Op {
   inc, // a = dst, b = src: ToNumeric(src) + 1, an int32 kept an int32 while it fits.
   dec, // a = dst, b = src: ToNumeric(src) - 1.
   toNumeric, // a = dst, b = src: ToNumeric(src), a postfix update's value.
+  // a = dst, b = left, c = the right operand as a signed byte: the bitwise
+  // and shift operators against a small integer literal.
+  bitOrImm,
+  bitAndImm,
+  bitXorImm,
+  shlImm,
+  shrImm,
+  uShrImm,
 }
 
 export struct Inst {
@@ -421,6 +429,12 @@ export function opCode(op: Op): i32 {
     inc => 172;
     dec => 173;
     toNumeric => 174;
+    bitOrImm => 175;
+    bitAndImm => 176;
+    bitXorImm => 177;
+    shlImm => 178;
+    shrImm => 179;
+    uShrImm => 180;
   };
 }
 

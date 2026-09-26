@@ -1401,6 +1401,7 @@ export struct Compiler {
       this.emitThis(base + 1);
       return;
     }
+    this.targetReg = i32(base + 1);
     const receiver = this.compileExpr(in parser, inout runtime, callee.left);
     if (receiver != base + 1) this.emit(instAB(Op.mov, base + 1, receiver));
     if (callee.kind == NodeKind.member) {
@@ -3078,7 +3079,7 @@ export struct Compiler {
       }
     }
     if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc) {
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emitFunctionValue(in parser, inout runtime, node, dst, contextualStart, contextualLength, contextualPrefix);
       return dst;
     }
@@ -4166,6 +4167,12 @@ function immediateForm(op: Op): Op {
   if (op == Op.cmpLe) return Op.cmpLeImm;
   if (op == Op.cmpGt) return Op.cmpGtImm;
   if (op == Op.cmpGe) return Op.cmpGeImm;
+  if (op == Op.bitOr) return Op.bitOrImm;
+  if (op == Op.bitAnd) return Op.bitAndImm;
+  if (op == Op.bitXor) return Op.bitXorImm;
+  if (op == Op.shl) return Op.shlImm;
+  if (op == Op.shr) return Op.shrImm;
+  if (op == Op.uShr) return Op.uShrImm;
   return Op.halt;
 }
 
