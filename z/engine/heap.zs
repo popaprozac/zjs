@@ -133,6 +133,14 @@ export const DICT_BIT: u32 = 2147483648;
 
 // A string buffer's reference word: the count of strings over it, and
 // whether a concatenation made it (and so may append to it in place).
+// A string cell's payload with this bit set is an offset into the byte
+// arena; without it, an index into `strings`.
+const ARENA_BIT: u32 = 0x8000_0000;
+// Strings of up to this many storage bytes live in the arena.
+const SMALL_STRING_BYTES: u32 = 256;
+// Arena bytes beyond twice the live ones before a collection compacts it.
+const SMALL_ARENA_SLACK: usize = 65536;
+
 const BUFFER_APPENDABLE: u32 = 0x8000_0000;
 const BUFFER_REFS: u32 = 0x7FFF_FFFF;
 
@@ -206,6 +214,14 @@ export struct Heap {
   // strings over it, with BUFFER_APPENDABLE set on a buffer a
   // concatenation made (see concatStorage).
   strings: Array<Array<u8>>;
+  // Small strings' storage, one byte arena filled from its top, and the
+  // one the collector compacts it into (see Strings).
+  smallBytes: Array<u8>;
+  spareSmallBytes: Array<u8>;
+  // The live small-string bytes the last collection counted: the arena
+  // is compacted only once it holds twice that and some slack, so a
+  // long-lived string is copied once per doubling, not every collection.
+  smallLiveBytes: usize;
   bufferRefs: Array<u32>;
   classes: Array<HiddenClass>;
   // Weak records reached during the current collection (see Weak
@@ -425,6 +441,12 @@ export struct Heap {
     // The arena being filled is a local while it is filled.
     let compacted = replace(inout this.spareSlots, Array<Value>());
     let compactedAttrs = replace(inout this.spareAttrs, Array<u8>());
+    // So is the byte arena the live small strings are copied into, when
+    // the arena has grown enough to be worth compacting.
+    const compactBytes = this.smallBytes.length >= this.smallLiveBytes * 2 + SMALL_ARENA_SLACK;
+    let compactedBytes = replace(inout this.spareSmallBytes, Array<u8>());
+    compactedBytes.clear();
+    let liveBytes: usize = 0;
     if (retain) {
       compacted.clear();
       compactedAttrs.clear();
@@ -461,7 +483,8 @@ export struct Heap {
         if (tag == TAG_OBJECT && (this.headers[usize(handle)].payload & DICT_BIT) != 0) {
           this.releaseDictionary(this.headers[usize(handle)].payload & (DICT_BIT - 1));
         }
-        if (tag == TAG_STRING) {
+        // A dead arena string's bytes are simply not copied below.
+        if (tag == TAG_STRING && (this.headers[usize(handle)].payload & ARENA_BIT) == 0) {
           const stringIndex = this.headers[usize(handle)].payload;
           this.releaseStringBuffer(stringIndex);
         }
@@ -484,6 +507,19 @@ export struct Heap {
         continue;
       }
       this.headers[usize(handle)].marked = false;
+      if (tag == TAG_STRING && (this.headers[usize(handle)].payload & ARENA_BIT) != 0) {
+        const length = usize(this.headers[usize(handle)].slotStart);
+        liveBytes = liveBytes + length;
+        if (compactBytes) {
+          const origin = usize(this.headers[usize(handle)].payload & ~ARENA_BIT);
+          this.headers[usize(handle)].payload = ARENA_BIT | u32(compactedBytes.length);
+          let k: usize = 0;
+          while (k < length) {
+            compactedBytes.push(this.smallBytes[origin + k]);
+            k = k + 1;
+          }
+        }
+      }
       const start = this.headers[usize(handle)].slotStart;
       const slotCount: u32 = tag == TAG_STRING ? 0 : this.headers[usize(handle)].slotCount;
       if (tag != TAG_STRING) this.headers[usize(handle)].slotStart = u32(compacted.length);
@@ -504,6 +540,17 @@ export struct Heap {
     const oldCapacity = this.slots.capacity;
     const oldSlots = replace(inout this.slots, move compacted);
     const oldAttrs = replace(inout this.attrs, move compactedAttrs);
+    // A compacted byte arena takes the old one's place, which becomes the
+    // spare unless it grew far past what the live strings need.
+    this.smallLiveBytes = liveBytes;
+    if (compactBytes) {
+      const oldBytes = replace(inout this.smallBytes, move compactedBytes);
+      if (oldBytes.capacity <= liveBytes * 4 + SMALL_ARENA_SLACK) {
+        const emptyBytes = replace(inout this.spareSmallBytes, move oldBytes);
+      }
+    } else {
+      const unused = replace(inout this.spareSmallBytes, move compactedBytes);
+    }
     if (retain && oldCapacity <= needed * 4 + 65536) {
       const emptySlots = replace(inout this.spareSlots, move oldSlots);
       const emptyAttrs = replace(inout this.spareAttrs, move oldAttrs);
@@ -1714,9 +1761,27 @@ export struct Heap {
   // A string cell's content is UTF-16 code units. Storage is one byte per
   // unit when every unit is at most 0xFF (Latin-1), else two bytes per
   // unit, little-endian, with FLAG_WIDE on the cell. The narrow form is
-  // canonical, so equal content always has equal storage.
+  // canonical, so equal content always has equal storage. The cell's
+  // slotStart is its storage length in bytes.
+  //
+  // Where the bytes are: a string of up to SMALL_STRING_BYTES lives in
+  // the byte arena, its payload the offset with ARENA_BIT set; the arena
+  // is filled from its top and compacted by the collector, which copies
+  // the live strings and drops the rest, so a small string costs no
+  // allocation of its own and nothing to free. A larger string has a
+  // buffer of its own in `strings`, its payload the buffer's index,
+  // shared by the strings a concatenation chain makes over it.
   function allocateStorage(inout this, bytes: Array<u8>, wide: boolean): u32 {
     const byteCount = u32(bytes.length);
+    if (byteCount <= SMALL_STRING_BYTES) {
+      const offset = u32(this.smallBytes.length);
+      let k: usize = 0;
+      while (k < bytes.length) {
+        this.smallBytes.push(bytes[k]);
+        k = k + 1;
+      }
+      return this.allocateArenaString(offset, byteCount, wide);
+    }
     const stringIndex = this.adoptBuffer(move bytes);
     return this.allocateStringOver(stringIndex, byteCount, wide);
   }
@@ -1746,6 +1811,26 @@ export struct Heap {
     return handle;
   }
 
+  // A string cell over `byteCount` arena bytes from `offset`.
+  function allocateArenaString(inout this, offset: u32, byteCount: u32, wide: boolean): u32 {
+    const handle = this.allocate(TAG_STRING, 0);
+    this.headers[usize(handle)].payload = ARENA_BIT | offset;
+    this.headers[usize(handle)].slotStart = byteCount;
+    if (wide) this.setFlags(handle, FLAG_WIDE);
+    return handle;
+  }
+
+  function isArenaString(handle: u32): boolean {
+    return (this.headers[usize(handle)].payload & ARENA_BIT) != 0;
+  }
+
+  // Where a string's bytes start: its arena offset, or 0 in its buffer.
+  function stringStorageStart(handle: u32): usize {
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & ARENA_BIT) != 0) return usize(payload & ~ARENA_BIT);
+    return 0;
+  }
+
   // One string over a buffer has died: the buffer goes back to the free
   // list with the last one.
   function releaseStringBuffer(inout this, stringIndex: u32): void {
@@ -1765,42 +1850,105 @@ export struct Heap {
     this.freeStringCount = this.freeStringCount + 1;
   }
 
-  // `left` followed by `right`, two strings of the same width. When
-  // `left` is the newest string over a buffer a concatenation made,
-  // `right` is appended to that buffer in place and the result shares it;
-  // every earlier string over the buffer keeps seeing its own prefix, and
-  // a loop that grows a string by `+=` copies each byte once instead of
-  // once per iteration. Otherwise both are copied into a fresh buffer
-  // that later concatenations may extend in the same way.
+  // A string's storage byte, wherever it lives.
+  function storageByte(handle: u32, index: usize): u8 {
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & ARENA_BIT) != 0) return this.smallBytes[usize(payload & ~ARENA_BIT) + index];
+    return this.strings[usize(payload)][index];
+  }
+
+  // A string's storage bytes appended to the arena's top.
+  function copyToArena(inout this, handle: u32): void {
+    const payload = this.headers[usize(handle)].payload;
+    const length = usize(this.headers[usize(handle)].slotStart);
+    let k: usize = 0;
+    if ((payload & ARENA_BIT) != 0) {
+      const origin = usize(payload & ~ARENA_BIT);
+      while (k < length) {
+        const byte = this.smallBytes[origin + k];
+        this.smallBytes.push(byte);
+        k = k + 1;
+      }
+      return;
+    }
+    const buffer = usize(payload);
+    while (k < length) {
+      const byte = this.strings[buffer][k];
+      this.smallBytes.push(byte);
+      k = k + 1;
+    }
+  }
+
+  // A string's storage bytes appended to `target`.
+  function copyStorage(handle: u32, inout target: Array<u8>): void {
+    const payload = this.headers[usize(handle)].payload;
+    const length = usize(this.headers[usize(handle)].slotStart);
+    let k: usize = 0;
+    if ((payload & ARENA_BIT) != 0) {
+      const origin = usize(payload & ~ARENA_BIT);
+      while (k < length) {
+        target.push(this.smallBytes[origin + k]);
+        k = k + 1;
+      }
+      return;
+    }
+    const buffer = usize(payload);
+    while (k < length) {
+      target.push(this.strings[buffer][k]);
+      k = k + 1;
+    }
+  }
+
+  // Whether a string's bytes end at the arena's top, so what follows can
+  // be appended there and shared.
+  function endsArena(handle: u32): boolean {
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & ARENA_BIT) == 0) return false;
+    return usize(payload & ~ARENA_BIT) + usize(this.headers[usize(handle)].slotStart) == this.smallBytes.length;
+  }
+
+  // `left` followed by `right`, two strings of the same width. A small
+  // result goes to the arena, after `left` in place when `left` ends at
+  // its top. A larger one extends `left`'s buffer in place when `left`
+  // is the newest string over a buffer a concatenation made -- every
+  // earlier string over it keeps seeing its own prefix, and a loop that
+  // grows a string by `+=` copies each byte once instead of once per
+  // iteration -- or else copies both into a fresh buffer that later
+  // concatenations may extend the same way.
   function concatStorage(inout this, left: u32, right: u32): u32 {
-    const leftBuffer = usize(this.headers[usize(left)].payload);
+    const leftPayload = this.headers[usize(left)].payload;
     const leftBytes = this.headers[usize(left)].slotStart;
-    const rightBuffer = usize(this.headers[usize(right)].payload);
+    const rightPayload = this.headers[usize(right)].payload;
     const rightBytes = this.headers[usize(right)].slotStart;
     const wide = (this.headers[usize(left)].flags & FLAG_WIDE) != 0;
     const joinedBytes = leftBytes + rightBytes;
-    const appendable = (this.bufferRefs[leftBuffer] & BUFFER_APPENDABLE) != 0;
-    if (appendable && leftBuffer != rightBuffer && u32(this.strings[leftBuffer].length) == leftBytes) {
-      let index: usize = 0;
-      while (index < usize(rightBytes)) {
-        const byte = this.strings[rightBuffer][index];
-        this.strings[leftBuffer].push(byte);
-        index = index + 1;
+    if (joinedBytes <= SMALL_STRING_BYTES) {
+      let offset = u32(this.smallBytes.length);
+      if (this.endsArena(left)) {
+        offset = leftPayload & ~ARENA_BIT;
+      } else {
+        this.copyToArena(left);
       }
-      this.bufferRefs[leftBuffer] = this.bufferRefs[leftBuffer] + 1;
-      return this.allocateStringOver(u32(leftBuffer), joinedBytes, wide);
+      this.copyToArena(right);
+      return this.allocateArenaString(offset, joinedBytes, wide);
+    }
+    if ((leftPayload & ARENA_BIT) == 0) {
+      const leftBuffer = usize(leftPayload);
+      const appendable = (this.bufferRefs[leftBuffer] & BUFFER_APPENDABLE) != 0;
+      if (appendable && rightPayload != leftPayload && u32(this.strings[leftBuffer].length) == leftBytes) {
+        let index: usize = 0;
+        while (index < usize(rightBytes)) {
+          const byte = this.storageByte(right, index);
+          this.strings[leftBuffer].push(byte);
+          index = index + 1;
+        }
+        this.bufferRefs[leftBuffer] = this.bufferRefs[leftBuffer] + 1;
+        return this.allocateStringOver(u32(leftBuffer), joinedBytes, wide);
+      }
     }
     let joined = Array<u8>.withCapacity(usize(joinedBytes));
-    let index: usize = 0;
-    while (index < usize(leftBytes)) {
-      joined.push(this.strings[leftBuffer][index]);
-      index = index + 1;
-    }
-    index = 0;
-    while (index < usize(rightBytes)) {
-      joined.push(this.strings[rightBuffer][index]);
-      index = index + 1;
-    }
+    this.copyStorage(left, inout joined);
+    this.copyStorage(right, inout joined);
     const stringIndex = this.adoptBuffer(move joined);
     this.bufferRefs[usize(stringIndex)] = BUFFER_APPENDABLE | 1;
     return this.allocateStringOver(stringIndex, joinedBytes, wide);
@@ -1808,25 +1956,51 @@ export struct Heap {
 
   // A string and `count` ASCII bytes joined, the bytes after the string
   // or, with `before`, ahead of it: what adding a string and a number
-  // makes, with no string made for the number. After the string, the
-  // bytes extend the string's buffer in place when concatStorage could;
-  // otherwise both go to a fresh buffer later concatenations may extend.
+  // makes, with no string made for the number. The result goes where
+  // concatStorage would put it, extending in place where it could.
   function concatAscii(inout this, handle: u32, bytes: Slice<u8>, count: usize, before: boolean): u32 {
-    const buffer = usize(this.headers[usize(handle)].payload);
+    const payload = this.headers[usize(handle)].payload;
     const length = this.headers[usize(handle)].slotStart;
     const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
     const width: usize = wide ? 2 : 1;
     const joinedBytes = length + u32(count * width);
-    const appendable = (this.bufferRefs[buffer] & BUFFER_APPENDABLE) != 0;
-    if (!before && appendable && u32(this.strings[buffer].length) == length) {
+    if (joinedBytes <= SMALL_STRING_BYTES) {
+      let offset = u32(this.smallBytes.length);
       let k: usize = 0;
+      if (before) {
+        while (k < count) {
+          this.smallBytes.push(bytes[k]);
+          if (wide) this.smallBytes.push(0);
+          k = k + 1;
+        }
+        this.copyToArena(handle);
+        return this.allocateArenaString(offset, joinedBytes, wide);
+      }
+      if (this.endsArena(handle)) {
+        offset = payload & ~ARENA_BIT;
+      } else {
+        this.copyToArena(handle);
+      }
       while (k < count) {
-        this.strings[buffer].push(bytes[k]);
-        if (wide) this.strings[buffer].push(0);
+        this.smallBytes.push(bytes[k]);
+        if (wide) this.smallBytes.push(0);
         k = k + 1;
       }
-      this.bufferRefs[buffer] = this.bufferRefs[buffer] + 1;
-      return this.allocateStringOver(u32(buffer), joinedBytes, wide);
+      return this.allocateArenaString(offset, joinedBytes, wide);
+    }
+    if (!before && (payload & ARENA_BIT) == 0) {
+      const buffer = usize(payload);
+      const appendable = (this.bufferRefs[buffer] & BUFFER_APPENDABLE) != 0;
+      if (appendable && u32(this.strings[buffer].length) == length) {
+        let k: usize = 0;
+        while (k < count) {
+          this.strings[buffer].push(bytes[k]);
+          if (wide) this.strings[buffer].push(0);
+          k = k + 1;
+        }
+        this.bufferRefs[buffer] = this.bufferRefs[buffer] + 1;
+        return this.allocateStringOver(u32(buffer), joinedBytes, wide);
+      }
     }
     let joined = Array<u8>.withCapacity(usize(joinedBytes));
     let k: usize = 0;
@@ -1837,11 +2011,7 @@ export struct Heap {
         k = k + 1;
       }
     }
-    let index: usize = 0;
-    while (index < usize(length)) {
-      joined.push(this.strings[buffer][index]);
-      index = index + 1;
-    }
+    this.copyStorage(handle, inout joined);
     if (!before) {
       while (k < count) {
         joined.push(bytes[k]);
@@ -1854,14 +2024,50 @@ export struct Heap {
     return this.allocateStringOver(stringIndex, joinedBytes, wide);
   }
 
+  // A string whose units are these bytes' values, written straight from
+  // the caller's bytes: a small one into the arena with no array of its
+  // own.
+  function allocateLatin1Slice(inout this, bytes: Slice<u8>): u32 {
+    const count = bytes.length;
+    if (count <= usize(SMALL_STRING_BYTES)) {
+      const offset = u32(this.smallBytes.length);
+      let k: usize = 0;
+      while (k < count) {
+        this.smallBytes.push(bytes[k]);
+        k = k + 1;
+      }
+      return this.allocateArenaString(offset, u32(count), false);
+    }
+    let copied = Array<u8>.withCapacity(count);
+    let k: usize = 0;
+    while (k < count) {
+      copied.push(bytes[k]);
+      k = k + 1;
+    }
+    return this.allocateStorage(move copied, false);
+  }
+
   // A string whose units are these bytes' values (ASCII or Latin-1).
   function allocateLatin1(inout this, bytes: Array<u8>): u32 {
     return this.allocateStorage(move bytes, false);
   }
 
-  // A string of these units, stored narrow when it can be.
+  // A string of these units, stored narrow when it can be; a small one
+  // is written straight into the arena.
   function allocateUnits(inout this, units: Array<u16>): u32 {
-    if (isNarrowUnits(in units)) return this.allocateStorage(unitsToLatin1(in units), false);
+    const narrow = isNarrowUnits(in units);
+    const byteCount = narrow ? units.length : units.length * 2;
+    if (byteCount <= usize(SMALL_STRING_BYTES)) {
+      const offset = u32(this.smallBytes.length);
+      let i: usize = 0;
+      while (i < units.length) {
+        this.smallBytes.push(u8(units[i] & 0xFF));
+        if (!narrow) this.smallBytes.push(u8(units[i] >> 8));
+        i = i + 1;
+      }
+      return this.allocateArenaString(offset, u32(byteCount), !narrow);
+    }
+    if (narrow) return this.allocateStorage(unitsToLatin1(in units), false);
     let bytes = Array<u8>.withCapacity(units.length * 2);
     let i: usize = 0;
     while (i < units.length) {
@@ -1917,21 +2123,37 @@ export struct Heap {
   }
 
   function stringUnit(handle: u32, index: usize): u16 {
-    const at = usize(this.headers[usize(handle)].payload);
     if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
-      return u16(this.strings[at][index * 2]) | (u16(this.strings[at][index * 2 + 1]) << 8);
+      return u16(this.storageByte(handle, index * 2)) | (u16(this.storageByte(handle, index * 2 + 1)) << 8);
     }
-    return u16(this.strings[at][index]);
+    return u16(this.storageByte(handle, index));
   }
 
   // units[start, end) copied; the caller keeps end in range.
   function stringUnitsSlice(handle: u32, start: usize, end: usize): Array<u16> {
-    const at = usize(this.headers[usize(handle)].payload);
     let count: usize = 0;
     if (end > start) count = end - start;
     let copied = Array<u16>.withCapacity(count);
+    const payload = this.headers[usize(handle)].payload;
+    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
     let index = start;
-    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
+    if ((payload & ARENA_BIT) != 0) {
+      const origin = usize(payload & ~ARENA_BIT);
+      if (wide) {
+        while (index < end) {
+          copied.push(u16(this.smallBytes[origin + index * 2]) | (u16(this.smallBytes[origin + index * 2 + 1]) << 8));
+          index = index + 1;
+        }
+        return copied;
+      }
+      while (index < end) {
+        copied.push(u16(this.smallBytes[origin + index]));
+        index = index + 1;
+      }
+      return copied;
+    }
+    const at = usize(payload);
+    if (wide) {
       while (index < end) {
         copied.push(u16(this.strings[at][index * 2]) | (u16(this.strings[at][index * 2 + 1]) << 8));
         index = index + 1;
@@ -1946,23 +2168,44 @@ export struct Heap {
   }
 
   // A fresh string cell holding units[start, end) of another, copied in
-  // storage form (no unit round trip).
+  // storage form (no unit round trip); a small one straight into the
+  // arena.
   function allocateSubstring(inout this, handle: u32, start: usize, end: usize): u32 {
-    const at = usize(this.headers[usize(handle)].payload);
     const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
-    if (!wide) {
-      let count: usize = 0;
-      if (end > start) count = end - start;
-      let bytes = Array<u8>.withCapacity(count);
-      let index = start;
-      while (index < end) {
-        bytes.push(this.strings[at][index]);
-        index = index + 1;
-      }
-      return this.allocateStorage(move bytes, false);
+    if (wide) {
+      // A wide slice may fit narrow; allocateUnits decides.
+      return this.allocateUnits(this.stringUnitsSlice(handle, start, end));
     }
-    // A wide slice may fit narrow; allocateUnits decides.
-    return this.allocateUnits(this.stringUnitsSlice(handle, start, end));
+    let count: usize = 0;
+    if (end > start) count = end - start;
+    const payload = this.headers[usize(handle)].payload;
+    if (count <= usize(SMALL_STRING_BYTES)) {
+      const offset = u32(this.smallBytes.length);
+      let index = start;
+      if ((payload & ARENA_BIT) != 0) {
+        const origin = usize(payload & ~ARENA_BIT);
+        while (index < end) {
+          const byte = this.smallBytes[origin + index];
+          this.smallBytes.push(byte);
+          index = index + 1;
+        }
+      } else {
+        const buffer = usize(payload);
+        while (index < end) {
+          const byte = this.strings[buffer][index];
+          this.smallBytes.push(byte);
+          index = index + 1;
+        }
+      }
+      return this.allocateArenaString(offset, u32(count), false);
+    }
+    let bytes = Array<u8>.withCapacity(count);
+    let index = start;
+    while (index < end) {
+      bytes.push(this.storageByte(handle, index));
+      index = index + 1;
+    }
+    return this.allocateStorage(move bytes, false);
   }
 
   function stringUnits(handle: u32): Array<u16> {
@@ -1977,20 +2220,38 @@ export struct Heap {
   function stringHash(inout this, handle: u32): u32 {
     const known = this.headers[usize(handle)].slotCount;
     if (known != 0) return known;
-    const at = usize(this.headers[usize(handle)].payload);
+    const payload = this.headers[usize(handle)].payload;
     const length = usize(this.headers[usize(handle)].slotStart);
+    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
     let hash: u32 = 2166136261;
     let index: usize = 0;
-    if ((this.headers[usize(handle)].flags & FLAG_WIDE) == 0) {
-      while (index < length) {
-        hash = (hash ^ u32(this.strings[at][index])).wrappingMultiply(16777619);
-        index = index + 1;
+    if ((payload & ARENA_BIT) != 0) {
+      const origin = usize(payload & ~ARENA_BIT);
+      if (!wide) {
+        while (index < length) {
+          hash = (hash ^ u32(this.smallBytes[origin + index])).wrappingMultiply(16777619);
+          index = index + 1;
+        }
+      } else {
+        while (index < length) {
+          const unit = u32(this.smallBytes[origin + index]) | (u32(this.smallBytes[origin + index + 1]) << 8);
+          hash = (hash ^ unit).wrappingMultiply(16777619);
+          index = index + 2;
+        }
       }
     } else {
-      while (index < length) {
-        const unit = u32(this.strings[at][index]) | (u32(this.strings[at][index + 1]) << 8);
-        hash = (hash ^ unit).wrappingMultiply(16777619);
-        index = index + 2;
+      const at = usize(payload);
+      if (!wide) {
+        while (index < length) {
+          hash = (hash ^ u32(this.strings[at][index])).wrappingMultiply(16777619);
+          index = index + 1;
+        }
+      } else {
+        while (index < length) {
+          const unit = u32(this.strings[at][index]) | (u32(this.strings[at][index + 1]) << 8);
+          hash = (hash ^ unit).wrappingMultiply(16777619);
+          index = index + 2;
+        }
       }
     }
     hash = hash | 0x8000_0000;
@@ -1998,7 +2259,8 @@ export struct Heap {
     return hash;
   }
 
-  // The buffer in `strings` a string's storage is in.
+  // The buffer in `strings` a string's storage is in, for a string that
+  // is not in the arena.
   function stringBuffer(handle: u32): u32 {
     return this.headers[usize(handle)].payload;
   }
@@ -2009,26 +2271,19 @@ export struct Heap {
   }
 
   function stringStorageByte(handle: u32, index: usize): u8 {
-    return this.strings[usize(this.headers[usize(handle)].payload)][index];
+    return this.storageByte(handle, index);
   }
 
   // A copy of the storage: the Latin-1 bytes of a narrow string (the
   // fast paths' working form), or the wide string's byte pairs.
   function stringStorageBytes(handle: u32): Array<u8> {
-    const at = usize(this.headers[usize(handle)].payload);
-    const length = usize(this.headers[usize(handle)].slotStart);
-    let copied = Array<u8>.withCapacity(length);
-    let index: usize = 0;
-    while (index < length) {
-      copied.push(this.strings[at][index]);
-      index = index + 1;
-    }
+    let copied = Array<u8>.withCapacity(usize(this.headers[usize(handle)].slotStart));
+    this.copyStorage(handle, inout copied);
     return copied;
   }
 
   // The content as UTF-8 for the host (a lone surrogate becomes U+FFFD).
   function stringUtf8(handle: u32): Array<u8> {
-    const at = usize(this.headers[usize(handle)].payload);
     if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
       const units = this.stringUnits(handle);
       return unitsToUtf8(in units);
@@ -2037,7 +2292,7 @@ export struct Heap {
     let bytes = Array<u8>.withCapacity(length);
     let index: usize = 0;
     while (index < length) {
-      const byte = this.strings[at][index];
+      const byte = this.storageByte(handle, index);
       if (byte < 0x80) {
         bytes.push(byte);
       } else {
@@ -2062,22 +2317,26 @@ export struct Heap {
   function stringsEqual(a: u32, b: u32): boolean {
     if (a == b) return true;
     if (this.isWideString(a) != this.isWideString(b)) return false;
-    const at = usize(this.headers[usize(a)].payload);
-    const bt = usize(this.headers[usize(b)].payload);
+    const aPayload = this.headers[usize(a)].payload;
+    const bPayload = this.headers[usize(b)].payload;
     const length = usize(this.headers[usize(a)].slotStart);
     if (length != usize(this.headers[usize(b)].slotStart)) return false;
     // Two hashes already known and different: different content.
     const aHash = this.headers[usize(a)].slotCount;
     const bHash = this.headers[usize(b)].slotCount;
     if (aHash != 0 && bHash != 0 && aHash != bHash) return false;
-    // Two strings over one buffer with one length are one content.
-    if (at == bt) return true;
-    let index: usize = 0;
-    while (index < length) {
-      if (this.strings[at][index] != this.strings[bt][index]) return false;
-      index = index + 1;
-    }
-    return true;
+    // Two strings over the same bytes with one length are one content.
+    if (aPayload == bPayload) return true;
+    const aArena = (aPayload & ARENA_BIT) != 0;
+    const bArena = (bPayload & ARENA_BIT) != 0;
+    let aStart: usize = 0;
+    if (aArena) aStart = usize(aPayload & ~ARENA_BIT);
+    let bStart: usize = 0;
+    if (bArena) bStart = usize(bPayload & ~ARENA_BIT);
+    if (aArena && bArena) return sameStorage(this.smallBytes, aStart, this.smallBytes, bStart, length);
+    if (aArena) return sameStorage(this.smallBytes, aStart, this.strings[usize(bPayload)], 0, length);
+    if (bArena) return sameStorage(this.strings[usize(aPayload)], 0, this.smallBytes, bStart, length);
+    return sameStorage(this.strings[usize(aPayload)], 0, this.strings[usize(bPayload)], 0, length);
   }
 
   // Ordering by code units, then by length: negative, zero, or positive.
@@ -2087,25 +2346,21 @@ export struct Heap {
     const shorter = aLength < bLength ? aLength : bLength;
     let index: usize = 0;
     if (!this.isWideString(a) && !this.isWideString(b)) {
-      const at = usize(this.headers[usize(a)].payload);
-      const bt = usize(this.headers[usize(b)].payload);
       while (index < shorter) {
-        const ab = this.strings[at][index];
-        const bb = this.strings[bt][index];
+        const ab = this.storageByte(a, index);
+        const bb = this.storageByte(b, index);
         if (ab < bb) return -1;
         if (ab > bb) return 1;
         index = index + 1;
       }
-      if (aLength < bLength) return -1;
-      if (aLength > bLength) return 1;
-      return 0;
-    }
-    while (index < shorter) {
-      const ab = this.stringUnit(a, index);
-      const bb = this.stringUnit(b, index);
-      if (ab < bb) return -1;
-      if (ab > bb) return 1;
-      index = index + 1;
+    } else {
+      while (index < shorter) {
+        const ab = this.stringUnit(a, index);
+        const bb = this.stringUnit(b, index);
+        if (ab < bb) return -1;
+        if (ab > bb) return 1;
+        index = index + 1;
+      }
     }
     if (aLength < bLength) return -1;
     if (aLength > bLength) return 1;
@@ -2239,6 +2494,7 @@ export struct Heap {
   // The string table: an array per string plus each one's content.
   function stringBytesHeld(): f64 {
     let held: f64 = f64(this.strings.capacity) * 24.0 + f64(this.freeStrings.capacity) * 4.0;
+    held = held + f64(this.smallBytes.capacity) + f64(this.spareSmallBytes.capacity);
     let index: usize = 0;
     while (index < this.strings.length) {
       held = held + f64(this.strings[index].capacity);
@@ -2283,8 +2539,17 @@ export struct Heap {
       stringBytes = stringBytes + f64(this.strings[index].length);
       index = index + 1;
     }
-    return f64(this.headerCount) * HEADER_BYTES + f64(this.slots.length) * 9.0 + stringBytes;
+    return f64(this.headerCount) * HEADER_BYTES + f64(this.slots.length) * 9.0 + stringBytes + f64(this.smallBytes.length);
   }
+}
+
+function sameStorage(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, length: usize): boolean {
+  let index: usize = 0;
+  while (index < length) {
+    if (a[aStart + index] != b[bStart + index]) return false;
+    index = index + 1;
+  }
+  return true;
 }
 
 export function createHeap(): Heap {
@@ -2298,7 +2563,7 @@ export function createHeap(): Heap {
     transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), bufferRefs: Array<u32>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), spareSmallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,

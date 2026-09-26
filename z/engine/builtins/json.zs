@@ -142,15 +142,7 @@ function finishString(inout parser: JsonParser): void {
 
 // The string just read, as a fresh string value.
 function parsedString(inout runtime: Runtime, in parser: JsonParser): Value {
-  if (!parser.wide) {
-    let bytes = Array<u8>.withCapacity(parser.narrow.length);
-    let index: usize = 0;
-    while (index < parser.narrow.length) {
-      bytes.push(parser.narrow[index]);
-      index = index + 1;
-    }
-    return runtime.newStringLatin1(move bytes);
-  }
+  if (!parser.wide) return runtime.newStringLatin1Slice(parser.narrow);
   let units = Array<u16>.withCapacity(parser.units.length);
   let index: usize = 0;
   while (index < parser.units.length) {

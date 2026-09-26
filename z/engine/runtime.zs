@@ -946,6 +946,11 @@ export struct Runtime {
     return cellValue(this.heap.allocateLatin1(move bytes));
   }
 
+  // A string of these Latin-1 bytes, copied from the caller's storage.
+  function newStringLatin1Slice(inout this, bytes: Slice<u8>): Value {
+    return cellValue(this.heap.allocateLatin1Slice(bytes));
+  }
+
   function newStringUnits(inout this, units: Array<u16>): Value {
     return cellValue(this.heap.allocateUnits(move units));
   }
@@ -970,6 +975,10 @@ export struct Runtime {
     while (start < end && isJsSpace(this.heap.stringUnit(handle, start))) { start = start + 1; }
     while (end > start && isJsSpace(this.heap.stringUnit(handle, end - 1))) { end = end - 1; }
     if (!this.heap.isWideString(handle)) {
+      if (this.heap.isArenaString(handle)) {
+        const origin = this.heap.stringStorageStart(handle);
+        return numericLiteralValue(this.heap.smallBytes, origin + start, origin + end);
+      }
       const buffer = usize(this.heap.stringBuffer(handle));
       return numericLiteralValue(this.heap.strings[buffer], start, end);
     }
