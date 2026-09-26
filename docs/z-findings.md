@@ -1691,6 +1691,14 @@ The illustrative shape is `append(from: Slice<T>)` for copyable `T`,
 accepting an `Array<T>` or a slice of one; a `Slice.copy(into:)` would do
 as well. What matters is that the lowering is a block copy, not a loop.
 
+The same holds for a run of one repeated value. Every cell the engine
+allocates pushes its slots as `undefined` and their attribute bytes one
+at a time, and every hash index starts as a loop of empty markers; in a
+profile of number-keyed `Map.set` (2026-09-25), the per-element `push`
+of attribute bytes alone was 13% of the time. An `append(repeating:
+count:)` or a `resize(to:, filling:)` for copyable `T`, lowered to a
+fill, would cover it.
+
 Minimal reproduction: probe `array-append-slice` (`COMPILER-REJECTED`:
 `Array has no method "append"`).
 
