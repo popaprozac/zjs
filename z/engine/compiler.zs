@@ -302,11 +302,14 @@ export struct Compiler {
       const compare = binaryOp(n.op);
       const fused = fusedBranch(compare);
       if (fused != Op.halt) {
-        const immediate = smallIntegerLiteral(in parser, n.right);
-        if (immediate > -129) {
+        const immediate = branchImmediate(in parser, n.right);
+        if (immediate != NO_BRANCH_IMMEDIATE) {
+          // A 24-bit literal: its low 16 bits in the instruction, the top
+          // 8 in the second word beside the offset.
           const operand = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
-          this.emit(instABC(fusedImmediateBranch(compare), operand, immediateByte(immediate), 0));
-          return this.emit(instAI16(Op.halt, 0, 0));
+          const bits = u32(i64(immediate) & 0xFFFFFF);
+          this.emit(instAU16(fusedImmediateBranch(compare), operand, u16(bits & 0xFFFF)));
+          return this.emit(instAI16(Op.halt, u8(bits >> 16), 0));
         }
         const left = this.compileOperand(in parser, inout runtime, n.left, n.right);
         const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
@@ -2114,9 +2117,11 @@ export struct Compiler {
     const unused = this.valueUnused;
     this.valueUnused = false;
 
-    if (k == NodeKind.numberExpr) {
+    // A number literal, or one negated (`-1` folds to the constant).
+    const literal = literalNumber(in parser, node);
+    if (literal.present) {
       const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
-      const value = n.num;
+      const value = literal.value;
       const truncated = f64ToInt32Exact(value);
       // -0 has no int32 form.
       const negativeZero = value == 0.0 && 1.0 / value < 0.0;
@@ -2135,17 +2140,17 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.boolExpr) {
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instA(n.boolValue ? Op.loadTrue : Op.loadFalse, dst));
       return dst;
     }
     if (k == NodeKind.nullExpr) {
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instA(Op.loadNull, dst));
       return dst;
     }
     if (k == NodeKind.undefinedExpr) {
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instA(Op.loadUndefined, dst));
       return dst;
     }
@@ -2160,7 +2165,7 @@ export struct Compiler {
       while (lastSlash > n.start && parser.source[usize(lastSlash)] != 47) { lastSlash = lastSlash - 1; }
       const sourceIndex = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(n.start + 1), usize(lastSlash))));
       const flagsIndex = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(lastSlash + 1), usize(n.end))));
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       if (sourceIndex < 256 && flagsIndex < 256) {
         this.emit(instABC(Op.newRegex, dst, u8(sourceIndex), u8(flagsIndex)));
       } else {
@@ -2176,7 +2181,7 @@ export struct Compiler {
     if (k == NodeKind.stringExpr) {
       const decoded = decodeStringBody(in parser, n.start + 1, n.end > 0 ? n.end - 1 : n.start + 1);
       const index = this.addConst(runtime.internUnitsValue(move decoded));
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instAU16(Op.loadConst, dst, index));
       return dst;
     }
@@ -2242,7 +2247,7 @@ export struct Compiler {
     if (k == NodeKind.templatePartExpr) {
       const decoded = decodeStringBody(in parser, n.start, n.end);
       const index = this.addConst(runtime.internUnitsValue(move decoded));
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instAU16(Op.loadConst, dst, index));
       return dst;
     }
@@ -2250,7 +2255,7 @@ export struct Compiler {
       // Literal segments and substitutions, concatenated left to right.
       if (n.childrenCount == 0) {
         const index = this.addConst(runtime.internLatin1Value(Array<u8>()));
-        const dst = this.allocReg();
+        const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
         this.emit(instAU16(Op.loadConst, dst, index));
         return dst;
       }
@@ -2258,7 +2263,8 @@ export struct Compiler {
       let i: u32 = 1;
       while (i < n.childrenCount) {
         const next = this.compileExpr(in parser, inout runtime, parser.ast.child(node, i));
-        const dst = this.allocReg();
+        // The last join writes the result, so it may land in the target.
+        const dst = i + 1 == n.childrenCount && hintReg >= 0 ? u8(hintReg) : this.allocReg();
         this.emit(instABC(Op.add, dst, acc, next));
         acc = dst;
         i = i + 1;
@@ -2667,7 +2673,7 @@ export struct Compiler {
     if (k == NodeKind.holeExpr) {
       // An elision: the deleted marker in a slot is a hole.
       const index = this.addConst(deletedValue());
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instAU16(Op.loadConst, dst, index));
       return dst;
     }
@@ -2744,6 +2750,7 @@ export struct Compiler {
         this.allocReg();
         slot = slot + 1;
       }
+      this.targetReg = i32(base);
       const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
       if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
       this.nextReg = base + u8(1 + argCount);
@@ -2755,14 +2762,16 @@ export struct Compiler {
           return 0;
         }
         const target = base + u8(1 + j);
+        this.targetReg = i32(target);
         const argReg = this.compileExpr(in parser, inout runtime, argument);
         if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
         this.nextReg = base + u8(1 + argCount);
         j = j + 1;
       }
-      this.emit(instABC(Op.newInvoke, base, base, u8(argCount)));
+      const result = hintReg >= 0 ? u8(hintReg) : base;
+      this.emit(instABC(Op.newInvoke, result, base, u8(argCount)));
       this.nextReg = base + 1;
-      return base;
+      return result;
     }
     if (k == NodeKind.binary && (n.op == TokenKind.kwIn || n.op == TokenKind.kwInstanceof)) {
       const left = this.compileExpr(in parser, inout runtime, n.left);
@@ -2906,7 +2915,7 @@ export struct Compiler {
         }
       }
       const operand = this.compileExpr(in parser, inout runtime, n.left);
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       if (n.op == TokenKind.minus) {
         this.emit(instAB(Op.neg, dst, operand));
         return dst;
@@ -2993,6 +3002,23 @@ export struct Compiler {
         this.targetReg = into;
         const value = this.compileExpr(in parser, inout runtime, n.right);
         if (value != u8(into)) this.emit(instAB(Op.mov, u8(into), value));
+        return u8(into);
+      }
+      if (into >= 0 && unused && n.op != TokenKind.eq && compoundOp(n.op) != Op.halt) {
+        // A statement `x op= e` into a register binding: one instruction
+        // reads x and writes the result back, a small literal riding in
+        // it; x is read in place unless e may assign it first.
+        const op = compoundOp(n.op);
+        const immediateOp = immediateForm(op);
+        const immediate = smallIntegerLiteral(in parser, n.right);
+        if (immediateOp != Op.halt && immediate > -129) {
+          this.emit(instABC(immediateOp, u8(into), u8(into), immediateByte(immediate)));
+          return u8(into);
+        }
+        let current = u8(into);
+        if (mayAssign(in parser, n.right)) current = this.compileExpr(in parser, inout runtime, n.left);
+        const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+        this.emit(instABC(op, u8(into), current, right));
         return u8(into);
       }
       const target = assigned;
@@ -4176,17 +4202,49 @@ function immediateForm(op: Op): Op {
   return Op.halt;
 }
 
+struct LiteralNumber {
+  present: boolean;
+  value: f64;
+}
+
+// The value of a number literal, through parentheses and any unary
+// minus: `-1` is a literal here, as it is in the source's intent.
+function literalNumber(in parser: Parser, node: u32): LiteralNumber {
+  if (node == NO_NODE) return LiteralNumber({ present: false, value: 0.0 });
+  const n = parser.ast.node(node);
+  if (n.kind == NodeKind.numberExpr) return LiteralNumber({ present: true, value: n.num });
+  if (n.kind == NodeKind.paren) return literalNumber(in parser, n.left);
+  if (n.kind == NodeKind.unary && n.op == TokenKind.minus) {
+    const inner = literalNumber(in parser, n.left);
+    if (inner.present) return LiteralNumber({ present: true, value: -inner.value });
+  }
+  return LiteralNumber({ present: false, value: 0.0 });
+}
+
 // A numeric literal that is an integer in [-128, 127] (a signed byte),
 // or -129 for anything else. -0 is not one: it is not an int32.
 function smallIntegerLiteral(in parser: Parser, node: u32): i32 {
-  if (node == NO_NODE) return -129;
-  const n = parser.ast.node(node);
-  if (n.kind != NodeKind.numberExpr) return -129;
-  const value = n.num;
+  const literal = literalNumber(in parser, node);
+  if (!literal.present) return -129;
+  const value = literal.value;
   if (value != value || value < -128.0 || value > 127.0) return -129;
   if (value == 0.0 && 1.0 / value < 0.0) return -129;
   const truncated = f64ToInt32Exact(value);
   if (!truncated.exact) return -129;
+  return truncated.value;
+}
+
+// A compare-and-branch literal: an integer in [-2^23, 2^23), not -0.
+const NO_BRANCH_IMMEDIATE: i32 = -2147483648;
+
+function branchImmediate(in parser: Parser, node: u32): i32 {
+  const literal = literalNumber(in parser, node);
+  if (!literal.present) return NO_BRANCH_IMMEDIATE;
+  const value = literal.value;
+  if (value != value || value < -8388608.0 || value > 8388607.0) return NO_BRANCH_IMMEDIATE;
+  if (value == 0.0 && 1.0 / value < 0.0) return NO_BRANCH_IMMEDIATE;
+  const truncated = f64ToInt32Exact(value);
+  if (!truncated.exact) return NO_BRANCH_IMMEDIATE;
   return truncated.value;
 }
 

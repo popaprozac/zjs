@@ -35,8 +35,8 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 |---|---|---|---|---|
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | open |
 | Allocator and collector | allocation, strings, json, maps, closures | about even | 3-5 days | open |
-| Call protocol | calls, closures, arrays, every callback | about even | 1-2 days | started |
-| Bytecode quality | all | about even | 1-2 days | started |
+| Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
+| Bytecode quality | all | about even | 1-2 days | in progress |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | started |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all | smaller | upstream | filed |
@@ -70,16 +70,33 @@ of `fib`; `sort` is a fifth of the arrays kernel, nearly all call
 overhead; Hermes does calls in 8 ms to our 17. Done so far: the frame is
 written once per call.
 
+The dispatch loop's shape belongs to this lever too. It is one large
+function in the generated C, and the C compiler's register allocation
+across it is fragile: adding one instruction's arm, which the kernel
+never executes, made properties 20% and polymorphic 14% slower
+(2026-09-26). The loop should keep only the hot instructions' bodies in
+line, with the rest in functions of their own, so a new instruction
+costs nothing where it is not used.
+
 **Bytecode quality.** The compiler emits one instruction per construct
 and copies more than it needs to: the closures loop runs 14 instructions
 an iteration, 5 of them copies into call slots or a reload of the loop
-bound. Register allocation for call arguments, constants as operands,
-fused method calls (look up and call in one), stores into environments
-straight from the source register, and cached global reads. Evidence:
-Hermes, whose optimizing compiler removes these, runs closures in 13 ms
-to our 35. Done so far: immediate operands for arithmetic, comparisons,
-bitwise and shift operators; fused compare-and-branch; receivers and
-function values compiled into their destination.
+bound. Evidence: Hermes, whose optimizing compiler removes these, runs
+closures in 13 ms to our 35. Done so far: immediate operands for
+arithmetic, comparisons, bitwise and shift operators; fused
+compare-and-branch, whose literal takes 24 bits; negated literals folded
+to constants; `x op= e` into a register local as one instruction;
+receivers, arguments, literals, unary results, `new`, and function
+values compiled into their destination (strings kernel -25%
+instructions, maps -5%, the rest -3% or unchanged). Left: the callee and
+the arguments of a call copied into a contiguous block (a call form that
+names its callee register), string constants as operands, stores into
+environments straight from the source register. A method call cannot
+look its method up after the arguments are evaluated (the specification
+reads it first), so the fusion available is the receiver copy with the
+lookup; tried as `getMethod`, it saved about 1% where it applied and set
+off the dispatch-loop fragility under Call protocol, so it waits for the
+loop's restructuring.
 
 **Built-in fast paths.** JSON is the widest gap (6x): parse should reuse
 the hidden class of the previous object with the same keys, stringify

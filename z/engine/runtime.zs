@@ -5763,33 +5763,33 @@ export struct Runtime {
           }
           jmpIfNotLtImm => {
             const left = this.reg(base, inst.a);
-            const immediate = immediateOf(inst.b);
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
+            const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) < immediate : this.lessThan(left, int32Value(immediate), false);
             if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
           }
           jmpIfNotLeImm => {
             const left = this.reg(base, inst.a);
-            const immediate = immediateOf(inst.b);
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
+            const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) <= immediate : this.lessThan(left, int32Value(immediate), true);
             if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
           }
           jmpIfNotGtImm => {
             const left = this.reg(base, inst.a);
-            const immediate = immediateOf(inst.b);
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
+            const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) > immediate : this.lessThan(int32Value(immediate), left, false);
             if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
           }
           jmpIfNotGeImm => {
             const left = this.reg(base, inst.a);
-            const immediate = immediateOf(inst.b);
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
+            const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) >= immediate : this.lessThan(int32Value(immediate), left, true);
             if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
           }
@@ -7505,6 +7505,13 @@ export function lengthValue(length: usize): Value {
 }
 
 // An instruction's c operand read as the signed byte an immediate is.
+// A compare-and-branch literal: 24 bits, the low 16 in the instruction's
+// b and c, the top 8 in its second word's a.
+export function branchImmediateOf(inst: Inst, word: Inst): i32 {
+  const bits = i32(bcU16(inst)) | (i32(word.a) << 16);
+  return bits >= 0x800000 ? bits - 0x1000000 : bits;
+}
+
 export function immediateOf(c: u8): i32 {
   return c >= 128 ? i32(c) - 256 : i32(c);
 }
