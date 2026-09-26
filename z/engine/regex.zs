@@ -74,6 +74,9 @@ export struct RegexBackend {
   lastError: Array<u8>;
   // The category of the last compile failure: a REGEX_* code.
   lastFailure: i32;
+  // What the scratch buffer holds: the tag its last loader chose, or 0
+  // once anything else has been written there.
+  loadedTag: u64;
 
   // Whether slot `i` holds this pattern (compared in place: an array
   // element's field cannot be lent out).
@@ -114,6 +117,7 @@ export struct RegexBackend {
       return found;
     }
     const context = this.context;
+    this.loadedTag = 0;
     const buffer = loadBuffer(context, in source);
     if (buffer == 0) {
       this.lastFailure = REGEX_OUT_OF_MEMORY;
@@ -217,6 +221,16 @@ export struct RegexBackend {
     native.zjs_re_buffer_store(buffer, index, byte);
   }
 
+  // Whether the scratch buffer still holds what was loaded under `tag`
+  // (never true for 0), so a caller can skip loading it again.
+  function holds(tag: u64): boolean {
+    return tag != 0 && this.loadedTag == tag;
+  }
+
+  function markLoaded(inout this, tag: u64): void {
+    this.loadedTag = tag;
+  }
+
   // Run a compiled pattern over the loaded buffer -- `length` units, one
   // byte each or two when `wide` -- from a unit offset; a REGEX_* code.
   // The captures are readable until the next exec.
@@ -282,7 +296,7 @@ export struct RegexBackend {
 }
 
 export function createRegexBackend(): RegexBackend {
-  return RegexBackend({ context: native.zjs_re_context_new(), entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>(), lastFailure: 0 });
+  return RegexBackend({ context: native.zjs_re_context_new(), entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>(), lastFailure: 0, loadedTag: 0 });
 }
 
 function asciiBytes(in text: String): Array<u8> {

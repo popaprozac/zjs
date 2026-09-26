@@ -1183,11 +1183,19 @@ export struct Runtime {
     const buffer = this.regexBackend.reserve(storageLength);
     let result = REGEX_OUT_OF_MEMORY;
     if (buffer != 0) {
-      let i: usize = 0;
-      while (i < storageLength) {
-        const byte = this.heap.stringStorageByte(input, i);
-        this.regexBackend.store(buffer, i, byte);
-        i = i + 1;
+      // A string's storage never changes and its handle is reused only
+      // after a collection, so the handle and the collection count name
+      // its contents: a global exec or replace walking one subject loads
+      // it once, not once per match.
+      const tag = (u64(this.heap.collections) << 32) | u64(input);
+      if (!this.regexBackend.holds(tag)) {
+        let i: usize = 0;
+        while (i < storageLength) {
+          const byte = this.heap.stringStorageByte(input, i);
+          this.regexBackend.store(buffer, i, byte);
+          i = i + 1;
+        }
+        this.regexBackend.markLoaded(tag);
       }
       result = this.regexBackend.execLoaded(entry, buffer, length, start, wide);
     }
