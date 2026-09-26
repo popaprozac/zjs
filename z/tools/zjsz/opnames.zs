@@ -176,5 +176,8 @@ export function opName(op: Op): String {
     iterCallReturn => "iterCallReturn";
     isAbsent => "isAbsent";
     requireIterResult => "requireIterResult";
+    inc => "inc";
+    dec => "dec";
+    toNumeric => "toNumeric";
   };
 }

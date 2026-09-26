@@ -1494,7 +1494,7 @@ export struct Runtime {
         return this.internUnitsValue(move one);
       }
       const atom = this.propertyKey(key);
-      if (atom == this.atomLength) return int32Value(i32(this.heap.stringLength(handle)));
+      if (atom == this.atomLength) return lengthValue(this.heap.stringLength(handle));
       const stringProto = this.stringProto;
       return this.lookupProperty(stringProto, atom, object);
     }
@@ -1526,7 +1526,7 @@ export struct Runtime {
       return this.lookupFrom(inherited, atom, receiver);
     }
     const atom = this.propertyKey(key);
-    if (atom == this.atomLength) return int32Value(i32(this.heap.arrayLength(handle)));
+    if (atom == this.atomLength) return lengthValue(usize(this.heap.arrayLength(handle)));
     const bag = this.heap.linkOf(handle);
     if (bag != 0) {
       const slot = this.heap.objectFindSlot(bag, atom);
@@ -1902,7 +1902,7 @@ export struct Runtime {
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) {
         const attr: u8 = (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0 ? PROP_NONE : PROP_WRITABLE;
-        return dataProperty(int32Value(i32(this.heap.arrayLength(handle))), attr);
+        return dataProperty(lengthValue(usize(this.heap.arrayLength(handle))), attr);
       }
       const bag = this.heap.linkOf(handle);
       if (bag == 0) return absentProperty();
@@ -1979,7 +1979,7 @@ export struct Runtime {
       return dataProperty(this.internUnitsValue(move one), PROP_ENUMERABLE);
     }
     const atom = this.propertyKey(key);
-    if (atom == this.atomLength) return dataProperty(int32Value(i32(this.heap.stringLength(handle))), PROP_NONE);
+    if (atom == this.atomLength) return dataProperty(lengthValue(this.heap.stringLength(handle)), PROP_NONE);
     return absentProperty();
   }
 
@@ -4234,6 +4234,22 @@ export struct Runtime {
 
   // An arithmetic operand: numbers pass through; anything else goes
   // through ToNumber, which for strings and arrays needs the heap.
+  // The + operator on two values that are not both numbers: ToPrimitive
+  // on each, then concatenation if either is a string, else numeric
+  // addition. A throw is left pending.
+  function addValues(inout this, rawLeft: Value, rawRight: Value): Value {
+    const left = this.toPrimitiveWithHint(rawLeft, HINT_DEFAULT);
+    if (this.pendingThrow) return undefinedValue();
+    const right = this.toPrimitiveWithHint(rawRight, HINT_DEFAULT);
+    if (this.pendingThrow) return undefinedValue();
+    if (this.isStringValue(left) || this.isStringValue(right)) return this.concatStrings(left, right);
+    const leftNumber = this.numericOperand(left);
+    if (this.pendingThrow) return undefinedValue();
+    const rightNumber = this.numericOperand(right);
+    if (this.pendingThrow) return undefinedValue();
+    return numericAdd(leftNumber, rightNumber);
+  }
+
   function numericOperand(inout this, value: Value): Value {
     if (isNumber(value)) return value;
     return doubleValue(this.toNumberValue(value));
@@ -4381,6 +4397,20 @@ export struct Runtime {
 
   // Relational comparison. `orEqual` selects <= over <; swap operands for
   // > and >=.
+  // a > b, or a >= b: b < a with the left operand converted first, as
+  // IsLessThan(b, a, LeftFirst = false) does, so a side effect in a's
+  // valueOf happens before one in b's.
+  function greaterThan(inout this, a: Value, b: Value, orEqual: boolean): boolean {
+    if (this.isObjectLike(a) || this.isObjectLike(b)) {
+      const left = this.toPrimitive(a, false);
+      if (this.pendingThrow) return false;
+      const right = this.toPrimitive(b, false);
+      if (this.pendingThrow) return false;
+      return this.lessThan(right, left, orEqual);
+    }
+    return this.lessThan(b, a, orEqual);
+  }
+
   function lessThan(inout this, a: Value, b: Value, orEqual: boolean): boolean {
     if (this.isObjectLike(a) || this.isObjectLike(b)) {
       const left = this.toPrimitive(a, false);
@@ -5464,30 +5494,182 @@ export struct Runtime {
               const sum = numericAdd(rawLeft, rawRight);
               this.setReg(base, inst.a, sum);
             } else {
-              const left = this.toPrimitiveWithHint(rawLeft, HINT_DEFAULT);
-              const right = this.toPrimitiveWithHint(rawRight, HINT_DEFAULT);
+              const sum = this.addValues(rawLeft, rawRight);
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
-              } else if (this.isStringValue(left) || this.isStringValue(right)) {
-                const joined = this.concatStrings(left, right);
-                if (this.pendingThrow) {
-                  thrown = this.takePending();
-                  throwing = true;
-                } else {
-                  this.setReg(base, inst.a, joined);
-                }
               } else {
-                const leftNumber = this.numericOperand(left);
-                const rightNumber = this.numericOperand(right);
-                if (this.pendingThrow) {
-                  thrown = this.takePending();
-                  throwing = true;
-                } else {
-                  const sum = numericAdd(leftNumber, rightNumber);
-                  this.setReg(base, inst.a, sum);
-                }
+                this.setReg(base, inst.a, sum);
               }
+            }
+          }
+          // An operand and a small integer in the instruction (c, as i8).
+          addImm => {
+            const rawLeft = this.reg(base, inst.b);
+            const immediate = int32Value(immediateOf(inst.c));
+            if (isNumber(rawLeft)) {
+              this.setReg(base, inst.a, numericAdd(rawLeft, immediate));
+            } else {
+              const sum = this.addValues(rawLeft, immediate);
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+              } else {
+                this.setReg(base, inst.a, sum);
+              }
+            }
+          }
+          subImm => {
+            const rawLeft = this.reg(base, inst.b);
+            const immediate = int32Value(immediateOf(inst.c));
+            const left = this.numericOperand(rawLeft);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, numericSub(left, immediate));
+            }
+          }
+          cmpLtImm => {
+            const operandB = this.reg(base, inst.b);
+            const immediate = immediateOf(inst.c);
+            if (isInt32(operandB)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) < immediate));
+            } else {
+              this.setReg(base, inst.a, booleanValue(this.lessThan(operandB, int32Value(immediate), false)));
+            }
+          }
+          cmpLeImm => {
+            const operandB = this.reg(base, inst.b);
+            const immediate = immediateOf(inst.c);
+            if (isInt32(operandB)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) <= immediate));
+            } else {
+              this.setReg(base, inst.a, booleanValue(this.lessThan(operandB, int32Value(immediate), true)));
+            }
+          }
+          cmpGtImm => {
+            const operandB = this.reg(base, inst.b);
+            const immediate = immediateOf(inst.c);
+            if (isInt32(operandB)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) > immediate));
+            } else {
+              this.setReg(base, inst.a, booleanValue(this.lessThan(int32Value(immediate), operandB, false)));
+            }
+          }
+          cmpGeImm => {
+            const operandB = this.reg(base, inst.b);
+            const immediate = immediateOf(inst.c);
+            if (isInt32(operandB)) {
+              this.setReg(base, inst.a, booleanValue(asInt32(operandB) >= immediate));
+            } else {
+              this.setReg(base, inst.a, booleanValue(this.lessThan(int32Value(immediate), operandB, true)));
+            }
+          }
+          // Compare and jump when the comparison is false; the offset is
+          // the next word's bc, relative to the instruction after it. Two
+          // int32s compare in place.
+          jmpIfNotLt => {
+            const left = this.reg(base, inst.a);
+            const right = this.reg(base, inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) && isInt32(right) ? asInt32(left) < asInt32(right) : this.lessThan(left, right, false);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          jmpIfNotLe => {
+            const left = this.reg(base, inst.a);
+            const right = this.reg(base, inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) && isInt32(right) ? asInt32(left) <= asInt32(right) : this.lessThan(left, right, true);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          jmpIfNotGt => {
+            const left = this.reg(base, inst.a);
+            const right = this.reg(base, inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) && isInt32(right) ? asInt32(left) > asInt32(right) : this.greaterThan(left, right, false);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          jmpIfNotGe => {
+            const left = this.reg(base, inst.a);
+            const right = this.reg(base, inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) && isInt32(right) ? asInt32(left) >= asInt32(right) : this.greaterThan(left, right, true);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          jmpIfNotLtImm => {
+            const left = this.reg(base, inst.a);
+            const immediate = immediateOf(inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) ? asInt32(left) < immediate : this.lessThan(left, int32Value(immediate), false);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          jmpIfNotLeImm => {
+            const left = this.reg(base, inst.a);
+            const immediate = immediateOf(inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) ? asInt32(left) <= immediate : this.lessThan(left, int32Value(immediate), true);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          jmpIfNotGtImm => {
+            const left = this.reg(base, inst.a);
+            const immediate = immediateOf(inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) ? asInt32(left) > immediate : this.lessThan(int32Value(immediate), left, false);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          jmpIfNotGeImm => {
+            const left = this.reg(base, inst.a);
+            const immediate = immediateOf(inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const holds = isInt32(left) ? asInt32(left) >= immediate : this.lessThan(int32Value(immediate), left, true);
+            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+          }
+          // ++ and -- on a value: ToNumeric first, so a string counts.
+          inc => {
+            const operandB = this.reg(base, inst.b);
+            if (isInt32(operandB) && asInt32(operandB) < 2147483647) {
+              this.setReg(base, inst.a, int32Value(asInt32(operandB) + 1));
+            } else {
+              const number = this.numericOperand(operandB);
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+              } else {
+                this.setReg(base, inst.a, numericAdd(number, int32Value(1)));
+              }
+            }
+          }
+          dec => {
+            const operandB = this.reg(base, inst.b);
+            if (isInt32(operandB) && asInt32(operandB) > -2147483648) {
+              this.setReg(base, inst.a, int32Value(asInt32(operandB) - 1));
+            } else {
+              const number = this.numericOperand(operandB);
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+              } else {
+                this.setReg(base, inst.a, numericSub(number, int32Value(1)));
+              }
+            }
+          }
+          toNumeric => {
+            const operandB = this.reg(base, inst.b);
+            const number = this.numericOperand(operandB);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+            } else {
+              this.setReg(base, inst.a, number);
             }
           }
           // Two int32s, the loop-counter case, compare without a call.
@@ -5517,7 +5699,7 @@ export struct Runtime {
             if (isInt32(operandB) && isInt32(operandC)) {
               this.setReg(base, inst.a, booleanValue(asInt32(operandB) > asInt32(operandC)));
             } else {
-              const outcome = this.lessThan(operandC, operandB, false);
+              const outcome = this.greaterThan(operandB, operandC, false);
               this.setReg(base, inst.a, booleanValue(outcome));
             }
           }
@@ -5527,7 +5709,7 @@ export struct Runtime {
             if (isInt32(operandB) && isInt32(operandC)) {
               this.setReg(base, inst.a, booleanValue(asInt32(operandB) >= asInt32(operandC)));
             } else {
-              const outcome = this.lessThan(operandC, operandB, true);
+              const outcome = this.greaterThan(operandB, operandC, true);
               this.setReg(base, inst.a, booleanValue(outcome));
             }
           }
@@ -6111,7 +6293,15 @@ export struct Runtime {
             const nameSlot = usize(inst.c);
             const isPlainObject = isCell(object) && asCell(object) != 0 && this.heap.isObject(asCell(object));
             let cached = deletedValue();
-            if (isPlainObject) cached = this.loadCached(fi, nameSlot, asCell(object));
+            if (isPlainObject) {
+              cached = this.loadCached(fi, nameSlot, asCell(object));
+            } else if (isCell(object) && asCell(object) != 0 && this.functions[usize(fi)].propertyNames[nameSlot] == this.atomLength) {
+              // An array's or a string's own length, which nothing on a
+              // prototype can shadow.
+              const handle = asCell(object);
+              if (this.heap.isArray(handle)) cached = lengthValue(usize(this.heap.arrayLength(handle)));
+              else if (this.heap.isString(handle)) cached = lengthValue(this.heap.stringLength(handle));
+            }
             if (!isDeleted(cached)) {
               this.setReg(base, inst.a, cached);
             } else {
@@ -7052,6 +7242,17 @@ export function mixBits(bits: u64): u32 {
   mixed = mixed.wrappingMultiply(0xC4CE_B9FE_1A85_EC53);
   mixed = mixed ^ (mixed >> 33);
   return u32(mixed & 0xFFFF_FFFF);
+}
+
+// A length as a number: an int32 while it fits.
+export function lengthValue(length: usize): Value {
+  if (length <= 2147483647) return int32Value(i32(length));
+  return doubleValue(f64(length));
+}
+
+// An instruction's c operand read as the signed byte an immediate is.
+export function immediateOf(c: u8): i32 {
+  return c >= 128 ? i32(c) - 256 : i32(c);
 }
 
 export function numericAdd(a: Value, b: Value): Value {

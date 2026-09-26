@@ -191,6 +191,9 @@ export enum Op {
   iterCallReturn,  // a = result, b = iterator, c = value: iterator.return(value) as returned, or the deleted marker when there is no such method.
   isAbsent,        // a = dst, b = src: whether src holds the deleted marker.
   requireIterResult, // a = value: throws a TypeError unless it is an object.
+  inc, // a = dst, b = src: ToNumeric(src) + 1, an int32 kept an int32 while it fits.
+  dec, // a = dst, b = src: ToNumeric(src) - 1.
+  toNumeric, // a = dst, b = src: ToNumeric(src), a postfix update's value.
 }
 
 export struct Inst {
@@ -415,6 +418,9 @@ export function opCode(op: Op): i32 {
     iterCallReturn => 169;
     isAbsent => 170;
     requireIterResult => 171;
+    inc => 172;
+    dec => 173;
+    toNumeric => 174;
   };
 }
 

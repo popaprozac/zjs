@@ -213,6 +213,16 @@ export struct Compiler {
   pendingNameStart: u32;
   pendingNameLength: u32;
   pendingNamePrefix: u32;
+  // Where the next expression should leave its value, or -1: a binding's
+  // register an assignment or declaration is about to store into, so an
+  // expression whose last instruction writes its result can write it
+  // there. Consumed like the pending name; an expression that cannot use
+  // it leaves its value elsewhere and the store copies it.
+  targetReg: i32;
+  // The next expression's value is discarded (an expression statement
+  // in a function, a for loop's update): an assignment or update can
+  // leave its result in the binding's own register.
+  valueUnused: boolean;
   // The register holding `this` in a function that reads it, or -1.
   thisReg: i32;
   // An arrow function; a derived class constructor. A derived
@@ -275,6 +285,37 @@ export struct Compiler {
     const inst = this.code[usize(at)];
     const offset = here - (i32(at) + 1);
     this.code[usize(at)] = instAI16(inst.op, inst.a, offset);
+  }
+
+  // A jump taken when a condition is false, returned for patchJump. A
+  // relational comparison fuses with the branch: the compare-and-jump
+  // instruction takes the two operands (or an operand and a small
+  // integer) and the offset follows in a second word, which is what is
+  // patched. Anything else is its value and jmpIfFalse.
+  function emitBranchIfFalse(inout this, in parser: Parser, inout runtime: Runtime, node: u32): u32 {
+    let current = node;
+    while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+      current = parser.ast.node(current).left;
+    }
+    if (current != NO_NODE && parser.ast.node(current).kind == NodeKind.binary) {
+      const n = parser.ast.node(current);
+      const compare = binaryOp(n.op);
+      const fused = fusedBranch(compare);
+      if (fused != Op.halt) {
+        const immediate = smallIntegerLiteral(in parser, n.right);
+        if (immediate > -129) {
+          const operand = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+          this.emit(instABC(fusedImmediateBranch(compare), operand, immediateByte(immediate), 0));
+          return this.emit(instAI16(Op.halt, 0, 0));
+        }
+        const left = this.compileOperand(in parser, inout runtime, n.left, n.right);
+        const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+        this.emit(instABC(fused, left, right, 0));
+        return this.emit(instAI16(Op.halt, 0, 0));
+      }
+    }
+    const condition = this.compileOperand(in parser, inout runtime, node, NO_NODE);
+    return this.emit(instAI16(Op.jmpIfFalse, condition, 0));
   }
 
   function emitJumpBack(inout this, target: u32): void {
@@ -985,6 +1026,50 @@ export struct Compiler {
     return local.nameConst >= 0 && (local.alwaysCheck || !local.initialized);
   }
 
+  // The register of a binding read as an operand, when it can be read in
+  // place: a local of this function held in a register, whose read needs
+  // no hole check. -1 otherwise.
+  function operandLocalReg(in parser: Parser, node: u32): i32 {
+    let current = node;
+    while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+      current = parser.ast.node(current).left;
+    }
+    if (current == NO_NODE) return -1;
+    const n = parser.ast.node(current);
+    if (n.kind != NodeKind.identExpr) return -1;
+    const local = this.findLocal(in parser, n.nameStart, n.nameLength);
+    if (local < 0) return -1;
+    const index = usize(local);
+    if (this.locals[index].envSlot >= 0 || this.mustCheck(index)) return -1;
+    return i32(this.locals[index].reg);
+  }
+
+  // The register of a binding an assignment can write directly: a local
+  // of this function in a register, not constant, whose write needs no
+  // hole check. -1 otherwise.
+  function storableLocalReg(in parser: Parser, node: u32): i32 {
+    if (node == NO_NODE) return -1;
+    const n = parser.ast.node(node);
+    if (n.kind != NodeKind.identExpr) return -1;
+    const local = this.findLocal(in parser, n.nameStart, n.nameLength);
+    if (local < 0) return -1;
+    const index = usize(local);
+    if (this.locals[index].envSlot >= 0 || this.mustCheck(index) || this.locals[index].isConst) return -1;
+    return i32(this.locals[index].reg);
+  }
+
+  // A value only read by the instruction that consumes it. A local held
+  // in a register is read in place, with no copy, when `later` -- what
+  // is evaluated after it and before the consumer -- cannot assign it; a
+  // register local changes only by an assignment in this function's own
+  // code, so that is the whole question. Anything else compiles into a
+  // temporary as usual.
+  function compileOperand(inout this, in parser: Parser, inout runtime: Runtime, node: u32, later: u32): u8 {
+    const direct = this.operandLocalReg(in parser, node);
+    if (direct >= 0 && !mayAssign(in parser, later)) return u8(direct);
+    return this.compileExpr(in parser, inout runtime, node);
+  }
+
   // Load a binding of this function into a register.
   function loadLocal(inout this, index: usize, dst: u8): void {
     const slot = this.locals[index].envSlot;
@@ -1023,7 +1108,7 @@ export struct Compiler {
       this.emit(instABC(Op.storeEnvSlot, value, hops, u8(slot)));
     } else {
       const reg = this.locals[index].reg;
-      this.emit(instAB(Op.mov, reg, value));
+      if (reg != value) this.emit(instAB(Op.mov, reg, value));
     }
     this.locals[index].initialized = true;
   }
@@ -2023,9 +2108,13 @@ export struct Compiler {
     const contextualPrefix = this.pendingNamePrefix;
     this.pendingNameLength = 0;
     this.pendingNamePrefix = 0;
+    const hintReg = this.targetReg;
+    this.targetReg = -1;
+    const unused = this.valueUnused;
+    this.valueUnused = false;
 
     if (k == NodeKind.numberExpr) {
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       const value = n.num;
       const truncated = f64ToInt32Exact(value);
       // -0 has no int32 form.
@@ -2091,17 +2180,20 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.conditional) {
-      const condition = this.compileExpr(in parser, inout runtime, n.left);
+      // Each branch leaves its value in dst directly where it can.
+      const condition = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
       const jumpElse = this.emit(instAI16(Op.jmpIfFalse, condition, 0));
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       const savedNext = this.nextReg;
+      this.targetReg = i32(dst);
       const consequent = this.compileExpr(in parser, inout runtime, n.right);
-      this.emit(instAB(Op.mov, dst, consequent));
+      if (consequent != dst) this.emit(instAB(Op.mov, dst, consequent));
       const jumpEnd = this.emit(instI16(Op.jmp, 0));
       this.patchJump(jumpElse);
       this.nextReg = savedNext;
+      this.targetReg = i32(dst);
       const alternate = this.compileExpr(in parser, inout runtime, n.third);
-      this.emit(instAB(Op.mov, dst, alternate));
+      if (alternate != dst) this.emit(instAB(Op.mov, dst, alternate));
       this.nextReg = savedNext;
       this.patchJump(jumpEnd);
       return dst;
@@ -2123,7 +2215,7 @@ export struct Compiler {
     }
     if (k == NodeKind.identExpr) {
       const local = this.findLocal(in parser, n.nameStart, n.nameLength);
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       if (local >= 0) {
         this.loadLocal(usize(local), dst);
         return dst;
@@ -2468,7 +2560,7 @@ export struct Compiler {
         this.emit(instAB(Op.loadSuper, dst, key));
         return dst;
       }
-      const object = this.compileExpr(in parser, inout runtime, n.left);
+      const object = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
       if (this.isPrivateName(in parser, n.nameStart, n.nameLength)) {
         const key = this.privateKeyReg(in parser, n.nameStart, n.nameLength);
         const dst = this.allocReg();
@@ -2477,7 +2569,7 @@ export struct Compiler {
       }
       const atom = this.propertyNameAtom(in parser, inout runtime, n.nameStart, n.nameLength);
       const slot = this.nameSlot(atom);
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instABC(Op.loadProp, dst, object, slot));
       return dst;
     }
@@ -2488,9 +2580,9 @@ export struct Compiler {
         this.emit(instAB(Op.loadSuper, dst, key));
         return dst;
       }
-      const object = this.compileExpr(in parser, inout runtime, n.left);
-      const key = this.compileExpr(in parser, inout runtime, n.right);
-      const dst = this.allocReg();
+      const object = this.compileOperand(in parser, inout runtime, n.left, n.right);
+      const key = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instABC(Op.loadElem, dst, object, key));
       return dst;
     }
@@ -2679,14 +2771,23 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.binary) {
-      const left = this.compileExpr(in parser, inout runtime, n.left);
-      const right = this.compileExpr(in parser, inout runtime, n.right);
+      const immediateOp = immediateForm(binaryOp(n.op));
+      const immediate = smallIntegerLiteral(in parser, n.right);
+      if (immediateOp != Op.halt && immediate > -129) {
+        // `x + 1`, `i < 10`: the literal rides in the instruction.
+        const operand = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+        const into = hintReg >= 0 ? u8(hintReg) : this.allocReg();
+        this.emit(instABC(immediateOp, into, operand, immediateByte(immediate)));
+        return into;
+      }
+      const left = this.compileOperand(in parser, inout runtime, n.left, n.right);
+      const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
       const op = binaryOp(n.op);
       if (op == Op.halt) {
         this.hadError = true;
         return 0;
       }
-      const dst = this.allocReg();
+      const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instABC(op, dst, left, right));
       return dst;
     }
@@ -2718,6 +2819,26 @@ export struct Compiler {
       if (target.kind != NodeKind.identExpr) {
         this.hadError = true;
         return 0;
+      }
+      const stepOp = n.op == TokenKind.plusPlus ? Op.inc : Op.dec;
+      const binding = this.storableLocalReg(in parser, n.left);
+      if (binding >= 0) {
+        // A register binding steps in place. Its value, when wanted, is a
+        // copy: the new value for prefix, ToNumeric of the old for postfix.
+        const reg = u8(binding);
+        if (unused) {
+          this.emit(instAB(stepOp, reg, reg));
+          return reg;
+        }
+        const copy = this.allocReg();
+        if (k == NodeKind.postfix) {
+          this.emit(instAB(Op.toNumeric, copy, reg));
+          this.emit(instAB(stepOp, reg, copy));
+        } else {
+          this.emit(instAB(stepOp, reg, reg));
+          this.emit(instAB(Op.mov, copy, reg));
+        }
+        return copy;
       }
       // ToNumeric(old) is `old - 0` for the numbers and strings the engine
       // has; a postfix expression's value is that numeric old value.
@@ -2862,7 +2983,18 @@ export struct Compiler {
       return value;
     }
     if (k == NodeKind.assignment) {
-      const target = parser.ast.node(n.left);
+      const assigned = parser.ast.node(n.left);
+      const into = this.storableLocalReg(in parser, n.left);
+      if (into >= 0 && unused && n.op == TokenKind.eq) {
+        // A statement `x = e` into a register binding: e leaves its value
+        // in x's register when its last instruction writes it.
+        this.nameNext(assigned.nameStart, assigned.nameLength, 0);
+        this.targetReg = into;
+        const value = this.compileExpr(in parser, inout runtime, n.right);
+        if (value != u8(into)) this.emit(instAB(Op.mov, u8(into), value));
+        return u8(into);
+      }
+      const target = assigned;
       if (target.kind == NodeKind.identExpr) {
         let value: u8 = 0;
         if (n.op == TokenKind.eq) {
@@ -2903,7 +3035,13 @@ export struct Compiler {
         return value;
       }
       if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
-        const object = this.compileExpr(in parser, inout runtime, target.left);
+        let object: u8 = 0;
+        const objectReg = this.operandLocalReg(in parser, target.left);
+        if (objectReg >= 0 && !mayAssign(in parser, n.right) && (target.kind == NodeKind.member || !mayAssign(in parser, target.right))) {
+          object = u8(objectReg);
+        } else {
+          object = this.compileExpr(in parser, inout runtime, target.left);
+        }
         if (n.op == TokenKind.eq) {
           if (target.kind == NodeKind.member) {
             const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
@@ -3025,14 +3163,16 @@ export struct Compiler {
             return 0;
           }
           const target = base + u8(2 + j);
+          this.targetReg = i32(target);
           const argReg = this.compileExpr(in parser, inout runtime, argument);
           if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
           this.nextReg = base + u8(2 + argCount);
           j = j + 1;
         }
-        this.emit(instABC(Op.methodInvoke, base, base, u8(argCount)));
+        const result = hintReg >= 0 ? u8(hintReg) : base;
+        this.emit(instABC(Op.methodInvoke, result, base, u8(argCount)));
         this.nextReg = base + 1;
-        return base;
+        return result;
       }
       // Callee at base, arguments contiguous above it, result into base.
       const base = this.allocReg();
@@ -3041,6 +3181,7 @@ export struct Compiler {
         this.allocReg();
         slot = slot + 1;
       }
+      this.targetReg = i32(base);
       const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
       if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
       let j: u32 = 0;
@@ -3051,13 +3192,15 @@ export struct Compiler {
           return 0;
         }
         const target = base + u8(1 + j);
+        this.targetReg = i32(target);
         const argReg = this.compileExpr(in parser, inout runtime, argument);
         if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
         j = j + 1;
       }
-      this.emit(instABC(Op.invoke, base, base, u8(argCount)));
+      const result = hintReg >= 0 ? u8(hintReg) : base;
+      this.emit(instABC(Op.invoke, result, base, u8(argCount)));
       this.nextReg = base + 1;
-      return base;
+      return result;
     }
     if (k == NodeKind.sequence) {
       let last: u8 = 0;
@@ -3644,8 +3787,12 @@ export struct Compiler {
           }
           if (decl.left != NO_NODE) {
             this.nameNext(decl.nameStart, decl.nameLength, 0);
+            const index = usize(local);
+            if (this.locals[index].envSlot < 0 && !this.mustCheck(index) && !this.locals[index].isConst) {
+              this.targetReg = i32(this.locals[index].reg);
+            }
             const value = this.compileExpr(in parser, inout runtime, decl.left);
-            this.storeLocal(usize(local), value);
+            this.storeLocal(index, value);
           }
         } else if (n.op == TokenKind.kwVar) {
           // Script-mode `var` is a global binding.
@@ -3669,6 +3816,10 @@ export struct Compiler {
           }
           if (decl.left != NO_NODE) {
             this.nameNext(decl.nameStart, decl.nameLength, 0);
+            // Its register is written only by the initializer's last
+            // instruction, after every read of the binding (checked for
+            // the hole) has happened.
+            if (this.locals[usize(local)].envSlot < 0) this.targetReg = i32(this.locals[usize(local)].reg);
             const value = this.compileExpr(in parser, inout runtime, decl.left);
             this.initLocal(usize(local), value);
           } else {
@@ -3738,7 +3889,11 @@ export struct Compiler {
     }
     if (k == NodeKind.returnStmt) {
       let r: u8 = 0;
-      if (n.left != NO_NODE) {
+      if (n.left != NO_NODE && this.regionDepth == 0 && !this.isAsyncGeneratorBody) {
+        // Nothing runs between the read and the return: no finally block
+        // could assign the binding in between.
+        r = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+      } else if (n.left != NO_NODE) {
         r = this.compileExpr(in parser, inout runtime, n.left);
         if (this.isAsyncGeneratorBody) {
           // An async generator awaits what it returns, before its
@@ -3765,8 +3920,7 @@ export struct Compiler {
     }
     if (k == NodeKind.ifStmt) {
       this.resetCompletion();
-      const condition = this.compileExpr(in parser, inout runtime, n.left);
-      const jumpElse = this.emit(instAI16(Op.jmpIfFalse, condition, 0));
+      const jumpElse = this.emitBranchIfFalse(in parser, inout runtime, n.left);
       this.resetTemps();
       this.compileStmt(in parser, inout runtime, n.right);
       if (n.third != NO_NODE) {
@@ -3784,8 +3938,7 @@ export struct Compiler {
       const loopTop = u32(this.code.length);
       this.loopPush(true);
       this.loopSetContinue(loopTop);
-      const condition = this.compileExpr(in parser, inout runtime, n.left);
-      const jumpExit = this.emit(instAI16(Op.jmpIfFalse, condition, 0));
+      const jumpExit = this.emitBranchIfFalse(in parser, inout runtime, n.left);
       this.resetTemps();
       this.compileStmt(in parser, inout runtime, n.right);
       this.emitJumpBack(loopTop);
@@ -3837,8 +3990,7 @@ export struct Compiler {
       this.loopPush(true);
       let jumpExit: i32 = -1;
       if (n.right != NO_NODE) {
-        const condition = this.compileExpr(in parser, inout runtime, n.right);
-        jumpExit = i32(this.emit(instAI16(Op.jmpIfFalse, condition, 0)));
+        jumpExit = i32(this.emitBranchIfFalse(in parser, inout runtime, n.right));
         this.resetTemps();
       }
       if (n.childrenCount > 0) this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
@@ -3846,6 +3998,7 @@ export struct Compiler {
       this.loopSetContinue(bound5);
       if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
       if (n.third != NO_NODE) {
+        this.valueUnused = true;
         const unused = this.compileExpr(in parser, inout runtime, n.third);
         this.resetTemps();
       }
@@ -3977,6 +4130,7 @@ export struct Compiler {
     // An expression statement. At the program top level its value is moved
     // into the reserved result register so the final Return picks up the
     // last one whatever path ran.
+    if (this.lastExprReg < 0) this.valueUnused = true;
     const r = this.compileExpr(in parser, inout runtime, node);
     if (this.lastExprReg >= 0) {
       const dst = u8(this.lastExprReg);
@@ -3984,6 +4138,73 @@ export struct Compiler {
     }
     this.resetTemps();
   }
+}
+
+// The compare-and-jump that jumps when a comparison is false, or halt.
+function fusedBranch(op: Op): Op {
+  if (op == Op.cmpLt) return Op.jmpIfNotLt;
+  if (op == Op.cmpLe) return Op.jmpIfNotLe;
+  if (op == Op.cmpGt) return Op.jmpIfNotGt;
+  if (op == Op.cmpGe) return Op.jmpIfNotGe;
+  return Op.halt;
+}
+
+// The same with a small integer as the right operand.
+function fusedImmediateBranch(op: Op): Op {
+  if (op == Op.cmpLt) return Op.jmpIfNotLtImm;
+  if (op == Op.cmpLe) return Op.jmpIfNotLeImm;
+  if (op == Op.cmpGt) return Op.jmpIfNotGtImm;
+  return Op.jmpIfNotGeImm;
+}
+
+// The instruction taking a small integer in place of its right operand,
+// or halt for an operator that has none.
+function immediateForm(op: Op): Op {
+  if (op == Op.add) return Op.addImm;
+  if (op == Op.sub) return Op.subImm;
+  if (op == Op.cmpLt) return Op.cmpLtImm;
+  if (op == Op.cmpLe) return Op.cmpLeImm;
+  if (op == Op.cmpGt) return Op.cmpGtImm;
+  if (op == Op.cmpGe) return Op.cmpGeImm;
+  return Op.halt;
+}
+
+// A numeric literal that is an integer in [-128, 127] (a signed byte),
+// or -129 for anything else. -0 is not one: it is not an int32.
+function smallIntegerLiteral(in parser: Parser, node: u32): i32 {
+  if (node == NO_NODE) return -129;
+  const n = parser.ast.node(node);
+  if (n.kind != NodeKind.numberExpr) return -129;
+  const value = n.num;
+  if (value != value || value < -128.0 || value > 127.0) return -129;
+  if (value == 0.0 && 1.0 / value < 0.0) return -129;
+  const truncated = f64ToInt32Exact(value);
+  if (!truncated.exact) return -129;
+  return truncated.value;
+}
+
+// A signed byte as the instruction's c operand.
+function immediateByte(value: i32): u8 {
+  return value < 0 ? u8(value + 256) : u8(value);
+}
+
+// Whether evaluating a subtree may assign a binding: an assignment (plain,
+// compound, logical, or destructuring) or an update anywhere in it,
+// outside a nested function body, which does not run as part of it.
+function mayAssign(in parser: Parser, node: u32): boolean {
+  if (node == NO_NODE) return false;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc) return false;
+  if (k == NodeKind.assignment) return true;
+  if ((k == NodeKind.unary || k == NodeKind.postfix) && (n.op == TokenKind.plusPlus || n.op == TokenKind.minusMinus)) return true;
+  if (mayAssign(in parser, n.left) || mayAssign(in parser, n.right) || mayAssign(in parser, n.third)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (mayAssign(in parser, parser.ast.child(node, i))) return true;
+    i = i + 1;
+  }
+  return false;
 }
 
 // Kinds that are statements but not yet compiled.
@@ -4226,7 +4447,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
   compiler.isArrow = n.kind == NodeKind.arrowFunc;
@@ -5102,7 +5323,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));
