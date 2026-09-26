@@ -13,9 +13,9 @@ import math from "std/math";
 import native from "./builtins/clock.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -463,6 +463,37 @@ export struct Runtime {
       return this.heap.slot(proto, cache.slot);
     }
     return deletedValue();
+  }
+
+  // The object a named read on this cell goes straight to: an array
+  // without named properties of its own reads through to its prototype,
+  // Array.prototype; a string, for any name but its length and indices,
+  // to String.prototype. 0 for any other cell.
+  function inheritingProto(handle: u32): u32 {
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_ARRAY) return this.heap.linkOf(handle) == 0 ? this.arrayProto : 0;
+    if (tag == TAG_STRING) return this.stringProto;
+    return 0;
+  }
+
+  // A cached read of an inherited name on an array or a string (see
+  // inheritingProto); deleted for a miss.
+  function loadCachedInherited(fi: u32, nameSlot: usize, handle: u32): Value {
+    const cache = this.functions[usize(fi)].caches[nameSlot];
+    if (cache.kind != CACHE_INHERITED) return deletedValue();
+    const proto = this.inheritingProto(handle);
+    if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return deletedValue();
+    if ((this.heap.attrOf(proto, cache.slot) & PROP_ACCESSOR) != 0) return deletedValue();
+    return this.heap.slot(proto, cache.slot);
+  }
+
+  function populateInheritedCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    const proto = this.inheritingProto(handle);
+    if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return;
+    const inherited = this.heap.objectFindSlot(proto, atom);
+    if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
+    const protoClass = this.heap.objectClass(proto);
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_INHERITED, depth: 1, receiverClass: 0, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
@@ -6423,16 +6454,19 @@ export struct Runtime {
           loadProp => {
             const object = this.reg(base, inst.b);
             const nameSlot = usize(inst.c);
-            const isPlainObject = isCell(object) && asCell(object) != 0 && this.heap.isObject(asCell(object));
+            const isCellValue = isCell(object) && asCell(object) != 0;
+            const isPlainObject = isCellValue && this.heap.isObject(asCell(object));
             let cached = deletedValue();
             if (isPlainObject) {
               cached = this.loadCached(fi, nameSlot, asCell(object));
-            } else if (isCell(object) && asCell(object) != 0 && this.functions[usize(fi)].propertyNames[nameSlot] == this.atomLength) {
+            } else if (isCellValue && this.functions[usize(fi)].propertyNames[nameSlot] == this.atomLength) {
               // An array's or a string's own length, which nothing on a
               // prototype can shadow.
               const handle = asCell(object);
               if (this.heap.isArray(handle)) cached = lengthValue(usize(this.heap.arrayLength(handle)));
               else if (this.heap.isString(handle)) cached = lengthValue(this.heap.stringLength(handle));
+            } else if (isCellValue) {
+              cached = this.loadCachedInherited(fi, nameSlot, asCell(object));
             }
             if (!isDeleted(cached)) {
               this.setReg(base, inst.a, cached);
@@ -6448,7 +6482,11 @@ export struct Runtime {
                   throwing = true;
                 } else {
                   this.setReg(base, inst.a, found);
-                  if (isPlainObject) this.populateLoadCache(fi, nameSlot, asCell(object), atom);
+                  if (isPlainObject) {
+                    this.populateLoadCache(fi, nameSlot, asCell(object), atom);
+                  } else if (isCellValue) {
+                    this.populateInheritedCache(fi, nameSlot, asCell(object), atom);
+                  }
                 }
               }
             }

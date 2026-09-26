@@ -6,9 +6,9 @@
 // same as an array. A real array's elements still read straight fromIndex
 // the heap inside the property protocol. Values held in Z locals across
 // a call into JavaScript are rooted, since a collection may run there.
-import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isInt32, isNumber } from "../value.zs";
+import { Value, undefinedValue, nullValue, deletedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isInt32, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, bytesOf } from "../heap.zs";
+import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, PROP_ACCESSOR, bytesOf } from "../heap.zs";
 import { Runtime, HostFunction, ERROR_KIND_RANGE, DescriptorInput, emptyDescriptorInput, toNumber, isIntegralDouble, truncateDouble } from "../runtime.zs";
 
 const MAX_SAFE_LENGTH: f64 = 9007199254740991.0;
@@ -60,6 +60,18 @@ function getIndex(inout runtime: Runtime, object: Value, index: f64): Value {
 
 function hasIndex(inout runtime: Runtime, object: Value, index: f64): boolean {
   return runtime.hasProperty(object, indexKey(index));
+}
+
+// An array's own data element at `index`, read in place: what HasProperty
+// then Get would find there, with nothing observable in between. Deleted
+// for a hole, an accessor, or anything but an array, which take the
+// general path.
+function ownElement(in runtime: Runtime, object: Value, index: f64): Value {
+  if (!isArrayValue(in runtime, object) || index >= 4294967295.0) return deletedValue();
+  const handle = asCell(object);
+  const at = u32(index);
+  if (!runtime.heap.arrayHasIndex(handle, at) || (runtime.heap.attrOf(handle, at) & PROP_ACCESSOR) != 0) return deletedValue();
+  return runtime.heap.arrayGet(handle, at);
 }
 
 // Set(O, P, V, true).
@@ -609,10 +621,13 @@ function findWalk(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
   let outcome = want == FIND_INDEX ? int32Value(-1) : undefinedValue();
   let done = false;
   while (!done && (fromEnd ? k >= 0.0 : k < length)) {
-    const element = getIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) break;
+    let element = ownElement(in runtime, object, k);
+    if (isDeleted(element)) {
+      element = getIndex(inout runtime, object, k);
+      if (runtime.pendingThrow) break;
+    }
     runtime.pushTempRoot(element);
-    const verdict = callWith3(inout runtime, callback, receiver, element, doubleValue(k), object);
+    const verdict = callWith3(inout runtime, callback, receiver, element, integerValue(k), object);
     runtime.popTempRoot();
     if (runtime.pendingThrow) break;
     if (runtime.toBooleanValue(verdict)) {
@@ -671,13 +686,19 @@ function walkArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   let k = 0.0;
   let stop = false;
   while (!stop && k < length) {
-    const present = hasIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) break;
-    if (present) {
-      const element = getIndex(inout runtime, object, k);
+    let element = ownElement(in runtime, object, k);
+    let present = !isDeleted(element);
+    if (!present) {
+      present = hasIndex(inout runtime, object, k);
       if (runtime.pendingThrow) break;
+      if (present) {
+        element = getIndex(inout runtime, object, k);
+        if (runtime.pendingThrow) break;
+      }
+    }
+    if (present) {
       runtime.pushTempRoot(element);
-      const produced = callWith3(inout runtime, callback, receiver, element, doubleValue(k), object);
+      const produced = callWith3(inout runtime, callback, receiver, element, integerValue(k), object);
       if (runtime.pendingThrow) {
         runtime.popTempRoot();
         break;
@@ -762,12 +783,18 @@ function reduceWalk(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   }
   runtime.pushTempRoot(accumulator);
   while (fromEnd ? k >= 0.0 : k < length) {
-    const present = hasIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) break;
-    if (present) {
-      const element = getIndex(inout runtime, object, k);
+    let element = ownElement(in runtime, object, k);
+    let present = !isDeleted(element);
+    if (!present) {
+      present = hasIndex(inout runtime, object, k);
       if (runtime.pendingThrow) break;
-      accumulator = runtime.callValue4(callback, undefinedValue(), accumulator, element, doubleValue(k), object);
+      if (present) {
+        element = getIndex(inout runtime, object, k);
+        if (runtime.pendingThrow) break;
+      }
+    }
+    if (present) {
+      accumulator = runtime.callValue4(callback, undefinedValue(), accumulator, element, integerValue(k), object);
       if (runtime.pendingThrow) break;
       runtime.popTempRoot();
       runtime.pushTempRoot(accumulator);

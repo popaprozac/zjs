@@ -434,6 +434,10 @@ export const CACHE_EMPTY: u8 = 0;
 export const CACHE_OWN: u8 = 1;
 export const CACHE_PROTO: u8 = 2;
 export const CACHE_TRANSITION: u8 = 3;
+// A read on an array with no named properties of its own, or on a
+// string, of a name its prototype holds: the prototype and its class,
+// and the slot there.
+export const CACHE_INHERITED: u8 = 4;
 
 export struct PropertyCache {
   kind: u8;
