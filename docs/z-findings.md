@@ -891,6 +891,12 @@ G21 (bytes out to native) and G26 (bytes to String, now landed).
 ## G31 — Checked indexing and arithmetic cost the interpreter loop about a tenth
 
 **Status:** `proposed` — Codex (2026-09-21): unchecked indexing remains a separate design deliberation, not an approved API; the measured cost stands as the case for it
+**Re-measured 2026-09-25 at `bdc237d2`:** compiling the engine's emitted C
+with every bounds check, and then also every checked add/sub/mul, turned
+into a no-op moved the ten speed kernels by -13% to +16% each, in both
+directions: code layout, not the checks. After the compiler rework that
+halved the instruction count, the checks are not a measurable cost; the
+engine does not need this now.
 **Confirmed:** z-lang `93611fe5`, measured · **Blocks:** no
 **Found:** the performance spike after classes.
 
@@ -1666,6 +1672,59 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   `2b70aea4`: 53,330 tests, no test changes outcome in either direction.
 - The pin stays `bdc237d2`: the candidate passes everything, and moving
   the pin is a decision, not a consequence. Nothing in the engine changed.
+
+## G50 — No way to append a run of elements to an array in one call
+
+**Status:** `proposed` · **Size:** small · **Priority:** medium ·
+**Confirmed:** z-lang `bdc237d2`, Stage 0 · **Blocks:** no
+
+`Array<T>` has `push`, `withCapacity`, `reserveCapacity`, `clear`, and
+`pop`, and nothing that moves a run of elements at once. The engine
+copies bytes and code units one element at a time, each through `push`
+and its capacity check: joining two strings and extending a string
+buffer a concatenation made, building JSON and `Array.prototype.join`
+output, copying a regular expression's subject for the matcher, growing
+an object's slots. A copyable element type could take the whole run with
+one capacity check and one `memcpy`.
+
+The illustrative shape is `append(from: Slice<T>)` for copyable `T`,
+accepting an `Array<T>` or a slice of one; a `Slice.copy(into:)` would do
+as well. What matters is that the lowering is a block copy, not a loop.
+
+Minimal reproduction: probe `array-append-slice` (`COMPILER-REJECTED`:
+`Array has no method "append"`).
+
+## G51 — Build-time selection: opt-in engine features and platform code
+
+**Status:** `proposed` · **Size:** large (the planned `std/target` and
+`comptime` work) · **Priority:** high for the engine's size goal ·
+**Confirmed:** z-lang `bdc237d2` · **Blocks:** no (interim approaches exist)
+
+The engine's first goal is to be small, with features opt-in: an embedder
+that does not want regular expressions, `Date`, or the web APIs should not
+link them. Its third is to be portable. Both want a way to choose code at
+build time:
+
+- **Features.** Selecting modules by which entry an embedder builds works
+  for a module nothing else refers to, and the engine will be arranged
+  that way (optional builtins installed from the entry, the core never
+  importing them). What it cannot do is remove a branch or a field inside
+  the core that exists for an optional feature (the runtime keeps a
+  regular-expression backend, the compiler compiles regular-expression
+  literals), or give an embedder one library with a few features
+  switched off without a separate entry module per combination.
+- **Platforms.** Local time is POSIX `localtime_r` and `tm_gmtoff` in
+  `builtins/clock.h`; Windows needs another call, and a 32-bit target
+  (wasm32) needs another context-handle packing. Today these can only go
+  in native headers behind the C preprocessor.
+
+Z's documents plan a small compile-time target facility in `std/target`,
+with branches eliminated before semantic checking and emission, and a
+`comptime` experiment "only after ... real use cases". These are real use
+cases: feature flags an embedder sets in `z.json` and reads at compile
+time, and platform branches on the target's OS and pointer width.
+
+No probe: this is a design request, not a missing method.
 
 ## G10 — Z is macOS-only
 

@@ -1,4 +1,5 @@
 # probe status at z-lang bdc237d2 (clean). Written by run.sh --record.
+array-append-slice COMPILER-REJECTED
 array-capacity-read LANDED
 array-capacity LANDED
 array-pop LANDED
