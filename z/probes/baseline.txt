@@ -10,6 +10,7 @@ f64-decimal-text COMPILER-REJECTED
 field-view-borrow LANDED
 float-bits LANDED
 in-borrow-with-field-read COMPILER-REJECTED
+inline-function COMPILER-REJECTED
 inout-indexed-storage COMPILER-REJECTED
 inout-receiver-operand COMPILER-REJECTED
 integer-bits LANDED

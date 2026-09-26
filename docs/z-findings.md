@@ -1777,6 +1777,37 @@ same fix.
 Minimal reproduction: probe `f64-decimal-text` (`COMPILER-REJECTED`:
 unknown standard module; the module and names are a proposal).
 
+## G53 — No way to ask for a function to be inlined
+
+**Status:** `proposed` · **Size:** small · **Priority:** high for the
+engine's speed goal · **Confirmed:** z-lang `bdc237d2`, Stage 0 ·
+**Blocks:** no
+
+Every Z function lowers to a plain `static` C function and clang decides
+what to inline. Small functions are inlined into ordinary callers, but
+not into the engine's dispatch loop, which is one very large function:
+in the optimized build (`-O2`) the loop calls `numericAdd` and
+`numericSub` out of line for every integer `+` and `-`, and
+`enterCallable` for every call. Marking five helpers
+`__attribute__((always_inline))` in a copy of the generated C
+(`numericAdd`, `numericSub`, `int32OrDouble`, `enterCallable`,
+`openFrame`) measured, 2026-09-26, interleaved medians: calls -9.3%,
+properties -5.4%, closures -5.1%, arrays -4.8%, nothing slower beyond
+noise.
+
+The engine could copy each helper's body into the loop by hand, but
+that duplicates the arithmetic and the frame protocol in two places,
+which is the kind of workaround that is hard to find and undo later.
+The ask is a declaration-site hint, as other systems languages have
+(`inline fn`, `#[inline(always)]`): the illustrative spelling is
+`inline function name(...)`, lowered to `static inline
+__attribute__((always_inline))` (`__forceinline` for MSVC), and a
+diagnostic when the function is recursive or its address is taken, if
+that matters to the design.
+
+Minimal reproduction: probe `inline-function` (`COMPILER-REJECTED`; the
+spelling is a proposal).
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic
