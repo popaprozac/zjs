@@ -27,14 +27,14 @@ clang -std=c11 -Wall -Wextra -Werror -O2 -c \
 echo "[3/6] libzjs.a (engine, shim, and the native backend in one archive)"
 rm -f "$OUT/libzjs.a"
 cp "$HERE/engine/build/libzjsz.a" "$OUT/libzjs.a"
-ar r "$OUT/libzjs.a" "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/zjs_regexp.o"
+ar r "$OUT/libzjs.a" "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/cutils.o" "$OUT/native/zjs_regexp.o"
 ranlib "$OUT/libzjs.a"
 
 echo "[3b/6] lifecycle test (its own build of the library, with the test-only gate; not shipped)"
 zc build "$HERE/tests/lifecycle" --release >/dev/null
 clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" -I "$HERE/tests/lifecycle/build" -I "$HERE/engine/native" \
   -o "$OUT/lifecycle_test" "$HERE/tests/lifecycle_test.c" "$HERE/tests/lifecycle/build/libzjsz.a" \
-  "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/zjs_regexp.o"
+  "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/cutils.o" "$OUT/native/zjs_regexp.o"
 "$OUT/lifecycle_test"
 
 echo "[4/6] test262 runner (unmodified)"

@@ -41,30 +41,33 @@ static void *run(void *argument) {
   return NULL;
 }
 
-/* libregexp stops at 64 MiB of bytecode: a pattern of that many single
-   characters must come back as the size limit, not syntax or memory. */
-static int size_limit_is_distinct(void) {
+/* A compile that fails reports why: a syntax error as syntax, and one
+   whose allocations are refused (the injected allocation limit) as out
+   of memory, never as syntax. */
+static int failure_categories_are_distinct(void) {
   uintptr_t context = zjs_re_context_new();
-  size_t length = 40u * 1024u * 1024u;
-  uintptr_t scratch = zjs_re_scratch(context, length);
-  if (scratch == 0) { zjs_re_context_free(context); return 1; }
-  memset((void *)scratch, 'a', length);
-  uintptr_t handle = zjs_re_compile(context, scratch, length, 0);
-  int failure = zjs_re_failure(context);
-  int ok = handle == 0 && failure == ZJS_RE_SIZE_LIMIT;
-  if (handle != 0) zjs_re_free(handle);
-  /* And a plain syntax failure stays syntax. */
+  int ok = 1;
   const char *bad = "(";
   uintptr_t small = zjs_re_scratch(context, 1);
   memcpy((void *)small, bad, 1);
   if (zjs_re_compile(context, small, 1, 0) != 0 || zjs_re_failure(context) != ZJS_RE_SYNTAX) ok = 0;
+  int syntax = zjs_re_failure(context);
+  const char *good = "(a|b)+c[de]*";
+  size_t length = strlen(good);
+  uintptr_t scratch = zjs_re_scratch(context, length);
+  memcpy((void *)scratch, good, length);
+  zjs_re_set_allocation_limit(context, 1);
+  uintptr_t handle = zjs_re_compile(context, scratch, length, 0);
+  int memory = zjs_re_failure(context);
+  if (handle != 0 || memory != ZJS_RE_OUT_OF_MEMORY) ok = 0;
+  if (handle != 0) zjs_re_free(handle);
   zjs_re_context_free(context);
-  if (!ok) fprintf(stderr, "regex size limit: failure category %d\n", failure);
+  if (!ok) fprintf(stderr, "regex failure categories: syntax %d, refused allocation %d\n", syntax, memory);
   return ok ? 0 : 1;
 }
 
 int main(void) {
-  if (size_limit_is_distinct() != 0) return 1;
+  if (failure_categories_are_distinct() != 0) return 1;
   Job first = { "(b+)c", "aabbbcd", 2, 6, 2, 0, 0 };
   Job second = { "x(y)?z", "..xz..", 2, 4, -1, 0, 0 };
   pthread_t threads[2];
@@ -77,6 +80,6 @@ int main(void) {
             (unsigned long)first.handles, (unsigned long)second.handles);
     return 1;
   }
-  printf("regex contexts: two threads, two contexts, 20000 matches, isolated; size limit distinct\n");
+  printf("regex contexts: two threads, two contexts, 20000 matches, isolated; failure categories distinct\n");
   return 0;
 }

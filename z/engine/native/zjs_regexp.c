@@ -43,7 +43,15 @@ typedef struct {
   uint8_t *bytecode;
   int length;
   int captures;
+  /* Capture pointers the matcher needs: two per capture and its own
+     registers. */
+  int alloc_count;
   int flags;
+  /* The group names, one NUL-terminated name per capture after the
+     first (empty for an unnamed one): the library follows each name
+     with a scope byte, which this form leaves out. NULL for none. */
+  char *names;
+  int names_length;
   Context *owner;
 } Pattern;
 
@@ -70,16 +78,16 @@ void *lre_realloc(void *opaque, void *ptr, size_t size) {
   return grown;
 }
 
-bool lre_check_stack_overflow(void *opaque, size_t alloca_size) {
+int lre_check_stack_overflow(void *opaque, size_t alloca_size) {
   Context *context = (Context *)opaque;
   char probe;
   uintptr_t here = (uintptr_t)&probe;
-  if (context == NULL || context->stack_floor == 0) return false;
+  if (context == NULL || context->stack_floor == 0) return 0;
   if (here < alloca_size || here - alloca_size < context->stack_floor) {
     context->last_failure = ZJS_RE_STACK_LIMIT;
-    return true;
+    return 1;
   }
-  return false;
+  return 0;
 }
 
 int lre_check_timeout(void *opaque) {
@@ -200,7 +208,38 @@ uintptr_t zjs_re_compile(uintptr_t handle, uintptr_t pattern, uintptr_t length, 
   compiled->bytecode = bytecode;
   compiled->length = bytecode_length;
   compiled->captures = lre_get_capture_count(bytecode);
+  compiled->alloc_count = lre_get_alloc_count(bytecode);
   compiled->flags = lre_get_flags(bytecode);
+  compiled->names = NULL;
+  compiled->names_length = 0;
+  const char *names = lre_get_groupnames(bytecode);
+  if (names != NULL) {
+    /* Each name is followed by LRE_GROUP_NAME_TRAILER_LEN bytes counting
+       its NUL: keep the NUL, drop the rest. */
+    size_t total = 0;
+    const char *cursor = names;
+    for (int g = 1; g < compiled->captures; g++) {
+      size_t len = strlen(cursor);
+      total += len + 1;
+      cursor += len + LRE_GROUP_NAME_TRAILER_LEN;
+    }
+    compiled->names = (char *)lre_realloc(context, NULL, total == 0 ? 1 : total);
+    if (compiled->names == NULL) {
+      lre_realloc(NULL, bytecode, 0);
+      lre_realloc(NULL, compiled, 0);
+      context->last_failure = ZJS_RE_OUT_OF_MEMORY;
+      return 0;
+    }
+    cursor = names;
+    size_t at = 0;
+    for (int g = 1; g < compiled->captures; g++) {
+      size_t len = strlen(cursor);
+      memcpy(compiled->names + at, cursor, len + 1);
+      at += len + 1;
+      cursor += len + LRE_GROUP_NAME_TRAILER_LEN;
+    }
+    compiled->names_length = (int)total;
+  }
   compiled->owner = context;
   context->live_handles += 1;
   context->live_bytes += (uintptr_t)bytecode_length;
@@ -227,6 +266,7 @@ void zjs_re_free(uintptr_t handle) {
     compiled->owner->live_bytes -= (uintptr_t)compiled->length;
   }
   lre_realloc(NULL, compiled->bytecode, 0);
+  if (compiled->names != NULL) lre_realloc(NULL, compiled->names, 0);
   free(compiled);
 }
 
@@ -240,20 +280,8 @@ int zjs_re_has_names(uintptr_t handle) {
 
 int zjs_re_name_byte(uintptr_t handle, int index) {
   Pattern *compiled = (Pattern *)handle;
-  const char *names = lre_get_groupnames(compiled->bytecode);
-  if (names == NULL || index < 0) return -1;
-  /* Names occupy (captures - 1) NUL-terminated strings; walk to the end. */
-  const char *cursor = names;
-  int remaining = compiled->captures - 1;
-  int total = 0;
-  while (remaining > 0) {
-    int len = (int)strlen(cursor) + 1;
-    total += len;
-    cursor += len;
-    remaining -= 1;
-  }
-  if (index >= total) return -1;
-  return (int)(unsigned char)names[index];
+  if (compiled->names == NULL || index < 0 || index >= compiled->names_length) return -1;
+  return (int)(unsigned char)compiled->names[index];
 }
 
 /* --- Matching --- */
@@ -266,11 +294,11 @@ int zjs_re_exec(uintptr_t handle, uintptr_t pattern_handle, uintptr_t input, uin
   ((uint8_t *)input)[length << type] = 0;
   context->capture_total = compiled->captures;
   if (context->capture_total > ZJS_RE_MAX_CAPTURES) return ZJS_RE_BAD_BYTECODE;
-  if (context->capture_total > context->capture_slots) {
-    uint8_t **grown = (uint8_t **)lre_realloc(context, context->captures, sizeof(uint8_t *) * 2 * (size_t)context->capture_total);
+  if (compiled->alloc_count > context->capture_slots) {
+    uint8_t **grown = (uint8_t **)lre_realloc(context, context->captures, sizeof(uint8_t *) * (size_t)compiled->alloc_count);
     if (grown == NULL) return ZJS_RE_OUT_OF_MEMORY;
     context->captures = grown;
-    context->capture_slots = context->capture_total;
+    context->capture_slots = compiled->alloc_count;
   }
   uint8_t **captures = context->captures;
   if (start > length) start = length;
@@ -321,5 +349,5 @@ uintptr_t zjs_re_allocation_count(uintptr_t handle) {
 
 uintptr_t zjs_re_retained_bytes(uintptr_t handle) {
   Context *context = (Context *)handle;
-  return context->scratch_capacity + (uintptr_t)context->capture_slots * 2 * sizeof(uint8_t *);
+  return context->scratch_capacity + (uintptr_t)context->capture_slots * sizeof(uint8_t *);
 }
