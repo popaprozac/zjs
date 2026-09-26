@@ -654,6 +654,13 @@ export struct Heap {
       this.setSlot(handle, u32(existing), value);
       return;
     }
+    this.objectAdd(handle, atom, value);
+  }
+
+  // Add a property the object does not have yet, with the default
+  // attributes: what filling a fresh object needs, without looking the
+  // name up first.
+  function objectAdd(inout this, handle: u32, atom: u32, value: Value): void {
     if ((this.headers[usize(atom)].flags & FLAG_INDEX_KEY) != 0) this.indexKeysDefined = true;
     const parentClass = this.headers[usize(handle)].payload;
     if ((parentClass & DICT_BIT) != 0) {

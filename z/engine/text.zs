@@ -249,6 +249,17 @@ export function appendUnits(inout target: Array<u16>, source: Array<u16>): void 
   }
 }
 
+// source[start, end) onto target, with no slice in between.
+export function appendUnitRange(inout target: Array<u16>, in source: Array<u16>, start: usize, end: usize): void {
+  if (end <= start) return;
+  target.reserveCapacity(target.length + (end - start));
+  let i = start;
+  while (i < end) {
+    target.push(source[i]);
+    i = i + 1;
+  }
+}
+
 export function appendText(inout target: Array<u16>, in text: String): void {
   appendUnits(inout target, unitsOf(in text));
 }

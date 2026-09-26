@@ -77,6 +77,9 @@ export struct RegexBackend {
   // What the scratch buffer holds: the tag its last loader chose, or 0
   // once anything else has been written there.
   loadedTag: u64;
+  // The entry the last exec ran, whose captures are readable until the
+  // next one; -1 before any.
+  matchedEntry: i32;
 
   // Whether slot `i` holds this pattern (compared in place: an array
   // element's field cannot be lent out).
@@ -239,7 +242,18 @@ export struct RegexBackend {
     const result = native.zjs_re_exec(this.context, handle, buffer, length, start, wide ? 1 : 0);
     this.clock = this.clock + 1;
     this.entries[usize(entry)].lastUse = this.clock;
+    this.matchedEntry = entry;
     return result;
+  }
+
+  // The last exec's pattern: its capture count, the whole match
+  // included, and whether it names any group.
+  function matchedCaptures(): i32 {
+    return this.entries[usize(this.matchedEntry)].captures;
+  }
+
+  function matchedHasNames(): boolean {
+    return this.entries[usize(this.matchedEntry)].hasNames;
   }
 
   function captureStart(group: i32): i32 {
@@ -258,6 +272,7 @@ export struct RegexBackend {
       i = i + 1;
     }
     this.entries = Array<RegexEntry>();
+    this.matchedEntry = -1;
     if (this.context != 0) native.zjs_re_context_free(this.context);
     this.context = 0;
   }
@@ -296,7 +311,7 @@ export struct RegexBackend {
 }
 
 export function createRegexBackend(): RegexBackend {
-  return RegexBackend({ context: native.zjs_re_context_new(), entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>(), lastFailure: 0, loadedTag: 0 });
+  return RegexBackend({ context: native.zjs_re_context_new(), entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>(), lastFailure: 0, loadedTag: 0, matchedEntry: -1 });
 }
 
 function asciiBytes(in text: String): Array<u8> {

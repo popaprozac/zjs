@@ -4,9 +4,9 @@
 // iterator matchAll returns. Matching itself is the runtime's
 // regexpExecRaw over the backend; this file is the specification's
 // algorithms around it, over byte offsets.
-import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isNumber, asInt32, isInt32 } from "../value.zs";
+import { Value, undefinedValue, nullValue, booleanValue, isTrue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isNumber, asInt32, isInt32 } from "../value.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT } from "../heap.zs";
-import { unitsOf, sliceUnits, copyUnits, appendUnits, isHighSurrogate, isLowSurrogate } from "../text.zs";
+import { unitsOf, sliceUnits, copyUnits, appendUnits, appendUnitRange, isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { Runtime, HostFunction, toNumber, truncateDouble, appendBytes } from "../runtime.zs";
 import { REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH } from "../regex.zs";
 import { thread } from "std/thread";
@@ -62,10 +62,10 @@ function sliceFrom(in bytes: Array<u16>, start: usize): Array<u16> {
   return sliceUnits(in bytes, start, end);
 }
 
-function hasFlag(in flags: Array<u16>, letter: u16): boolean {
+function hasUnit(in units: Array<u16>, unit: u16): boolean {
   let i: usize = 0;
-  while (i < flags.length) {
-    if (flags[i] == letter) return true;
+  while (i < units.length) {
+    if (units[i] == unit) return true;
     i = i + 1;
   }
   return false;
@@ -135,73 +135,78 @@ function speciesConstructorOf(inout runtime: Runtime, object: Value, defaultCtor
 
 // --- The builtin exec ---
 
-// RegExpBuiltinExec: the match array (index, input, groups, indices
-// with the d flag), or null.
-function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
+// RegExpBuiltinExec up to the match: lastIndex read and advanced as the
+// specification does, the offsets left in the backend. The capture count
+// (the whole match included) when it matched, 0 when it did not, -1 when
+// something was thrown. Nothing after it can run a program or another
+// match before the caller reads the offsets: only allocation, and the
+// collector never matches.
+function builtinMatch(inout runtime: Runtime, rx: u32, input: Value): i32 {
   const rxValue = cellValue(rx);
   const inputHandle = asCell(input);
   const length = runtime.heap.stringLength(inputHandle);
   let lastIndex = getLastIndex(inout runtime, rxValue);
-  if (runtime.pendingThrow) return undefinedValue();
+  if (runtime.pendingThrow) return -1;
   const bits = runtime.regexpFlagBits(rx);
   const global = (bits & REGEX_GLOBAL) != 0;
   const sticky = (bits & REGEX_STICKY) != 0;
-  const hasIndices = (bits & REGEX_HAS_INDICES) != 0;
   if (!global && !sticky) lastIndex = 0;
   if (lastIndex > length) {
     if (global || sticky) {
-      if (!setLastIndex(inout runtime, rxValue, 0)) return undefinedValue();
+      if (!setLastIndex(inout runtime, rxValue, 0)) return -1;
     }
-    return nullValue();
+    return 0;
   }
   const outcome = runtime.regexpExecRaw(rx, inputHandle, lastIndex);
-  if (runtime.pendingThrow) return undefinedValue();
+  if (runtime.pendingThrow) return -1;
   if (outcome != REGEX_MATCH) {
     if (global || sticky) {
-      if (!setLastIndex(inout runtime, rxValue, 0)) return undefinedValue();
+      if (!setLastIndex(inout runtime, rxValue, 0)) return -1;
     }
-    return nullValue();
+    return 0;
   }
-  const entry = runtime.regexpEntry(rx);
-  if (runtime.pendingThrow) return undefinedValue();
-  const count = runtime.regexBackend.captures(entry);
-  // The offsets are read result first: any allocation below may run the
-  // collector, and any getter may run another exec.
-  let starts = Array<i32>();
-  let ends = Array<i32>();
-  let g: i32 = 0;
-  while (g < count) {
-    starts.push(runtime.regexBackend.captureStart(g));
-    ends.push(runtime.regexBackend.captureEnd(g));
-    g = g + 1;
-  }
-  const matchEnd = usize(ends[0]);
   if (global || sticky) {
-    if (!setLastIndex(inout runtime, rxValue, matchEnd)) return undefinedValue();
+    if (!setLastIndex(inout runtime, rxValue, usize(runtime.regexBackend.captureEnd(0)))) return -1;
   }
+  return runtime.regexBackend.matchedCaptures();
+}
+
+// A group's text in the last match, undefined if it took no part.
+function captureValue(inout runtime: Runtime, inputHandle: u32, group: i32): Value {
+  const start = runtime.regexBackend.captureStart(group);
+  if (start < 0) return undefinedValue();
+  return runtime.substringValue(inputHandle, usize(start), usize(runtime.regexBackend.captureEnd(group)));
+}
+
+// The match array RegExpBuiltinExec returns, from the offsets the last
+// match left (see builtinMatch): index, input, groups, and indices with
+// the d flag.
+function execResult(inout runtime: Runtime, rx: u32, input: Value): Value {
+  const inputHandle = asCell(input);
+  const count = runtime.regexBackend.matchedCaptures();
+  const hasNames = runtime.regexBackend.matchedHasNames();
+  const hasIndices = (runtime.regexpFlagBits(rx) & REGEX_HAS_INDICES) != 0;
   const array = runtime.heap.allocateArray(u32(count));
   const arrayValue = cellValue(array);
   runtime.pushTempRoot(arrayValue);
   const bag = runtime.arrayBag(array);
   const atomIndex = runtime.atomIndex;
-  runtime.heap.objectDefine(bag, atomIndex, int32Value(starts[0]), PROP_DEFAULT);
+  runtime.heap.objectAdd(bag, atomIndex, int32Value(runtime.regexBackend.captureStart(0)));
   const atomInput = runtime.atomInput;
-  runtime.heap.objectDefine(bag, atomInput, input, PROP_DEFAULT);
-  g = 0;
+  runtime.heap.objectAdd(bag, atomInput, input);
+  let g: i32 = 0;
   while (g < count) {
-    let captured = undefinedValue();
-    if (starts[usize(g)] >= 0) captured = runtime.substringValue(inputHandle, usize(starts[usize(g)]), usize(ends[usize(g)]));
+    const captured = captureValue(inout runtime, inputHandle, g);
     runtime.heap.arraySet(array, u32(g), captured);
     g = g + 1;
   }
   // groups: an object without a prototype when the pattern names any.
   let groups = undefinedValue();
-  const hasNames = runtime.regexBackend.hasNames(entry);
   if (hasNames) {
     const groupsObject = runtime.heap.allocateObject(0);
     groups = cellValue(groupsObject);
     runtime.pushTempRoot(groups);
-    const names = runtime.regexBackend.names(entry);
+    const names = runtime.regexBackend.names(runtime.regexBackend.matchedEntry);
     let at: usize = 0;
     let group: i32 = 1;
     while (group < count && at <= names.length) {
@@ -214,17 +219,16 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
       if (name.length > 0) {
         const nameAtom = runtime.internUtf8Value(move name);
         const existing = runtime.heap.objectFindSlot(groupsObject, asCell(nameAtom));
-        let captured = undefinedValue();
-        if (starts[usize(group)] >= 0) captured = runtime.substringValue(inputHandle, usize(starts[usize(group)]), usize(ends[usize(group)]));
+        const captured = captureValue(inout runtime, inputHandle, group);
         // A duplicated name keeps the group that took part.
-        if (existing < 0 || starts[usize(group)] >= 0) runtime.heap.objectDefine(groupsObject, asCell(nameAtom), captured, PROP_DEFAULT);
+        if (existing < 0 || runtime.regexBackend.captureStart(group) >= 0) runtime.heap.objectDefine(groupsObject, asCell(nameAtom), captured, PROP_DEFAULT);
       }
       group = group + 1;
     }
     runtime.popTempRoot();
   }
   const atomGroups = runtime.atomGroups;
-  runtime.heap.objectDefine(bag, atomGroups, groups, PROP_DEFAULT);
+  runtime.heap.objectAdd(bag, atomGroups, groups);
   if (hasIndices) {
     const indices = runtime.heap.allocateArray(u32(count));
     const indicesValue = cellValue(indices);
@@ -232,10 +236,11 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
     g = 0;
     while (g < count) {
       let pair = undefinedValue();
-      if (starts[usize(g)] >= 0) {
+      const start = runtime.regexBackend.captureStart(g);
+      if (start >= 0) {
         const pairArray = runtime.heap.allocateArray(2);
-        runtime.heap.arraySet(pairArray, 0, int32Value(starts[usize(g)]));
-        runtime.heap.arraySet(pairArray, 1, int32Value(ends[usize(g)]));
+        runtime.heap.arraySet(pairArray, 0, int32Value(start));
+        runtime.heap.arraySet(pairArray, 1, int32Value(runtime.regexBackend.captureEnd(g)));
         pair = cellValue(pairArray);
       }
       runtime.heap.arraySet(indices, u32(g), pair);
@@ -246,7 +251,7 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
       const indexGroupsObject = runtime.heap.allocateObject(0);
       indexGroups = cellValue(indexGroupsObject);
       runtime.pushTempRoot(indexGroups);
-      const names = runtime.regexBackend.names(entry);
+      const names = runtime.regexBackend.names(runtime.regexBackend.matchedEntry);
       let at: usize = 0;
       let group: i32 = 1;
       while (group < count && at <= names.length) {
@@ -260,25 +265,37 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
           const nameAtom = runtime.internUtf8Value(move name);
           const existing = runtime.heap.objectFindSlot(indexGroupsObject, asCell(nameAtom));
           const pair = runtime.heap.arrayHasIndex(indices, u32(group)) ? runtime.heap.arrayGet(indices, u32(group)) : undefinedValue();
-          if (existing < 0 || starts[usize(group)] >= 0) runtime.heap.objectDefine(indexGroupsObject, asCell(nameAtom), pair, PROP_DEFAULT);
+          if (existing < 0 || runtime.regexBackend.captureStart(group) >= 0) runtime.heap.objectDefine(indexGroupsObject, asCell(nameAtom), pair, PROP_DEFAULT);
         }
         group = group + 1;
       }
       runtime.popTempRoot();
     }
     const indicesBag = runtime.arrayBag(indices);
-    runtime.heap.objectDefine(indicesBag, atomGroups, indexGroups, PROP_DEFAULT);
+    runtime.heap.objectAdd(indicesBag, atomGroups, indexGroups);
     const indicesText: String = "indices";
     const indicesAtom = runtime.atomOf(in indicesText);
-    runtime.heap.objectDefine(bag, indicesAtom, indicesValue, PROP_DEFAULT);
+    runtime.heap.objectAdd(bag, indicesAtom, indicesValue);
     runtime.popTempRoot();
   }
   runtime.popTempRoot();
   return arrayValue;
 }
 
-// RegExpExec: a user `exec` when the object has one, else the builtin.
-function regexpExec(inout runtime: Runtime, rx: Value, input: Value): Value {
+// RegExpBuiltinExec: the match array, or null.
+function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
+  const count = builtinMatch(inout runtime, rx, input);
+  if (count < 0) return undefinedValue();
+  if (count == 0) return nullValue();
+  return execResult(inout runtime, rx, input);
+}
+
+// RegExpExec for the algorithms that need only the match: a user exec's
+// result object or null as RegExpExec gives them, but when the builtin
+// runs, true, with the offsets left in the backend (see builtinMatch)
+// in place of a match array no program would see. Undefined when
+// something was thrown.
+function execMatch(inout runtime: Runtime, rx: Value, input: Value): Value {
   const atomExec = runtime.atomExec;
   const exec = runtime.getProperty(rx, cellValue(atomExec));
   if (runtime.pendingThrow) return undefinedValue();
@@ -296,7 +313,17 @@ function regexpExec(inout runtime: Runtime, rx: Value, input: Value): Value {
     const message: String = "RegExp.prototype.exec called on an object that is not a RegExp";
     return raiseType(inout runtime, in message);
   }
-  return builtinExec(inout runtime, asCell(rx), input);
+  const count = builtinMatch(inout runtime, asCell(rx), input);
+  if (count < 0) return undefinedValue();
+  if (count == 0) return nullValue();
+  return booleanValue(true);
+}
+
+// RegExpExec: a user `exec` when the object has one, else the builtin.
+function regexpExec(inout runtime: Runtime, rx: Value, input: Value): Value {
+  const result = execMatch(inout runtime, rx, input);
+  if (!isTrue(result)) return result;
+  return execResult(inout runtime, asCell(rx), input);
 }
 
 // --- Constructor ---
@@ -391,7 +418,7 @@ function regexpTest(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   const input = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
   runtime.pushTempRoot(input);
-  const result = regexpExec(inout runtime, thisValue, input);
+  const result = execMatch(inout runtime, thisValue, input);
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   return booleanValue(!isNull(result));
@@ -526,12 +553,12 @@ function regexpMatch(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
     runtime.popTempRoot();
     return undefinedValue();
   }
-  if (!hasFlag(in flags, 103)) {
+  if (!hasUnit(in flags, 103)) {
     const result = regexpExec(inout runtime, thisValue, input);
     runtime.popTempRoot();
     return result;
   }
-  const unicode = hasFlag(in flags, 117) || hasFlag(in flags, 118);
+  const unicode = hasUnit(in flags, 117) || hasUnit(in flags, 118);
   if (!setLastIndex(inout runtime, thisValue, 0)) {
     runtime.popTempRoot();
     return undefinedValue();
@@ -542,13 +569,18 @@ function regexpMatch(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   runtime.pushTempRoot(arrayValue);
   let n: u32 = 0;
   while (true) {
-    const result = regexpExec(inout runtime, thisValue, input);
+    const result = execMatch(inout runtime, thisValue, input);
     if (runtime.pendingThrow) break;
     if (isNull(result)) break;
-    const matched = runtime.getProperty(result, int32Value(0));
-    if (runtime.pendingThrow) break;
-    const matchString = runtime.toStringValue(matched);
-    if (runtime.pendingThrow) break;
+    let matchString = undefinedValue();
+    if (isTrue(result)) {
+      matchString = captureValue(inout runtime, asCell(input), 0);
+    } else {
+      const matched = runtime.getProperty(result, int32Value(0));
+      if (runtime.pendingThrow) break;
+      matchString = runtime.toStringValue(matched);
+      if (runtime.pendingThrow) break;
+    }
     runtime.heap.arraySet(array, n, matchString);
     n = n + 1;
     if (runtime.heap.stringLength(asCell(matchString)) == 0) {
@@ -586,12 +618,16 @@ function regexpSearch(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
       return undefinedValue();
     }
   }
-  const result = regexpExec(inout runtime, thisValue, input);
+  const matched = execMatch(inout runtime, thisValue, input);
   if (runtime.pendingThrow) {
     runtime.popTempRoot();
     runtime.popTempRoot();
     return undefinedValue();
   }
+  // The builtin's match is read now, before anything else can match; a
+  // user exec's result is an object or null, never a number.
+  let result = matched;
+  if (isTrue(matched)) result = int32Value(runtime.regexBackend.captureStart(0));
   runtime.pushTempRoot(result);
   const current = runtime.getProperty(thisValue, cellValue(atomLastIndex));
   if (!runtime.pendingThrow && !runtime.sameValue(current, previous)) {
@@ -606,6 +642,7 @@ function regexpSearch(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   if (isNull(result)) return int32Value(-1);
+  if (isInt32(result)) return result;
   const atomIndex = runtime.atomIndex;
   return runtime.getProperty(result, cellValue(atomIndex));
 }
@@ -711,6 +748,8 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     replaceValue = replaceText;
     template = stringBytesOf(inout runtime, replaceText);
   }
+  // A template without a `$` is its own replacement, whatever matched.
+  const literal = !functional && !hasUnit(in template, 36);
   runtime.pushTempRoot(replaceValue);
   const flags = flagsStringOf(inout runtime, thisValue);
   if (runtime.pendingThrow) {
@@ -718,8 +757,8 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     runtime.popTempRoot();
     return undefinedValue();
   }
-  const global = hasFlag(in flags, 103);
-  const unicode = hasFlag(in flags, 117) || hasFlag(in flags, 118);
+  const global = hasUnit(in flags, 103);
+  const unicode = hasUnit(in flags, 117) || hasUnit(in flags, 118);
   if (global) {
     if (!setLastIndex(inout runtime, thisValue, 0)) {
       runtime.popTempRoot();
@@ -727,23 +766,47 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
       return undefinedValue();
     }
   }
-  // Every match first, rooted in an array; then the replacements.
+  // Every match first, then the replacements. A match the builtin made
+  // for a pattern that names no group is kept as its offsets: in
+  // `offsets` the capture count, then each group's start and end (-1 for
+  // one that took no part), and nothing in `results`, since reading a
+  // match array no program can see is not observable. Any other match is
+  // its result object, rooted in `results`, and a -1 in `offsets`.
   const results = runtime.heap.allocateArray(0);
   const resultsValue = cellValue(results);
   runtime.pushTempRoot(resultsValue);
+  let offsets = Array<i32>();
   let resultCount: u32 = 0;
   while (true) {
-    const result = regexpExec(inout runtime, thisValue, input);
+    let result = execMatch(inout runtime, thisValue, input);
     if (runtime.pendingThrow) break;
     if (isNull(result)) break;
-    runtime.heap.arraySet(results, resultCount, result);
-    resultCount = resultCount + 1;
-    if (!global) break;
-    const matched = runtime.getProperty(result, int32Value(0));
-    if (runtime.pendingThrow) break;
-    const matchString = runtime.toStringValue(matched);
-    if (runtime.pendingThrow) break;
-    if (runtime.heap.stringLength(asCell(matchString)) == 0) {
+    let emptyMatch = false;
+    if (isTrue(result) && !runtime.regexBackend.matchedHasNames()) {
+      const count = runtime.regexBackend.matchedCaptures();
+      offsets.push(count);
+      let g: i32 = 0;
+      while (g < count) {
+        offsets.push(runtime.regexBackend.captureStart(g));
+        offsets.push(runtime.regexBackend.captureEnd(g));
+        g = g + 1;
+      }
+      emptyMatch = runtime.regexBackend.captureStart(0) == runtime.regexBackend.captureEnd(0);
+      resultCount = resultCount + 1;
+      if (!global) break;
+    } else {
+      if (isTrue(result)) result = execResult(inout runtime, asCell(thisValue), input);
+      offsets.push(-1);
+      runtime.heap.arraySet(results, resultCount, result);
+      resultCount = resultCount + 1;
+      if (!global) break;
+      const matched = runtime.getProperty(result, int32Value(0));
+      if (runtime.pendingThrow) break;
+      const matchString = runtime.toStringValue(matched);
+      if (runtime.pendingThrow) break;
+      emptyMatch = runtime.heap.stringLength(asCell(matchString)) == 0;
+    }
+    if (emptyMatch) {
       const thisIndex = getLastIndex(inout runtime, thisValue);
       if (runtime.pendingThrow) break;
       if (!setLastIndex(inout runtime, thisValue, advanceIndex(in bytes, thisIndex, unicode))) break;
@@ -751,119 +814,163 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   }
   let accumulated = Array<u16>();
   let nextSourcePosition: usize = 0;
+  let at: usize = 0;
   let r: u32 = 0;
   while (!runtime.pendingThrow && r < resultCount) {
-    const result = runtime.heap.arrayGet(results, r);
-    r = r + 1;
-    const atomLength = runtime.atomLength;
-    const lengthValue = runtime.getProperty(result, cellValue(atomLength));
-    if (runtime.pendingThrow) break;
-    const resultLength = lengthOf(inout runtime, lengthValue);
-    if (runtime.pendingThrow) break;
-    const nCaptures: usize = resultLength > 0 ? resultLength - 1 : 0;
-    const matchedValue = runtime.getProperty(result, int32Value(0));
-    if (runtime.pendingThrow) break;
-    const matchedString = runtime.toStringValue(matchedValue);
-    if (runtime.pendingThrow) break;
-    runtime.pushTempRoot(matchedString);
-    const matched = stringBytesOf(inout runtime, matchedString);
-    const atomIndex = runtime.atomIndex;
-    const indexValue = runtime.getProperty(result, cellValue(atomIndex));
-    if (runtime.pendingThrow) {
-      runtime.popTempRoot();
-      break;
-    }
-    const indexNumber = runtime.toNumberValue(indexValue);
-    if (runtime.pendingThrow) {
-      runtime.popTempRoot();
-      break;
-    }
+    const count = offsets[at];
     let position: usize = 0;
-    if (indexNumber == indexNumber && indexNumber > 0.0) {
-      const clipped = truncateDouble(indexNumber);
-      position = clipped >= f64(bytes.length) ? bytes.length : usize(clipped);
-    }
-    let captures = Array<Value>();
-    const capturesArray = runtime.heap.allocateArray(0);
-    runtime.pushTempRoot(cellValue(capturesArray));
-    let n: usize = 1;
-    while (n <= nCaptures) {
-      let capture = runtime.getProperty(result, int32Value(i32(n)));
-      if (runtime.pendingThrow) break;
-      if (!isUndefined(capture)) {
-        capture = runtime.toStringValue(capture);
-        if (runtime.pendingThrow) break;
-      }
-      runtime.heap.arraySet(capturesArray, u32(n - 1), capture);
-      captures.push(capture);
-      n = n + 1;
-    }
-    if (runtime.pendingThrow) {
-      runtime.popTempRoot();
-      runtime.popTempRoot();
-      break;
-    }
-    const atomGroups = runtime.atomGroups;
-    let namedCaptures = runtime.getProperty(result, cellValue(atomGroups));
-    if (runtime.pendingThrow) {
-      runtime.popTempRoot();
-      runtime.popTempRoot();
-      break;
-    }
+    let matchLength: usize = 0;
     let replacement = Array<u16>();
-    if (functional) {
-      let args = Array<Value>();
-      args.push(matchedString);
-      let c: usize = 0;
-      while (c < captures.length) {
-        args.push(captures[c]);
-        c = c + 1;
-      }
-      args.push(doubleValue(f64(position)));
-      args.push(input);
-      if (!isUndefined(namedCaptures)) args.push(namedCaptures);
-      const produced = runtime.callValue(replaceValue, undefinedValue(), move args);
-      if (runtime.pendingThrow) {
-        runtime.popTempRoot();
-        runtime.popTempRoot();
-        break;
-      }
-      const producedString = runtime.toStringValue(produced);
-      if (runtime.pendingThrow) {
-        runtime.popTempRoot();
-        runtime.popTempRoot();
-        break;
-      }
-      replacement = stringBytesOf(inout runtime, producedString);
+    if (count >= 0 && literal) {
+      position = usize(offsets[at + 1]);
+      matchLength = usize(offsets[at + 2]) - position;
+      at = at + 1 + usize(count) * 2;
     } else {
-      if (!isUndefined(namedCaptures)) {
-        namedCaptures = runtime.toObjectValue(namedCaptures);
+      // The matched text, the captures as strings (rooted in an array
+      // while more are made), and the named captures, from the offsets
+      // or read from the result object as the specification does.
+      let matchedString = undefinedValue();
+      let captures = Array<Value>();
+      const capturesArray = runtime.heap.allocateArray(0);
+      runtime.pushTempRoot(cellValue(capturesArray));
+      let namedCaptures = undefinedValue();
+      if (count >= 0) {
+        position = usize(offsets[at + 1]);
+        matchLength = usize(offsets[at + 2]) - position;
+        matchedString = runtime.substringValue(asCell(input), position, position + matchLength);
+        runtime.heap.arraySet(capturesArray, 0, matchedString);
+        let g: usize = 1;
+        while (g < usize(count)) {
+          let capture = undefinedValue();
+          const captureStart = offsets[at + 1 + g * 2];
+          if (captureStart >= 0) capture = runtime.substringValue(asCell(input), usize(captureStart), usize(offsets[at + 2 + g * 2]));
+          runtime.heap.arraySet(capturesArray, u32(g), capture);
+          captures.push(capture);
+          g = g + 1;
+        }
+        at = at + 1 + usize(count) * 2;
+      } else {
+        at = at + 1;
+        const result = runtime.heap.arrayGet(results, r);
+        const atomLength = runtime.atomLength;
+        const lengthValue = runtime.getProperty(result, cellValue(atomLength));
         if (runtime.pendingThrow) {
           runtime.popTempRoot();
+          break;
+        }
+        const resultLength = lengthOf(inout runtime, lengthValue);
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        const nCaptures: usize = resultLength > 0 ? resultLength - 1 : 0;
+        const matchedValue = runtime.getProperty(result, int32Value(0));
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        matchedString = runtime.toStringValue(matchedValue);
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        runtime.heap.arraySet(capturesArray, 0, matchedString);
+        matchLength = runtime.heap.stringLength(asCell(matchedString));
+        const atomIndex = runtime.atomIndex;
+        const indexValue = runtime.getProperty(result, cellValue(atomIndex));
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        const indexNumber = runtime.toNumberValue(indexValue);
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        if (indexNumber == indexNumber && indexNumber > 0.0) {
+          const clipped = truncateDouble(indexNumber);
+          position = clipped >= f64(bytes.length) ? bytes.length : usize(clipped);
+        }
+        let n: usize = 1;
+        while (n <= nCaptures) {
+          let capture = runtime.getProperty(result, int32Value(i32(n)));
+          if (runtime.pendingThrow) break;
+          if (!isUndefined(capture)) {
+            capture = runtime.toStringValue(capture);
+            if (runtime.pendingThrow) break;
+          }
+          runtime.heap.arraySet(capturesArray, u32(n), capture);
+          captures.push(capture);
+          n = n + 1;
+        }
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        const atomGroups = runtime.atomGroups;
+        namedCaptures = runtime.getProperty(result, cellValue(atomGroups));
+        if (runtime.pendingThrow) {
           runtime.popTempRoot();
           break;
         }
       }
-      replacement = substitution(inout runtime, in matched, in bytes, position, in captures, namedCaptures, in template);
-      if (runtime.pendingThrow) {
-        runtime.popTempRoot();
-        runtime.popTempRoot();
-        break;
+      if (functional) {
+        let args = Array<Value>();
+        args.push(matchedString);
+        let c: usize = 0;
+        while (c < captures.length) {
+          args.push(captures[c]);
+          c = c + 1;
+        }
+        args.push(doubleValue(f64(position)));
+        args.push(input);
+        if (!isUndefined(namedCaptures)) args.push(namedCaptures);
+        const produced = runtime.callValue(replaceValue, undefinedValue(), move args);
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        const producedString = runtime.toStringValue(produced);
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
+        replacement = stringBytesOf(inout runtime, producedString);
+      } else {
+        if (!isUndefined(namedCaptures)) {
+          namedCaptures = runtime.toObjectValue(namedCaptures);
+          if (runtime.pendingThrow) {
+            runtime.popTempRoot();
+            break;
+          }
+        }
+        const matched = stringBytesOf(inout runtime, matchedString);
+        replacement = substitution(inout runtime, in matched, in bytes, position, in captures, namedCaptures, in template);
+        if (runtime.pendingThrow) {
+          runtime.popTempRoot();
+          break;
+        }
       }
+      runtime.popTempRoot();
     }
-    runtime.popTempRoot();
-    runtime.popTempRoot();
+    r = r + 1;
     if (position >= nextSourcePosition) {
-      appendUnits(inout accumulated, sliceUnits(in bytes, nextSourcePosition, position));
-      appendUnits(inout accumulated, move replacement);
-      nextSourcePosition = position + matched.length;
+      appendUnitRange(inout accumulated, in bytes, nextSourcePosition, position);
+      if (literal) {
+        const templateLength = template.length;
+        appendUnitRange(inout accumulated, in template, 0, templateLength);
+      } else {
+        appendUnits(inout accumulated, move replacement);
+      }
+      nextSourcePosition = position + matchLength;
     }
   }
   runtime.popTempRoot();
   runtime.popTempRoot();
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  if (nextSourcePosition < bytes.length) appendUnits(inout accumulated, sliceFrom(in bytes, nextSourcePosition));
+  const inputLength = bytes.length;
+  appendUnitRange(inout accumulated, in bytes, nextSourcePosition, inputLength);
   return runtime.newStringUnits(move accumulated);
 }
 
@@ -888,8 +995,8 @@ function regexpSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
     runtime.popTempRoot();
     return undefinedValue();
   }
-  const unicode = hasFlag(in flags, 117) || hasFlag(in flags, 118);
-  if (!hasFlag(in flags, 121)) flags.push(121);
+  const unicode = hasUnit(in flags, 117) || hasUnit(in flags, 118);
+  if (!hasUnit(in flags, 121)) flags.push(121);
   let ctorArgs = Array<Value>();
   ctorArgs.push(thisValue);
   ctorArgs.push(runtime.newStringUnits(move flags));
@@ -1008,8 +1115,8 @@ function regexpMatchAll(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     runtime.popTempRoot();
     return undefinedValue();
   }
-  const global = hasFlag(in flags, 103);
-  const unicode = hasFlag(in flags, 117) || hasFlag(in flags, 118);
+  const global = hasUnit(in flags, 103);
+  const unicode = hasUnit(in flags, 117) || hasUnit(in flags, 118);
   let ctorArgs = Array<Value>();
   ctorArgs.push(thisValue);
   ctorArgs.push(runtime.newStringUnits(copyUnits(in flags)));
