@@ -2135,15 +2135,12 @@ export struct Runtime {
       let number = toNumber(value);
       if (number != number) return 0x7FF80000;
       if (number == 0.0) number = 0.0;
-      const bits = number.toBits();
-      const mixed = (bits ^ (bits >> 32)).wrappingMultiply(0x9E3779B1);
-      return u32(mixed & 0xFFFFFFFF);
+      return mixBits(number.toBits());
     }
     if (this.isStringValue(value)) {
       return this.hashStorage(asCell(value));
     }
-    const mixed = (value.bits ^ (value.bits >> 29)).wrappingMultiply(0x9E3779B1);
-    return u32(mixed & 0xFFFFFFFF);
+    return mixBits(value.bits);
   }
 
   // SameValue: strict equality, except NaN equals NaN and +0 differs from -0.
@@ -7042,6 +7039,19 @@ function int32OrDouble(wide: i64): Value {
   const highest: i64 = 2147483647;
   if (wide >= lowest && wide <= highest) return int32Value(i32(wide));
   return doubleValue(f64(wide));
+}
+
+// MurmurHash3's 64-bit finalizer: every input bit reaches the low bits a
+// power-of-two table masks with. A double holding a small integer differs
+// from its neighbours only in its high bits, so a bare multiply left the
+// low bits zero and put every such key in one bucket.
+export function mixBits(bits: u64): u32 {
+  let mixed = bits ^ (bits >> 33);
+  mixed = mixed.wrappingMultiply(0xFF51_AFD7_ED55_8CCD);
+  mixed = mixed ^ (mixed >> 33);
+  mixed = mixed.wrappingMultiply(0xC4CE_B9FE_1A85_EC53);
+  mixed = mixed ^ (mixed >> 33);
+  return u32(mixed & 0xFFFF_FFFF);
 }
 
 export function numericAdd(a: Value, b: Value): Value {

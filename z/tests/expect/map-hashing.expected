@@ -1,0 +1,6 @@
+size 23
+1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23
+zeros 1 1 nan 11 one-as-string 16 one 2
+set 5000 5000 false false
+after delete 2500 false true
+order 3c 1a 2b
