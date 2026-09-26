@@ -1,0 +1,13 @@
+{"a":1,"b":[true,false,null,0,1000,-0.0025,"s"],"c":{"d":"éā😀","e":"\"\\/\b\f\n\r\t"},"a2":[],"":{}}
+200 199 v5 key7,shared
+depth 100
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+{"x":{"y":3}}

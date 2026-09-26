@@ -1,7 +1,7 @@
 // JSON.parse and JSON.stringify over byte strings.
 import { unitsOf, isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { thread } from "std/thread";
-import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber } from "../value.zs";
+import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32 } from "../value.zs";
 import { Runtime, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber } from "../runtime.zs";
 import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE } from "../heap.zs";
 
@@ -11,6 +11,11 @@ struct JsonParser {
   bytes: Array<u16>;
   position: usize;
   failed: boolean;
+  // A string being read: its units, whether any is past Latin-1, and the
+  // Latin-1 bytes a narrow one becomes. Reused from string to string.
+  units: Array<u16>;
+  wide: boolean;
+  narrow: Array<u8>;
 }
 
 function skipSpace(inout parser: JsonParser): void {
@@ -66,53 +71,105 @@ function parseHex4(inout parser: JsonParser): u32 {
 
 // A JSON string body after the opening quote; escapes decoded, surrogate
 // pairs combined.
-function parseStringBody(inout parser: JsonParser): Array<u16> {
-  let text = Array<u16>();
+// The body of a string, after its opening quote, into parser.units (and
+// parser.narrow when every unit is Latin-1).
+function parseStringBody(inout parser: JsonParser): void {
+  parser.units.clear();
+  parser.wide = false;
   while (true) {
     const byte = peekByte(in parser);
     if (byte < 0) {
       parser.failed = true;
-      return text;
+      return;
     }
     parser.position = parser.position + 1;
-    if (byte == 34) return text;
+    if (byte == 34) {
+      finishString(inout parser);
+      return;
+    }
     if (byte < 32) {
       parser.failed = true;
-      return text;
+      return;
     }
     if (byte != 92) {
-      text.push(u16(byte));
+      pushUnit(inout parser, u16(byte));
       continue;
     }
     const escape = peekByte(in parser);
     parser.position = parser.position + 1;
     if (escape == 34) {
-      text.push(34);
+      pushUnit(inout parser, 34);
     } else if (escape == 92) {
-      text.push(92);
+      pushUnit(inout parser, 92);
     } else if (escape == 47) {
-      text.push(47);
+      pushUnit(inout parser, 47);
     } else if (escape == 98) {
-      text.push(8);
+      pushUnit(inout parser, 8);
     } else if (escape == 102) {
-      text.push(12);
+      pushUnit(inout parser, 12);
     } else if (escape == 110) {
-      text.push(10);
+      pushUnit(inout parser, 10);
     } else if (escape == 114) {
-      text.push(13);
+      pushUnit(inout parser, 13);
     } else if (escape == 116) {
-      text.push(9);
+      pushUnit(inout parser, 9);
     } else if (escape == 117) {
       // One escape is one unit; a pair written as two escapes is a pair.
       const unit = parseHex4(inout parser);
-      if (parser.failed) return text;
-      text.push(u16(unit));
+      if (parser.failed) return;
+      pushUnit(inout parser, u16(unit));
     } else {
       parser.failed = true;
-      return text;
+      return;
     }
   }
-  return text;
+}
+
+function pushUnit(inout parser: JsonParser, unit: u16): void {
+  if (unit > 255) parser.wide = true;
+  parser.units.push(unit);
+}
+
+function finishString(inout parser: JsonParser): void {
+  parser.narrow.clear();
+  if (parser.wide) return;
+  let index: usize = 0;
+  while (index < parser.units.length) {
+    parser.narrow.push(u8(parser.units[index]));
+    index = index + 1;
+  }
+}
+
+// The string just read, as a fresh string value.
+function parsedString(inout runtime: Runtime, in parser: JsonParser): Value {
+  if (!parser.wide) {
+    let bytes = Array<u8>.withCapacity(parser.narrow.length);
+    let index: usize = 0;
+    while (index < parser.narrow.length) {
+      bytes.push(parser.narrow[index]);
+      index = index + 1;
+    }
+    return runtime.newStringLatin1(move bytes);
+  }
+  let units = Array<u16>.withCapacity(parser.units.length);
+  let index: usize = 0;
+  while (index < parser.units.length) {
+    units.push(parser.units[index]);
+    index = index + 1;
+  }
+  return runtime.newStringUnits(move units);
+}
+
+// The string just read, as a property name.
+function parsedKey(inout runtime: Runtime, in parser: JsonParser): u32 {
+  if (!parser.wide) return runtime.internLatin1Borrowed(in parser.narrow);
+  let units = Array<u16>.withCapacity(parser.units.length);
+  let index: usize = 0;
+  while (index < parser.units.length) {
+    units.push(parser.units[index]);
+    index = index + 1;
+  }
+  return runtime.internUnits(move units);
 }
 
 function numberValue(number: f64): Value {
@@ -192,14 +249,20 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
         return undefinedValue();
       }
       parser.position = parser.position + 1;
-      const key = parseStringBody(inout parser);
+      parseStringBody(inout parser);
       if (parser.failed) {
         runtime.popTempRoot();
         return undefinedValue();
       }
+      // The name is interned now, since parsing the value reuses the
+      // buffer; the intern table is weak, so it stays rooted until the
+      // object holds it.
+      const atom = parsedKey(inout runtime, in parser);
+      runtime.pushTempRoot(cellValue(atom));
       skipSpace(inout parser);
       if (peekByte(in parser) != 58) {
         parser.failed = true;
+        runtime.popTempRoot();
         runtime.popTempRoot();
         return undefinedValue();
       }
@@ -207,10 +270,11 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
       const value = parseValue(inout runtime, inout parser, depth + 1);
       if (parser.failed) {
         runtime.popTempRoot();
+        runtime.popTempRoot();
         return undefinedValue();
       }
-      const atom = runtime.internUnits(move key);
       runtime.heap.objectSet(object, atom, value);
+      runtime.popTempRoot();
       skipSpace(inout parser);
       const next = peekByte(in parser);
       parser.position = parser.position + 1;
@@ -257,9 +321,9 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
   }
   if (byte == 34) {
     parser.position = parser.position + 1;
-    const text = parseStringBody(inout parser);
+    parseStringBody(inout parser);
     if (parser.failed) return undefinedValue();
-    return runtime.newStringUnits(move text);
+    return parsedString(inout runtime, in parser);
   }
   if (byte == 116) {
     const word: String = "true";
@@ -325,7 +389,7 @@ function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Valu
 function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  let parser = JsonParser({ bytes: runtime.heap.stringUnits(asCell(text)), position: 0, failed: false });
+  let parser = JsonParser({ bytes: runtime.heap.stringUnits(asCell(text)), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>() });
   const value = parseValue(inout runtime, inout parser, 0);
   skipSpace(inout parser);
   if (parser.failed || parser.position != parser.bytes.length) {
@@ -354,6 +418,8 @@ struct Stringifier {
   useAllowed: boolean;
   stack: Array<u32>;
   stackCount: usize;
+  // "toJSON" as a key, interned once per call.
+  toJSONKey: Value;
 }
 
 function hexChar(digit: u32): u16 {
@@ -361,52 +427,90 @@ function hexChar(digit: u32): u16 {
   return u16(87 + digit);
 }
 
-// Whether the unit at `index` is a surrogate without its partner.
-function lone(in bytes: Array<u16>, index: usize): boolean {
-  const unit = bytes[index];
-  if (isHighSurrogate(unit)) return index + 1 >= bytes.length || !isLowSurrogate(bytes[index + 1]);
-  if (isLowSurrogate(unit)) return index == 0 || !isHighSurrogate(bytes[index - 1]);
-  return false;
-}
-
-function quote(inout text: Array<u16>, in bytes: Array<u16>): void {
+// A string's JSON form, read from the heap cell: nothing is copied out
+// first. A narrow string has no surrogates to check.
+function quoteString(in runtime: Runtime, inout text: Array<u16>, handle: u32): void {
   text.push(34);
+  const length = runtime.heap.stringLength(handle);
+  const wide = runtime.heap.isWideString(handle);
   let index: usize = 0;
-  while (index < bytes.length) {
-    const byte = bytes[index];
-    if (byte == 34 || byte == 92) {
+  while (index < length) {
+    const unit = wide ? runtime.heap.stringUnit(handle, index) : u16(runtime.heap.stringStorageByte(handle, index));
+    if (unit >= 32 && unit != 34 && unit != 92 && (unit < 0xD800 || unit > 0xDFFF)) {
+      text.push(unit);
+    } else if (unit == 34 || unit == 92) {
       text.push(92);
-      text.push(byte);
-    } else if (byte == 8) {
+      text.push(unit);
+    } else if (unit == 8) {
       text.push(92);
       text.push(98);
-    } else if (byte == 12) {
+    } else if (unit == 12) {
       text.push(92);
       text.push(102);
-    } else if (byte == 10) {
+    } else if (unit == 10) {
       text.push(92);
       text.push(110);
-    } else if (byte == 13) {
+    } else if (unit == 13) {
       text.push(92);
       text.push(114);
-    } else if (byte == 9) {
+    } else if (unit == 9) {
       text.push(92);
       text.push(116);
-    } else if (byte < 32 || lone(in bytes, index)) {
-      // Control characters, and a lone surrogate (JSON text is
-      // well-formed), as \uXXXX.
+    } else if (unit < 32 || loneAt(in runtime, handle, index, length)) {
       text.push(92);
       text.push(117);
-      text.push(hexChar(u32(byte) >> 12));
-      text.push(hexChar((u32(byte) >> 8) & 15));
-      text.push(hexChar((u32(byte) >> 4) & 15));
-      text.push(hexChar(u32(byte) & 15));
+      text.push(hexChar(u32(unit) >> 12));
+      text.push(hexChar((u32(unit) >> 8) & 15));
+      text.push(hexChar((u32(unit) >> 4) & 15));
+      text.push(hexChar(u32(unit) & 15));
     } else {
-      text.push(byte);
+      text.push(unit);
     }
     index = index + 1;
   }
   text.push(34);
+}
+
+// Whether the surrogate at `index` of a wide string lacks its partner.
+function loneAt(in runtime: Runtime, handle: u32, index: usize, length: usize): boolean {
+  const unit = runtime.heap.stringUnit(handle, index);
+  if (isHighSurrogate(unit)) return index + 1 >= length || !isLowSurrogate(runtime.heap.stringUnit(handle, index + 1));
+  if (isLowSurrogate(unit)) return index == 0 || !isHighSurrogate(runtime.heap.stringUnit(handle, index - 1));
+  return false;
+}
+
+// An int32's decimal digits.
+function pushInt32(inout text: Array<u16>, value: i32): void {
+  let magnitude: u32 = 0;
+  if (value < 0) {
+    text.push(45);
+    magnitude = value == -2147483648 ? 2147483648 : u32(0 - value);
+  } else {
+    magnitude = u32(value);
+  }
+  let digits: u16[10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  let count: usize = 0;
+  if (magnitude == 0) {
+    digits[0] = 48;
+    count = 1;
+  }
+  while (magnitude > 0) {
+    digits[count] = u16(48 + magnitude % 10);
+    magnitude = magnitude / 10;
+    count = count + 1;
+  }
+  while (count > 0) {
+    count = count - 1;
+    text.push(digits[count]);
+  }
+}
+
+// Drop what was written after `mark` (a property whose value has no JSON
+// form after its key went out).
+function truncateTo(inout text: Array<u16>, mark: usize): void {
+  while (text.length > mark) {
+    const dropped = text.pop();
+  }
 }
 
 function appendAll(inout text: Array<u16>, in more: Array<u16>): void {
@@ -440,8 +544,7 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
   let value = runtime.getProperty(holder, key);
   if (runtime.pendingThrow) return false;
   if (runtime.isObjectLike(value)) {
-    const toJSONText: String = "toJSON";
-    const toJSONKey = runtime.internText(in toJSONText);
+    const toJSONKey = state.toJSONKey;
     const toJSON = runtime.getProperty(value, toJSONKey);
     if (runtime.pendingThrow) return false;
     if (runtime.isCallable(toJSON)) {
@@ -484,8 +587,11 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
     return true;
   }
   if (runtime.isStringValue(value)) {
-    const valueBytes = runtime.heap.stringUnits(asCell(value));
-    quote(inout text, in valueBytes);
+    quoteString(in runtime, inout text, asCell(value));
+    return true;
+  }
+  if (isInt32(value)) {
+    pushInt32(inout text, asInt32(value));
     return true;
   }
   if (isNumber(value)) {
@@ -518,9 +624,14 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
     state.stack.push(handle);
   }
   state.stackCount = state.stackCount + 1;
-  const outerIndent = copyBytes(in state.indent);
-  const gap = copyBytes(in state.gap);
-  appendAll(inout state.indent, in gap);
+  // Indentation changes only when there is a gap.
+  const pretty = state.gap.length > 0;
+  let outerIndent = Array<u16>();
+  if (pretty) {
+    outerIndent = copyBytes(in state.indent);
+    const gap = copyBytes(in state.gap);
+    appendAll(inout state.indent, in gap);
+  }
   const isArray = runtime.heap.isArray(handle);
   const open: u16 = isArray ? 91 : 123;
   text.push(open);
@@ -563,21 +674,22 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
     let index: usize = 0;
     while (index < keys.length) {
       const propertyKey = keys[index];
-      let piece = Array<u16>();
-      const wrote = serialize(inout runtime, inout state, value, propertyKey, inout piece);
+      // The key goes out first; a value with no JSON form takes it back.
+      const mark = text.length;
+      if (wroteAny) text.push(44);
+      if (pretty) {
+        text.push(10);
+        appendAll(inout text, in state.indent);
+      }
+      quoteString(in runtime, inout text, asCell(propertyKey));
+      text.push(58);
+      if (pretty) text.push(32);
+      const wrote = serialize(inout runtime, inout state, value, propertyKey, inout text);
       if (runtime.pendingThrow) return false;
       if (wrote) {
-        if (wroteAny) text.push(44);
-        if (state.gap.length > 0) {
-          text.push(10);
-          appendAll(inout text, in state.indent);
-        }
-        const keyBytes = runtime.heap.stringUnits(asCell(propertyKey));
-        quote(inout text, in keyBytes);
-        text.push(58);
-        if (state.gap.length > 0) text.push(32);
-        appendAll(inout text, in piece);
         wroteAny = true;
+      } else {
+        truncateTo(inout text, mark);
       }
       index = index + 1;
     }
@@ -588,7 +700,7 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
   }
   const close: u16 = isArray ? 93 : 125;
   text.push(close);
-  state.indent = move outerIndent;
+  if (pretty) state.indent = move outerIndent;
   state.stackCount = state.stackCount - 1;
   return true;
 }
@@ -596,9 +708,11 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
 function jsonStringify(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const value = runtime.argument(argsBase, argc, 0);
   const replacer = runtime.argument(argsBase, argc, 1);
+  const toJSONText: String = "toJSON";
   let state = Stringifier({
     indent: Array<u16>(), gap: Array<u16>(), replacer: undefinedValue(),
     allowed: Array<u32>(), useAllowed: false, stack: Array<u32>(), stackCount: 0,
+    toJSONKey: runtime.internText(in toJSONText),
   });
   if (runtime.isCallable(replacer)) {
     state.replacer = replacer;
