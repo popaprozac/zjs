@@ -16,8 +16,8 @@ echo "[0/6] native backend"
 clang -std=c11 -O2 -Wall -Wextra -Werror -I "$HERE/engine/native" -o "$OUT/native/regex_contexts" "$HERE/tests/regex_contexts.c" "$OUT/native/libzjsregexp.a"
 "$OUT/native/regex_contexts"
 
-echo "[1/6] Z engine -> libzjsz.a"
-zc build "$HERE/engine" >/dev/null
+echo "[1/6] Z engine -> libzjsz.a (optimized: the library embedders link)"
+zc build "$HERE/engine" --release >/dev/null
 
 echo "[2/6] ABI shim"
 clang -std=c11 -Wall -Wextra -Werror -O2 -c \
@@ -31,7 +31,7 @@ ar r "$OUT/libzjs.a" "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/li
 ranlib "$OUT/libzjs.a"
 
 echo "[3b/6] lifecycle test (its own build of the library, with the test-only gate; not shipped)"
-zc build "$HERE/tests/lifecycle" >/dev/null
+zc build "$HERE/tests/lifecycle" --release >/dev/null
 clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" -I "$HERE/tests/lifecycle/build" -I "$HERE/engine/native" \
   -o "$OUT/lifecycle_test" "$HERE/tests/lifecycle_test.c" "$HERE/tests/lifecycle/build/libzjsz.a" \
   "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/zjs_regexp.o"
