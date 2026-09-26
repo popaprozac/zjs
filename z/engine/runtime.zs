@@ -723,7 +723,7 @@ export struct Runtime {
   }
 
   // Atoms hash by unit value, so Latin-1 bytes and the units they stand
-  // for hash alike.
+  // for hash alike, and as a string cell does (see Heap.stringHash).
   function hashBytes(in bytes: Array<u8>): u32 {
     let hash: u32 = 2166136261;
     let index: usize = 0;
@@ -732,7 +732,7 @@ export struct Runtime {
       hash = (hash ^ u32(bytes[index])).wrappingMultiply(16777619);
       index = index + 1;
     }
-    return hash;
+    return hash | 0x8000_0000;
   }
 
   function hashUnits(in units: Array<u16>): u32 {
@@ -743,26 +743,11 @@ export struct Runtime {
       hash = (hash ^ u32(units[index])).wrappingMultiply(16777619);
       index = index + 1;
     }
-    return hash;
+    return hash | 0x8000_0000;
   }
 
-  function hashStorage(handle: u32): u32 {
-    let hash: u32 = 2166136261;
-    let index: usize = 0;
-    if (!this.heap.isWideString(handle)) {
-      const length = this.heap.stringStorageLength(handle);
-      while (index < length) {
-        hash = (hash ^ u32(this.heap.stringStorageByte(handle, index))).wrappingMultiply(16777619);
-        index = index + 1;
-      }
-      return hash;
-    }
-    const units = this.heap.stringLength(handle);
-    while (index < units) {
-      hash = (hash ^ u32(this.heap.stringUnit(handle, index))).wrappingMultiply(16777619);
-      index = index + 1;
-    }
-    return hash;
+  function hashStorage(inout this, handle: u32): u32 {
+    return this.heap.stringHash(handle);
   }
 
   // A fresh string holding units[start, end) of another.
@@ -2242,7 +2227,7 @@ export struct Runtime {
 
   // A hash consistent with SameValueZero: numbers by value (both zeros
   // and every NaN alike), strings by content, everything else by bits.
-  function hashValue(value: Value): u32 {
+  function hashValue(inout this, value: Value): u32 {
     if (isNumber(value)) {
       let number = toNumber(value);
       if (number != number) return 0x7FF80000;
@@ -4505,6 +4490,18 @@ export struct Runtime {
   }
 
   function concatStrings(inout this, a: Value, b: Value): Value {
+    // A string and an int32: the digits go straight into the joined
+    // storage.
+    if (isInt32(b) && this.isStringValue(a) && this.heap.stringLength(asCell(a)) > 0) {
+      let digits: u8[11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      const count = int32DigitsInto(inout digits, asInt32(b));
+      return cellValue(this.heap.concatAscii(asCell(a), digits, count, false));
+    }
+    if (isInt32(a) && this.isStringValue(b) && this.heap.stringLength(asCell(b)) > 0) {
+      let digits: u8[11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      const count = int32DigitsInto(inout digits, asInt32(a));
+      return cellValue(this.heap.concatAscii(asCell(b), digits, count, true));
+    }
     const left = this.toStringValue(a);
     const right = this.toStringValue(b);
     const leftHandle = asCell(left);
@@ -7740,6 +7737,41 @@ function bufferToString(buffer: usize): String {
 
 // The decimal digits of an int32 as the bytes a string cell stores: the
 // one allocation is the one the cell keeps.
+// An int32's decimal digits, a sign first if negative, into `digits`
+// from the start; how many were written.
+export function int32DigitsInto(inout digits: u8[11], value: i32): usize {
+  let count: usize = 0;
+  let magnitude: u32 = 0;
+  if (value < 0) {
+    digits[0] = 45;
+    count = 1;
+    magnitude = value == -2147483648 ? 2147483648 : u32(0 - value);
+  } else {
+    magnitude = u32(value);
+  }
+  const first = count;
+  if (magnitude == 0) {
+    digits[count] = 48;
+    return count + 1;
+  }
+  while (magnitude > 0) {
+    digits[count] = u8(48 + magnitude % 10);
+    magnitude = magnitude / 10;
+    count = count + 1;
+  }
+  // Written least significant first: reverse them in place.
+  let low = first;
+  let high = count - 1;
+  while (low < high) {
+    const held = digits[low];
+    digits[low] = digits[high];
+    digits[high] = held;
+    low = low + 1;
+    high = high - 1;
+  }
+  return count;
+}
+
 export function int32Digits(value: i32): Array<u8> {
   let bytes = Array<u8>.withCapacity(11);
   let rest: i64 = i64(value);

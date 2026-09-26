@@ -90,7 +90,8 @@ struct CellHeader {
   flags: u8;
   // Where the cell's slots begin in the arena. A string has no slots, and
   // its slotStart holds its length in storage bytes instead (its buffer
-  // may be longer: see the string storage below).
+  // may be longer: see the string storage below), and its slotCount its
+  // hash once computed (see stringHash).
   slotStart: u32;
   slotCount: u32;
   // Tag-specific words. `payload`: a string's index into `strings`, a
@@ -328,7 +329,7 @@ export struct Heap {
       this.markCount = this.markCount - 1;
       const handle = this.markStack[this.markCount];
       this.markedCells = this.markedCells + 1;
-      this.markedSlots = this.markedSlots + usize(this.headers[usize(handle)].slotCount);
+      if (this.headers[usize(handle)].tag != TAG_STRING) this.markedSlots = this.markedSlots + usize(this.headers[usize(handle)].slotCount);
       // A key some weak record was waiting on: its values go live now.
       if (this.pendingCount > 0) this.activatePending(handle);
       const tag = this.headers[usize(handle)].tag;
@@ -456,7 +457,7 @@ export struct Heap {
       }
       this.headers[usize(handle)].marked = false;
       const start = this.headers[usize(handle)].slotStart;
-      const slotCount = this.headers[usize(handle)].slotCount;
+      const slotCount: u32 = tag == TAG_STRING ? 0 : this.headers[usize(handle)].slotCount;
       if (tag != TAG_STRING) this.headers[usize(handle)].slotStart = u32(compacted.length);
       let index: u32 = 0;
       while (index < slotCount) {
@@ -1587,6 +1588,54 @@ export struct Heap {
     return this.allocateStringOver(stringIndex, joinedBytes, wide);
   }
 
+  // A string and `count` ASCII bytes joined, the bytes after the string
+  // or, with `before`, ahead of it: what adding a string and a number
+  // makes, with no string made for the number. After the string, the
+  // bytes extend the string's buffer in place when concatStorage could;
+  // otherwise both go to a fresh buffer later concatenations may extend.
+  function concatAscii(inout this, handle: u32, bytes: Slice<u8>, count: usize, before: boolean): u32 {
+    const buffer = usize(this.headers[usize(handle)].payload);
+    const length = this.headers[usize(handle)].slotStart;
+    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
+    const width: usize = wide ? 2 : 1;
+    const joinedBytes = length + u32(count * width);
+    const appendable = (this.bufferRefs[buffer] & BUFFER_APPENDABLE) != 0;
+    if (!before && appendable && u32(this.strings[buffer].length) == length) {
+      let k: usize = 0;
+      while (k < count) {
+        this.strings[buffer].push(bytes[k]);
+        if (wide) this.strings[buffer].push(0);
+        k = k + 1;
+      }
+      this.bufferRefs[buffer] = this.bufferRefs[buffer] + 1;
+      return this.allocateStringOver(u32(buffer), joinedBytes, wide);
+    }
+    let joined = Array<u8>.withCapacity(usize(joinedBytes));
+    let k: usize = 0;
+    if (before) {
+      while (k < count) {
+        joined.push(bytes[k]);
+        if (wide) joined.push(0);
+        k = k + 1;
+      }
+    }
+    let index: usize = 0;
+    while (index < usize(length)) {
+      joined.push(this.strings[buffer][index]);
+      index = index + 1;
+    }
+    if (!before) {
+      while (k < count) {
+        joined.push(bytes[k]);
+        if (wide) joined.push(0);
+        k = k + 1;
+      }
+    }
+    const stringIndex = this.adoptBuffer(move joined);
+    this.bufferRefs[usize(stringIndex)] = BUFFER_APPENDABLE | 1;
+    return this.allocateStringOver(stringIndex, joinedBytes, wide);
+  }
+
   // A string whose units are these bytes' values (ASCII or Latin-1).
   function allocateLatin1(inout this, bytes: Array<u8>): u32 {
     return this.allocateStorage(move bytes, false);
@@ -1703,6 +1752,34 @@ export struct Heap {
     return this.stringUnitsSlice(handle, 0, length);
   }
 
+  // A string's hash: FNV-1a over its unit values, so a narrow string and
+  // the units it stands for hash alike, with the top bit set. Computed
+  // once: a string has no slots, so its header's slot count keeps it,
+  // zero until then.
+  function stringHash(inout this, handle: u32): u32 {
+    const known = this.headers[usize(handle)].slotCount;
+    if (known != 0) return known;
+    const at = usize(this.headers[usize(handle)].payload);
+    const length = usize(this.headers[usize(handle)].slotStart);
+    let hash: u32 = 2166136261;
+    let index: usize = 0;
+    if ((this.headers[usize(handle)].flags & FLAG_WIDE) == 0) {
+      while (index < length) {
+        hash = (hash ^ u32(this.strings[at][index])).wrappingMultiply(16777619);
+        index = index + 1;
+      }
+    } else {
+      while (index < length) {
+        const unit = u32(this.strings[at][index]) | (u32(this.strings[at][index + 1]) << 8);
+        hash = (hash ^ unit).wrappingMultiply(16777619);
+        index = index + 2;
+      }
+    }
+    hash = hash | 0x8000_0000;
+    this.headers[usize(handle)].slotCount = hash;
+    return hash;
+  }
+
   // The buffer in `strings` a string's storage is in.
   function stringBuffer(handle: u32): u32 {
     return this.headers[usize(handle)].payload;
@@ -1771,6 +1848,10 @@ export struct Heap {
     const bt = usize(this.headers[usize(b)].payload);
     const length = usize(this.headers[usize(a)].slotStart);
     if (length != usize(this.headers[usize(b)].slotStart)) return false;
+    // Two hashes already known and different: different content.
+    const aHash = this.headers[usize(a)].slotCount;
+    const bHash = this.headers[usize(b)].slotCount;
+    if (aHash != 0 && bHash != 0 && aHash != bHash) return false;
     // Two strings over one buffer with one length are one content.
     if (at == bt) return true;
     let index: usize = 0;
