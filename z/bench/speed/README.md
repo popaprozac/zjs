@@ -21,7 +21,10 @@ Engines, each measured only when present:
 | `v8-jitless` | `node --jitless` | V8's Ignition interpreter |
 | `quickjs` | `qjs` | QuickJS, when a `qjs` is on PATH |
 
-The kernels are written for this suite. They are small on purpose: each
+The kernels are written for this suite, each with its work inside a
+function, as most code runs (`results/2026-09-25.json` was recorded with an
+earlier version that ran at the top level, where every variable is a
+global). They are small on purpose: each
 isolates one cost (calls, property access, closures, arrays, strings,
 allocation, JSON, regular expressions, Map and Set), so a regression or a
 win points at a subsystem. They are not a substitute for real programs.
