@@ -4329,23 +4329,11 @@ export struct Runtime {
     const rightHandle = asCell(right);
     if (this.heap.stringLength(leftHandle) == 0) return right;
     if (this.heap.stringLength(rightHandle) == 0) return left;
-    // Two narrow strings stay narrow by joining storage; anything else
-    // goes through units.
-    if (!this.heap.isWideString(leftHandle) && !this.heap.isWideString(rightHandle)) {
-      const leftLength = this.heap.stringStorageLength(leftHandle);
-      const rightLength = this.heap.stringStorageLength(rightHandle);
-      let joined = Array<u8>.withCapacity(leftLength + rightLength);
-      let i: usize = 0;
-      while (i < leftLength) {
-        joined.push(this.heap.stringStorageByte(leftHandle, i));
-        i = i + 1;
-      }
-      i = 0;
-      while (i < rightLength) {
-        joined.push(this.heap.stringStorageByte(rightHandle, i));
-        i = i + 1;
-      }
-      return this.newStringLatin1(move joined);
+    // Two strings of one width join by storage, extending a buffer a
+    // previous concatenation made where they can; a narrow and a wide one
+    // go through units.
+    if (this.heap.isWideString(leftHandle) == this.heap.isWideString(rightHandle)) {
+      return cellValue(this.heap.concatStorage(leftHandle, rightHandle));
     }
     let units = this.heap.stringUnits(leftHandle);
     appendUnits(inout units, this.heap.stringUnits(rightHandle));

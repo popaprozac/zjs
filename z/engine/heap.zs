@@ -88,6 +88,9 @@ struct CellHeader {
   marked: boolean;
   // FLAG_* bits: extensibility, an array's read-only length.
   flags: u8;
+  // Where the cell's slots begin in the arena. A string has no slots, and
+  // its slotStart holds its length in storage bytes instead (its buffer
+  // may be longer: see the string storage below).
   slotStart: u32;
   slotCount: u32;
   // Tag-specific words. `payload`: a string's index into `strings`, a
@@ -124,6 +127,11 @@ struct HiddenClass {
 }
 
 export const DICT_BIT: u32 = 2147483648;
+
+// A string buffer's reference word: the count of strings over it, and
+// whether a concatenation made it (and so may append to it in place).
+const BUFFER_APPENDABLE: u32 = 0x8000_0000;
+const BUFFER_REFS: u32 = 0x7FFF_FFFF;
 
 // The most pending-ephemeron scratch kept between collections.
 const PENDING_RETAIN_BYTES: usize = 262144;
@@ -177,7 +185,12 @@ export struct Heap {
   // current cycle's are added when asked.
   cellsBeforeCycle: f64;
   slotsBeforeCycle: f64;
+  // String storage buffers. A buffer can back several strings: each sees
+  // the prefix its own length names. `bufferRefs` counts, per buffer, the
+  // strings over it, with BUFFER_APPENDABLE set on a buffer a
+  // concatenation made (see concatStorage).
   strings: Array<Array<u8>>;
+  bufferRefs: Array<u32>;
   classes: Array<HiddenClass>;
   // Weak records reached during the current collection (see Weak
   // records); emptied when the collection ends, never a root.
@@ -425,13 +438,7 @@ export struct Heap {
         }
         if (tag == TAG_STRING) {
           const stringIndex = this.headers[usize(handle)].payload;
-          this.strings[usize(stringIndex)] = Array<u8>();
-          if (this.freeStringCount < this.freeStrings.length) {
-            this.freeStrings[this.freeStringCount] = stringIndex;
-          } else {
-            this.freeStrings.push(stringIndex);
-          }
-          this.freeStringCount = this.freeStringCount + 1;
+          this.releaseStringBuffer(stringIndex);
         }
         this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
         // A cell above the highest survivor is cut off with the table,
@@ -450,7 +457,7 @@ export struct Heap {
       this.headers[usize(handle)].marked = false;
       const start = this.headers[usize(handle)].slotStart;
       const slotCount = this.headers[usize(handle)].slotCount;
-      this.headers[usize(handle)].slotStart = u32(compacted.length);
+      if (tag != TAG_STRING) this.headers[usize(handle)].slotStart = u32(compacted.length);
       let index: u32 = 0;
       while (index < slotCount) {
         const kept = this.slots[usize(start + index)];
@@ -1453,19 +1460,94 @@ export struct Heap {
   // unit, little-endian, with FLAG_WIDE on the cell. The narrow form is
   // canonical, so equal content always has equal storage.
   function allocateStorage(inout this, bytes: Array<u8>, wide: boolean): u32 {
-    let stringIndex: u32 = 0;
+    const byteCount = u32(bytes.length);
+    const stringIndex = this.adoptBuffer(move bytes);
+    return this.allocateStringOver(stringIndex, byteCount, wide);
+  }
+
+  // A buffer slot for `bytes`, with one string over it to come.
+  function adoptBuffer(inout this, bytes: Array<u8>): u32 {
     if (this.freeStringCount > 0) {
       this.freeStringCount = this.freeStringCount - 1;
-      stringIndex = this.freeStrings[this.freeStringCount];
-      this.strings[usize(stringIndex)] = move bytes;
-    } else {
-      stringIndex = u32(this.strings.length);
-      this.strings.push(move bytes);
+      const reused = this.freeStrings[this.freeStringCount];
+      this.strings[usize(reused)] = move bytes;
+      this.bufferRefs[usize(reused)] = 1;
+      return reused;
     }
+    const stringIndex = u32(this.strings.length);
+    this.strings.push(move bytes);
+    this.bufferRefs.push(1);
+    return stringIndex;
+  }
+
+  // A string cell over the first `byteCount` bytes of buffer
+  // `stringIndex`, whose count already includes it.
+  function allocateStringOver(inout this, stringIndex: u32, byteCount: u32, wide: boolean): u32 {
     const handle = this.allocate(TAG_STRING, 0);
     this.headers[usize(handle)].payload = stringIndex;
+    this.headers[usize(handle)].slotStart = byteCount;
     if (wide) this.setFlags(handle, FLAG_WIDE);
     return handle;
+  }
+
+  // One string over a buffer has died: the buffer goes back to the free
+  // list with the last one.
+  function releaseStringBuffer(inout this, stringIndex: u32): void {
+    const at = usize(stringIndex);
+    const remaining = (this.bufferRefs[at] & BUFFER_REFS) - 1;
+    if (remaining > 0) {
+      this.bufferRefs[at] = (this.bufferRefs[at] & BUFFER_APPENDABLE) | remaining;
+      return;
+    }
+    this.strings[at] = Array<u8>();
+    this.bufferRefs[at] = 0;
+    if (this.freeStringCount < this.freeStrings.length) {
+      this.freeStrings[this.freeStringCount] = stringIndex;
+    } else {
+      this.freeStrings.push(stringIndex);
+    }
+    this.freeStringCount = this.freeStringCount + 1;
+  }
+
+  // `left` followed by `right`, two strings of the same width. When
+  // `left` is the newest string over a buffer a concatenation made,
+  // `right` is appended to that buffer in place and the result shares it;
+  // every earlier string over the buffer keeps seeing its own prefix, and
+  // a loop that grows a string by `+=` copies each byte once instead of
+  // once per iteration. Otherwise both are copied into a fresh buffer
+  // that later concatenations may extend in the same way.
+  function concatStorage(inout this, left: u32, right: u32): u32 {
+    const leftBuffer = usize(this.headers[usize(left)].payload);
+    const leftBytes = this.headers[usize(left)].slotStart;
+    const rightBuffer = usize(this.headers[usize(right)].payload);
+    const rightBytes = this.headers[usize(right)].slotStart;
+    const wide = (this.headers[usize(left)].flags & FLAG_WIDE) != 0;
+    const joinedBytes = leftBytes + rightBytes;
+    const appendable = (this.bufferRefs[leftBuffer] & BUFFER_APPENDABLE) != 0;
+    if (appendable && leftBuffer != rightBuffer && u32(this.strings[leftBuffer].length) == leftBytes) {
+      let index: usize = 0;
+      while (index < usize(rightBytes)) {
+        const byte = this.strings[rightBuffer][index];
+        this.strings[leftBuffer].push(byte);
+        index = index + 1;
+      }
+      this.bufferRefs[leftBuffer] = this.bufferRefs[leftBuffer] + 1;
+      return this.allocateStringOver(u32(leftBuffer), joinedBytes, wide);
+    }
+    let joined = Array<u8>.withCapacity(usize(joinedBytes));
+    let index: usize = 0;
+    while (index < usize(leftBytes)) {
+      joined.push(this.strings[leftBuffer][index]);
+      index = index + 1;
+    }
+    index = 0;
+    while (index < usize(rightBytes)) {
+      joined.push(this.strings[rightBuffer][index]);
+      index = index + 1;
+    }
+    const stringIndex = this.adoptBuffer(move joined);
+    this.bufferRefs[usize(stringIndex)] = BUFFER_APPENDABLE | 1;
+    return this.allocateStringOver(stringIndex, joinedBytes, wide);
   }
 
   // A string whose units are these bytes' values (ASCII or Latin-1).
@@ -1525,7 +1607,7 @@ export struct Heap {
 
   // The length in code units.
   function stringLength(handle: u32): usize {
-    const bytes = this.strings[usize(this.headers[usize(handle)].payload)].length;
+    const bytes = usize(this.headers[usize(handle)].slotStart);
     if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) return bytes / 2;
     return bytes;
   }
@@ -1586,7 +1668,7 @@ export struct Heap {
 
   // The raw storage: Latin-1 bytes, or two bytes per unit when wide.
   function stringStorageLength(handle: u32): usize {
-    return this.strings[usize(this.headers[usize(handle)].payload)].length;
+    return usize(this.headers[usize(handle)].slotStart);
   }
 
   function stringStorageByte(handle: u32, index: usize): u8 {
@@ -1597,7 +1679,7 @@ export struct Heap {
   // fast paths' working form), or the wide string's byte pairs.
   function stringStorageBytes(handle: u32): Array<u8> {
     const at = usize(this.headers[usize(handle)].payload);
-    const length = this.strings[at].length;
+    const length = usize(this.headers[usize(handle)].slotStart);
     let copied = Array<u8>.withCapacity(length);
     let index: usize = 0;
     while (index < length) {
@@ -1614,7 +1696,7 @@ export struct Heap {
       const units = this.stringUnits(handle);
       return unitsToUtf8(in units);
     }
-    const length = this.strings[at].length;
+    const length = usize(this.headers[usize(handle)].slotStart);
     let bytes = Array<u8>.withCapacity(length);
     let index: usize = 0;
     while (index < length) {
@@ -1645,8 +1727,10 @@ export struct Heap {
     if (this.isWideString(a) != this.isWideString(b)) return false;
     const at = usize(this.headers[usize(a)].payload);
     const bt = usize(this.headers[usize(b)].payload);
-    const length = this.strings[at].length;
-    if (length != this.strings[bt].length) return false;
+    const length = usize(this.headers[usize(a)].slotStart);
+    if (length != usize(this.headers[usize(b)].slotStart)) return false;
+    // Two strings over one buffer with one length are one content.
+    if (at == bt) return true;
     let index: usize = 0;
     while (index < length) {
       if (this.strings[at][index] != this.strings[bt][index]) return false;
@@ -1866,7 +1950,7 @@ export function createHeap(): Heap {
     transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), bufferRefs: Array<u32>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
