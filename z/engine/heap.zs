@@ -25,7 +25,7 @@
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, isAsciiBytes, isNarrowUnits, unitsToLatin1 } from "./text.zs";
 import { expect } from "std/test";
 import { replace } from "std/memory";
-import { Value, undefinedValue, deletedValue, isDeleted, cellValue, asCell, isCell, int32Value, asInt32 } from "./value.zs";
+import { Value, undefinedValue, deletedValue, isDeleted, cellValue, asCell, isCell, int32Value, asInt32, isInt32, isNumber, asDouble } from "./value.zs";
 
 // Tags mirror the reference engine (src/value.zc) so the two implementations
 // stay legible against each other during the migration.
@@ -44,6 +44,8 @@ export const TAG_SYMBOL: u8 = 15;
 // values), which the collector never traces through: see Weak records.
 export const TAG_WEAK_RECORD: u8 = 16;
 export const TAG_WEAK_ARRAY: u8 = 17;
+// A Map's or Set's entries, kept outside the slot arena: see Tables.
+export const TAG_TABLE: u8 = 18;
 
 // Beyond the reference's tags: an environment is its own cell here, where
 // the reference keeps captured bindings in a property bag.
@@ -146,6 +148,19 @@ const WEAK_KIND: u32 = 4;
 const WEAK_EMPTY: i32 = -1;
 const WEAK_TOMBSTONE: i32 = -2;
 
+// A Map's or Set's entries (see Tables).
+struct Table {
+  keys: Array<Value>;
+  values: Array<Value>;
+  hashes: Array<u32>;
+  index: Array<i32>;
+  live: u32;
+  kind: i32;
+}
+
+const TABLE_EMPTY: i32 = -1;
+const TABLE_REMOVED: i32 = -2;
+
 // The side index of a dictionary-mode object: open addressing over pair
 // numbers plus one (0 is empty), sized to at least twice the pair
 // capacity. A removed pair stays in the index as a tombstone until the
@@ -218,6 +233,10 @@ export struct Heap {
   // Slots of the cells traced in this collection: what the sweep will
   // keep, known before it copies anything.
   markedSlots: usize;
+  // Map and Set tables, one per TAG_TABLE cell, reused after a sweep.
+  tables: Array<Table>;
+  freeTables: Array<u32>;
+  freeTableCount: usize;
   // Dictionary-mode indexes, one per such object, reused after a sweep.
   dictionaries: Array<Dictionary>;
   freeDictionaries: Array<u32>;
@@ -343,6 +362,11 @@ export struct Heap {
       // its entries registered: a marked key's value is marked now, the
       // rest wait on their keys. A weak array's elements are never traced
       // from here.
+      // A table's keys and values are traced through its cell.
+      if (tag == TAG_TABLE) {
+        const table = usize(this.headers[usize(handle)].payload);
+        this.markTable(table);
+      }
       if (tag == TAG_WEAK_RECORD) {
         this.weakRecords.push(handle);
         this.registerWeakRecord(handle);
@@ -440,6 +464,10 @@ export struct Heap {
         if (tag == TAG_STRING) {
           const stringIndex = this.headers[usize(handle)].payload;
           this.releaseStringBuffer(stringIndex);
+        }
+        if (tag == TAG_TABLE) {
+          const table = this.headers[usize(handle)].payload;
+          this.releaseTable(table);
         }
         this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
         // A cell above the highest survivor is cut off with the table,
@@ -948,6 +976,196 @@ export struct Heap {
   // Live dictionary-mode objects, for the harness.
   function dictionaryCount(): u32 {
     return u32(this.dictionaries.length - this.freeDictionaryCount);
+  }
+
+  // --- Tables ---
+  //
+  // A Map's or Set's entries live outside the slot arena, in a table that
+  // a TAG_TABLE cell owns (its payload is the table's number): keys and
+  // values in insertion order, a removed entry leaving the deleted marker
+  // in both; each entry's hash beside it, given by the caller; an
+  // open-addressed index from hash to position (TABLE_EMPTY, or
+  // TABLE_REMOVED where an entry was); the live count; and a kind the
+  // caller defines. Positions never move while the table lives, so an
+  // iterator walks them in order, seeing entries added during the walk
+  // and skipping removed ones. The collector traces the keys and values
+  // through the cell and takes the table back with it.
+  function allocateTable(inout this, kind: i32): u32 {
+    let index = Array<i32>.withCapacity(8);
+    let k: usize = 0;
+    while (k < 8) {
+      index.push(TABLE_EMPTY);
+      k = k + 1;
+    }
+    const fresh = Table({ keys: Array<Value>(), values: Array<Value>(), hashes: Array<u32>(), index: move index, live: 0, kind: kind });
+    let table: u32 = 0;
+    if (this.freeTableCount > 0) {
+      this.freeTableCount = this.freeTableCount - 1;
+      table = this.freeTables[this.freeTableCount];
+      this.tables[usize(table)] = move fresh;
+    } else {
+      table = u32(this.tables.length);
+      this.tables.push(move fresh);
+    }
+    const handle = this.allocate(TAG_TABLE, 0);
+    this.headers[usize(handle)].payload = table;
+    return handle;
+  }
+
+  function isTable(handle: u32): boolean {
+    return this.headers[usize(handle)].tag == TAG_TABLE;
+  }
+
+  function tableKind(handle: u32): i32 {
+    return this.tables[usize(this.headers[usize(handle)].payload)].kind;
+  }
+
+  // Entries present.
+  function tableLive(handle: u32): u32 {
+    return this.tables[usize(this.headers[usize(handle)].payload)].live;
+  }
+
+  // Positions taken, removed entries included: an iteration's bound.
+  function tableExtent(handle: u32): u32 {
+    return u32(this.tables[usize(this.headers[usize(handle)].payload)].keys.length);
+  }
+
+  // The key at a position, the deleted marker once removed.
+  function tableKey(handle: u32, position: u32): Value {
+    return this.tables[usize(this.headers[usize(handle)].payload)].keys[usize(position)];
+  }
+
+  function tableValue(handle: u32, position: u32): Value {
+    return this.tables[usize(this.headers[usize(handle)].payload)].values[usize(position)];
+  }
+
+  function setTableValue(inout this, handle: u32, position: u32, value: Value): void {
+    this.tables[usize(this.headers[usize(handle)].payload)].values[usize(position)] = value;
+  }
+
+  // The position of `key`, whose hash is `hash`, or -1.
+  function tableFind(handle: u32, key: Value, hash: u32): i32 {
+    const table = usize(this.headers[usize(handle)].payload);
+    const mask = u32(this.tables[table].index.length) - 1;
+    let slot = hash & mask;
+    while (true) {
+      const held = this.tables[table].index[usize(slot)];
+      if (held == TABLE_EMPTY) return -1;
+      if (held >= 0 && this.tables[table].hashes[usize(held)] == hash && this.sameKey(this.tables[table].keys[usize(held)], key)) return held;
+      slot = (slot + 1) & mask;
+    }
+    return -1;
+  }
+
+  // Append an entry the table does not hold.
+  function tableAdd(inout this, handle: u32, key: Value, value: Value, hash: u32): void {
+    const table = usize(this.headers[usize(handle)].payload);
+    const position = this.tables[table].keys.length;
+    // The index counts every position taken, removed ones included, and
+    // stays at most three quarters full.
+    if ((position + 1) * 4 > this.tables[table].index.length * 3) this.growTableIndex(table);
+    this.tables[table].keys.push(key);
+    this.tables[table].values.push(value);
+    this.tables[table].hashes.push(hash);
+    const mask = u32(this.tables[table].index.length) - 1;
+    let slot = hash & mask;
+    while (this.tables[table].index[usize(slot)] >= 0) { slot = (slot + 1) & mask; }
+    this.tables[table].index[usize(slot)] = i32(position);
+    this.tables[table].live = this.tables[table].live + 1;
+  }
+
+  // Remove the entry at a position.
+  function tableRemove(inout this, handle: u32, position: u32): void {
+    const table = usize(this.headers[usize(handle)].payload);
+    const mask = u32(this.tables[table].index.length) - 1;
+    let slot = this.tables[table].hashes[usize(position)] & mask;
+    while (this.tables[table].index[usize(slot)] != i32(position)) { slot = (slot + 1) & mask; }
+    this.tables[table].index[usize(slot)] = TABLE_REMOVED;
+    this.tables[table].keys[usize(position)] = deletedValue();
+    this.tables[table].values[usize(position)] = deletedValue();
+    this.tables[table].live = this.tables[table].live - 1;
+  }
+
+  // Remove every entry; positions stay taken, so an iterator walking the
+  // table finds nothing live and then whatever is added after.
+  function tableClear(inout this, handle: u32): void {
+    const table = usize(this.headers[usize(handle)].payload);
+    let k: usize = 0;
+    while (k < this.tables[table].keys.length) {
+      this.tables[table].keys[k] = deletedValue();
+      this.tables[table].values[k] = deletedValue();
+      k = k + 1;
+    }
+    k = 0;
+    while (k < this.tables[table].index.length) {
+      this.tables[table].index[k] = TABLE_EMPTY;
+      k = k + 1;
+    }
+    this.tables[table].live = 0;
+  }
+
+  // Twice the index, rebuilt from the kept hashes over the live entries.
+  function growTableIndex(inout this, table: usize): void {
+    const capacity = this.tables[table].index.length * 2;
+    let index = Array<i32>.withCapacity(capacity);
+    let k: usize = 0;
+    while (k < capacity) {
+      index.push(TABLE_EMPTY);
+      k = k + 1;
+    }
+    const mask = u32(capacity) - 1;
+    let position: usize = 0;
+    while (position < this.tables[table].keys.length) {
+      if (!isDeleted(this.tables[table].keys[position])) {
+        let slot = this.tables[table].hashes[position] & mask;
+        while (index[usize(slot)] != TABLE_EMPTY) { slot = (slot + 1) & mask; }
+        index[usize(slot)] = i32(position);
+      }
+      position = position + 1;
+    }
+    this.tables[table].index = move index;
+  }
+
+  function markTable(inout this, table: usize): void {
+    let k: usize = 0;
+    while (k < this.tables[table].keys.length) {
+      const key = this.tables[table].keys[k];
+      if (isCell(key) && asCell(key) != 0 && !this.headers[usize(asCell(key))].marked) {
+        this.headers[usize(asCell(key))].marked = true;
+        this.pushMark(asCell(key));
+      }
+      const value = this.tables[table].values[k];
+      if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+        this.headers[usize(asCell(value))].marked = true;
+        this.pushMark(asCell(value));
+      }
+      k = k + 1;
+    }
+  }
+
+  function releaseTable(inout this, table: u32): void {
+    this.tables[usize(table)] = Table({ keys: Array<Value>(), values: Array<Value>(), hashes: Array<u32>(), index: Array<i32>(), live: 0, kind: 0 });
+    if (this.freeTableCount < this.freeTables.length) {
+      this.freeTables[this.freeTableCount] = table;
+    } else {
+      this.freeTables.push(table);
+    }
+    this.freeTableCount = this.freeTableCount + 1;
+  }
+
+  // SameValueZero between keys: numbers by value (NaN equal to itself,
+  // the two zeros alike), strings by content, anything else by identity.
+  function sameKey(a: Value, b: Value): boolean {
+    if (a.bits == b.bits) return true;
+    if (isNumber(a) && isNumber(b)) {
+      const x = isInt32(a) ? f64(asInt32(a)) : asDouble(a);
+      const y = isInt32(b) ? f64(asInt32(b)) : asDouble(b);
+      return x == y || (x != x && y != y);
+    }
+    if (isCell(a) && isCell(b) && asCell(a) != 0 && asCell(b) != 0 && this.headers[usize(asCell(a))].tag == TAG_STRING && this.headers[usize(asCell(b))].tag == TAG_STRING) {
+      return this.stringsEqual(asCell(a), asCell(b));
+    }
+    return false;
   }
 
   // --- Arrays ---
@@ -2044,6 +2262,13 @@ export struct Heap {
       held = held + f64(this.dictionaries[index].index.capacity) * 4.0;
       index = index + 1;
     }
+    held = held + f64(this.tables.capacity) * 104.0 + f64(this.freeTables.capacity) * 4.0;
+    index = 0;
+    while (index < this.tables.length) {
+      held = held + f64(this.tables[index].keys.capacity + this.tables[index].values.capacity) * 8.0;
+      held = held + f64(this.tables[index].hashes.capacity + this.tables[index].index.capacity) * 4.0;
+      index = index + 1;
+    }
     return held;
   }
 
@@ -2077,6 +2302,7 @@ export function createHeap(): Heap {
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
+    tables: Array<Table>(), freeTables: Array<u32>(), freeTableCount: 0,
     dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD, indexKeysDefined: false,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: COLLECT_FLOOR, collections: 0, collectFloor: COLLECT_FLOOR, collectGrowthPercent: COLLECT_GROWTH_PERCENT,

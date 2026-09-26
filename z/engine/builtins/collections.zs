@@ -14,36 +14,14 @@ import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, 
 import { Runtime, toNumber, truncateDouble } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT } from "../heap.zs";
 
-// Record slots.
-const REC_KEYS: u32 = 0;
-const REC_VALUES: u32 = 1;
-const REC_INDEX: u32 = 2;
-const REC_SIZE: u32 = 3;
-const REC_KIND: u32 = 4;
-
 const KIND_MAP: i32 = 0;
 const KIND_SET: i32 = 1;
 const KIND_WEAK_MAP: i32 = 2;
 const KIND_WEAK_SET: i32 = 3;
 
-const SLOT_EMPTY: i32 = -1;
-const SLOT_TOMBSTONE: i32 = -2;
-
 function newRecord(inout runtime: Runtime, kind: i32): u32 {
   if (kind == KIND_WEAK_MAP || kind == KIND_WEAK_SET) return runtime.heap.allocateWeakRecord(kind);
-  const record = runtime.heap.allocateArray(5);
-  runtime.heap.setSlot(record, REC_KEYS, cellValue(runtime.heap.allocateArray(0)));
-  runtime.heap.setSlot(record, REC_VALUES, cellValue(runtime.heap.allocateArray(0)));
-  const index = runtime.heap.allocateArray(8);
-  let i: u32 = 0;
-  while (i < 8) {
-    runtime.heap.setSlot(index, i, int32Value(SLOT_EMPTY));
-    i = i + 1;
-  }
-  runtime.heap.setSlot(record, REC_INDEX, cellValue(index));
-  runtime.heap.setSlot(record, REC_SIZE, int32Value(0));
-  runtime.heap.setSlot(record, REC_KIND, int32Value(kind));
-  return record;
+  return runtime.heap.allocateTable(kind);
 }
 
 function recordOf(in runtime: Runtime, value: Value, kind: i32): u32 {
@@ -52,7 +30,8 @@ function recordOf(in runtime: Runtime, value: Value, kind: i32): u32 {
   const slot = runtime.heap.objectFindSlot(asCell(value), atomMapRecord);
   if (slot < 0) return 0;
   const record = asCell(runtime.heap.slot(asCell(value), u32(slot)));
-  if (asInt32(runtime.heap.slot(record, REC_KIND)) != kind) return 0;
+  const recordKind = runtime.heap.isTable(record) ? runtime.heap.tableKind(record) : runtime.heap.weakKind(record);
+  if (recordKind != kind) return 0;
   return record;
 }
 
@@ -67,47 +46,8 @@ function requireRecord(inout runtime: Runtime, value: Value, kind: i32, in what:
 
 // The entry position holding `key`, or -1.
 function findEntry(inout runtime: Runtime, record: u32, key: Value): i32 {
-  const index = asCell(runtime.heap.slot(record, REC_INDEX));
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const capacity = runtime.heap.arrayLength(index);
-  let slot = runtime.hashValue(key) & (capacity - 1);
-  let probes: u32 = 0;
-  while (probes < capacity) {
-    const held = asInt32(runtime.heap.slot(index, slot));
-    if (held == SLOT_EMPTY) return -1;
-    if (held >= 0) {
-      const candidate = runtime.heap.slot(keys, u32(held));
-      if (!isDeleted(candidate) && runtime.sameValueZero(candidate, key)) return held;
-    }
-    slot = (slot + 1) & (capacity - 1);
-    probes = probes + 1;
-  }
-  return -1;
-}
-
-// Rebuild the index over the live entries at twice the capacity.
-function rehash(inout runtime: Runtime, record: u32): void {
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const oldIndex = asCell(runtime.heap.slot(record, REC_INDEX));
-  const capacity = runtime.heap.arrayLength(oldIndex) * 2;
-  const index = runtime.heap.allocateArray(capacity);
-  let i: u32 = 0;
-  while (i < capacity) {
-    runtime.heap.setSlot(index, i, int32Value(SLOT_EMPTY));
-    i = i + 1;
-  }
-  runtime.heap.setSlot(record, REC_INDEX, cellValue(index));
-  const count = runtime.heap.arrayLength(keys);
-  let position: u32 = 0;
-  while (position < count) {
-    const key = runtime.heap.slot(keys, position);
-    if (!isDeleted(key)) {
-      let slot = runtime.hashValue(key) & (capacity - 1);
-      while (asInt32(runtime.heap.slot(index, slot)) != SLOT_EMPTY) { slot = (slot + 1) & (capacity - 1); }
-      runtime.heap.setSlot(index, slot, int32Value(i32(position)));
-    }
-    position = position + 1;
-  }
+  const hash = runtime.hashValue(key);
+  return runtime.heap.tableFind(record, key, hash);
 }
 
 // Insert or update. -0 keys become +0.
@@ -115,30 +55,15 @@ function putEntry(inout runtime: Runtime, record: u32, key: Value, value: Value)
   let normalized = key;
   if (isNumberZero(key)) normalized = int32Value(0);
   // A set's element is its key: -0 added becomes +0 when iterated.
-  const kind = asInt32(runtime.heap.slot(record, REC_KIND));
-  const stored: Value = (kind == KIND_SET || kind == KIND_WEAK_SET) ? normalized : value;
-  const existing = findEntry(inout runtime, record, normalized);
-  const values = asCell(runtime.heap.slot(record, REC_VALUES));
+  const kind = runtime.heap.tableKind(record);
+  const stored: Value = kind == KIND_SET ? normalized : value;
+  const hash = runtime.hashValue(normalized);
+  const existing = runtime.heap.tableFind(record, normalized, hash);
   if (existing >= 0) {
-    runtime.heap.setSlot(values, u32(existing), stored);
+    runtime.heap.setTableValue(record, u32(existing), stored);
     return;
   }
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const position = runtime.heap.arrayLength(keys);
-  let index = asCell(runtime.heap.slot(record, REC_INDEX));
-  // The index counts every entry position, deleted ones included.
-  if ((position + 1) * 4 > runtime.heap.arrayLength(index) * 3) {
-    rehash(inout runtime, record);
-    index = asCell(runtime.heap.slot(record, REC_INDEX));
-  }
-  runtime.heap.arraySet(keys, position, normalized);
-  runtime.heap.arraySet(values, position, stored);
-  const capacity = runtime.heap.arrayLength(index);
-  let slot = runtime.hashValue(normalized) & (capacity - 1);
-  while (asInt32(runtime.heap.slot(index, slot)) >= 0) { slot = (slot + 1) & (capacity - 1); }
-  runtime.heap.setSlot(index, slot, int32Value(i32(position)));
-  const size = asInt32(runtime.heap.slot(record, REC_SIZE));
-  runtime.heap.setSlot(record, REC_SIZE, int32Value(size + 1));
+  runtime.heap.tableAdd(record, normalized, stored, hash);
 }
 
 function isNumberZero(value: Value): boolean {
@@ -148,39 +73,12 @@ function isNumberZero(value: Value): boolean {
 function deleteEntry(inout runtime: Runtime, record: u32, key: Value): boolean {
   const position = findEntry(inout runtime, record, key);
   if (position < 0) return false;
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const values = asCell(runtime.heap.slot(record, REC_VALUES));
-  runtime.heap.setSlot(keys, u32(position), deletedValue());
-  runtime.heap.setSlot(values, u32(position), deletedValue());
-  const index = asCell(runtime.heap.slot(record, REC_INDEX));
-  const capacity = runtime.heap.arrayLength(index);
-  let slot = runtime.hashValue(key) & (capacity - 1);
-  while (asInt32(runtime.heap.slot(index, slot)) != position) { slot = (slot + 1) & (capacity - 1); }
-  runtime.heap.setSlot(index, slot, int32Value(SLOT_TOMBSTONE));
-  const size = asInt32(runtime.heap.slot(record, REC_SIZE));
-  runtime.heap.setSlot(record, REC_SIZE, int32Value(size - 1));
+  runtime.heap.tableRemove(record, u32(position));
   return true;
 }
 
 function clearEntries(inout runtime: Runtime, record: u32): void {
-  // Existing iterators keep walking the old arrays and find nothing live.
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const values = asCell(runtime.heap.slot(record, REC_VALUES));
-  const count = runtime.heap.arrayLength(keys);
-  let position: u32 = 0;
-  while (position < count) {
-    runtime.heap.setSlot(keys, position, deletedValue());
-    runtime.heap.setSlot(values, position, deletedValue());
-    position = position + 1;
-  }
-  const index = asCell(runtime.heap.slot(record, REC_INDEX));
-  const capacity = runtime.heap.arrayLength(index);
-  let slot: u32 = 0;
-  while (slot < capacity) {
-    runtime.heap.setSlot(index, slot, int32Value(SLOT_EMPTY));
-    slot = slot + 1;
-  }
-  runtime.heap.setSlot(record, REC_SIZE, int32Value(0));
+  runtime.heap.tableClear(record);
 }
 
 // --- construction ---
@@ -283,8 +181,7 @@ function mapGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u
   if (record == 0) return undefinedValue();
   const position = findEntry(inout runtime, record, runtime.argument(argsBase, argc, 0));
   if (position < 0) return undefinedValue();
-  const values = asCell(runtime.heap.slot(record, REC_VALUES));
-  return runtime.heap.slot(values, u32(position));
+  return runtime.heap.tableValue(record, u32(position));
 }
 
 function mapSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -321,7 +218,7 @@ function mapSize(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: 
   const what: String = "get Map.prototype.size";
   const record = requireRecord(inout runtime, thisValue, KIND_MAP, in what);
   if (record == 0) return undefinedValue();
-  return runtime.heap.slot(record, REC_SIZE);
+  return int32Value(i32(runtime.heap.tableLive(record)));
 }
 
 // forEach over the live entries, in insertion order, seeing additions.
@@ -336,13 +233,11 @@ function forEachEntry(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     return undefinedValue();
   }
   const receiver = runtime.argument(argsBase, argc, 1);
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const values = asCell(runtime.heap.slot(record, REC_VALUES));
   let position: u32 = 0;
-  while (position < runtime.heap.arrayLength(keys)) {
-    const key = runtime.heap.slot(keys, position);
+  while (position < runtime.heap.tableExtent(record)) {
+    const key = runtime.heap.tableKey(record, position);
     if (!isDeleted(key)) {
-      const value = runtime.heap.slot(values, position);
+      const value = runtime.heap.tableValue(record, position);
       runtime.callValue3(callback, receiver, kind == KIND_MAP ? value : key, key, thisValue);
       if (runtime.pendingThrow) return undefinedValue();
     }
@@ -393,7 +288,7 @@ function setSize(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: 
   const what: String = "get Set.prototype.size";
   const record = requireRecord(inout runtime, thisValue, KIND_SET, in what);
   if (record == 0) return undefinedValue();
-  return runtime.heap.slot(record, REC_SIZE);
+  return int32Value(i32(runtime.heap.tableLive(record)));
 }
 
 function setForEach(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -505,20 +400,18 @@ function iteratorNext(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   const recordValue = runtime.heap.slot(state, 0);
   if (isUndefined(recordValue)) return runtime.createIterResult(undefinedValue(), true);
   const record = asCell(recordValue);
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const values = asCell(runtime.heap.slot(record, REC_VALUES));
   let position = u32(asInt32(runtime.heap.slot(state, 1)));
   const kind = asInt32(runtime.heap.slot(state, 2));
-  const count = runtime.heap.arrayLength(keys);
-  while (position < count && isDeleted(runtime.heap.slot(keys, position))) { position = position + 1; }
+  const count = runtime.heap.tableExtent(record);
+  while (position < count && isDeleted(runtime.heap.tableKey(record, position))) { position = position + 1; }
   if (position >= count) {
     runtime.heap.setSlot(state, 0, undefinedValue());
     runtime.heap.setSlot(state, 1, int32Value(i32(position)));
     return runtime.createIterResult(undefinedValue(), true);
   }
   runtime.heap.setSlot(state, 1, int32Value(i32(position + 1)));
-  const key = runtime.heap.slot(keys, position);
-  const value = runtime.heap.slot(values, position);
+  const key = runtime.heap.tableKey(record, position);
+  const value = runtime.heap.tableValue(record, position);
   if (kind == 0) return runtime.createIterResult(key, false);
   if (kind == 1) return runtime.createIterResult(value, false);
   const pair = runtime.heap.allocateArray(2);
@@ -574,8 +467,7 @@ function getOrInsert(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   }
   const position = findEntry(inout runtime, record, key);
   if (position >= 0) {
-    const values = asCell(runtime.heap.slot(record, REC_VALUES));
-    return runtime.heap.slot(values, u32(position));
+    return runtime.heap.tableValue(record, u32(position));
   }
   putEntry(inout runtime, record, key, value);
   return value;
@@ -604,8 +496,7 @@ function getOrInsertComputed(inout runtime: Runtime, thisValue: Value, argsBase:
   } else {
     const position = findEntry(inout runtime, record, key);
     if (position >= 0) {
-      const values = asCell(runtime.heap.slot(record, REC_VALUES));
-      return runtime.heap.slot(values, u32(position));
+      return runtime.heap.tableValue(record, u32(position));
     }
   }
   let args = Array<Value>();
@@ -701,8 +592,7 @@ function groupItems(inout runtime: Runtime, argsBase: u32, argc: u32, asMap: boo
     }
     const position = findEntry(inout runtime, groups, key);
     if (position >= 0) {
-      const values = asCell(runtime.heap.slot(groups, REC_VALUES));
-      const list = asCell(runtime.heap.slot(values, u32(position)));
+      const list = asCell(runtime.heap.tableValue(groups, u32(position)));
       const count = runtime.heap.arrayLength(list);
       runtime.heap.arraySet(list, count, item);
     } else {
@@ -736,13 +626,11 @@ function objectGroupBy(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   if (groups == 0) return undefinedValue();
   runtime.pushTempRoot(cellValue(groups));
   const object = runtime.heap.allocateObject(0);
-  const keys = asCell(runtime.heap.slot(groups, REC_KEYS));
-  const values = asCell(runtime.heap.slot(groups, REC_VALUES));
-  const count = runtime.heap.arrayLength(keys);
+  const count = runtime.heap.tableExtent(groups);
   let position: u32 = 0;
   while (position < count) {
-    const atom = asCell(runtime.heap.slot(keys, position));
-    const list = runtime.heap.slot(values, position);
+    const atom = asCell(runtime.heap.tableKey(groups, position));
+    const list = runtime.heap.tableValue(groups, position);
     runtime.heap.objectDefine(object, atom, list, PROP_DEFAULT);
     position = position + 1;
   }
@@ -813,7 +701,7 @@ function getSetRecord(inout runtime: Runtime, other: Value): SetRecord {
 }
 
 function recordSize(in runtime: Runtime, record: u32): f64 {
-  return f64(asInt32(runtime.heap.slot(record, REC_SIZE)));
+  return f64(asInt32(int32Value(i32(runtime.heap.tableLive(record)))));
 }
 
 // Call the other set's `has` with one element.
@@ -840,11 +728,10 @@ function otherKeys(inout runtime: Runtime, in other: SetRecord): Value {
 function copySet(inout runtime: Runtime, record: u32): u32 {
   const result = newRecord(inout runtime, KIND_SET);
   runtime.pushTempRoot(cellValue(result));
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
-  const count = runtime.heap.arrayLength(keys);
+  const count = runtime.heap.tableExtent(record);
   let position: u32 = 0;
   while (position < count) {
-    const key = runtime.heap.slot(keys, position);
+    const key = runtime.heap.tableKey(record, position);
     if (!isDeleted(key)) putEntry(inout runtime, result, key, key);
     position = position + 1;
   }
@@ -882,7 +769,6 @@ function setOperation(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 }
 
 function setOperationBody(inout runtime: Runtime, record: u32, in other: SetRecord, op: i32): Value {
-  const keys = asCell(runtime.heap.slot(record, REC_KEYS));
   const thisSize = recordSize(in runtime, record);
   if (op == SET_UNION) {
     const result = copySet(inout runtime, record);
@@ -905,8 +791,8 @@ function setOperationBody(inout runtime: Runtime, record: u32, in other: SetReco
     runtime.pushTempRoot(cellValue(result));
     if (thisSize <= other.size) {
       let position: u32 = 0;
-      while (position < runtime.heap.arrayLength(keys)) {
-        const element = runtime.heap.slot(keys, position);
+      while (position < runtime.heap.tableExtent(record)) {
+        const element = runtime.heap.tableKey(record, position);
         position = position + 1;
         if (isDeleted(element)) continue;
         const inOther = otherHas(inout runtime, in other, element);
@@ -933,8 +819,8 @@ function setOperationBody(inout runtime: Runtime, record: u32, in other: SetReco
     runtime.pushTempRoot(cellValue(result));
     if (thisSize <= other.size) {
       let position: u32 = 0;
-      while (position < runtime.heap.arrayLength(keys)) {
-        const element = runtime.heap.slot(keys, position);
+      while (position < runtime.heap.tableExtent(record)) {
+        const element = runtime.heap.tableKey(record, position);
         position = position + 1;
         if (isDeleted(element)) continue;
         const inOther = otherHas(inout runtime, in other, element);
@@ -980,8 +866,8 @@ function setOperationBody(inout runtime: Runtime, record: u32, in other: SetReco
   if (op == SET_IS_SUBSET) {
     if (thisSize > other.size) return booleanValue(false);
     let position: u32 = 0;
-    while (position < runtime.heap.arrayLength(keys)) {
-      const element = runtime.heap.slot(keys, position);
+    while (position < runtime.heap.tableExtent(record)) {
+      const element = runtime.heap.tableKey(record, position);
       position = position + 1;
       if (isDeleted(element)) continue;
       const inOther = otherHas(inout runtime, in other, element);
@@ -1012,8 +898,8 @@ function setOperationBody(inout runtime: Runtime, record: u32, in other: SetReco
   // SET_IS_DISJOINT
   if (thisSize <= other.size) {
     let position: u32 = 0;
-    while (position < runtime.heap.arrayLength(keys)) {
-      const element = runtime.heap.slot(keys, position);
+    while (position < runtime.heap.tableExtent(record)) {
+      const element = runtime.heap.tableKey(record, position);
       position = position + 1;
       if (isDeleted(element)) continue;
       const inOther = otherHas(inout runtime, in other, element);
