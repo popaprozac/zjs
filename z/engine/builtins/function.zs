@@ -16,13 +16,8 @@ function functionCall(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
     return undefinedValue();
   }
   const receiver = runtime.argument(argsBase, argc, 0);
-  let args = Array<Value>();
-  let index: u32 = 1;
-  while (index < argc) {
-    args.push(runtime.argument(argsBase, argc, index));
-    index = index + 1;
-  }
-  return runtime.callValue(thisValue, receiver, move args);
+  if (argc <= 1) return runtime.callValue0(thisValue, receiver);
+  return runtime.callForwarding(thisValue, receiver, argsBase + 1, argc - 1);
 }
 
 function functionApply(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

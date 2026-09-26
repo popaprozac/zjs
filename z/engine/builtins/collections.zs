@@ -342,12 +342,8 @@ function forEachEntry(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   while (position < runtime.heap.arrayLength(keys)) {
     const key = runtime.heap.slot(keys, position);
     if (!isDeleted(key)) {
-      let args = Array<Value>();
       const value = runtime.heap.slot(values, position);
-      args.push(kind == KIND_MAP ? value : key);
-      args.push(key);
-      args.push(thisValue);
-      runtime.callValue(callback, receiver, move args);
+      runtime.callValue3(callback, receiver, kind == KIND_MAP ? value : key, key, thisValue);
       if (runtime.pendingThrow) return undefinedValue();
     }
     position = position + 1;

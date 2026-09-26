@@ -3626,6 +3626,43 @@ export struct Runtime {
     return this.callPlaced(callee, thisValue, argsBase, 2);
   }
 
+  function callValue3(inout this, callee: Value, thisValue: Value, first: Value, second: Value, third: Value): Value {
+    const argsBase = this.regTop;
+    while (this.regStack.length < usize(argsBase + 3)) { this.regStack.push(undefinedValue()); }
+    this.regStack[usize(argsBase)] = first;
+    this.regStack[usize(argsBase + 1)] = second;
+    this.regStack[usize(argsBase + 2)] = third;
+    this.regTop = argsBase + 3;
+    return this.callPlaced(callee, thisValue, argsBase, 3);
+  }
+
+  function callValue4(inout this, callee: Value, thisValue: Value, first: Value, second: Value, third: Value, fourth: Value): Value {
+    const argsBase = this.regTop;
+    while (this.regStack.length < usize(argsBase + 4)) { this.regStack.push(undefinedValue()); }
+    this.regStack[usize(argsBase)] = first;
+    this.regStack[usize(argsBase + 1)] = second;
+    this.regStack[usize(argsBase + 2)] = third;
+    this.regStack[usize(argsBase + 3)] = fourth;
+    this.regTop = argsBase + 4;
+    return this.callPlaced(callee, thisValue, argsBase, 4);
+  }
+
+  // A call whose arguments are `count` registers from `source` (a
+  // builtin's own arguments, passed on): copied above the stack top, no
+  // vector.
+  function callForwarding(inout this, callee: Value, thisValue: Value, source: u32, count: u32): Value {
+    const argsBase = this.regTop;
+    while (this.regStack.length < usize(argsBase + count)) { this.regStack.push(undefinedValue()); }
+    let index: u32 = 0;
+    while (index < count) {
+      const passed = this.regStack[usize(source + index)];
+      this.regStack[usize(argsBase + index)] = passed;
+      index = index + 1;
+    }
+    this.regTop = argsBase + count;
+    return this.callPlaced(callee, thisValue, argsBase, count);
+  }
+
   // The call itself, its arguments already in registers from argsBase.
   function callPlaced(inout this, callee: Value, thisValue: Value, argsBase: u32, argc: u32): Value {
     let outcome = undefinedValue();

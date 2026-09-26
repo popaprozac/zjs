@@ -184,11 +184,7 @@ function requireCallback(inout runtime: Runtime, callback: Value): boolean {
 }
 
 function callWith3(inout runtime: Runtime, callback: Value, receiver: Value, a: Value, b: Value, c: Value): Value {
-  let args = Array<Value>();
-  args.push(a);
-  args.push(b);
-  args.push(c);
-  return runtime.callValue(callback, receiver, move args);
+  return runtime.callValue3(callback, receiver, a, b, c);
 }
 
 // --- The constructor and statics ---
@@ -771,12 +767,7 @@ function reduceWalk(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
     if (present) {
       const element = getIndex(inout runtime, object, k);
       if (runtime.pendingThrow) break;
-      let args = Array<Value>();
-      args.push(accumulator);
-      args.push(element);
-      args.push(doubleValue(k));
-      args.push(object);
-      accumulator = runtime.callValue(callback, undefinedValue(), move args);
+      accumulator = runtime.callValue4(callback, undefinedValue(), accumulator, element, doubleValue(k), object);
       if (runtime.pendingThrow) break;
       runtime.popTempRoot();
       runtime.pushTempRoot(accumulator);
