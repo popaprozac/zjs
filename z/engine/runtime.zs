@@ -208,6 +208,15 @@ export struct RunResult {
   value: Value;
 }
 
+// What an out-of-line instruction leaves the dispatch loop: where to go
+// on, and whether the frame stack changed, with the value the run ends
+// with when it came back to the entry depth.
+struct ColdStep {
+  ip: usize;
+  returned: boolean;
+  result: Value;
+}
+
 export struct Runtime {
   heap: Heap;
   functions: Array<FunctionCode>;
@@ -5564,16 +5573,786 @@ export struct Runtime {
     return this.runFrames(entryDepth);
   }
 
+  // The dispatch loop's rarely executed instructions, kept out of its
+  // line so the ones every program runs compile the same whatever is
+  // added here. A throw is left pending, which the loop takes after the
+  // instruction as it does for every other.
+  function runColdOp(inout this, inst: Inst, fi: u32, frameIndex: usize, base: u32, startIp: usize, entryDepth: u32): ColdStep {
+    let ip = startIp;
+    let returned = false;
+    let result = undefinedValue();
+    const op = inst.op;
+    match (op) {
+      defineGlobal => {
+        const slot = usize(bcU16(inst));
+        this.globals[slot].value = this.reg(base, inst.a);
+        this.globals[slot].defined = true;
+      }
+      loadGlobalOrUndefined => {
+        const slot = usize(bcU16(inst));
+        const operand4 = this.globals[slot].defined ? this.globals[slot].value : undefinedValue();
+        this.setReg(base, inst.a, operand4);
+      }
+      generatorStart => {
+        // The prologue is done: suspend, and the call's result is the
+        // generator object -- or, for an async function, its promise,
+        // after the body has run to its first await.
+        const gen = this.frames[frameIndex].generator;
+        this.suspendGenerator(frameIndex, ip, inst.a);
+        // A generator records that its body has not run (kind 4): a
+        // return or throw before the first next() completes it as
+        // it is, without running the body.
+        if (this.functions[usize(fi)].isGenerator) {
+          const startRecord = this.generatorRecord(gen);
+          this.heap.setSlot(startRecord, 9, int32Value(4));
+        }
+        const frame = this.popFrame();
+        let produced = cellValue(gen);
+        if (this.functions[usize(fi)].isAsync && !this.functions[usize(fi)].isGenerator) {
+          const promise = this.newPromise();
+          const record = this.generatorRecord(gen);
+          this.heap.setSlot(record, 3, promise);
+          this.asyncStep(gen, undefinedValue(), 0);
+          produced = promise;
+        }
+        if (this.frameCount <= entryDepth) {
+          result = produced;
+        } else {
+          const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+          this.setReg(callerBase, frame.returnDst, produced);
+        }
+        returned = true;
+      }
+      yieldOp => {
+        // a receives what next() sends on resume; b is the value yielded.
+        if (this.frames[frameIndex].generator == 0) {
+          const message: String = "yield outside a generator";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        } else {
+          const yielded = this.reg(base, inst.b);
+          this.suspendGenerator(frameIndex, ip, inst.a);
+          const gen = this.frames[frameIndex].generator;
+          const record = this.generatorRecord(gen);
+          this.heap.setSlot(record, 9, int32Value(0));
+          const yieldingAsync = this.functions[usize(fi)].isAsync;
+          const produced = this.resumeResult(yieldingAsync, yielded, false);
+          const frame = this.popFrame();
+          if (this.frameCount <= entryDepth) {
+            result = produced;
+          } else {
+            const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+            this.setReg(callerBase, frame.returnDst, produced);
+          }
+          returned = true;
+        }
+      }
+      iterGetAsync => {
+        const iterable = this.reg(base, inst.b);
+        const iterator = this.getAsyncIterator(iterable);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else {
+          this.setReg(base, inst.a, iterator);
+        }
+      }
+      yieldDelegate => {
+        // yield*: the delegate's result object goes to the caller as
+        // it is; a receives what the next resumption sends, and the
+        // record notes a delegating suspension so every resumption
+        // re-enters the loop with its mode.
+        if (this.frames[frameIndex].generator == 0) {
+          const message: String = "yield outside a generator";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        } else {
+          let produced = this.reg(base, inst.b);
+          this.suspendGenerator(frameIndex, ip, inst.a);
+          const gen = this.frames[frameIndex].generator;
+          const record = this.generatorRecord(gen);
+          if (this.functions[usize(fi)].isAsync) {
+            // An async delegation yields the delegate's value; the
+            // driver answers the request with it as it is.
+            this.heap.setSlot(record, 9, int32Value(5));
+            this.resumeDone = false;
+          } else {
+            this.heap.setSlot(record, 9, int32Value(3));
+          }
+          const frame = this.popFrame();
+          if (this.frameCount <= entryDepth) {
+            result = produced;
+          } else {
+            const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+            this.setReg(callerBase, frame.returnDst, produced);
+          }
+          returned = true;
+        }
+      }
+      jmpIfNotReturn => {
+        const gen = this.frames[frameIndex].generator;
+        let returning = false;
+        if (gen != 0) {
+          const record = this.generatorRecord(gen);
+          returning = asInt32(this.heap.slot(record, 12)) == 2;
+        }
+        if (!returning) ip = usize(i64(ip) + i64(bcI16(inst)));
+      }
+      resumeMode => {
+        const gen = this.frames[frameIndex].generator;
+        if (gen == 0) {
+          this.setReg(base, inst.a, int32Value(0));
+        } else {
+          const record = this.generatorRecord(gen);
+          const mode = this.heap.slot(record, 12);
+          this.setReg(base, inst.a, mode);
+        }
+      }
+      iterCallNext => {
+        const iterator = this.reg(base, inst.b);
+        const value = this.reg(base, inst.c);
+        const nextText: String = "next";
+        let absent = false;
+        const produced = this.iteratorCallRaw(iterator, in nextText, value, true, inout absent);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else {
+          this.setReg(base, inst.a, produced);
+        }
+      }
+      iterCallThrow => {
+        const iterator = this.reg(base, inst.b);
+        const value = this.reg(base, inst.c);
+        const throwText: String = "throw";
+        let absent = false;
+        const produced = this.iteratorCallRaw(iterator, in throwText, value, false, inout absent);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else {
+          this.setReg(base, inst.a, produced);
+        }
+      }
+      iterCallReturn => {
+        const iterator = this.reg(base, inst.b);
+        const value = this.reg(base, inst.c);
+        const returnText: String = "return";
+        let absent = false;
+        const produced = this.iteratorCallRaw(iterator, in returnText, value, false, inout absent);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else {
+          this.setReg(base, inst.a, produced);
+        }
+      }
+      isAbsent => {
+        const held = this.reg(base, inst.b);
+        this.setReg(base, inst.a, booleanValue(isDeleted(held)));
+      }
+      requireIterResult => {
+        const held = this.reg(base, inst.a);
+        if (!this.isObjectLike(held)) {
+          const message: String = "Iterator result is not an object";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        }
+      }
+      throwTypeError => {
+        const named = this.functions[usize(fi)].constants[usize(bcU16(inst))];
+        {
+          const raised = this.makeError(ERROR_KIND_TYPE, this.heap.stringUtf8(asCell(named)));
+          this.raise(raised);
+        }
+      }
+      iterNextWith => {
+        const iterator = this.reg(base, inst.b);
+        const value = this.reg(base, inst.c);
+        const nextText: String = "next";
+        let absent = false;
+        const produced = this.iteratorCallWith(iterator, in nextText, value, inout absent);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else if (absent) {
+          const message: String = "iterator.next is not a function";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        } else {
+          this.setReg(base, inst.a, produced);
+        }
+      }
+      iterThrowWith => {
+        const iterator = this.reg(base, inst.b);
+        const value = this.reg(base, inst.c);
+        const throwText: String = "throw";
+        let absent = false;
+        const produced = this.iteratorCallWith(iterator, in throwText, value, inout absent);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else if (absent) {
+          // No throw method: close the delegate (its own throw wins),
+          // then the protocol violation is a TypeError.
+          this.iteratorClose(iterator);
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else {
+            const message: String = "The iterator does not provide a 'throw' method";
+            {
+              const raised = this.typeError(in message);
+              this.raise(raised);
+            }
+          }
+        } else {
+          this.setReg(base, inst.a, produced);
+        }
+      }
+      iterReturnWith => {
+        const iterator = this.reg(base, inst.b);
+        const value = this.reg(base, inst.c);
+        const returnText: String = "return";
+        let absent = false;
+        const produced = this.iteratorCallWith(iterator, in returnText, value, inout absent);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else if (absent) {
+          // No return method: the outer generator returns the value.
+          const finished = this.createIterResult(value, true);
+          this.setReg(base, inst.a, finished);
+        } else {
+          this.setReg(base, inst.a, produced);
+        }
+      }
+      yieldRaw => {
+        // An async generator hands a delegate's value straight to its
+        // request, without awaiting it.
+        if (this.frames[frameIndex].generator == 0) {
+          const message: String = "yield outside a generator";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        } else {
+          const yielded = this.reg(base, inst.b);
+          this.suspendGenerator(frameIndex, ip, inst.a);
+          const gen = this.frames[frameIndex].generator;
+          const record = this.generatorRecord(gen);
+          this.heap.setSlot(record, 9, int32Value(2));
+          // Only an async generator delegates this way: its driver takes the value.
+          this.resumeDone = false;
+          const produced = yielded;
+          const frame = this.popFrame();
+          if (this.frameCount <= entryDepth) {
+            result = produced;
+          } else {
+            const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+            this.setReg(callerBase, frame.returnDst, produced);
+          }
+          returned = true;
+        }
+      }
+      awaitOp => {
+        // Like yield, but the body is parked until the value settles:
+        // the driver alone resumes it.
+        if (this.frames[frameIndex].generator == 0) {
+          const message: String = "await outside an async function";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        } else {
+          const awaited = this.reg(base, inst.b);
+          this.suspendGenerator(frameIndex, ip, inst.a);
+          const gen = this.frames[frameIndex].generator;
+          const record = this.generatorRecord(gen);
+          this.heap.setSlot(record, 9, int32Value(1));
+          this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+          this.resumeDone = false;
+          const produced = awaited;
+          const frame = this.popFrame();
+          if (this.frameCount <= entryDepth) {
+            result = produced;
+          } else {
+            const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+            this.setReg(callerBase, frame.returnDst, produced);
+          }
+          returned = true;
+        }
+      }
+      throwOp => {
+        {
+          const raised = this.reg(base, inst.a);
+          this.raise(raised);
+        }
+      }
+      deleteElem => {
+        const object = this.reg(base, inst.b);
+        const key = this.reg(base, inst.c);
+        const removed = this.deleteProperty(object, key);
+        if (!removed && this.functions[usize(fi)].strict) {
+          const message: String = "Cannot delete property";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        } else {
+          this.setReg(base, inst.a, booleanValue(removed));
+        }
+      }
+      arraySpread => {
+        // Append everything the iterable in b yields to the array in a.
+        const array = this.reg(base, inst.a);
+        const iterable = this.reg(base, inst.b);
+        const items = this.iterateToArray(iterable);
+        if (!this.pendingThrow) {
+          const target = asCell(array);
+          const source = asCell(items);
+          const count = this.heap.arrayLength(source);
+          let index: u32 = 0;
+          while (index < count) {
+            const element = this.heap.arrayGet(source, index);
+            const length = this.heap.arrayLength(target);
+            this.heap.arraySet(target, length, element);
+            index = index + 1;
+          }
+        }
+      }
+      objectSpread => {
+        // { ...source } into the object in a.
+        const target = this.reg(base, inst.a);
+        const source = this.reg(base, inst.b);
+        this.copyDataProperties(asCell(target), source, 0);
+      }
+      objectRest => {
+        // { ...rest } of a pattern: a fresh object with what the other
+        // entries did not take.
+        const source = this.reg(base, inst.b);
+        const excluded = this.reg(base, inst.c);
+        const objectProto = this.objectProto;
+        const created = this.heap.allocateObject(objectProto);
+        this.setReg(base, inst.a, cellValue(created));
+        this.copyDataProperties(created, source, asCell(excluded));
+      }
+      assertCoercible => {
+        const value = this.reg(base, inst.a);
+        if (isUndefined(value) || isNull(value)) {
+          const message: String = "Cannot destructure null or undefined";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        }
+      }
+      iterRestCollect => {
+        // The iterator's remaining values as an array; the iterator is
+        // then done.
+        const iterator = this.reg(base, inst.b);
+        const array = this.heap.allocateArray(0);
+        this.setReg(base, inst.a, cellValue(array));
+        while (!this.pendingThrow) {
+          const next = this.iteratorStep(iterator);
+          if (this.pendingThrow || isDeleted(next)) break;
+          const count = this.heap.arrayLength(array);
+          this.heap.arraySet(array, count, next);
+        }
+        this.setReg(base, inst.c, booleanValue(true));
+      }
+      buildArguments => {
+        // The frame's actual arguments as an array, marked so that
+        // Object.prototype.toString reports Arguments.
+        const argsBase = this.frames[frameIndex].argsBase;
+        const argc = this.frames[frameIndex].argc;
+        const array = this.heap.allocateArray(argc);
+        let index: u32 = 0;
+        while (index < argc) {
+          const passed = this.regStack[usize(argsBase + index)];
+          this.heap.setSlot(array, index, passed);
+          index = index + 1;
+        }
+        const bag = this.arrayBag(array);
+        const marker = this.atomArgumentsMarker;
+        this.heap.objectDefine(bag, marker, booleanValue(true), PROP_NONE);
+        this.setReg(base, inst.a, cellValue(array));
+      }
+      buildRestArgs => {
+        // The actual arguments past the first b, as an array.
+        const argsBase = this.frames[frameIndex].argsBase;
+        const argc = this.frames[frameIndex].argc;
+        const skip = u32(inst.b);
+        const count: u32 = argc > skip ? argc - skip : 0;
+        const array = this.heap.allocateArray(count);
+        let index: u32 = 0;
+        while (index < count) {
+          const passed = this.regStack[usize(argsBase + skip + index)];
+          this.heap.setSlot(array, index, passed);
+          index = index + 1;
+        }
+        this.setReg(base, inst.a, cellValue(array));
+      }
+      loadCallee => {
+        const callee = this.frames[frameIndex].callee;
+        this.setReg(base, inst.a, callee);
+      }
+      loadNewTarget => {
+        let target = this.frames[frameIndex].newTarget;
+        if (this.functions[usize(this.frames[frameIndex].functionIndex)].isArrow) {
+          const callee = this.frames[frameIndex].callee;
+          const atomNewTarget = this.atomNewTarget;
+          target = isCell(callee) && asCell(callee) != 0 ? this.functionHidden(asCell(callee), atomNewTarget) : undefinedValue();
+        }
+        this.setReg(base, inst.a, target);
+      }
+      newPrivateName => {
+        const functionIndex = this.frames[frameIndex].functionIndex;
+        const description = this.functions[usize(functionIndex)].constants[usize(bcU16(inst))];
+        const symbol = this.newSymbol(description);
+        this.heap.setFlags(asCell(symbol), FLAG_PRIVATE_NAME);
+        this.setReg(base, inst.a, symbol);
+      }
+      defineField => {
+        const object = this.reg(base, inst.a);
+        const key = this.reg(base, inst.b);
+        const value = this.reg(base, inst.c);
+        let desc = emptyDescriptorInput();
+        desc.hasValue = true;
+        desc.value = value;
+        desc.hasWritable = true;
+        desc.writable = true;
+        desc.hasEnumerable = true;
+        desc.enumerable = true;
+        desc.hasConfigurable = true;
+        desc.configurable = true;
+        const defined = this.defineOwnProperty(object, key, desc);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else if (!defined) {
+          const message: String = "Cannot define class field";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        }
+      }
+      loadSuper => {
+        const callee = this.frames[frameIndex].callee;
+        const atomHome = this.atomHome;
+        const home = isCell(callee) && asCell(callee) != 0 ? this.functionHidden(asCell(callee), atomHome) : undefinedValue();
+        if (!this.isObjectLike(home)) {
+          const message: String = "'super' keyword unexpected here";
+          {
+            const raised = this.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
+            this.raise(raised);
+          }
+        } else {
+          const key = this.reg(base, inst.b);
+          const proto = this.protoOfValue(home);
+          let found = undefinedValue();
+          if (proto != 0) {
+            if (this.heap.isObject(proto)) {
+              const atom = this.propertyKey(key);
+              const receiver = this.hostThis;
+              found = this.lookupProperty(proto, atom, receiver);
+            } else {
+              found = this.getProperty(cellValue(proto), key);
+            }
+          }
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else {
+            this.setReg(base, inst.a, found);
+          }
+        }
+      }
+      storeSuper => {
+        const key = this.reg(base, inst.a);
+        const value = this.reg(base, inst.b);
+        const receiver = this.hostThis;
+        const stored = this.setProperty(receiver, key, value);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else if (!stored) {
+          const message: String = "Cannot assign to read only property";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        }
+      }
+      checkThis => {
+        const held = this.reg(base, inst.a);
+        if (isDeleted(held) || isHole(held)) {
+          const text: String = "Must call super constructor in derived class before accessing 'this' or returning from derived constructor";
+          {
+            const raised = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in text));
+            this.raise(raised);
+          }
+        }
+      }
+      throwConstAssign => {
+        const text: String = "Assignment to constant variable.";
+        {
+          const raised = this.makeError(ERROR_KIND_TYPE, bytesOf(in text));
+          this.raise(raised);
+        }
+      }
+      newRegex => {
+        const pattern = this.functions[usize(fi)].constants[usize(inst.b)];
+        const flags = this.functions[usize(fi)].constants[usize(inst.c)];
+        const regexProto = this.regexProto;
+        const created = this.regexpCreate(pattern, flags, regexProto);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else {
+          this.setReg(base, inst.a, created);
+        }
+      }
+      newRegexR => {
+        const pattern = this.reg(base, inst.b);
+        const flags = this.reg(base, inst.c);
+        const regexProto = this.regexProto;
+        const created = this.regexpCreate(pattern, flags, regexProto);
+        if (this.pendingThrow) {
+          // The throw stays pending for the loop to take.
+        } else {
+          this.setReg(base, inst.a, created);
+        }
+      }
+      _ => {
+        // Opcode pairs that share a handler, and the unimplemented rest.
+        if (op == Op.cmpEq || op == Op.cmpNe) {
+          const operandB = this.reg(base, inst.b);
+          const operandC = this.reg(base, inst.c);
+          const equal = this.looseEquals(operandB, operandC);
+          this.setReg(base, inst.a, booleanValue(op == Op.cmpEq ? equal : !equal));
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          }
+        } else if (op == Op.cmpStrictEq || op == Op.cmpStrictNe) {
+          const operandB = this.reg(base, inst.b);
+          const operandC = this.reg(base, inst.c);
+          const equal = this.strictEquals(operandB, operandC);
+          this.setReg(base, inst.a, booleanValue(op == Op.cmpStrictEq ? equal : !equal));
+        } else if (op == Op.setFunctionName) {
+          // NamedEvaluation for a computed key: the function made for the
+          // value takes the key as its name (a symbol as "[description]",
+          // an accessor with its "get " or "set " prefix), unless it has
+          // an own name of its own already.
+          const fn = this.reg(base, inst.a);
+          const key = this.reg(base, inst.b);
+          const atomName = this.atomName;
+          // The key is converted to a property key here, once, and the
+          // string put back for the definition that follows.
+          let propertyKey = key;
+          if (!this.isStringValue(key) && !this.isSymbolValue(key)) {
+            propertyKey = this.toStringValue(key);
+            if (!this.pendingThrow) this.setReg(base, inst.b, propertyKey);
+          }
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else if (this.isCompiledCallable(fn) && !this.functionBagHas(asCell(fn), atomName) && !this.functionVirtualDeleted(asCell(fn), atomName)) {
+            const name = this.functionNameFromKey(propertyKey, u32(inst.c));
+            this.defineOwnAttr(asCell(fn), atomName, name, PROP_CONFIGURABLE);
+          }
+        } else if (op == Op.setProto) {
+          // A literal's `__proto__: value`: an object or null becomes the
+          // prototype, anything else is ignored. The literal is fresh, so
+          // the change is never refused.
+          const object = this.reg(base, inst.a);
+          const proto = this.reg(base, inst.b);
+          if (this.isObjectLike(proto) || isNull(proto)) {
+            if (!this.setPrototypeOfValue(object, proto)) {
+            }
+          }
+        } else if (op == Op.defineGetter || op == Op.defineSetter) {
+          const object = this.reg(base, inst.a);
+          const key = this.reg(base, inst.b);
+          const fn = this.reg(base, inst.c);
+          this.defineAccessor(object, key, fn, fn, op == Op.defineGetter);
+          if (this.isCompiledCallable(fn)) {
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(asCell(fn), atomHome, object);
+          }
+        } else if (op == Op.spreadInvoke || op == Op.spreadMethodInvoke || op == Op.spreadNewInvoke) {
+          // Callee at b; for a method call the receiver at b + 1; the
+          // arguments array in the next register. The elements are placed
+          // on the register stack and the ordinary call paths take over.
+          const callee = this.reg(base, inst.b);
+          const isMethod = op == Op.spreadMethodInvoke;
+          const receiver = isMethod ? this.reg(base, inst.b + 1) : undefinedValue();
+          const arrayReg: u8 = isMethod ? inst.b + 2 : inst.b + 1;
+          const argsArray = this.reg(base, arrayReg);
+          const argsBase = this.spreadArguments(asCell(argsArray));
+          const argc = this.regTop - argsBase;
+          if (op == Op.spreadNewInvoke) {
+            if (!this.isConstructorValue(callee)) {
+              {
+                const raised = this.notConstructorError(callee);
+                this.raise(raised);
+              }
+            } else if (this.isCompiledCallable(callee)) {
+              this.frames[frameIndex].ip = ip;
+              if (this.enterConstruct(callee, inst.a, argsBase, argc, callee)) {
+                returned = true;
+              } else {
+                // The throw stays pending for the loop to take.
+              }
+            } else {
+              const produced = this.constructHostDirect(asCell(callee), argsBase, argc);
+              this.regTop = argsBase;
+              if (!this.pendingThrow) this.setReg(base, inst.a, produced);
+            }
+          } else if (this.isCompiledCallable(callee)) {
+            this.frames[frameIndex].ip = ip;
+            if (this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue())) {
+              returned = true;
+            } else {
+              // The throw stays pending for the loop to take.
+            }
+          } else if (this.isHostFunctionValue(callee)) {
+            const builtin = this.heap.hostFunctionId(asCell(callee));
+            const outcome = this.callHost(builtin, receiver, argsBase, argc, asCell(callee));
+            this.regTop = argsBase;
+            if (!this.pendingThrow) this.setReg(base, inst.a, outcome);
+          } else {
+            this.regTop = argsBase;
+            const message: String = isMethod ? "property is not a function" : "value is not a function";
+            {
+              const raised = this.typeError(in message);
+              this.raise(raised);
+            }
+          }
+        } else if (op == Op.initClass || op == Op.initClassBase) {
+          const ctor = this.reg(base, inst.a);
+          const proto = this.reg(base, inst.b);
+          const ctorHandle = asCell(ctor);
+          const protoHandle = asCell(proto);
+          let failed = false;
+          if (op == Op.initClass) {
+            const parent = this.reg(base, inst.c);
+            if (isNull(parent)) {
+              this.heap.setObjectProto(protoHandle, 0);
+            } else if (!this.isConstructorValue(parent)) {
+              const message: String = "Class extends value is not a constructor or null";
+              {
+                const raised = this.typeError(in message);
+                this.raise(raised);
+              }
+              failed = true;
+            } else {
+              const atomPrototype = this.atomPrototype;
+              const parentProto = this.getProperty(parent, cellValue(atomPrototype));
+              if (this.pendingThrow) {
+                // The throw stays pending for the loop to take.
+                failed = true;
+              } else if (!this.isObjectLike(parentProto) && !isNull(parentProto)) {
+                const message: String = "Class extends value does not have valid prototype property";
+                {
+                  const raised = this.typeError(in message);
+                  this.raise(raised);
+                }
+                failed = true;
+              } else {
+                this.heap.setObjectProto(protoHandle, isNull(parentProto) ? 0 : asCell(parentProto));
+                const atomFunctionProto = this.atomFunctionProto;
+                this.setFunctionHidden(ctorHandle, atomFunctionProto, parent);
+              }
+            }
+          }
+          if (!failed) {
+            const atomPrototype = this.atomPrototype;
+            this.defineOwnAttr(ctorHandle, atomPrototype, proto, PROP_NONE);
+            const atomConstructor = this.atomConstructor;
+            this.heap.objectDefine(protoHandle, atomConstructor, ctor, PROP_METHOD);
+          }
+        } else if (op == Op.defineMethod || op == Op.defineMethodComputed) {
+          // Methods are writable and configurable but not enumerable, and
+          // remember the object they were defined on for `super`.
+          const target = this.reg(base, inst.a);
+          const fn = this.reg(base, inst.c);
+          let atom: u32 = 0;
+          if (op == Op.defineMethod) {
+            const functionIndex = this.frames[frameIndex].functionIndex;
+            atom = this.functions[usize(functionIndex)].propertyNames[usize(inst.b)];
+          } else {
+            const key = this.reg(base, inst.b);
+            atom = this.propertyKey(key);
+            this.setFunctionNameFromKey(fn, key, 0);
+          }
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else {
+            this.defineOwnAttr(asCell(target), atom, fn, PROP_METHOD);
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(asCell(fn), atomHome, target);
+          }
+        } else if (op == Op.defineMethodGetter || op == Op.defineMethodSetter) {
+          const target = this.reg(base, inst.a);
+          const key = this.reg(base, inst.b);
+          const fn = this.reg(base, inst.c);
+          const isGetter = op == Op.defineMethodGetter;
+          this.setFunctionNameFromKey(fn, key, isGetter ? 1 : 2);
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else {
+            this.defineAccessorAttr(target, key, fn, fn, isGetter, PROP_CONFIGURABLE | PROP_ACCESSOR);
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(asCell(fn), atomHome, target);
+          }
+        } else if (op == Op.superCall || op == Op.spreadSuperCall) {
+          let args = Array<Value>();
+          if (op == Op.superCall) {
+            let index: u32 = 0;
+            while (index < u32(inst.c)) {
+              const passed = this.reg(base, inst.b + u8(index));
+              args.push(passed);
+              index = index + 1;
+            }
+          } else {
+            const spread = this.reg(base, inst.b);
+            const count = this.heap.arrayLength(asCell(spread));
+            let index: u32 = 0;
+            while (index < count) {
+              const passed = this.heap.arrayGet(asCell(spread), index);
+              args.push(passed);
+              index = index + 1;
+            }
+          }
+          this.frames[frameIndex].ip = ip;
+          const constructed = this.superConstruct(frameIndex, move args);
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else {
+            this.setReg(base, inst.a, constructed);
+          }
+        } else {
+          // Not yet implemented: an internal error, surfaced as a throw.
+          const message: String = "unsupported operation";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
+        }
+      }
+    }
+    return ColdStep({ ip: ip, returned: returned, result: result });
+  }
+
   // The dispatch loop, until the frame stack is back to `entryDepth`.
   function runFrames(inout this, entryDepth: u32): RunResult {
     let result = undefinedValue();
     while (this.frameCount > entryDepth) {
-      const frameIndex = usize(this.frameCount - 1);
-      const fi = this.frames[frameIndex].functionIndex;
-      const base = this.frames[frameIndex].regsBase;
+      // The running frame's state, reloaded here after a throw or a
+      // generator's switch, and in place by an ordinary call or return.
+      let frameIndex = usize(this.frameCount - 1);
+      let fi = this.frames[frameIndex].functionIndex;
+      let base = this.frames[frameIndex].regsBase;
       let ip = this.frames[frameIndex].ip;
-      const codeLength = usize(this.functions[usize(fi)].codeLength);
-      const codeStart = usize(this.functions[usize(fi)].codeStart);
+      let codeLength = usize(this.functions[usize(fi)].codeLength);
+      let codeStart = usize(this.functions[usize(fi)].codeStart);
       let returned = false;
       let throwing = false;
       let thrown = undefinedValue();
@@ -5610,11 +6389,6 @@ export struct Runtime {
             const operand2 = this.reg(base, inst.b);
             this.setReg(base, inst.a, operand2);
           }
-          defineGlobal => {
-            const slot = usize(bcU16(inst));
-            this.globals[slot].value = this.reg(base, inst.a);
-            this.globals[slot].defined = true;
-          }
           storeGlobal => {
             const slot = usize(bcU16(inst));
             this.globals[slot].value = this.reg(base, inst.a);
@@ -5641,11 +6415,6 @@ export struct Runtime {
               const operand3 = this.globals[slot].value;
               this.setReg(base, inst.a, operand3);
             }
-          }
-          loadGlobalOrUndefined => {
-            const slot = usize(bcU16(inst));
-            const operand4 = this.globals[slot].defined ? this.globals[slot].value : undefinedValue();
-            this.setReg(base, inst.a, operand4);
           }
           add => {
             const rawLeft = this.reg(base, inst.b);
@@ -6060,7 +6829,7 @@ export struct Runtime {
           }
           invoke => {
             // Callee at b, arguments above it, result into a. A compiled
-            // callee gets a frame and the outer loop resumes on it; a
+            // callee gets a frame and the loop continues in it; a
             // builtin runs to completion here. A plain call binds `this`
             // to undefined: there is no global object yet.
             const callee = this.reg(base, inst.b);
@@ -6069,7 +6838,13 @@ export struct Runtime {
             if (this.isCompiledCallable(callee)) {
               this.frames[frameIndex].ip = ip;
               if (this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue())) {
-                returned = true;
+                // The callee's frame, entered without leaving the loop.
+                frameIndex = usize(this.frameCount - 1);
+                fi = this.frames[frameIndex].functionIndex;
+                base = this.frames[frameIndex].regsBase;
+                ip = 0;
+                codeLength = usize(this.functions[usize(fi)].codeLength);
+                codeStart = usize(this.functions[usize(fi)].codeStart);
               } else {
                 thrown = this.takePending();
                 throwing = true;
@@ -6098,7 +6873,13 @@ export struct Runtime {
             if (this.isCompiledCallable(callee)) {
               this.frames[frameIndex].ip = ip;
               if (this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue())) {
-                returned = true;
+                // The callee's frame, entered without leaving the loop.
+                frameIndex = usize(this.frameCount - 1);
+                fi = this.frames[frameIndex].functionIndex;
+                base = this.frames[frameIndex].regsBase;
+                ip = 0;
+                codeLength = usize(this.functions[usize(fi)].codeLength);
+                codeStart = usize(this.functions[usize(fi)].codeStart);
               } else {
                 thrown = this.takePending();
                 throwing = true;
@@ -6131,7 +6912,13 @@ export struct Runtime {
             } else if (this.isCompiledCallable(callee)) {
               this.frames[frameIndex].ip = ip;
               if (this.enterConstruct(callee, inst.a, argsBase, argc, callee)) {
-                returned = true;
+                // The callee's frame, entered without leaving the loop.
+                frameIndex = usize(this.frameCount - 1);
+                fi = this.frames[frameIndex].functionIndex;
+                base = this.frames[frameIndex].regsBase;
+                ip = 0;
+                codeLength = usize(this.functions[usize(fi)].codeLength);
+                codeStart = usize(this.functions[usize(fi)].codeStart);
               } else {
                 thrown = this.takePending();
                 throwing = true;
@@ -6148,287 +6935,6 @@ export struct Runtime {
               const message: String = "value is not a constructor";
               thrown = this.typeError(in message);
               throwing = true;
-            }
-          }
-          generatorStart => {
-            // The prologue is done: suspend, and the call's result is the
-            // generator object -- or, for an async function, its promise,
-            // after the body has run to its first await.
-            const gen = this.frames[frameIndex].generator;
-            this.suspendGenerator(frameIndex, ip, inst.a);
-            // A generator records that its body has not run (kind 4): a
-            // return or throw before the first next() completes it as
-            // it is, without running the body.
-            if (this.functions[usize(fi)].isGenerator) {
-              const startRecord = this.generatorRecord(gen);
-              this.heap.setSlot(startRecord, 9, int32Value(4));
-            }
-            const frame = this.popFrame();
-            let produced = cellValue(gen);
-            if (this.functions[usize(fi)].isAsync && !this.functions[usize(fi)].isGenerator) {
-              const promise = this.newPromise();
-              const record = this.generatorRecord(gen);
-              this.heap.setSlot(record, 3, promise);
-              this.asyncStep(gen, undefinedValue(), 0);
-              produced = promise;
-            }
-            if (this.frameCount <= entryDepth) {
-              result = produced;
-            } else {
-              const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
-              this.setReg(callerBase, frame.returnDst, produced);
-            }
-            returned = true;
-          }
-          yieldOp => {
-            // a receives what next() sends on resume; b is the value yielded.
-            if (this.frames[frameIndex].generator == 0) {
-              const message: String = "yield outside a generator";
-              thrown = this.typeError(in message);
-              throwing = true;
-            } else {
-              const yielded = this.reg(base, inst.b);
-              this.suspendGenerator(frameIndex, ip, inst.a);
-              const gen = this.frames[frameIndex].generator;
-              const record = this.generatorRecord(gen);
-              this.heap.setSlot(record, 9, int32Value(0));
-              const yieldingAsync = this.functions[usize(fi)].isAsync;
-              const produced = this.resumeResult(yieldingAsync, yielded, false);
-              const frame = this.popFrame();
-              if (this.frameCount <= entryDepth) {
-                result = produced;
-              } else {
-                const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
-                this.setReg(callerBase, frame.returnDst, produced);
-              }
-              returned = true;
-            }
-          }
-          iterGetAsync => {
-            const iterable = this.reg(base, inst.b);
-            const iterator = this.getAsyncIterator(iterable);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, iterator);
-            }
-          }
-          yieldDelegate => {
-            // yield*: the delegate's result object goes to the caller as
-            // it is; a receives what the next resumption sends, and the
-            // record notes a delegating suspension so every resumption
-            // re-enters the loop with its mode.
-            if (this.frames[frameIndex].generator == 0) {
-              const message: String = "yield outside a generator";
-              thrown = this.typeError(in message);
-              throwing = true;
-            } else {
-              let produced = this.reg(base, inst.b);
-              this.suspendGenerator(frameIndex, ip, inst.a);
-              const gen = this.frames[frameIndex].generator;
-              const record = this.generatorRecord(gen);
-              if (this.functions[usize(fi)].isAsync) {
-                // An async delegation yields the delegate's value; the
-                // driver answers the request with it as it is.
-                this.heap.setSlot(record, 9, int32Value(5));
-                this.resumeDone = false;
-              } else {
-                this.heap.setSlot(record, 9, int32Value(3));
-              }
-              const frame = this.popFrame();
-              if (this.frameCount <= entryDepth) {
-                result = produced;
-              } else {
-                const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
-                this.setReg(callerBase, frame.returnDst, produced);
-              }
-              returned = true;
-            }
-          }
-          jmpIfNotReturn => {
-            const gen = this.frames[frameIndex].generator;
-            let returning = false;
-            if (gen != 0) {
-              const record = this.generatorRecord(gen);
-              returning = asInt32(this.heap.slot(record, 12)) == 2;
-            }
-            if (!returning) ip = usize(i64(ip) + i64(bcI16(inst)));
-          }
-          resumeMode => {
-            const gen = this.frames[frameIndex].generator;
-            if (gen == 0) {
-              this.setReg(base, inst.a, int32Value(0));
-            } else {
-              const record = this.generatorRecord(gen);
-              const mode = this.heap.slot(record, 12);
-              this.setReg(base, inst.a, mode);
-            }
-          }
-          iterCallNext => {
-            const iterator = this.reg(base, inst.b);
-            const value = this.reg(base, inst.c);
-            const nextText: String = "next";
-            let absent = false;
-            const produced = this.iteratorCallRaw(iterator, in nextText, value, true, inout absent);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, produced);
-            }
-          }
-          iterCallThrow => {
-            const iterator = this.reg(base, inst.b);
-            const value = this.reg(base, inst.c);
-            const throwText: String = "throw";
-            let absent = false;
-            const produced = this.iteratorCallRaw(iterator, in throwText, value, false, inout absent);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, produced);
-            }
-          }
-          iterCallReturn => {
-            const iterator = this.reg(base, inst.b);
-            const value = this.reg(base, inst.c);
-            const returnText: String = "return";
-            let absent = false;
-            const produced = this.iteratorCallRaw(iterator, in returnText, value, false, inout absent);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, produced);
-            }
-          }
-          isAbsent => {
-            const held = this.reg(base, inst.b);
-            this.setReg(base, inst.a, booleanValue(isDeleted(held)));
-          }
-          requireIterResult => {
-            const held = this.reg(base, inst.a);
-            if (!this.isObjectLike(held)) {
-              const message: String = "Iterator result is not an object";
-              thrown = this.typeError(in message);
-              throwing = true;
-            }
-          }
-          throwTypeError => {
-            const named = this.functions[usize(fi)].constants[usize(bcU16(inst))];
-            thrown = this.makeError(ERROR_KIND_TYPE, this.heap.stringUtf8(asCell(named)));
-            throwing = true;
-          }
-          iterNextWith => {
-            const iterator = this.reg(base, inst.b);
-            const value = this.reg(base, inst.c);
-            const nextText: String = "next";
-            let absent = false;
-            const produced = this.iteratorCallWith(iterator, in nextText, value, inout absent);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else if (absent) {
-              const message: String = "iterator.next is not a function";
-              thrown = this.typeError(in message);
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, produced);
-            }
-          }
-          iterThrowWith => {
-            const iterator = this.reg(base, inst.b);
-            const value = this.reg(base, inst.c);
-            const throwText: String = "throw";
-            let absent = false;
-            const produced = this.iteratorCallWith(iterator, in throwText, value, inout absent);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else if (absent) {
-              // No throw method: close the delegate (its own throw wins),
-              // then the protocol violation is a TypeError.
-              this.iteratorClose(iterator);
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-              } else {
-                const message: String = "The iterator does not provide a 'throw' method";
-                thrown = this.typeError(in message);
-              }
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, produced);
-            }
-          }
-          iterReturnWith => {
-            const iterator = this.reg(base, inst.b);
-            const value = this.reg(base, inst.c);
-            const returnText: String = "return";
-            let absent = false;
-            const produced = this.iteratorCallWith(iterator, in returnText, value, inout absent);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else if (absent) {
-              // No return method: the outer generator returns the value.
-              const finished = this.createIterResult(value, true);
-              this.setReg(base, inst.a, finished);
-            } else {
-              this.setReg(base, inst.a, produced);
-            }
-          }
-          yieldRaw => {
-            // An async generator hands a delegate's value straight to its
-            // request, without awaiting it.
-            if (this.frames[frameIndex].generator == 0) {
-              const message: String = "yield outside a generator";
-              thrown = this.typeError(in message);
-              throwing = true;
-            } else {
-              const yielded = this.reg(base, inst.b);
-              this.suspendGenerator(frameIndex, ip, inst.a);
-              const gen = this.frames[frameIndex].generator;
-              const record = this.generatorRecord(gen);
-              this.heap.setSlot(record, 9, int32Value(2));
-              // Only an async generator delegates this way: its driver takes the value.
-              this.resumeDone = false;
-              const produced = yielded;
-              const frame = this.popFrame();
-              if (this.frameCount <= entryDepth) {
-                result = produced;
-              } else {
-                const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
-                this.setReg(callerBase, frame.returnDst, produced);
-              }
-              returned = true;
-            }
-          }
-          awaitOp => {
-            // Like yield, but the body is parked until the value settles:
-            // the driver alone resumes it.
-            if (this.frames[frameIndex].generator == 0) {
-              const message: String = "await outside an async function";
-              thrown = this.typeError(in message);
-              throwing = true;
-            } else {
-              const awaited = this.reg(base, inst.b);
-              this.suspendGenerator(frameIndex, ip, inst.a);
-              const gen = this.frames[frameIndex].generator;
-              const record = this.generatorRecord(gen);
-              this.heap.setSlot(record, 9, int32Value(1));
-              this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
-              this.resumeDone = false;
-              const produced = awaited;
-              const frame = this.popFrame();
-              if (this.frameCount <= entryDepth) {
-                result = produced;
-              } else {
-                const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
-                this.setReg(callerBase, frame.returnDst, produced);
-              }
-              returned = true;
             }
           }
           returnOp => {
@@ -6469,11 +6975,23 @@ export struct Runtime {
             }
             if (this.frameCount <= entryDepth) {
               result = value;
+              returned = true;
             } else {
-              const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+              const callerIndex = usize(this.frameCount - 1);
+              const callerBase = this.frames[callerIndex].regsBase;
               this.setReg(callerBase, frame.returnDst, value);
+              if (throwing) {
+                returned = true;
+              } else {
+                // Back in the caller without leaving the loop.
+                frameIndex = callerIndex;
+                fi = this.frames[callerIndex].functionIndex;
+                base = callerBase;
+                ip = this.frames[callerIndex].ip;
+                codeLength = usize(this.functions[usize(fi)].codeLength);
+                codeStart = usize(this.functions[usize(fi)].codeStart);
+              }
             }
-            returned = true;
           }
           newObject => {
             const objectProto = this.objectProto;
@@ -6666,10 +7184,6 @@ export struct Runtime {
             const label = this.typeofValue(operand);
             this.setReg(base, inst.a, label);
           }
-          throwOp => {
-            thrown = this.reg(base, inst.a);
-            throwing = true;
-          }
           enterTry => {
             // The catch block starts at the jump target; the thrown value
             // lands in register a.
@@ -6700,18 +7214,6 @@ export struct Runtime {
               throwing = true;
             } else {
               this.setReg(base, inst.a, booleanValue(found));
-            }
-          }
-          deleteElem => {
-            const object = this.reg(base, inst.b);
-            const key = this.reg(base, inst.c);
-            const removed = this.deleteProperty(object, key);
-            if (!removed && this.functions[usize(fi)].strict) {
-              const message: String = "Cannot delete property";
-              thrown = this.typeError(in message);
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, booleanValue(removed));
             }
           }
           iterPrepare => {
@@ -6806,180 +7308,6 @@ export struct Runtime {
               if (this.pendingThrow) this.takePending();
             }
           }
-          arraySpread => {
-            // Append everything the iterable in b yields to the array in a.
-            const array = this.reg(base, inst.a);
-            const iterable = this.reg(base, inst.b);
-            const items = this.iterateToArray(iterable);
-            if (!this.pendingThrow) {
-              const target = asCell(array);
-              const source = asCell(items);
-              const count = this.heap.arrayLength(source);
-              let index: u32 = 0;
-              while (index < count) {
-                const element = this.heap.arrayGet(source, index);
-                const length = this.heap.arrayLength(target);
-                this.heap.arraySet(target, length, element);
-                index = index + 1;
-              }
-            }
-          }
-          objectSpread => {
-            // { ...source } into the object in a.
-            const target = this.reg(base, inst.a);
-            const source = this.reg(base, inst.b);
-            this.copyDataProperties(asCell(target), source, 0);
-          }
-          objectRest => {
-            // { ...rest } of a pattern: a fresh object with what the other
-            // entries did not take.
-            const source = this.reg(base, inst.b);
-            const excluded = this.reg(base, inst.c);
-            const objectProto = this.objectProto;
-            const created = this.heap.allocateObject(objectProto);
-            this.setReg(base, inst.a, cellValue(created));
-            this.copyDataProperties(created, source, asCell(excluded));
-          }
-          assertCoercible => {
-            const value = this.reg(base, inst.a);
-            if (isUndefined(value) || isNull(value)) {
-              const message: String = "Cannot destructure null or undefined";
-              thrown = this.typeError(in message);
-              throwing = true;
-            }
-          }
-          iterRestCollect => {
-            // The iterator's remaining values as an array; the iterator is
-            // then done.
-            const iterator = this.reg(base, inst.b);
-            const array = this.heap.allocateArray(0);
-            this.setReg(base, inst.a, cellValue(array));
-            while (!this.pendingThrow) {
-              const next = this.iteratorStep(iterator);
-              if (this.pendingThrow || isDeleted(next)) break;
-              const count = this.heap.arrayLength(array);
-              this.heap.arraySet(array, count, next);
-            }
-            this.setReg(base, inst.c, booleanValue(true));
-          }
-          buildArguments => {
-            // The frame's actual arguments as an array, marked so that
-            // Object.prototype.toString reports Arguments.
-            const argsBase = this.frames[frameIndex].argsBase;
-            const argc = this.frames[frameIndex].argc;
-            const array = this.heap.allocateArray(argc);
-            let index: u32 = 0;
-            while (index < argc) {
-              const passed = this.regStack[usize(argsBase + index)];
-              this.heap.setSlot(array, index, passed);
-              index = index + 1;
-            }
-            const bag = this.arrayBag(array);
-            const marker = this.atomArgumentsMarker;
-            this.heap.objectDefine(bag, marker, booleanValue(true), PROP_NONE);
-            this.setReg(base, inst.a, cellValue(array));
-          }
-          buildRestArgs => {
-            // The actual arguments past the first b, as an array.
-            const argsBase = this.frames[frameIndex].argsBase;
-            const argc = this.frames[frameIndex].argc;
-            const skip = u32(inst.b);
-            const count: u32 = argc > skip ? argc - skip : 0;
-            const array = this.heap.allocateArray(count);
-            let index: u32 = 0;
-            while (index < count) {
-              const passed = this.regStack[usize(argsBase + skip + index)];
-              this.heap.setSlot(array, index, passed);
-              index = index + 1;
-            }
-            this.setReg(base, inst.a, cellValue(array));
-          }
-          loadCallee => {
-            const callee = this.frames[frameIndex].callee;
-            this.setReg(base, inst.a, callee);
-          }
-          loadNewTarget => {
-            let target = this.frames[frameIndex].newTarget;
-            if (this.functions[usize(this.frames[frameIndex].functionIndex)].isArrow) {
-              const callee = this.frames[frameIndex].callee;
-              const atomNewTarget = this.atomNewTarget;
-              target = isCell(callee) && asCell(callee) != 0 ? this.functionHidden(asCell(callee), atomNewTarget) : undefinedValue();
-            }
-            this.setReg(base, inst.a, target);
-          }
-          newPrivateName => {
-            const functionIndex = this.frames[frameIndex].functionIndex;
-            const description = this.functions[usize(functionIndex)].constants[usize(bcU16(inst))];
-            const symbol = this.newSymbol(description);
-            this.heap.setFlags(asCell(symbol), FLAG_PRIVATE_NAME);
-            this.setReg(base, inst.a, symbol);
-          }
-          defineField => {
-            const object = this.reg(base, inst.a);
-            const key = this.reg(base, inst.b);
-            const value = this.reg(base, inst.c);
-            let desc = emptyDescriptorInput();
-            desc.hasValue = true;
-            desc.value = value;
-            desc.hasWritable = true;
-            desc.writable = true;
-            desc.hasEnumerable = true;
-            desc.enumerable = true;
-            desc.hasConfigurable = true;
-            desc.configurable = true;
-            const defined = this.defineOwnProperty(object, key, desc);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else if (!defined) {
-              const message: String = "Cannot define class field";
-              thrown = this.typeError(in message);
-              throwing = true;
-            }
-          }
-          loadSuper => {
-            const callee = this.frames[frameIndex].callee;
-            const atomHome = this.atomHome;
-            const home = isCell(callee) && asCell(callee) != 0 ? this.functionHidden(asCell(callee), atomHome) : undefinedValue();
-            if (!this.isObjectLike(home)) {
-              const message: String = "'super' keyword unexpected here";
-              thrown = this.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
-              throwing = true;
-            } else {
-              const key = this.reg(base, inst.b);
-              const proto = this.protoOfValue(home);
-              let found = undefinedValue();
-              if (proto != 0) {
-                if (this.heap.isObject(proto)) {
-                  const atom = this.propertyKey(key);
-                  const receiver = this.hostThis;
-                  found = this.lookupProperty(proto, atom, receiver);
-                } else {
-                  found = this.getProperty(cellValue(proto), key);
-                }
-              }
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-                throwing = true;
-              } else {
-                this.setReg(base, inst.a, found);
-              }
-            }
-          }
-          storeSuper => {
-            const key = this.reg(base, inst.a);
-            const value = this.reg(base, inst.b);
-            const receiver = this.hostThis;
-            const stored = this.setProperty(receiver, key, value);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else if (!stored) {
-              const message: String = "Cannot assign to read only property";
-              thrown = this.typeError(in message);
-              throwing = true;
-            }
-          }
           loadHole => {
             this.setReg(base, inst.a, holeValue());
           }
@@ -6995,19 +7323,6 @@ export struct Runtime {
               thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
               throwing = true;
             }
-          }
-          checkThis => {
-            const held = this.reg(base, inst.a);
-            if (isDeleted(held) || isHole(held)) {
-              const text: String = "Must call super constructor in derived class before accessing 'this' or returning from derived constructor";
-              thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in text));
-              throwing = true;
-            }
-          }
-          throwConstAssign => {
-            const text: String = "Assignment to constant variable.";
-            thrown = this.makeError(ERROR_KIND_TYPE, bytesOf(in text));
-            throwing = true;
           }
           envToReg => {
             const env = this.frames[frameIndex].env;
@@ -7033,242 +7348,13 @@ export struct Runtime {
             const current = u32(asInt32(this.reg(base, inst.a)));
             this.frames[frameIndex].env = this.heap.linkOf(current);
           }
-          newRegex => {
-            const pattern = this.functions[usize(fi)].constants[usize(inst.b)];
-            const flags = this.functions[usize(fi)].constants[usize(inst.c)];
-            const regexProto = this.regexProto;
-            const created = this.regexpCreate(pattern, flags, regexProto);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, created);
-            }
-          }
-          newRegexR => {
-            const pattern = this.reg(base, inst.b);
-            const flags = this.reg(base, inst.c);
-            const regexProto = this.regexProto;
-            const created = this.regexpCreate(pattern, flags, regexProto);
-            if (this.pendingThrow) {
-              thrown = this.takePending();
-              throwing = true;
-            } else {
-              this.setReg(base, inst.a, created);
-            }
-          }
           _ => {
-            // Opcode pairs that share a handler, and the unimplemented rest.
-            if (op == Op.cmpEq || op == Op.cmpNe) {
-              const operandB = this.reg(base, inst.b);
-              const operandC = this.reg(base, inst.c);
-              const equal = this.looseEquals(operandB, operandC);
-              this.setReg(base, inst.a, booleanValue(op == Op.cmpEq ? equal : !equal));
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-                throwing = true;
-              }
-            } else if (op == Op.cmpStrictEq || op == Op.cmpStrictNe) {
-              const operandB = this.reg(base, inst.b);
-              const operandC = this.reg(base, inst.c);
-              const equal = this.strictEquals(operandB, operandC);
-              this.setReg(base, inst.a, booleanValue(op == Op.cmpStrictEq ? equal : !equal));
-            } else if (op == Op.setFunctionName) {
-              // NamedEvaluation for a computed key: the function made for the
-              // value takes the key as its name (a symbol as "[description]",
-              // an accessor with its "get " or "set " prefix), unless it has
-              // an own name of its own already.
-              const fn = this.reg(base, inst.a);
-              const key = this.reg(base, inst.b);
-              const atomName = this.atomName;
-              // The key is converted to a property key here, once, and the
-              // string put back for the definition that follows.
-              let propertyKey = key;
-              if (!this.isStringValue(key) && !this.isSymbolValue(key)) {
-                propertyKey = this.toStringValue(key);
-                if (!this.pendingThrow) this.setReg(base, inst.b, propertyKey);
-              }
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-                throwing = true;
-              } else if (this.isCompiledCallable(fn) && !this.functionBagHas(asCell(fn), atomName) && !this.functionVirtualDeleted(asCell(fn), atomName)) {
-                const name = this.functionNameFromKey(propertyKey, u32(inst.c));
-                this.defineOwnAttr(asCell(fn), atomName, name, PROP_CONFIGURABLE);
-              }
-            } else if (op == Op.setProto) {
-              // A literal's `__proto__: value`: an object or null becomes the
-              // prototype, anything else is ignored. The literal is fresh, so
-              // the change is never refused.
-              const object = this.reg(base, inst.a);
-              const proto = this.reg(base, inst.b);
-              if (this.isObjectLike(proto) || isNull(proto)) {
-                if (!this.setPrototypeOfValue(object, proto)) {
-                }
-              }
-            } else if (op == Op.defineGetter || op == Op.defineSetter) {
-              const object = this.reg(base, inst.a);
-              const key = this.reg(base, inst.b);
-              const fn = this.reg(base, inst.c);
-              this.defineAccessor(object, key, fn, fn, op == Op.defineGetter);
-              if (this.isCompiledCallable(fn)) {
-                const atomHome = this.atomHome;
-                this.setFunctionHidden(asCell(fn), atomHome, object);
-              }
-            } else if (op == Op.spreadInvoke || op == Op.spreadMethodInvoke || op == Op.spreadNewInvoke) {
-              // Callee at b; for a method call the receiver at b + 1; the
-              // arguments array in the next register. The elements are placed
-              // on the register stack and the ordinary call paths take over.
-              const callee = this.reg(base, inst.b);
-              const isMethod = op == Op.spreadMethodInvoke;
-              const receiver = isMethod ? this.reg(base, inst.b + 1) : undefinedValue();
-              const arrayReg: u8 = isMethod ? inst.b + 2 : inst.b + 1;
-              const argsArray = this.reg(base, arrayReg);
-              const argsBase = this.spreadArguments(asCell(argsArray));
-              const argc = this.regTop - argsBase;
-              if (op == Op.spreadNewInvoke) {
-                if (!this.isConstructorValue(callee)) {
-                  thrown = this.notConstructorError(callee);
-                  throwing = true;
-                } else if (this.isCompiledCallable(callee)) {
-                  this.frames[frameIndex].ip = ip;
-                  if (this.enterConstruct(callee, inst.a, argsBase, argc, callee)) {
-                    returned = true;
-                  } else {
-                    thrown = this.takePending();
-                    throwing = true;
-                  }
-                } else {
-                  const produced = this.constructHostDirect(asCell(callee), argsBase, argc);
-                  this.regTop = argsBase;
-                  if (!this.pendingThrow) this.setReg(base, inst.a, produced);
-                }
-              } else if (this.isCompiledCallable(callee)) {
-                this.frames[frameIndex].ip = ip;
-                if (this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue())) {
-                  returned = true;
-                } else {
-                  thrown = this.takePending();
-                  throwing = true;
-                }
-              } else if (this.isHostFunctionValue(callee)) {
-                const builtin = this.heap.hostFunctionId(asCell(callee));
-                const outcome = this.callHost(builtin, receiver, argsBase, argc, asCell(callee));
-                this.regTop = argsBase;
-                if (!this.pendingThrow) this.setReg(base, inst.a, outcome);
-              } else {
-                this.regTop = argsBase;
-                const message: String = isMethod ? "property is not a function" : "value is not a function";
-                thrown = this.typeError(in message);
-                throwing = true;
-              }
-            } else if (op == Op.initClass || op == Op.initClassBase) {
-              const ctor = this.reg(base, inst.a);
-              const proto = this.reg(base, inst.b);
-              const ctorHandle = asCell(ctor);
-              const protoHandle = asCell(proto);
-              let failed = false;
-              if (op == Op.initClass) {
-                const parent = this.reg(base, inst.c);
-                if (isNull(parent)) {
-                  this.heap.setObjectProto(protoHandle, 0);
-                } else if (!this.isConstructorValue(parent)) {
-                  const message: String = "Class extends value is not a constructor or null";
-                  thrown = this.typeError(in message);
-                  throwing = true;
-                  failed = true;
-                } else {
-                  const atomPrototype = this.atomPrototype;
-                  const parentProto = this.getProperty(parent, cellValue(atomPrototype));
-                  if (this.pendingThrow) {
-                    thrown = this.takePending();
-                    throwing = true;
-                    failed = true;
-                  } else if (!this.isObjectLike(parentProto) && !isNull(parentProto)) {
-                    const message: String = "Class extends value does not have valid prototype property";
-                    thrown = this.typeError(in message);
-                    throwing = true;
-                    failed = true;
-                  } else {
-                    this.heap.setObjectProto(protoHandle, isNull(parentProto) ? 0 : asCell(parentProto));
-                    const atomFunctionProto = this.atomFunctionProto;
-                    this.setFunctionHidden(ctorHandle, atomFunctionProto, parent);
-                  }
-                }
-              }
-              if (!failed) {
-                const atomPrototype = this.atomPrototype;
-                this.defineOwnAttr(ctorHandle, atomPrototype, proto, PROP_NONE);
-                const atomConstructor = this.atomConstructor;
-                this.heap.objectDefine(protoHandle, atomConstructor, ctor, PROP_METHOD);
-              }
-            } else if (op == Op.defineMethod || op == Op.defineMethodComputed) {
-              // Methods are writable and configurable but not enumerable, and
-              // remember the object they were defined on for `super`.
-              const target = this.reg(base, inst.a);
-              const fn = this.reg(base, inst.c);
-              let atom: u32 = 0;
-              if (op == Op.defineMethod) {
-                const functionIndex = this.frames[frameIndex].functionIndex;
-                atom = this.functions[usize(functionIndex)].propertyNames[usize(inst.b)];
-              } else {
-                const key = this.reg(base, inst.b);
-                atom = this.propertyKey(key);
-                this.setFunctionNameFromKey(fn, key, 0);
-              }
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-                throwing = true;
-              } else {
-                this.defineOwnAttr(asCell(target), atom, fn, PROP_METHOD);
-                const atomHome = this.atomHome;
-                this.setFunctionHidden(asCell(fn), atomHome, target);
-              }
-            } else if (op == Op.defineMethodGetter || op == Op.defineMethodSetter) {
-              const target = this.reg(base, inst.a);
-              const key = this.reg(base, inst.b);
-              const fn = this.reg(base, inst.c);
-              const isGetter = op == Op.defineMethodGetter;
-              this.setFunctionNameFromKey(fn, key, isGetter ? 1 : 2);
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-                throwing = true;
-              } else {
-                this.defineAccessorAttr(target, key, fn, fn, isGetter, PROP_CONFIGURABLE | PROP_ACCESSOR);
-                const atomHome = this.atomHome;
-                this.setFunctionHidden(asCell(fn), atomHome, target);
-              }
-            } else if (op == Op.superCall || op == Op.spreadSuperCall) {
-              let args = Array<Value>();
-              if (op == Op.superCall) {
-                let index: u32 = 0;
-                while (index < u32(inst.c)) {
-                  const passed = this.reg(base, inst.b + u8(index));
-                  args.push(passed);
-                  index = index + 1;
-                }
-              } else {
-                const spread = this.reg(base, inst.b);
-                const count = this.heap.arrayLength(asCell(spread));
-                let index: u32 = 0;
-                while (index < count) {
-                  const passed = this.heap.arrayGet(asCell(spread), index);
-                  args.push(passed);
-                  index = index + 1;
-                }
-              }
-              this.frames[frameIndex].ip = ip;
-              const constructed = this.superConstruct(frameIndex, move args);
-              if (this.pendingThrow) {
-                thrown = this.takePending();
-                throwing = true;
-              } else {
-                this.setReg(base, inst.a, constructed);
-              }
-            } else {
-              // Not yet implemented: an internal error, surfaced as a throw.
-              const message: String = "unsupported operation";
-              thrown = this.typeError(in message);
-              throwing = true;
+            // Everything else runs out of this loop's line (see runColdOp).
+            const step = this.runColdOp(inst, fi, frameIndex, base, ip, entryDepth);
+            ip = step.ip;
+            if (step.returned) {
+              returned = true;
+              result = step.result;
             }
           }
         }

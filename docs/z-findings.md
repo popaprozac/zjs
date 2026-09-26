@@ -897,6 +897,21 @@ into a no-op moved the ten speed kernels by -13% to +16% each, in both
 directions: code layout, not the checks. After the compiler rework that
 halved the instruction count, the checks are not a measurable cost; the
 engine does not need this now.
+**Re-measured 2026-09-26 at `bdc237d2`, and now it does:** with calls
+entering and leaving frames inside the dispatch loop, the inherited-method
+cache, and native Map tables taking the larger costs out, interleaved
+medians over eleven runs each, same C flags:
+- every bounds check a no-op: the ten kernels -6% to -13% (properties
+  -13%, strings -10%, allocation -9%, calls -9%), none slower;
+- also every checked add/sub/mul: little more (strings -15%, the rest
+  within two points of the above);
+- only the register file's reads and writes and the instruction fetch
+  unchecked, the places where a frame's entry already establishes the
+  bounds: properties -8%, closures -6%, calls -5%, polymorphic -4%.
+The case is now the narrow one: an unchecked element access the engine
+uses where an invariant it checks once (a frame's register window lies
+inside the register stack; a function's code inside the code segment)
+makes the per-access check redundant, not unchecked indexing everywhere.
 **Confirmed:** z-lang `93611fe5`, measured · **Blocks:** no
 **Found:** the performance spike after classes.
 

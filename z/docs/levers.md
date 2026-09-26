@@ -39,7 +39,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Bytecode quality | all | about even | 1-2 days | in progress |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | started |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
-| Z upstream | all | smaller | upstream | filed |
+| Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
 **Object model.** A property read goes from the handle to its header in
 one table, to its slots in the arena, to an attribute byte per slot in a
@@ -68,7 +68,12 @@ calls and returns, give frames and registers one contiguous stack, and
 let built-ins call back without nesting. Evidence: frame entry is a third
 of `fib`; `sort` is a fifth of the arrays kernel, nearly all call
 overhead; Hermes does calls in 8 ms to our 17. Done so far: the frame is
-written once per call.
+written once per call; an ordinary call and return switch frames inside
+the dispatch loop instead of leaving it to reload the frame (closures
+-20%, calls -7%). Measured 2026-09-26, callbacks from built-ins are not
+the gap (`map` and `forEach` level with QuickJS, `sort` 1.2x); a plain
+call is (1.7x QuickJS). In `fib` the frame protocol (enter, open, pop)
+is about a quarter of the time.
 
 The dispatch loop's shape belongs to this lever too. It is one large
 function in the generated C, and the C compiler's register allocation
@@ -76,7 +81,11 @@ across it is fragile: adding one instruction's arm, which the kernel
 never executes, made properties 20% and polymorphic 14% slower
 (2026-09-26). The loop should keep only the hot instructions' bodies in
 line, with the rest in functions of their own, so a new instruction
-costs nothing where it is not used.
+costs nothing where it is not used. Done: the forty rarely executed
+instructions (generators, await, super, private names, spreads, rest,
+arguments, delete, throw, regular-expression literals) run in a
+function of their own; adding an unused instruction now costs 7% where
+it cost 20%, not nothing.
 
 **Bytecode quality.** The compiler emits one instruction per construct
 and copies more than it needs to: the closures loop runs 14 instructions
@@ -121,9 +130,14 @@ the format is not fixed too early.
 one repeated value in a single call, for every allocation and copy the
 heap makes; locale-independent conversion between numbers and text,
 which would also replace the formatting passes above; build-time
-selection, for opt-in features and platform code; unchecked indexing,
-worth measuring again once the levers above have taken the larger costs
-out.
+selection, for opt-in features and platform code. Two now measured as
+worth several percent everywhere (2026-09-26): an inlining hint, since
+clang will not inline even two-line helpers into the dispatch loop
+(forcing five inline: calls -9%, properties, closures, and arrays -5%);
+and unchecked element access where an invariant checked once makes the
+per-access check redundant (every bounds check off: -6% to -13% on every
+kernel; the register file and instruction fetch alone: properties -8%,
+closures -6%, calls -5%).
 
 ## Order
 
