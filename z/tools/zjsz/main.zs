@@ -13,6 +13,10 @@ import { thread } from "std/thread";
 import { Runtime, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate } from "../../engine/lib.zs";
+import { parseProgram } from "../../engine/parser.zs";
+import { compileProgram } from "../../engine/compiler.zs";
+import { bcU16, bcI16 } from "../../engine/bytecode.zs";
+import { opName } from "./opnames.zs";
 import native from "./memstat.h";
 
 function nativeAlloc(count: usize): usize = raw c { return (uintptr_t)calloc(count, 1); }
@@ -163,6 +167,79 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
   if (!outcome.isThrow) return 0;
   reportThrow(inout runtime, outcome.value);
   return 1;
+}
+
+// The bytecode a script compiles to, on stdout: each function's header
+// (index, name, registers, parameters) and its instructions with their
+// operands, a 16-bit operand shown both signed and unsigned.
+function dumpFile(in path: String): i32 throws String {
+  const source = try fs.readBytes(path);
+  let runtime = createEngine();
+  const parsed = parseProgram(move source, false);
+  if (parsed.hadError) {
+    console.error("zjsz dump: parse error");
+    return 1;
+  }
+  const first = runtime.functions.length;
+  const root = compileProgram(in parsed.parser, parsed.root, inout runtime);
+  if (root < 0) {
+    console.error("zjsz dump: compile error");
+    return 1;
+  }
+  let fi = first;
+  while (fi < runtime.functions.length) {
+    let line = Array<u8>();
+    appendText(inout line, "function ");
+    appendDecimal(inout line, u32(fi));
+    appendText(inout line, " ");
+    const nameAtom = runtime.functions[fi].nameAtom;
+    if (nameAtom != 0) {
+      appendString(inout line, in runtime, cellValue(nameAtom));
+    } else {
+      appendText(inout line, "(anonymous)");
+    }
+    appendText(inout line, " registers ");
+    appendDecimal(inout line, runtime.functions[fi].registerCount);
+    appendText(inout line, " params ");
+    appendDecimal(inout line, runtime.functions[fi].paramCount);
+    appendText(inout line, " instructions ");
+    appendDecimal(inout line, runtime.functions[fi].codeLength);
+    line.push(10);
+    writeOut(in line);
+    const start = usize(runtime.functions[fi].codeStart);
+    const count = usize(runtime.functions[fi].codeLength);
+    let ip: usize = 0;
+    while (ip < count) {
+      const inst = runtime.codeSegment[start + ip];
+      let text = Array<u8>();
+      appendText(inout text, "  ");
+      appendDecimal(inout text, u32(ip));
+      appendText(inout text, "  ");
+      appendText(inout text, opName(inst.op));
+      appendText(inout text, " ");
+      appendDecimal(inout text, u32(inst.a));
+      appendText(inout text, " ");
+      appendDecimal(inout text, u32(inst.b));
+      appendText(inout text, " ");
+      appendDecimal(inout text, u32(inst.c));
+      appendText(inout text, "  (u16 ");
+      appendDecimal(inout text, u32(bcU16(inst)));
+      appendText(inout text, ", i16 ");
+      const signed = bcI16(inst);
+      if (signed < 0) {
+        appendText(inout text, "-");
+        appendDecimal(inout text, u32(0 - signed));
+      } else {
+        appendDecimal(inout text, u32(signed));
+      }
+      appendText(inout text, ")");
+      text.push(10);
+      writeOut(in text);
+      ip = ip + 1;
+    }
+    fi = fi + 1;
+  }
+  return 0;
 }
 
 // Heap figures after a run, on stderr: slots in use, live cells,
@@ -342,6 +419,7 @@ function main(): i32 {
   // Arguments exclude the program name:
   //   run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats]
   //       [--gc-floor N] [--gc-growth P] [--expose-gc] <file>
+  //   dump <file>        the bytecode the file compiles to
   // --dict-threshold sets the property count at which an object leaves
   // its hidden class (for measurement); --stats prints heap figures
   // after the run; --gc-stats times every collection and prints the
@@ -357,6 +435,15 @@ function main(): i32 {
   }
   const commandLength = arguments[0].byteLength;
   const command = arguments[0].copyBytes(0, commandLength);
+  if (command == "dump") {
+    const pathLength = arguments[1].byteLength;
+    const dumpPath = arguments[1].copyBytes(0, pathLength);
+    const dumped = attempt dumpFile(in dumpPath);
+    return match (dumped) {
+      success(code) => code;
+      failure(message) => 2;
+    };
+  }
   if (command != "run") {
     console.error("usage: zjsz run [--dict-threshold N] [--stats] [--expose-gc] <file>");
     return 2;

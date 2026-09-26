@@ -624,6 +624,7 @@ Z_BIN=<native z> ./z/build.sh     # the same, built by a native compiler binary 
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 Z_BIN=<native z> ./z/probes/native/run.sh   # programs Stage 0 accepts that a native compiler rejects
 ./z/spike/run.sh                  # Phase 0 measurements
+./z/build/zjsz dump file.js       # the bytecode each function compiles to
 ./z/build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats] [--gc-floor N] [--gc-growth P] [--expose-gc] file.js
                                   # --dict-threshold: property count at which an
                                   #   object leaves its hidden class (measurement)
