@@ -7247,8 +7247,8 @@ export struct Runtime {
               this.frameCount = this.frameCount - 1;
               this.regTop = base;
               if (this.heap.shouldCollect()) {
-                this.setReg(base, 0, value);
                 this.regTop = base + 1;
+                this.setReg(base, 0, value);
                 this.collectGarbage();
                 this.regTop = base;
               }
@@ -7295,8 +7295,8 @@ export struct Runtime {
             // parked in the caller's next register through the collection,
             // and an error the return raised is rooted with it.
             if (this.heap.shouldCollect()) {
-              this.setReg(frame.regsBase, 0, value);
               this.regTop = frame.regsBase + 1;
+              this.setReg(frame.regsBase, 0, value);
               if (throwing) this.pushTempRoot(thrown);
               this.collectGarbage();
               if (throwing) this.popTempRoot();

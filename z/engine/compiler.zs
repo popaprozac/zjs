@@ -5033,7 +5033,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   const constants = replace(inout compiler.constants, Array<Value>());
   compiled.code = move code;
   compiled.constants = move constants;
-  compiled.registerCount = u32(compiler.maxReg) + 1;
+  compiled.registerCount = u32(compiler.maxReg);
   if (compiled.registerCount < paramCount) compiled.registerCount = paramCount;
   compiled.fixedRegs = u32(compiler.fixedRegs);
   compiled.paramCount = paramCount;
@@ -5697,7 +5697,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   const constants = replace(inout compiler.constants, Array<Value>());
   compiled.code = move code;
   compiled.constants = move constants;
-  compiled.registerCount = u32(compiler.maxReg) + 1;
+  compiled.registerCount = u32(compiler.maxReg);
   compiled.fixedRegs = u32(compiler.fixedRegs);
   compiled.strict = compiler.strict;
   const propertyNames = replace(inout compiler.propertyNames, Array<u32>());
