@@ -89,7 +89,11 @@ given a young one (a large cell by the slot alone). On a program keeping
 400,000 records alive under churn (`z/bench/memory`), peak resident
 memory 247 -> 117 MB (QuickJS 131, Hermes 67, JavaScriptCore 188, V8
 240), 95th-percentile pause 20 -> 0.2 ms, total collection time about
-even; instructions on the speed kernels -5% to +1%. The barrier has to
+even; on the speed kernels, interleaved medians of eleven runs at load
+4.3: regexp -10.8%, allocation -4.6%, calls -2.1%, maps +2.7%,
+polymorphic +1.8%, the rest within 1.1%. Finding the collector's
+latent bugs took running everything with a collection at every safe
+point; the expectation cases now always run that way too. The barrier has to
 stay inside the C compiler's inlining budget for the slot store: one
 bounds check more put it over (cost 225 of 225) and cost properties and
 arrays 3%. Left: every allocation pushes its slots one call at a time
