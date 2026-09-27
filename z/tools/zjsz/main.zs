@@ -141,19 +141,21 @@ function writeOut(in bytes: Array<u8>): void {
 // where any host call runs -- a call site, the arguments and the caller's
 // registers rooted -- the same point an ordinary collection may take.
 function gcHost(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  runtime.collectGarbage();
+  runtime.collectAll();
   return undefinedValue();
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32): i32 throws String {
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
   if (gcFloor > 0) {
     runtime.heap.collectFloor = u32(gcFloor);
-    runtime.heap.collectThreshold = u32(gcFloor);
+    runtime.heap.majorThreshold = u32(gcFloor);
   }
   if (gcGrowth > 0) runtime.heap.collectGrowthPercent = u32(gcGrowth);
+  if (gcNursery >= 0) runtime.heap.nurseryCells = u32(gcNursery);
+  runtime.heap.collectThreshold = runtime.heap.nurseryCells == 0 ? runtime.heap.majorThreshold : runtime.heap.nurseryCells;
   runtime.gcTiming = gcStats;
   installConsole(inout runtime);
   if (exposeGc) {
@@ -254,6 +256,8 @@ function reportStats(in runtime: Runtime): void {
   appendDecimal(inout line, runtime.heap.dictionaryCount());
   appendText(inout line, " collections ");
   appendDecimal(inout line, runtime.heap.collections);
+  appendText(inout line, " minor ");
+  appendDecimal(inout line, runtime.heap.minorCollections);
   appendText(inout line, " weak-cleared ");
   appendDecimal(inout line, runtime.heap.weakCleared);
   appendText(inout line, " ephemeron-passes ");
@@ -418,7 +422,7 @@ function decimalOf(in text: String): i32 {
 function main(): i32 {
   // Arguments exclude the program name:
   //   run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats]
-  //       [--gc-floor N] [--gc-growth P] [--expose-gc] <file>
+  //       [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] <file>
   //   dump <file>        the bytecode the file compiles to
   // --dict-threshold sets the property count at which an object leaves
   // its hidden class (for measurement); --stats prints heap figures
@@ -426,8 +430,11 @@ function main(): i32 {
   // pause distribution; --mem-stats prints storage figures (alive, in
   // use, held by capacity, the allocator's, the process's now and at
   // peak); --gc-floor and --gc-growth set the collection
-  // policy's floor (cells) and survivor multiple (percent), for
-  // measurement; --expose-gc defines a global gc() that collects.
+  // policy's floor (cells promoted between full collections) and
+  // survivor multiple (percent), and --gc-nursery the allocations
+  // between minor collections (0: every collection is full), for
+  // measurement and testing; --expose-gc defines a global gc() that
+  // collects everything.
   const arguments = process.args();
   if (arguments.length < 2) {
     console.error("usage: zjsz run [--dict-threshold N] [--stats] [--expose-gc] <file>");
@@ -456,6 +463,7 @@ function main(): i32 {
   let memStats = false;
   let gcFloor: i32 = -1;
   let gcGrowth: i32 = -1;
+  let gcNursery: i32 = -1;
   while (index + 1 < arguments.length) {
     const optionLength = arguments[index].byteLength;
     const option = arguments[index].copyBytes(0, optionLength);
@@ -482,6 +490,15 @@ function main(): i32 {
         gcGrowth = parsed;
       }
       index = index + 2;
+    } else if (option == "--gc-nursery" && index + 2 < arguments.length) {
+      const valueLength = arguments[index + 1].byteLength;
+      const value = arguments[index + 1].copyBytes(0, valueLength);
+      gcNursery = decimalOf(in value);
+      if (gcNursery < 0) {
+        console.error("zjsz: --gc-nursery needs a decimal count");
+        return 2;
+      }
+      index = index + 2;
     } else if (option == "--expose-gc") {
       exposeGc = true;
       index = index + 1;
@@ -500,7 +517,7 @@ function main(): i32 {
   }
   const pathLength = arguments[index].byteLength;
   const path = arguments[index].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth);
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

@@ -1,6 +1,9 @@
 # Allocation and collection: what an operation costs, and what the floor buys
 
-Status: **measured**. Everything here is Stage 0 evidence: the engine built
+Status: **measured**, before the young generation (2026-09-26): the policy
+measured here, a floor and a survivor multiple, now decides when a full
+collection is due, counted in cells promoted, with minor collections every
+16,384 cells between (README, Phase 6). Everything here is Stage 0 evidence: the engine built
 by the TypeScript compiler run under bun, at z-lang `ad43b117`, on macOS
 arm64. No native compiler build was used.
 

@@ -37,7 +37,7 @@ MB (arm64).
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
-| Allocator and collector | allocation, strings, json, maps, closures | about even | 3-5 days | started |
+| Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
 | Bytecode quality | all | about even | 1-2 days | in progress |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | started |
@@ -81,9 +81,21 @@ the candidates; a different collector is in scope. Done so far: strings
 of up to 256 bytes live in a byte arena, written in place and dropped by
 not being copied, compacted only once it holds twice its live bytes
 (strings -17%, maps -16%, regexp -8%); malloc and free went from 12-26%
-of those kernels to 1-4%. Left: every allocation pushes its slots and
-attribute bytes one call at a time (Z has no bulk append), and the sweep
-visits every handle.
+of those kernels to 1-4%. A young generation (2026-09-26): minor
+collections every 16,384 cells trace from the roots only into young
+cells, sweep only the young ones, and slide the young slots and string
+bytes still in use down their arenas; a write barrier lists an old cell
+given a young one (a large cell by the slot alone). On a program keeping
+400,000 records alive under churn (`z/bench/memory`), peak resident
+memory 247 -> 117 MB (QuickJS 131, Hermes 67, JavaScriptCore 188, V8
+240), 95th-percentile pause 20 -> 0.2 ms, total collection time about
+even; instructions on the speed kernels -5% to +1%. The barrier has to
+stay inside the C compiler's inlining budget for the slot store: one
+bounds check more put it over (cost 225 of 225) and cost properties and
+arrays 3%. Left: every allocation pushes its slots one call at a time
+(Z has no bulk append); a full collection copies every live slot into a
+second arena, which doubles the slot arena at its peak (a sliding
+compaction would not); cell headers are 20 bytes.
 
 **Call protocol.** A call writes an 88-byte frame into one array and a
 register window into another, and leaves the dispatch loop to reload the

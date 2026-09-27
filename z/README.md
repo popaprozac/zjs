@@ -391,6 +391,26 @@ at instruction boundaries only -- returns and loop back edges -- so no value
 is ever held only in a Z local across a collection. The ABI smoke test runs a
 200,000-iteration allocating loop and checks the heap stays bounded.
 
+The collector has two generations (2026-09-26). A cell is young until it
+survives a collection; between collections the mark bit says which, since
+a sweep leaves its survivors marked. Most collections are minor: every
+16,384 cells allocated, marking from the same roots stops at any old cell,
+and the sweep walks only the young cells (the free list's entries taken
+since the last collection, then the handles past the table's old extent,
+which is their allocation order), freeing the dead and leaving the rest
+old. The slots and small-string bytes allocated since the last collection
+sit above a base in their arenas, so a minor sweep slides the ones still
+in use down and cuts both arenas back. A store that gives an old cell a
+young one (a slot, a prototype or link, a Map or Set entry) lists the old
+cell in a remembered set, or for a cell of 256 slots or more just the slot,
+and a minor collection traces those too. Weak entries are held strongly
+by a minor collection; their dead keys go at the next full one. A full
+collection is the mark-sweep above, due once minor collections have
+promoted the floor or twice what the last full one kept. On a program
+keeping 400,000 records alive under steady churn, peak resident memory
+went from 247 to 117 MB and the 95th-percentile pause from 20 ms to under
+0.2 ms. `gc()` always collects fully.
+
 Places the corpus deliberately steps around, where the reference is wrong and
 the Z engine follows the specification: a property write to `undefined`
 throws a TypeError (the reference drops it); `Error.prototype.message` is
@@ -537,8 +557,8 @@ constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and
 the remaining builtins. A function declaration
 evaluated more than once yields the same function object each time
-(class members do not). The collector is stop-the-world and
-non-generational; the reference's nursery is a later refinement.
+(class members do not). The collector is stop-the-world, with a young
+generation (Phase 6).
 
 ```
 $ ./z/oracle.sh
@@ -627,7 +647,7 @@ Z_BIN=<native z> ./z/build.sh     # the same, built by a native compiler binary 
 Z_BIN=<native z> ./z/probes/native/run.sh   # programs Stage 0 accepts that a native compiler rejects
 ./z/spike/run.sh                  # Phase 0 measurements
 ./z/build/zjsz dump file.js       # the bytecode each function compiles to
-./z/build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats] [--gc-floor N] [--gc-growth P] [--expose-gc] file.js
+./z/build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats] [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] file.js
                                   # --dict-threshold: property count at which an
                                   #   object leaves its hidden class (measurement)
                                   # --stats: slots, cells, dictionaries, collections,
@@ -638,10 +658,14 @@ Z_BIN=<native z> ./z/probes/native/run.sh   # programs Stage 0 accepts that a na
                                   # --mem-stats: storage alive, in use, and held by
                                   #   capacity; the allocator's in use and reserved;
                                   #   resident and footprint now, and resident peak
-                                  # --gc-floor, --gc-growth: the collection policy's
-                                  #   floor in cells and survivor multiple in
-                                  #   percent (measurement)
-                                  # --expose-gc: a global gc() that collects (tests)
+                                  # --gc-floor, --gc-growth: the full collection
+                                  #   policy's floor in cells promoted and survivor
+                                  #   multiple in percent (measurement)
+                                  # --gc-nursery: cells allocated between minor
+                                  #   collections; 1 collects at every safe point
+                                  #   (tests), 0 makes every collection full
+                                  # --expose-gc: a global gc() that collects
+                                  #   everything (tests)
 
 cd ~/code/z-lang && bun run z test ~/code/zjs/z/engine/heap.zs   # unit tests
 ```

@@ -1823,6 +1823,21 @@ that matters to the design.
 Minimal reproduction: probe `inline-function` (`COMPILER-REJECTED`; the
 spelling is a proposal).
 
+**The other direction too** (2026-09-26, the young generation). The
+collector's write barrier sits in the slot store every property and
+element write goes through: a fast check inline, the listing out of line.
+Neither half can be placed. With the header read twice the store cost
+clang 225 against a threshold of 225 and stopped being inlined into the
+dispatch loop (properties +2.8%, arrays +3.3% instructions); reading the
+header once brought it to 165. Then the out-of-line half, called from one
+place, was inlined into the store by clang's single-caller bonus, and the
+store rose to 710 and left the loop again; it went back out of line only
+once three other stores called it too. The engine now keeps its hot paths
+inside a budget it cannot see, by rearranging code. The ask grows to a
+pair: `inline` for the fast half and a cold or never-inline mark for the
+slow half (`__attribute__((noinline, cold))`), the standard shape of a
+barrier or any fast path with a rare exit.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

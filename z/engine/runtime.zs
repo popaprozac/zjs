@@ -833,7 +833,10 @@ export struct Runtime {
     this.atoms = move rebuilt;
   }
 
-  function markInterned(inout this, handle: u32): void {
+  // An atom keeps its hash in its header from the start, so the table
+  // can drop it after its bytes are gone (removeAtom).
+  function markInterned(inout this, handle: u32, hash: u32): void {
+    this.heap.cacheStringHash(handle, hash);
     let flags = this.heap.flagsOf(handle) | FLAG_INTERNED;
     if (this.indexNameValue(handle) >= 0) flags = flags | FLAG_INDEX_KEY;
     this.heap.setFlags(handle, flags);
@@ -864,7 +867,8 @@ export struct Runtime {
   function internLatin1(inout this, bytes: Array<u8>): u32 {
     if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
     const mask = this.atoms.length - 1;
-    let slot = usize(this.hashBytes(in bytes)) & mask;
+    const hash = this.hashBytes(in bytes);
+    let slot = usize(hash) & mask;
     while (true) {
       const existing = this.atoms[slot];
       if (existing == 0) break;
@@ -872,7 +876,7 @@ export struct Runtime {
       slot = (slot + 1) & mask;
     }
     const handle = this.heap.allocateLatin1(move bytes);
-    this.markInterned(handle);
+    this.markInterned(handle, hash);
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
     return handle;
@@ -883,7 +887,8 @@ export struct Runtime {
   function internLatin1Borrowed(inout this, in bytes: Array<u8>): u32 {
     if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
     const mask = this.atoms.length - 1;
-    let slot = usize(this.hashBytes(in bytes)) & mask;
+    const hash = this.hashBytes(in bytes);
+    let slot = usize(hash) & mask;
     while (true) {
       const existing = this.atoms[slot];
       if (existing == 0) break;
@@ -897,7 +902,7 @@ export struct Runtime {
       index = index + 1;
     }
     const handle = this.heap.allocateLatin1(move owned);
-    this.markInterned(handle);
+    this.markInterned(handle, hash);
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
     return handle;
@@ -908,7 +913,8 @@ export struct Runtime {
     if (isNarrowUnits(in units)) return this.internLatin1(unitsToLatin1(in units));
     if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
     const mask = this.atoms.length - 1;
-    let slot = usize(this.hashUnits(in units)) & mask;
+    const hash = this.hashUnits(in units);
+    let slot = usize(hash) & mask;
     while (true) {
       const existing = this.atoms[slot];
       if (existing == 0) break;
@@ -916,7 +922,7 @@ export struct Runtime {
       slot = (slot + 1) & mask;
     }
     const handle = this.heap.allocateUnits(move units);
-    this.markInterned(handle);
+    this.markInterned(handle, hash);
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
     return handle;
@@ -934,14 +940,15 @@ export struct Runtime {
     if ((this.heap.flagsOf(handle) & FLAG_INTERNED) != 0) return handle;
     if ((usize(this.atomCount) + 1) * 2 > this.atoms.length) this.growAtoms();
     const mask = this.atoms.length - 1;
-    let slot = usize(this.hashStorage(handle)) & mask;
+    const hash = this.hashStorage(handle);
+    let slot = usize(hash) & mask;
     while (true) {
       const existing = this.atoms[slot];
       if (existing == 0) break;
       if (this.heap.stringsEqual(existing, handle)) return existing;
       slot = (slot + 1) & mask;
     }
-    this.markInterned(handle);
+    this.markInterned(handle, hash);
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
     return handle;
@@ -4132,20 +4139,57 @@ export struct Runtime {
 
   // --- Collection ---
 
-  // Mark everything reachable from the runtime's roots, then sweep. Runs
-  // only at instruction boundaries, where every live value sits in a
-  // register, a frame, a global, or a table -- never in a Z local.
+  // Mark everything reachable from the runtime's roots, then sweep: the
+  // young cells alone, or everything when the policy says the old ones
+  // are due. Runs only at instruction boundaries, where every live value
+  // sits in a register, a frame, a global, or a table -- never in a Z
+  // local.
   function collectGarbage(inout this): void {
+    const full = this.heap.majorDue();
+    this.collectTimed(full);
+  }
+
+  // A full collection now, whatever the policy says: gc().
+  function collectAll(inout this): void {
+    this.collectTimed(true);
+  }
+
+  function collectTimed(inout this, full: boolean): void {
     let started: f64 = 0.0;
     if (this.gcTiming) started = native.zjs_clock_mono_ns();
-    this.collectNow();
+    this.collectNow(full);
     if (this.gcTiming) this.gcPauses.push(native.zjs_clock_mono_ns() - started);
   }
 
-  function collectNow(inout this): void {
-    this.heap.markedCells = 0;
-    this.heap.markedSlots = 0;
-    this.heap.weakVisits = 0;
+  function collectNow(inout this, full: boolean): void {
+    if (full) {
+      this.heap.beginMajor();
+    } else {
+      this.heap.beginMinor();
+    }
+    this.markRoots();
+    if (!full) {
+      // The old cells given young ones since the last collection are
+      // roots too. The atoms interned since then that nothing reached
+      // leave the table before their cells are freed.
+      this.heap.traceRemembered();
+      this.heap.sweepYoung();
+      this.dropDeadAtoms();
+      this.heap.finishMinor();
+      return;
+    }
+    // Weak collections: values reached through marked keys, to a
+    // fixpoint, then the entries of dead keys dropped -- before the
+    // atom rebuild, since such values can hold interned strings.
+    this.heap.markEphemerons();
+    this.heap.clearDeadWeakEntries();
+    // The atom table is weak: an interned string nothing else reaches is
+    // dropped, and the table is rebuilt from the survivors.
+    this.rebuildAtoms();
+    this.heap.sweep();
+  }
+
+  function markRoots(inout this): void {
     let index: usize = 0;
     while (index < usize(this.regTop)) {
       const value = this.regStack[index];
@@ -4389,15 +4433,37 @@ export struct Runtime {
       this.heap.markHandle(nameAtom);
       index = index + 1;
     }
-    // Weak collections: values reached through marked keys, to a
-    // fixpoint, then the entries of dead keys dropped -- before the
-    // atom rebuild, since such values can hold interned strings.
-    this.heap.markEphemerons();
-    this.heap.clearDeadWeakEntries();
-    // The atom table is weak: an interned string nothing else reaches is
-    // dropped, and the table is rebuilt from the survivors.
-    this.rebuildAtoms();
-    this.heap.sweep();
+  }
+
+  function dropDeadAtoms(inout this): void {
+    let at: usize = 0;
+    while (at < this.heap.deadAtoms.length) {
+      const dead = this.heap.deadAtoms[at];
+      this.removeAtom(dead);
+      at = at + 1;
+    }
+  }
+
+  // Take an atom out of the table, moving later entries of its probe
+  // run back so every remaining atom is still found from its hash, which
+  // its header keeps (see markInterned): its bytes may be gone.
+  function removeAtom(inout this, handle: u32): void {
+    const mask = this.atoms.length - 1;
+    let hole = usize(this.hashStorage(handle)) & mask;
+    while (this.atoms[hole] != handle) { hole = (hole + 1) & mask; }
+    let next = (hole + 1) & mask;
+    while (this.atoms[next] != 0) {
+      const moved = this.atoms[next];
+      const home = usize(this.hashStorage(moved)) & mask;
+      // An entry stays unless the hole lies between its home and it.
+      if (((next + mask + 1 - home) & mask) >= ((next + mask + 1 - hole) & mask)) {
+        this.atoms[hole] = moved;
+        hole = next;
+      }
+      next = (next + 1) & mask;
+    }
+    this.atoms[hole] = 0;
+    this.atomCount = this.atomCount - 1;
   }
 
   function rebuildAtoms(inout this): void {
@@ -4421,7 +4487,8 @@ export struct Runtime {
   // Place an existing string cell in the atom table by its bytes' hash.
   function insertAtom(inout this, handle: u32): void {
     const mask = this.atoms.length - 1;
-    let slot = usize(this.hashStorage(handle)) & mask;
+    const hash = this.hashStorage(handle);
+    let slot = usize(hash) & mask;
     while (this.atoms[slot] != 0) { slot = (slot + 1) & mask; }
     this.atoms[slot] = handle;
     this.atomCount = this.atomCount + 1;
