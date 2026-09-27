@@ -1,9 +1,9 @@
 // JSON.parse and JSON.stringify over byte strings.
 import { unitsOf, isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { thread } from "std/thread";
-import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32 } from "../value.zs";
+import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32, isDeleted } from "../value.zs";
 import { Runtime, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber } from "../runtime.zs";
-import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE } from "../heap.zs";
+import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN } from "../heap.zs";
 
 // --- parse ---
 
@@ -16,6 +16,43 @@ struct JsonParser {
   units: Array<u16>;
   wide: boolean;
   narrow: Array<u8>;
+  // Recent class transitions, direct-mapped by (class, name): objects of
+  // one shape, which a document repeats, move straight to their class.
+  shapeFrom: Array<u32>;
+  shapeName: Array<u32>;
+  shapeTo: Array<u32>;
+  shapeSlot: Array<u32>;
+}
+
+const SHAPE_CACHE: usize = 64;
+
+// Define a parsed property on a fresh object, through the transition
+// cache when it holds.
+function defineParsed(inout runtime: Runtime, inout parser: JsonParser, object: u32, atom: u32, value: Value): void {
+  const before = runtime.heap.objectClass(object);
+  const at = usize(before.wrappingMultiply(31).wrappingAdd(atom)) & (SHAPE_CACHE - 1);
+  if (parser.shapeFrom[at] == before && parser.shapeName[at] == atom && parser.shapeTo[at] != 0) {
+    runtime.heap.transitionTo(object, parser.shapeTo[at], parser.shapeSlot[at], value);
+    return;
+  }
+  runtime.heap.objectSet(object, atom, value);
+  const after = runtime.heap.objectClass(object);
+  if (after != before && !runtime.heap.isDictionary(object) && runtime.heap.isTransitionOf(after, before, atom)) {
+    parser.shapeFrom[at] = before;
+    parser.shapeName[at] = atom;
+    parser.shapeTo[at] = after;
+    parser.shapeSlot[at] = runtime.heap.classSlot(after);
+  }
+}
+
+function zeros(count: usize): Array<u32> {
+  let list = Array<u32>.withCapacity(count);
+  let k: usize = 0;
+  while (k < count) {
+    list.push(0);
+    k = k + 1;
+  }
+  return list;
 }
 
 function skipSpace(inout parser: JsonParser): void {
@@ -31,17 +68,23 @@ function peekByte(in parser: JsonParser): i32 {
   return i32(parser.bytes[parser.position]);
 }
 
+// The literal `word` (true, false, null) at the position, stepped over;
+// compared in place, with nothing copied.
 function expectWord(inout parser: JsonParser, in word: String): boolean {
-  const wordBytes = unitsOf(in word);
+  const length = usize(word.byteLength);
+  if (parser.position + length > parser.bytes.length) {
+    parser.failed = true;
+    return false;
+  }
   let index: usize = 0;
-  while (index < wordBytes.length) {
-    if (parser.position + index >= parser.bytes.length || parser.bytes[parser.position + index] != wordBytes[index]) {
+  while (index < length) {
+    if (parser.bytes[parser.position + index] != u16(word.byteAt(index))) {
       parser.failed = true;
       return false;
     }
     index = index + 1;
   }
-  parser.position = parser.position + wordBytes.length;
+  parser.position = parser.position + length;
   return true;
 }
 
@@ -206,8 +249,26 @@ function parseNumber(inout parser: JsonParser): Value {
     }
     while (isDigitAt(in parser)) { parser.position = parser.position + 1; }
   }
-  let digits = Array<u8>();
+  // An integer of up to 15 digits is exact as it is read.
   let index = start;
+  const negative = parser.bytes[index] == 45;
+  if (negative) index = index + 1;
+  if (parser.position - index <= 15) {
+    let magnitude: i64 = 0;
+    let integral = true;
+    while (index < parser.position) {
+      const unit = parser.bytes[index];
+      if (unit < 48 || unit > 57) {
+        integral = false;
+        break;
+      }
+      magnitude = magnitude * 10 + i64(unit - 48);
+      index = index + 1;
+    }
+    if (integral) return numberValue(negative ? -f64(magnitude) : f64(magnitude));
+  }
+  let digits = Array<u8>();
+  index = start;
   while (index < parser.position) {
     digits.push(u8(parser.bytes[index]));
     index = index + 1;
@@ -265,7 +326,7 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
         runtime.popTempRoot();
         return undefinedValue();
       }
-      runtime.heap.objectSet(object, atom, value);
+      defineParsed(inout runtime, inout parser, object, atom, value);
       runtime.popTempRoot();
       skipSpace(inout parser);
       const next = peekByte(in parser);
@@ -381,7 +442,7 @@ function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Valu
 function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  let parser = JsonParser({ bytes: runtime.heap.stringUnits(asCell(text)), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>() });
+  let parser = JsonParser({ bytes: runtime.heap.stringUnits(asCell(text)), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeFrom: zeros(SHAPE_CACHE), shapeName: zeros(SHAPE_CACHE), shapeTo: zeros(SHAPE_CACHE), shapeSlot: zeros(SHAPE_CACHE) });
   const value = parseValue(inout runtime, inout parser, 0);
   skipSpace(inout parser);
   if (parser.failed || parser.position != parser.bytes.length) {
@@ -412,6 +473,11 @@ struct Stringifier {
   stackCount: usize;
   // "toJSON" as a key, interned once per call.
   toJSONKey: Value;
+  // The key lists of the objects being written, one on another: each
+  // object pushes its names and value slots and pops them when done, so
+  // no object allocates a list of its own.
+  names: Array<u32>;
+  slots: Array<u32>;
 }
 
 function hexChar(digit: u32): u16 {
@@ -533,8 +599,51 @@ function pushNull(inout text: Array<u16>): void {
 // SerializeJSONProperty: returns false when the value has no JSON form
 // (undefined, functions, symbols), leaving `text` untouched.
 function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, inout text: Array<u16>): boolean {
-  let value = runtime.getProperty(holder, key);
+  const value = runtime.getProperty(holder, key);
   if (runtime.pendingThrow) return false;
+  return serializeValue(inout runtime, inout state, holder, key, value, inout text);
+}
+
+// An object's enumerable own string keys in property order, pushed on
+// the stringifier's key stack with their slots, all before any value is
+// read, as the specification takes its key list first; where they start,
+// or -1 with nothing pushed when the object has an index key and needs
+// the general order.
+function pushPlainKeys(inout runtime: Runtime, inout state: Stringifier, handle: u32): i64 {
+  const start = state.names.length;
+  runtime.heap.appendOwnNamedSlots(handle, inout state.names, inout state.slots);
+  let read = start;
+  let write = start;
+  while (read < state.names.length) {
+    const name = state.names[read];
+    const slot = state.slots[read];
+    const flags = runtime.heap.flagsOf(name);
+    if (runtime.heap.isString(name) && (flags & FLAG_INDEX_KEY) != 0) {
+      popKeys(inout state, start);
+      return -1;
+    }
+    // Symbols and the engine's own keys are not written.
+    if (runtime.heap.isString(name) && (flags & FLAG_HIDDEN) == 0 && (runtime.heap.attrOf(handle, slot) & PROP_ENUMERABLE) != 0) {
+      state.names[write] = name;
+      state.slots[write] = slot;
+      write = write + 1;
+    }
+    read = read + 1;
+  }
+  popKeys(inout state, write);
+  return i64(start);
+}
+
+function popKeys(inout state: Stringifier, mark: usize): void {
+  while (state.names.length > mark) {
+    const name = state.names.pop();
+    const slot = state.slots.pop();
+  }
+}
+
+// SerializeJSONProperty with the property's value already read.
+function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, given: Value, inout text: Array<u16>): boolean {
+  let value = given;
   if (runtime.isObjectLike(value)) {
     const toJSONKey = state.toJSONKey;
     const toJSON = runtime.getProperty(value, toJSONKey);
@@ -625,6 +734,10 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
     appendAll(inout state.indent, in gap);
   }
   const isArray = runtime.heap.isArray(handle);
+  let plainStart: i64 = -1;
+  if (!isArray && !state.useAllowed && runtime.heap.isObject(handle) && handle != runtime.globalObject) {
+    plainStart = pushPlainKeys(inout runtime, inout state, handle);
+  }
   const open: u16 = isArray ? 91 : 123;
   text.push(open);
   let wroteAny = false;
@@ -637,12 +750,56 @@ function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Val
         text.push(10);
         appendAll(inout text, in state.indent);
       }
-      const wrote = serialize(inout runtime, inout state, value, int32Value(i32(index)), inout text);
+      // A present data element is read in place; a hole or an accessor
+      // goes through Get.
+      let element = undefinedValue();
+      if (index < runtime.heap.arrayLength(handle) && runtime.heap.arrayHasIndex(handle, index) && (runtime.heap.attrOf(handle, index) & PROP_ACCESSOR) == 0) {
+        element = runtime.heap.arrayGet(handle, index);
+      } else {
+        element = runtime.getProperty(value, int32Value(i32(index)));
+        if (runtime.pendingThrow) return false;
+      }
+      const wrote = serializeValue(inout runtime, inout state, value, int32Value(i32(index)), element, inout text);
       if (runtime.pendingThrow) return false;
       if (!wrote) pushNull(inout text);
       wroteAny = true;
       index = index + 1;
     }
+  } else if (plainStart >= 0) {
+    // A plain object: its keys from its shape, each value read from its
+    // slot while the object keeps the shape its keys were read from (a
+    // getter or toJSON may change it), else by Get.
+    const first = usize(plainStart);
+    const end = state.names.length;
+    const shape = runtime.heap.objectClass(handle);
+    let k = first;
+    while (k < end) {
+      const name = state.names[k];
+      const slot = state.slots[k];
+      const mark = text.length;
+      if (wroteAny) text.push(44);
+      if (pretty) {
+        text.push(10);
+        appendAll(inout text, in state.indent);
+      }
+      quoteString(in runtime, inout text, name);
+      text.push(58);
+      if (pretty) text.push(32);
+      let propertyValue = runtime.heap.slot(handle, slot);
+      if (runtime.heap.objectClass(handle) != shape || isDeleted(propertyValue) || (runtime.heap.attrOf(handle, slot) & PROP_ACCESSOR) != 0) {
+        propertyValue = runtime.getProperty(value, cellValue(name));
+        if (runtime.pendingThrow) return false;
+      }
+      const wrote = serializeValue(inout runtime, inout state, value, cellValue(name), propertyValue, inout text);
+      if (runtime.pendingThrow) return false;
+      if (wrote) {
+        wroteAny = true;
+      } else {
+        truncateTo(inout text, mark);
+      }
+      k = k + 1;
+    }
+    popKeys(inout state, first);
   } else {
     let keys = Array<Value>();
     if (state.useAllowed) {
@@ -705,6 +862,7 @@ function jsonStringify(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     indent: Array<u16>(), gap: Array<u16>(), replacer: undefinedValue(),
     allowed: Array<u32>(), useAllowed: false, stack: Array<u32>(), stackCount: 0,
     toJSONKey: runtime.internText(in toJSONText),
+    names: Array<u32>(), slots: Array<u32>(),
   });
   if (runtime.isCallable(replacer)) {
     state.replacer = replacer;

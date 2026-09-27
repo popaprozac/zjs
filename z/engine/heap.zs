@@ -667,6 +667,11 @@ export struct Heap {
   }
 
   // Whether `child` is the class `parent` reaches by adding `atom`.
+  // The slot the property a class adds lives in.
+  function classSlot(classId: u32): u32 {
+    return this.classes[usize(classId)].transitionSlot;
+  }
+
   function isTransitionOf(child: u32, parent: u32, atom: u32): boolean {
     return this.classes[usize(child)].parent == parent && this.classes[usize(child)].transitionName == atom;
   }
@@ -810,6 +815,40 @@ export struct Heap {
         slots.push(slot);
       }
       slot = slot + 1;
+    }
+  }
+
+  // An object's own property names and value slots in insertion order,
+  // appended to the caller's arrays, with nothing allocated here: a
+  // class-mode object's come from its class chain, newest first, and are
+  // turned around in place.
+  function appendOwnNamedSlots(handle: u32, inout names: Array<u32>, inout slots: Array<u32>): void {
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & DICT_BIT) != 0) {
+      this.objectNamedSlots(handle, inout names, inout slots);
+      return;
+    }
+    const start = names.length;
+    let classId = payload;
+    while (classId != 0) {
+      const slot = this.classes[usize(classId)].transitionSlot;
+      if (!isDeleted(this.slot(handle, slot))) {
+        names.push(this.classes[usize(classId)].transitionName);
+        slots.push(slot);
+      }
+      classId = this.classes[usize(classId)].parent;
+    }
+    let low = start;
+    let high = names.length;
+    while (high > low + 1) {
+      high = high - 1;
+      const name = names[low];
+      names[low] = names[high];
+      names[high] = name;
+      const slot = slots[low];
+      slots[low] = slots[high];
+      slots[high] = slot;
+      low = low + 1;
     }
   }
 

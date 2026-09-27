@@ -1,0 +1,70 @@
+{"a":1,"b":2,"d":4}
+{"a":1,"b":"B","d":"late"}
+{"x":1,"y":2,"z":5}
+{"1":"one","2":"two","10":"ten","b":1,"a":2}
+697
+{"k0":0,"k1":1,"k2":2,"k4":4,"k5":5,"k6"
+[1,"got",3,null,null]
+[null,null,"x"]
+{"p":"P3","q":["P4"]}
+{"w":"key=w"}
+"key="
+{"a":[10,{"b":20}],"c":"x"}
+{"a":1,"c":{"a":3}}
+{
+  "a": [
+    1,
+    {
+      "b": 2
+    }
+  ],
+  "c": {}
+}
+{"n":null,"nan":null,"inf":null,"neg":0,"d":"1970-01-01T00:00:00.000Z"}
+{"m":1}
+{}
+{"own":2}
+TypeError
+stop
+[{"id":0,"tag":"t0","ok":true,"sub":{"v":0}},{"id":1,"tag":"t1","ok":false,"sub":{"v":1}},{"id":2,"tag":"t2","ok":true,"sub":{"v":2}}]
+"str \ud800x"
+{"é":"中"}
+{"a":2,"b":3}
+{"1":"y","2":"x","b":1}
+{"__proto__":{"p":1},"q":2}
+0(-0)
+0
+-12
+123456789012345
+1234567890123456800
+1.2345678901234568e+22
+0.1
+100000
+-0.0015
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+true
+SyntaxError
+null
+false
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+"é中😀"
+[true,false,null,-7,7.25]
+{"x":[1,{"y":null}]}
+__proto__,q
+
+true
+90
+89
+k42
+idtagok0t0true|idtagok1t1false|idtagok2t2true|idtagok3t3false|idtagok4t4true|idtagok5t5false
+[{"id":0,"tag":"T0"},{"id":1,"tag":"T1"},{"id":2,"tag":"T2"},{"id":3,"tag":"T3"},{"id":4,"tag":"T4"},{"id":5,"tag":"T5"}]
+ba
+ab
