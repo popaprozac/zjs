@@ -208,7 +208,9 @@ Array literal elements compile into their slots (allocation -3.8%), and
 against a register or a literal, with the jump-when-true flag serving
 both operators and a loop's bottom, so two arms serve all four cases
 (allocation -5.9%, properties -2.9%, polymorphic -2.2%, maps and
-closures -1.2%).
+closures -1.2%). A closure is made from its function's constant by one
+instruction, where a load of the function preceded it (closures -1.9%,
+calls -1.3%).
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches

@@ -7713,9 +7713,9 @@ export struct Runtime {
             continue;
           }
           makeClosure => {
-            // The function in b becomes a closure over the frame's current
-            // environment; an arrow also keeps the frame's `this`.
-            const fn = this.reg(base, inst.b);
+            // The function constant bc becomes a closure over the frame's
+            // current environment; an arrow also keeps the frame's `this`.
+            const fn = this.functions[usize(fi)].constants[usize(bcU16(inst))];
             const env = this.frames[frameIndex].env;
             const capturedThis = this.hostThis;
             const wrapped = this.heap.functionIndex(asCell(fn));

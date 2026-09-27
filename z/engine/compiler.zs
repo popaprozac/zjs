@@ -1775,8 +1775,7 @@ export struct Compiler {
       }
       runtime.setFunction(index, move code);
       const constant = this.addConst(runtime.functionValue(index));
-      this.emit(instAU16(Op.loadConst, ctorReg, constant));
-      this.emit(instAB(Op.makeClosure, ctorReg, ctorReg));
+      this.emit(instAU16(Op.makeClosure, ctorReg, constant));
     }
     if (this.hadError) return ctorReg;
     this.emit(instA(Op.newObject, protoReg));
@@ -1884,8 +1883,7 @@ export struct Compiler {
       return;
     }
     const constant = this.addConst(runtime.functionValue(u32(compiled.index)));
-    this.emit(instAU16(Op.loadConst, dst, constant));
-    this.emit(instAB(Op.makeClosure, dst, dst));
+    this.emit(instAU16(Op.makeClosure, dst, constant));
     const ownScope = this.outerScopes.length;
     if (compiled.minOuterScope < ownScope && compiled.minOuterScope < this.minOuterScope) this.minOuterScope = compiled.minOuterScope;
   }
@@ -2215,10 +2213,13 @@ export struct Compiler {
       return;
     }
     const constant = this.addConst(runtime.functionValue(u32(compiled.index)));
-    this.emit(instAU16(Op.loadConst, dst, constant));
     const ownScope = this.outerScopes.length;
     const isArrow = parser.ast.node(node).kind == NodeKind.arrowFunc;
-    if (isArrow || compiled.minOuterScope <= ownScope) this.emit(instAB(Op.makeClosure, dst, dst));
+    if (isArrow || compiled.minOuterScope <= ownScope) {
+      this.emit(instAU16(Op.makeClosure, dst, constant));
+    } else {
+      this.emit(instAU16(Op.loadConst, dst, constant));
+    }
     if (compiled.minOuterScope < ownScope && compiled.minOuterScope < this.minOuterScope) this.minOuterScope = compiled.minOuterScope;
   }
 

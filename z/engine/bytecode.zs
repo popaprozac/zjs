@@ -131,7 +131,7 @@ export enum Op {
   defineSetter,
   defineMethodGetter,
   defineMethodSetter,
-  makeClosure,
+  makeClosure,  // a = dst, bc = the function's constant: a closure over the current environment.
   loadEnv,
   loadCallee,
   newRegex,
