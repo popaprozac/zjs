@@ -6628,26 +6628,33 @@ export struct Runtime {
         match (op) {
           loadInt => {
             this.setReg(base, inst.a, int32Value(bcI16(inst)));
+            continue;
           }
           loadConst => {
             const operand1 = this.functions[usize(fi)].constants[usize(bcU16(inst))];
             this.setReg(base, inst.a, operand1);
+            continue;
           }
           loadUndefined => {
             this.setReg(base, inst.a, undefinedValue());
+            continue;
           }
           loadNull => {
             this.setReg(base, inst.a, nullValue());
+            continue;
           }
           loadTrue => {
             this.setReg(base, inst.a, booleanValue(true));
+            continue;
           }
           loadFalse => {
             this.setReg(base, inst.a, booleanValue(false));
+            continue;
           }
           mov => {
             const operand2 = this.reg(base, inst.b);
             this.setReg(base, inst.a, operand2);
+            continue;
           }
           storeGlobal => {
             const slot = usize(bcU16(inst));
@@ -6683,6 +6690,7 @@ export struct Runtime {
             if (isNumber(rawLeft) && isNumber(rawRight)) {
               const sum = numericAdd(rawLeft, rawRight);
               this.setReg(base, inst.a, sum);
+              continue;
             } else {
               const sum = this.addValues(rawLeft, rawRight);
               if (this.pendingThrow) {
@@ -6700,6 +6708,7 @@ export struct Runtime {
             const immediate = int32Value(wideImmediateOf(inst));
             if (isNumber(rawLeft)) {
               this.setReg(base, inst.a, numericAdd(rawLeft, immediate));
+              continue;
             } else {
               const sum = this.addValues(rawLeft, immediate);
               if (this.pendingThrow) {
@@ -6773,6 +6782,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left) && isInt32(right)) continue;
           }
           jmpIfNotLe => {
             const left = this.reg(base, inst.a);
@@ -6785,6 +6795,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left) && isInt32(right)) continue;
           }
           jmpIfNotGt => {
             const left = this.reg(base, inst.a);
@@ -6797,6 +6808,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left) && isInt32(right)) continue;
           }
           jmpIfNotGe => {
             const left = this.reg(base, inst.a);
@@ -6809,6 +6821,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left) && isInt32(right)) continue;
           }
           jmpIfNotLtImm => {
             const left = this.reg(base, inst.a);
@@ -6821,6 +6834,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left)) continue;
           }
           jmpIfNotLeImm => {
             const left = this.reg(base, inst.a);
@@ -6833,6 +6847,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left)) continue;
           }
           jmpIfNotGtImm => {
             const left = this.reg(base, inst.a);
@@ -6845,6 +6860,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left)) continue;
           }
           jmpIfNotGeImm => {
             const left = this.reg(base, inst.a);
@@ -6857,6 +6873,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            if (isInt32(left)) continue;
           }
           jmpIfNotStrictEq => {
             const left = this.reg(base, inst.a);
@@ -6868,6 +6885,7 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            continue;
           }
           jmpIfNotStrictEqImm => {
             const left = this.reg(base, inst.a);
@@ -6880,12 +6898,14 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            continue;
           }
           // ++ and -- on a value: ToNumeric first, so a string counts.
           inc => {
             const operandB = this.reg(base, inst.b);
             if (isInt32(operandB) && asInt32(operandB) < 2147483647) {
               this.setReg(base, inst.a, int32Value(asInt32(operandB) + 1));
+              continue;
             } else {
               const number = this.numericOperand(operandB);
               if (this.pendingThrow) {
@@ -6968,6 +6988,7 @@ export struct Runtime {
             const offset = bcI16(inst);
             ip = usize(i64(ip) + i64(offset));
             if (offset < 0) this.backEdge(frameIndex, ip);
+            continue;
           }
           // A boolean, what a comparison leaves, branches without a call.
           jmpIfTrue => {
@@ -6978,11 +6999,13 @@ export struct Runtime {
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
+            continue;
           }
           jmpIfFalse => {
             const operandA = this.reg(base, inst.a);
             const taken = isBoolean(operandA) ? !isTrue(operandA) : !this.toBooleanValue(operandA);
             if (taken) ip = usize(i64(ip) + i64(bcI16(inst)));
+            continue;
           }
           jmpIfNotNullish => {
             const tested = this.reg(base, inst.a);
@@ -7086,6 +7109,7 @@ export struct Runtime {
             const rawB = this.reg(base, inst.b);
             if (isInt32(rawB)) {
               this.setReg(base, inst.a, int32Value(asInt32(rawB) | wideImmediateOf(inst)));
+              continue;
             } else {
               const numberB = this.numericOperand(rawB);
               this.setReg(base, inst.a, int32Value(toInt32(numberB) | wideImmediateOf(inst)));
@@ -7384,11 +7408,13 @@ export struct Runtime {
             const operandB = this.reg(base, inst.b);
             const operandC = this.reg(base, inst.c);
             this.setReg(base, inst.a, booleanValue(this.strictEquals(operandB, operandC)));
+            continue;
           }
           cmpStrictNe => {
             const operandB = this.reg(base, inst.b);
             const operandC = this.reg(base, inst.c);
             this.setReg(base, inst.a, booleanValue(!this.strictEquals(operandB, operandC)));
+            continue;
           }
           cmpEq => {
             const operandB = this.reg(base, inst.b);
@@ -7421,6 +7447,7 @@ export struct Runtime {
             }
             if (!isDeleted(cached)) {
               this.setReg(base, inst.a, cached);
+              continue;
             } else {
               const atom = this.functions[usize(fi)].propertyNames[nameSlot];
               if (isUndefined(object) || isNull(object)) {
@@ -7450,6 +7477,7 @@ export struct Runtime {
             const isPlainObject = isCell(object) && asCell(object) != 0 && this.heap.isObject(asCell(object));
             let stored = false;
             if (isPlainObject) stored = this.storeCached(fi, nameSlot, asCell(object), value);
+            if (stored) continue;
             if (!stored) {
               const atom = this.functions[usize(fi)].propertyNames[nameSlot];
               if (isUndefined(object) || isNull(object)) {
@@ -7484,6 +7512,7 @@ export struct Runtime {
             }
             if (!isDeleted(direct)) {
               this.setReg(base, inst.a, direct);
+              continue;
             } else if (isUndefined(object) || isNull(object)) {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, true);
@@ -7645,6 +7674,7 @@ export struct Runtime {
             }
             const value = this.heap.slot(env, u32(inst.c));
             this.setReg(base, inst.a, value);
+            continue;
           }
           storeEnvSlot => {
             let env = this.frames[frameIndex].env;
@@ -7655,6 +7685,7 @@ export struct Runtime {
             }
             const value = this.reg(base, inst.a);
             this.heap.setSlot(env, u32(inst.c), value);
+            continue;
           }
           makeClosure => {
             // The function in b becomes a closure over the frame's current
@@ -7765,7 +7796,8 @@ export struct Runtime {
           }
         }
         // A coercion inside any handler may have raised (a Symbol in
-        // arithmetic, a throwing valueOf); it surfaces here.
+        // arithmetic, a throwing valueOf); it surfaces here. A path that
+        // cannot raise (no conversion, no call) goes on with `continue`.
         if (this.pendingThrow) {
           thrown = this.takePending();
           throwing = true;

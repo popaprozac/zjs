@@ -186,7 +186,11 @@ spare byte to jump when the comparison holds, so no arm was added, and a
 backward branch taken is a safe point as the jump was. The dispatch loop
 is left only by the instruction that returns or throws, rather than
 testing for either, and for the end of the code, after every
-instruction. Over the kernels, in cycles averaged over eight placements
+instruction; then an instruction whose path ran no conversion and no
+call (a load, a move, a jump, an int32 or cached-property fast path, a
+strict-equality or boolean branch) goes straight to the next without the
+check for a pending throw: polymorphic -9.7%, allocation -8.1%,
+properties -7.5%, strings -1.8%, calls -1.4%, closures +1.6%. Over the kernels, in cycles averaged over eight placements
 of the dispatch loop's code (a change to one arm moves every other, and
 one placement alone swung a kernel by up to 12%): allocation -8.0%,
 polymorphic -7.5%, properties -3.9%, closures -3.3%, arrays -2.3%,
