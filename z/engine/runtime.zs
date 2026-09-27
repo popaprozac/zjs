@@ -7963,7 +7963,11 @@ export function numericSub(a: Value, b: Value): Value {
 // The reference keeps an int32 product whenever it fits, including a
 // zero product with a negative operand (spec says -0); parity wins.
 export function numericMul(a: Value, b: Value): Value {
-  if (isInt32(a) && isInt32(b)) return int32OrDouble(i64(asInt32(a)) * i64(asInt32(b)));
+  if (isInt32(a) && isInt32(b)) {
+    const product = i64(asInt32(a)) * i64(asInt32(b));
+    // A zero product with a negative factor is -0, which only a double holds.
+    if (product != 0 || (asInt32(a) >= 0 && asInt32(b) >= 0)) return int32OrDouble(product);
+  }
   return doubleValue(toNumber(a) * toNumber(b));
 }
 
@@ -8001,7 +8005,8 @@ test "int32 arithmetic promotes to double only when it must" {
   expect(asInt32(numericAdd(int32Value(1), int32Value(2)))).toEqual(3);
   expect(isDouble(numericAdd(int32Value(2147483647), int32Value(1)))).toEqual(true);
   expect(isDouble(numericDiv(int32Value(6), int32Value(3)))).toEqual(true);
-  expect(isInt32(numericMul(int32Value(0), int32Value(-1)))).toEqual(true);
+  expect(isInt32(numericMul(int32Value(0), int32Value(1)))).toEqual(true);
+  expect(isDouble(numericMul(int32Value(0), int32Value(-1)))).toEqual(true);
   expect(isDouble(numericNeg(int32Value(0)))).toEqual(true);
   expect(asInt32(numericMod(int32Value(7), int32Value(3)))).toEqual(1);
 }
