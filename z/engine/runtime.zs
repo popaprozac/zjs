@@ -6956,13 +6956,13 @@ export struct Runtime {
             this.setReg(base, inst.a, uint32ToValue(shifted));
           }
           invoke => {
-            // Callee at b, arguments above it, result into a. A compiled
+            // Callee at b, d arguments from c, result into a. A compiled
             // callee gets a frame and the loop continues in it; a
             // builtin runs to completion here. A plain call binds `this`
             // to undefined: there is no global object yet.
             const callee = this.reg(base, inst.b);
-            const argc = u32(inst.c);
-            const argsBase = base + u32(inst.b) + 1;
+            const argc = u32(inst.d);
+            const argsBase = base + u32(inst.c);
             if (this.isCompiledCallable(callee)) {
               this.frames[frameIndex].ip = ip;
               if (this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue())) {
@@ -6993,10 +6993,10 @@ export struct Runtime {
             }
           }
           methodInvoke => {
-            // Callee at b, receiver at b + 1, arguments above.
+            // Callee at b, receiver at c, d arguments from b + 2.
             const callee = this.reg(base, inst.b);
-            const receiver = this.reg(base, inst.b + 1);
-            const argc = u32(inst.c);
+            const receiver = this.reg(base, inst.c);
+            const argc = u32(inst.d);
             const argsBase = base + u32(inst.b) + 2;
             if (this.isCompiledCallable(callee)) {
               this.frames[frameIndex].ip = ip;
@@ -7032,8 +7032,8 @@ export struct Runtime {
             // `prototype` becomes `this`; the body's return value replaces
             // it only when that value is an object.
             const callee = this.reg(base, inst.b);
-            const argc = u32(inst.c);
-            const argsBase = base + u32(inst.b) + 1;
+            const argc = u32(inst.d);
+            const argsBase = base + u32(inst.c);
             if (!this.isConstructorValue(callee)) {
               thrown = this.notConstructorError(callee);
               throwing = true;

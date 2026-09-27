@@ -224,6 +224,10 @@ function dumpFile(in path: String): i32 throws String {
       appendDecimal(inout text, u32(inst.b));
       appendText(inout text, " ");
       appendDecimal(inout text, u32(inst.c));
+      if (inst.d != 0) {
+        appendText(inout text, " ");
+        appendDecimal(inout text, u32(inst.d));
+      }
       appendText(inout text, "  (u16 ");
       appendDecimal(inout text, u32(bcU16(inst)));
       appendText(inout text, ", i16 ");

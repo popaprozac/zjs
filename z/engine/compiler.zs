@@ -15,7 +15,7 @@ import { Value, int32Value, doubleValue, isInt32, asInt32 } from "./value.zs";
 import { TokenKind } from "./token.zs";
 import { NodeKind, AstNode, NO_NODE } from "./ast.zs";
 import { Parser, ParseResult, parseProgram } from "./parser.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instAU16, instAI16, instI16, instU16 } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instABCD, instAU16, instAI16, instI16, instU16 } from "./bytecode.zs";
 import { Runtime } from "./runtime.zs";
 import { bytesOf, sliceBytes } from "./heap.zs";
 import { cellValue, deletedValue } from "./value.zs";
@@ -1435,6 +1435,12 @@ export struct Compiler {
   // 1: `super.m` reads the home object's prototype with `this` as the
   // receiver; `o.#m` goes through the private key.
   function emitCalleeAndReceiver(inout this, in parser: Parser, inout runtime: Runtime, callee: AstNode, base: u8): void {
+    this.emitCalleeFrom(in parser, inout runtime, callee, base, base + 1, false);
+  }
+
+  // The same with the receiver in `receiver`, already there when
+  // `inPlace` (a local register read where it is).
+  function emitCalleeFrom(inout this, in parser: Parser, inout runtime: Runtime, callee: AstNode, base: u8, receiver: u8, inPlace: boolean): void {
     if (parser.ast.node(callee.left).kind == NodeKind.superExpr) {
       let key: u8 = 0;
       if (callee.kind == NodeKind.member) {
@@ -1444,24 +1450,26 @@ export struct Compiler {
         key = this.compileExpr(in parser, inout runtime, callee.right);
       }
       this.emit(instAB(Op.loadSuper, base, key));
-      this.emitThis(base + 1);
+      this.emitThis(receiver);
       return;
     }
-    this.targetReg = i32(base + 1);
-    const receiver = this.compileExpr(in parser, inout runtime, callee.left);
-    if (receiver != base + 1) this.emit(instAB(Op.mov, base + 1, receiver));
+    if (!inPlace) {
+      this.targetReg = i32(receiver);
+      const object = this.compileExpr(in parser, inout runtime, callee.left);
+      if (object != receiver) this.emit(instAB(Op.mov, receiver, object));
+    }
     if (callee.kind == NodeKind.member) {
       if (this.isPrivateName(in parser, callee.nameStart, callee.nameLength)) {
         const key = this.privateKeyReg(in parser, callee.nameStart, callee.nameLength);
-        this.emit(instABC(Op.loadElem, base, base + 1, key));
+        this.emit(instABC(Op.loadElem, base, receiver, key));
         return;
       }
       const atom = this.propertyNameAtom(in parser, inout runtime, callee.nameStart, callee.nameLength);
-      this.emitLoadNamed(base, base + 1, atom);
+      this.emitLoadNamed(base, receiver, atom);
       return;
     }
     const key = this.compileExpr(in parser, inout runtime, callee.right);
-    this.emit(instABC(Op.loadElem, base, base + 1, key));
+    this.emit(instABC(Op.loadElem, base, receiver, key));
   }
 
   // An optional chain: a spine of member / element / call links with at
@@ -1555,9 +1563,9 @@ export struct Compiler {
         a = a + 1;
       }
       if (isMethod) {
-        this.emit(instABC(Op.methodInvoke, base, base, u8(argCount)));
+        this.emit(instABCD(Op.methodInvoke, base, base, base + 1, u8(argCount)));
       } else {
-        this.emit(instABC(Op.invoke, base, base, u8(argCount)));
+        this.emit(instABCD(Op.invoke, base, base, base + 1, u8(argCount)));
       }
       this.nextReg = base + 1;
       return base;
@@ -1577,9 +1585,9 @@ export struct Compiler {
     this.emitLoadNamed(base, base + 1, nextAtom);
     if (withArgument) {
       this.emit(instAB(Op.mov, base + 2, sent));
-      this.emit(instABC(Op.methodInvoke, base, base, 1));
+      this.emit(instABCD(Op.methodInvoke, base, base, base + 1, 1));
     } else {
-      this.emit(instABC(Op.methodInvoke, base, base, 0));
+      this.emit(instABCD(Op.methodInvoke, base, base, base + 1, 0));
     }
     this.emit(instAB(Op.awaitOp, result, base));
     this.nextReg = base;
@@ -1790,7 +1798,7 @@ export struct Compiler {
         this.allocReg();
         this.emit(instAB(Op.mov, base, fnReg));
         this.emit(instAB(Op.mov, base + 1, ctorReg));
-        this.emit(instABC(Op.methodInvoke, base, base, 0));
+        this.emit(instABCD(Op.methodInvoke, base, base, base + 1, 0));
       }
       this.nextReg = protoReg + 1;
       i = i + 1;
@@ -2402,9 +2410,9 @@ export struct Compiler {
         a = a + 1;
       }
       if (isMethod) {
-        this.emit(instABC(Op.methodInvoke, base, base, u8(argCount)));
+        this.emit(instABCD(Op.methodInvoke, base, base, base + 1, u8(argCount)));
       } else {
-        this.emit(instABC(Op.invoke, base, base, u8(argCount)));
+        this.emit(instABCD(Op.invoke, base, base, base + 1, u8(argCount)));
       }
       this.nextReg = base + 1;
       return base;
@@ -2674,7 +2682,13 @@ export struct Compiler {
       return this.compileClass(in parser, inout runtime, node, contextualStart, contextualLength);
     }
     if (k == NodeKind.object) {
-      const dst = this.allocReg();
+      // Built in its destination when that is a temporary (an argument's
+      // slot): a binding's register could be read by its own properties.
+      const dst = hintReg >= i32(this.fixedRegs) ? u8(hintReg) : this.allocReg();
+      // What each property's temporaries go back to: above dst, and above
+      // every register taken before it when dst is a hint (the other
+      // argument slots of a call).
+      const floorReg = this.nextReg;
       this.emit(instA(Op.newObject, dst));
       // Annex B: the colon form `__proto__: value` (not computed, not
       // shorthand, not a method or accessor) sets the literal's
@@ -2690,7 +2704,7 @@ export struct Compiler {
           // { ...source }: the source's own enumerable properties copied in.
           const source = this.compileExpr(in parser, inout runtime, property.left);
           this.emit(instAB(Op.objectSpread, dst, source));
-          this.nextReg = dst + 1;
+          this.nextReg = floorReg;
           i = i + 1;
           continue;
         }
@@ -2712,7 +2726,7 @@ export struct Compiler {
             sawProto = true;
             const proto = this.compileExpr(in parser, inout runtime, property.left);
             this.emit(instAB(Op.setProto, dst, proto));
-            this.nextReg = dst + 1;
+            this.nextReg = floorReg;
             i = i + 1;
             continue;
           }
@@ -2732,7 +2746,8 @@ export struct Compiler {
             this.nameNext(property.nameStart, property.nameLength, prefix);
           }
         }
-        const value = this.compileExpr(in parser, inout runtime, property.left);
+        // Defined at once: read in place.
+        const value = this.compileOperand(in parser, inout runtime, property.left, NO_NODE);
         if (property.third != NO_NODE && this.isAnonymousDefinition(in parser, property.left)) {
           // NamedEvaluation with a key known only at run time.
           let prefix: u8 = 0;
@@ -2749,7 +2764,7 @@ export struct Compiler {
         } else {
           this.emit(instABC(Op.initObjData, dst, key, value));
         }
-        this.nextReg = dst + 1;
+        this.nextReg = floorReg;
         i = i + 1;
       }
       return dst;
@@ -2828,6 +2843,49 @@ export struct Compiler {
         this.hadError = true;
         return 0;
       }
+      let j: u32 = 0;
+      while (j < argCount) {
+        if (parser.ast.node(parser.ast.child(node, j)).kind == NodeKind.spread) {
+          this.hadError = true;
+          return 0;
+        }
+        j = j + 1;
+      }
+      // As for a call: a local constructor no argument may assign is read
+      // where it is, and so is a lone local argument.
+      let assignFree = true;
+      j = 0;
+      while (j < argCount) {
+        if (mayAssign(in parser, parser.ast.child(node, j))) assignFree = false;
+        j = j + 1;
+      }
+      if (this.operandLocalReg(in parser, n.left) >= 0 && assignFree) {
+        const calleeReg = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+        const result = hintReg >= 0 ? u8(hintReg) : this.allocReg();
+        const afterResult = this.nextReg;
+        let argsBase = this.nextReg;
+        if (argCount == 1 && this.operandLocalReg(in parser, parser.ast.child(node, 0)) >= 0) {
+          argsBase = this.compileOperand(in parser, inout runtime, parser.ast.child(node, 0), NO_NODE);
+        } else {
+          let slot: u32 = 0;
+          while (slot < argCount) {
+            this.allocReg();
+            slot = slot + 1;
+          }
+          j = 0;
+          while (j < argCount) {
+            const target = argsBase + u8(j);
+            this.targetReg = i32(target);
+            const argReg = this.compileExpr(in parser, inout runtime, parser.ast.child(node, j));
+            if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
+            this.nextReg = argsBase + u8(argCount);
+            j = j + 1;
+          }
+        }
+        this.emit(instABCD(Op.newInvoke, result, calleeReg, argsBase, u8(argCount)));
+        this.nextReg = afterResult;
+        return result;
+      }
       const base = this.allocReg();
       let slot: u32 = 0;
       while (slot < argCount) {
@@ -2838,22 +2896,17 @@ export struct Compiler {
       const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
       if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
       this.nextReg = base + u8(1 + argCount);
-      let j: u32 = 0;
+      j = 0;
       while (j < argCount) {
-        const argument = parser.ast.child(node, j);
-        if (parser.ast.node(argument).kind == NodeKind.spread) {
-          this.hadError = true;
-          return 0;
-        }
         const target = base + u8(1 + j);
         this.targetReg = i32(target);
-        const argReg = this.compileExpr(in parser, inout runtime, argument);
+        const argReg = this.compileExpr(in parser, inout runtime, parser.ast.child(node, j));
         if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
         this.nextReg = base + u8(1 + argCount);
         j = j + 1;
       }
       const result = hintReg >= 0 ? u8(hintReg) : base;
-      this.emit(instABC(Op.newInvoke, result, base, u8(argCount)));
+      this.emit(instABCD(Op.newInvoke, result, base, base + 1, u8(argCount)));
       this.nextReg = base + 1;
       return result;
     }
@@ -3160,7 +3213,14 @@ export struct Compiler {
             const slot = this.freeNameSlot(atom);
             let key: u8 = 0;
             if (slot < 0) key = this.emitKey(atom);
-            const value = this.compileExpr(in parser, inout runtime, n.right);
+            // The store follows at once: a value nobody uses after it is
+            // read in place.
+            let value: u8 = 0;
+            if (unused) {
+              value = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+            } else {
+              value = this.compileExpr(in parser, inout runtime, n.right);
+            }
             if (slot >= 0) {
               this.emit(instABC(Op.storeProp, object, u8(slot), value));
             } else {
@@ -3169,7 +3229,12 @@ export struct Compiler {
             return value;
           }
           const key = this.compileExpr(in parser, inout runtime, target.right);
-          const value = this.compileExpr(in parser, inout runtime, n.right);
+          let value: u8 = 0;
+          if (unused) {
+            value = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+          } else {
+            value = this.compileExpr(in parser, inout runtime, n.right);
+          }
           this.emit(instABC(Op.storeElem, object, key, value));
           return value;
         }
@@ -3183,7 +3248,7 @@ export struct Compiler {
         }
         const current = this.allocReg();
         this.emit(instABC(Op.loadElem, current, object, key));
-        const right = this.compileExpr(in parser, inout runtime, n.right);
+        const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
         const op = compoundOp(n.op);
         if (op == Op.halt) {
           this.hadError = true;
@@ -3271,7 +3336,24 @@ export struct Compiler {
           this.allocReg();
           slot = slot + 1;
         }
-        this.emitCalleeAndReceiver(in parser, inout runtime, callee, base);
+        // A local receiver no key or argument may assign is read where
+        // it is; otherwise it goes to base + 1.
+        let receiver = base + 1;
+        let inPlace = false;
+        const localObject = parser.ast.node(callee.left).kind == NodeKind.superExpr ? -1 : this.operandLocalReg(in parser, callee.left);
+        if (localObject >= 0 && (callee.kind == NodeKind.member || !mayAssign(in parser, callee.right))) {
+          let assignFree = true;
+          let q: u32 = 0;
+          while (q < argCount) {
+            if (mayAssign(in parser, parser.ast.child(node, q))) assignFree = false;
+            q = q + 1;
+          }
+          if (assignFree) {
+            receiver = this.compileOperand(in parser, inout runtime, callee.left, NO_NODE);
+            inPlace = true;
+          }
+        }
+        this.emitCalleeFrom(in parser, inout runtime, callee, base, receiver, inPlace);
         this.nextReg = base + u8(2 + argCount);
         let j: u32 = 0;
         while (j < argCount) {
@@ -3288,11 +3370,56 @@ export struct Compiler {
           j = j + 1;
         }
         const result = hintReg >= 0 ? u8(hintReg) : base;
-        this.emit(instABC(Op.methodInvoke, result, base, u8(argCount)));
+        this.emit(instABCD(Op.methodInvoke, result, base, receiver, u8(argCount)));
         this.nextReg = base + 1;
         return result;
       }
-      // Callee at base, arguments contiguous above it, result into base.
+      // A local callee is called from its own register unless an argument
+      // may assign it; so is a lone local argument passed from its own.
+      // Everything else is evaluated into a block: the callee at its
+      // base, the arguments contiguous above.
+      let j: u32 = 0;
+      while (j < argCount) {
+        if (parser.ast.node(parser.ast.child(node, j)).kind == NodeKind.spread) {
+          this.hadError = true;
+          return 0;
+        }
+        j = j + 1;
+      }
+      let assignFree = true;
+      j = 0;
+      while (j < argCount) {
+        if (mayAssign(in parser, parser.ast.child(node, j))) assignFree = false;
+        j = j + 1;
+      }
+      const localCallee = this.operandLocalReg(in parser, n.left);
+      if (localCallee >= 0 && assignFree) {
+        const calleeReg = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+        const result = hintReg >= 0 ? u8(hintReg) : this.allocReg();
+        const afterResult = this.nextReg;
+        let argsBase = this.nextReg;
+        if (argCount == 1 && this.operandLocalReg(in parser, parser.ast.child(node, 0)) >= 0) {
+          argsBase = this.compileOperand(in parser, inout runtime, parser.ast.child(node, 0), NO_NODE);
+        } else {
+          let slot: u32 = 0;
+          while (slot < argCount) {
+            this.allocReg();
+            slot = slot + 1;
+          }
+          j = 0;
+          while (j < argCount) {
+            const target = argsBase + u8(j);
+            this.targetReg = i32(target);
+            const argReg = this.compileExpr(in parser, inout runtime, parser.ast.child(node, j));
+            if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
+            this.nextReg = argsBase + u8(argCount);
+            j = j + 1;
+          }
+        }
+        this.emit(instABCD(Op.invoke, result, calleeReg, argsBase, u8(argCount)));
+        this.nextReg = afterResult;
+        return result;
+      }
       const base = this.allocReg();
       let slot: u32 = 0;
       while (slot < argCount) {
@@ -3302,13 +3429,9 @@ export struct Compiler {
       this.targetReg = i32(base);
       const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
       if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
-      let j: u32 = 0;
+      j = 0;
       while (j < argCount) {
         const argument = parser.ast.child(node, j);
-        if (parser.ast.node(argument).kind == NodeKind.spread) {
-          this.hadError = true;
-          return 0;
-        }
         const target = base + u8(1 + j);
         this.targetReg = i32(target);
         const argReg = this.compileExpr(in parser, inout runtime, argument);
@@ -3316,7 +3439,7 @@ export struct Compiler {
         j = j + 1;
       }
       const result = hintReg >= 0 ? u8(hintReg) : base;
-      this.emit(instABC(Op.invoke, result, base, u8(argCount)));
+      this.emit(instABCD(Op.invoke, result, base, base + 1, u8(argCount)));
       this.nextReg = base + 1;
       return result;
     }

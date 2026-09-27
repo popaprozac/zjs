@@ -79,6 +79,10 @@ export enum Op {
   jmpIfNotStrictEq,
   jmpIfNotStrictNe,
   returnOp,
+  // a = result, b = callee, c = first argument, d = argument count: the
+  // callee and the arguments each where they already are when they can.
+  // methodInvoke: b = callee, c = receiver, arguments from b + 2;
+  // newInvoke as invoke.
   invoke,
   tailInvoke,
   loadProp,
@@ -212,28 +216,35 @@ export struct Inst {
   a: u8;
   b: u8;
   c: u8;
+  // A fourth operand, where the op's tag leaves a byte: invoke's
+  // argument count.
+  d: u8;
 }
 
 export function instA(op: Op, a: u8): Inst {
-  return Inst({ op: op, a: a, b: 0, c: 0 });
+  return Inst({ op: op, a: a, b: 0, c: 0, d: 0 });
 }
 
 export function instAB(op: Op, a: u8, b: u8): Inst {
-  return Inst({ op: op, a: a, b: b, c: 0 });
+  return Inst({ op: op, a: a, b: b, c: 0, d: 0 });
 }
 
 export function instABC(op: Op, a: u8, b: u8, c: u8): Inst {
-  return Inst({ op: op, a: a, b: b, c: c });
+  return Inst({ op: op, a: a, b: b, c: c, d: 0 });
+}
+
+export function instABCD(op: Op, a: u8, b: u8, c: u8, d: u8): Inst {
+  return Inst({ op: op, a: a, b: b, c: c, d: d });
 }
 
 export function instAU16(op: Op, a: u8, value: u16): Inst {
-  return Inst({ op: op, a: a, b: u8(value & 0xFF), c: u8((value >> 8) & 0xFF) });
+  return Inst({ op: op, a: a, b: u8(value & 0xFF), c: u8((value >> 8) & 0xFF), d: 0 });
 }
 
 // A signed 16-bit operand is stored as its two's-complement bit pattern.
 export function instAI16(op: Op, a: u8, value: i32): Inst {
   const bits: u32 = u32(i64(value) & 0xFFFF);
-  return Inst({ op: op, a: a, b: u8(bits & 0xFF), c: u8((bits >> 8) & 0xFF) });
+  return Inst({ op: op, a: a, b: u8(bits & 0xFF), c: u8((bits >> 8) & 0xFF), d: 0 });
 }
 
 export function instU16(op: Op, value: u16): Inst {

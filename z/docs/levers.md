@@ -39,7 +39,7 @@ MB (arm64).
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
-| Bytecode quality | all | about even | 1-2 days | in progress |
+| Bytecode quality | all | about even | 1-2 days | calls and stores done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | started |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
@@ -144,15 +144,24 @@ compare-and-branch, whose literal takes 24 bits; negated literals folded
 to constants; `x op= e` into a register local as one instruction;
 receivers, arguments, literals, unary results, `new`, and function
 values compiled into their destination (strings kernel -25%
-instructions, maps -5%, the rest -3% or unchanged). Left: the callee and
-the arguments of a call copied into a contiguous block (a call form that
-names its callee register), string constants as operands, stores into
-environments straight from the source register. A method call cannot
-look its method up after the arguments are evaluated (the specification
-reads it first), so the fusion available is the receiver copy with the
-lookup; tried as `getMethod`, it saved about 1% where it applied and set
-off the dispatch-loop fragility under Call protocol, so it waits for the
-loop's restructuring.
+instructions, maps -5%, the rest -3% or unchanged). Then (2026-09-27),
+measured in cycles, since on this core fewer instructions did not by
+themselves mean less time: `return t ? a : b` returns from each arm and a
+conditional's test fuses with its branch (fib's base case runs 2
+instructions where it ran 5); an instruction's spare byte became a fourth
+operand, so a call names its callee's register and its arguments' first,
+a method call its receiver's, and `new` its constructor's: a local callee,
+receiver, constructor, or lone local argument is read where it is (the
+closures loop runs 12 instructions where it ran 16); values stored into a
+property, an object literal, or an environment, and the right operand of
+a compound assignment, are read in place. Together, over the kernels:
+calls -11.7%, closures -8.8%, allocation -5.6%, maps -4.0%, geometric mean
+-3.5%. Left: string constants as operands; a method call's lone
+argument, which still goes to its block. Fused branches for equality
+(`===` and the rest in a condition, one instruction for two) were
+written and measured: the four new arms in the dispatch loop cost the
+kernels 1-3% (calls, closures, properties), more than they saved where
+equality is tested, so they wait for the loop's restructuring.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
@@ -209,6 +218,13 @@ profile through `z build` (or a build step compiling the emitted C).
 
 ## Tried and not kept
 
+- A compact per-function record for calls (code range, frame size,
+  `this` register, flags) apart from the function's code and caches, a
+  frame entry without a separate fill loop, a return that reads the frame
+  where it is instead of copying it out (2026-09-27): fewer instructions
+  per call (fib 771 -> 694), no fewer cycles once the dispatch loop's
+  layout changes were taken out; reordering the frame's fields alone had
+  moved single kernels by 2-4% either way.
 - Direct-threaded dispatch (computed goto), measured 2026-09-26 by
   rewriting the generated C by hand: slower on Apple silicon (polymorphic
   +39%, properties +24%, calls +6%). The cost is in what each
