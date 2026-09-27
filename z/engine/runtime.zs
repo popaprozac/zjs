@@ -6683,6 +6683,7 @@ export struct Runtime {
               this.setReg(base, inst.a, operand3);
             }
             if (returned || throwing) break;
+            continue;
           }
           add => {
             const rawLeft = this.reg(base, inst.b);
@@ -6731,6 +6732,7 @@ export struct Runtime {
               this.setReg(base, inst.a, numericSub(left, immediate));
             }
             if (returned || throwing) break;
+            continue;
           }
           cmpLtImm => {
             const operandB = this.reg(base, inst.b);
@@ -6931,6 +6933,7 @@ export struct Runtime {
               }
             }
             if (returned || throwing) break;
+            continue;
           }
           toNumeric => {
             const operandB = this.reg(base, inst.b);
@@ -6942,6 +6945,7 @@ export struct Runtime {
               this.setReg(base, inst.a, number);
             }
             if (returned || throwing) break;
+            continue;
           }
           // Two int32s, the loop-counter case, compare without a call.
           cmpLt => {
@@ -7025,18 +7029,30 @@ export struct Runtime {
           }
           mulImm => {
             const rawB = this.reg(base, inst.b);
+            if (isNumber(rawB)) {
+              this.setReg(base, inst.a, numericMul(rawB, int32Value(wideImmediateOf(inst))));
+              continue;
+            }
             const numberB = this.numericOperand(rawB);
             this.setReg(base, inst.a, numericMul(numberB, int32Value(wideImmediateOf(inst))));
           }
           modImm => {
             const rawB = this.reg(base, inst.b);
+            if (isNumber(rawB)) {
+              this.setReg(base, inst.a, numericMod(rawB, int32Value(wideImmediateOf(inst))));
+              continue;
+            }
             const numberB = this.numericOperand(rawB);
             this.setReg(base, inst.a, numericMod(numberB, int32Value(wideImmediateOf(inst))));
           }
           mul => {
             const rawB = this.reg(base, inst.b);
-            const numberB = this.numericOperand(rawB);
             const rawC = this.reg(base, inst.c);
+            if (isNumber(rawB) && isNumber(rawC)) {
+              this.setReg(base, inst.a, numericMul(rawB, rawC));
+              continue;
+            }
+            const numberB = this.numericOperand(rawB);
             const numberC = this.numericOperand(rawC);
             const operand6 = numericMul(numberB, numberC);
             this.setReg(base, inst.a, operand6);
@@ -7051,8 +7067,12 @@ export struct Runtime {
           }
           mod => {
             const rawB = this.reg(base, inst.b);
-            const numberB = this.numericOperand(rawB);
             const rawC = this.reg(base, inst.c);
+            if (isNumber(rawB) && isNumber(rawC)) {
+              this.setReg(base, inst.a, numericMod(rawB, rawC));
+              continue;
+            }
+            const numberB = this.numericOperand(rawB);
             const numberC = this.numericOperand(rawC);
             const operand8 = numericMod(numberB, numberC);
             this.setReg(base, inst.a, operand8);
@@ -7218,6 +7238,7 @@ export struct Runtime {
               throwing = true;
             }
             if (returned || throwing) break;
+            continue;
           }
           methodInvoke => {
             // Callee at b, receiver at c, d arguments from b + 2.
@@ -7253,6 +7274,7 @@ export struct Runtime {
               throwing = true;
             }
             if (returned || throwing) break;
+            continue;
           }
           newInvoke => {
             // Construct: a fresh object whose prototype is the callee's
@@ -7383,6 +7405,7 @@ export struct Runtime {
             const objectProto = this.objectProto;
             const created = cellValue(this.heap.allocateObject(objectProto));
             this.setReg(base, inst.a, created);
+            continue;
           }
           newArray => {
             // Elements contiguous from b, c of them.
@@ -7395,6 +7418,7 @@ export struct Runtime {
               index = index + 1;
             }
             this.setReg(base, inst.a, cellValue(array));
+            continue;
           }
           arrayPush => {
             const array = this.reg(base, inst.a);
@@ -7567,6 +7591,7 @@ export struct Runtime {
               }
             }
             if (returned || throwing) break;
+            continue;
           }
           defineNamed => {
             // An object literal's property named at compile time: the
@@ -7709,6 +7734,7 @@ export struct Runtime {
               }
             }
             this.setReg(base, inst.a, cellValue(closure));
+            continue;
           }
           iterGet => {
             const iterable = this.reg(base, inst.b);
