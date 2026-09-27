@@ -202,8 +202,9 @@ export enum Op {
   inc, // a = dst, b = src: ToNumeric(src) + 1, an int32 kept an int32 while it fits.
   dec, // a = dst, b = src: ToNumeric(src) - 1.
   toNumeric, // a = dst, b = src: ToNumeric(src), a postfix update's value.
-  // a = dst, b = left, c = the right operand as a signed byte: the bitwise
-  // and shift operators against a small integer literal.
+  // a = dst, b = left, c and d = the right operand as a signed 16-bit
+  // integer, c its low byte: the bitwise and shift operators against a
+  // small integer literal (a shift reads c alone, all its count needs).
   bitOrImm,
   bitAndImm,
   bitXorImm,
@@ -213,6 +214,10 @@ export enum Op {
   // a = object, b = name slot, c = value: an object literal's property
   // with a name known at compile time, through the site's cache.
   defineNamed,
+  // a = dst, b = left, c and d = the right operand as a signed 16-bit
+  // integer: `*` and `%` against a small integer literal.
+  mulImm,
+  modImm,
 }
 
 export struct Inst {
@@ -454,6 +459,8 @@ export function opCode(op: Op): i32 {
     shrImm => 179;
     uShrImm => 180;
     defineNamed => 181;
+    mulImm => 182;
+    modImm => 183;
   };
 }
 

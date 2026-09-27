@@ -2954,11 +2954,11 @@ export struct Compiler {
     if (k == NodeKind.binary) {
       const immediateOp = immediateForm(binaryOp(n.op));
       const immediate = smallIntegerLiteral(in parser, n.right);
-      if (immediateOp != Op.halt && immediate > -129) {
+      if (immediateOp != Op.halt && immediate != NO_IMMEDIATE) {
         // `x + 1`, `i < 10`: the literal rides in the instruction.
         const operand = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
         const into = hintReg >= 0 ? u8(hintReg) : this.allocReg();
-        this.emit(instABC(immediateOp, into, operand, immediateByte(immediate)));
+        this.emit(immediateInst(immediateOp, into, operand, immediate));
         return into;
       }
       const left = this.compileOperand(in parser, inout runtime, n.left, n.right);
@@ -3182,8 +3182,8 @@ export struct Compiler {
         const op = compoundOp(n.op);
         const immediateOp = immediateForm(op);
         const immediate = smallIntegerLiteral(in parser, n.right);
-        if (immediateOp != Op.halt && immediate > -129) {
-          this.emit(instABC(immediateOp, u8(into), u8(into), immediateByte(immediate)));
+        if (immediateOp != Op.halt && immediate != NO_IMMEDIATE) {
+          this.emit(immediateInst(immediateOp, u8(into), u8(into), immediate));
           return u8(into);
         }
         let current = u8(into);
@@ -4459,6 +4459,8 @@ function fusedImmediateBranch(op: Op): Op {
 function immediateForm(op: Op): Op {
   if (op == Op.add) return Op.addImm;
   if (op == Op.sub) return Op.subImm;
+  if (op == Op.mul) return Op.mulImm;
+  if (op == Op.mod) return Op.modImm;
   if (op == Op.cmpLt) return Op.cmpLtImm;
   if (op == Op.cmpLe) return Op.cmpLeImm;
   if (op == Op.cmpGt) return Op.cmpGtImm;
@@ -4493,15 +4495,24 @@ function literalNumber(in parser: Parser, node: u32): LiteralNumber {
 
 // A numeric literal that is an integer in [-128, 127] (a signed byte),
 // or -129 for anything else. -0 is not one: it is not an int32.
+// An operand literal: an integer in [-2^15, 2^15), not -0.
+const NO_IMMEDIATE: i32 = -2147483648;
+
 function smallIntegerLiteral(in parser: Parser, node: u32): i32 {
   const literal = literalNumber(in parser, node);
-  if (!literal.present) return -129;
+  if (!literal.present) return NO_IMMEDIATE;
   const value = literal.value;
-  if (value != value || value < -128.0 || value > 127.0) return -129;
-  if (value == 0.0 && 1.0 / value < 0.0) return -129;
+  if (value != value || value < -32768.0 || value > 32767.0) return NO_IMMEDIATE;
+  if (value == 0.0 && 1.0 / value < 0.0) return NO_IMMEDIATE;
   const truncated = f64ToInt32Exact(value);
-  if (!truncated.exact) return -129;
+  if (!truncated.exact) return NO_IMMEDIATE;
   return truncated.value;
+}
+
+// An instruction with an operand literal in c (low byte) and d.
+function immediateInst(op: Op, a: u8, b: u8, value: i32): Inst {
+  const bits = u32(i64(value) & 0xFFFF);
+  return instABCD(op, a, b, u8(bits & 0xFF), u8(bits >> 8));
 }
 
 // A compare-and-branch literal: an integer in [-2^23, 2^23), not -0.
@@ -4518,10 +4529,6 @@ function branchImmediate(in parser: Parser, node: u32): i32 {
   return truncated.value;
 }
 
-// A signed byte as the instruction's c operand.
-function immediateByte(value: i32): u8 {
-  return value < 0 ? u8(value + 256) : u8(value);
-}
 
 // Whether evaluating a subtree may assign a binding: an assignment (plain,
 // compound, logical, or destructuring) or an update anywhere in it,

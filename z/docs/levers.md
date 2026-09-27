@@ -189,7 +189,10 @@ of the dispatch loop's code (a change to one arm moves every other, and
 one placement alone swung a kernel by up to 12%): allocation -8.0%,
 polymorphic -7.5%, properties -3.9%, closures -3.3%, arrays -2.3%,
 strings -1.9%, json -1.4%, calls +1.3% (no loops; its branch now tests
-the flag), regexp +2.3%.
+the flag), regexp +2.3%. Then an operand literal takes 16 bits, the
+instruction's spare byte its high half, and `*` and `%` take one too:
+`(i * 7919 + round) % 10007` is three instructions where it was five
+(arrays -4.4%, allocation -3.6%, maps -1.6%, the rest within noise).
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches

@@ -1,0 +1,16 @@
+mul 9772046
+mod 5217
+edges 34001 -31534 -40435712 34002 34002
+negzero mul -0
+negzero mod -0
+neg mod -1 -1 1
+mod zero NaN
+mul overflow 6442156035
+strings 42 1 211 20
+valueOf 1800 2 2
+bitwise 40146 0 31533 1279
+shifts 5054464 617 16777211 0
+compare true true true
+compound -18997
+symbol TypeError
+loop 48017

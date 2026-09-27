@@ -186,5 +186,7 @@ export function opName(op: Op): String {
     shrImm => "shrImm";
     uShrImm => "uShrImm";
     defineNamed => "defineNamed";
+    mulImm => "mulImm";
+    modImm => "modImm";
   };
 }

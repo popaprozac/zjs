@@ -6697,7 +6697,7 @@ export struct Runtime {
           // An operand and a small integer in the instruction (c, as i8).
           addImm => {
             const rawLeft = this.reg(base, inst.b);
-            const immediate = int32Value(immediateOf(inst.c));
+            const immediate = int32Value(wideImmediateOf(inst));
             if (isNumber(rawLeft)) {
               this.setReg(base, inst.a, numericAdd(rawLeft, immediate));
             } else {
@@ -6713,7 +6713,7 @@ export struct Runtime {
           }
           subImm => {
             const rawLeft = this.reg(base, inst.b);
-            const immediate = int32Value(immediateOf(inst.c));
+            const immediate = int32Value(wideImmediateOf(inst));
             const left = this.numericOperand(rawLeft);
             if (this.pendingThrow) {
               thrown = this.takePending();
@@ -6725,7 +6725,7 @@ export struct Runtime {
           }
           cmpLtImm => {
             const operandB = this.reg(base, inst.b);
-            const immediate = immediateOf(inst.c);
+            const immediate = wideImmediateOf(inst);
             if (isInt32(operandB)) {
               this.setReg(base, inst.a, booleanValue(asInt32(operandB) < immediate));
             } else {
@@ -6734,7 +6734,7 @@ export struct Runtime {
           }
           cmpLeImm => {
             const operandB = this.reg(base, inst.b);
-            const immediate = immediateOf(inst.c);
+            const immediate = wideImmediateOf(inst);
             if (isInt32(operandB)) {
               this.setReg(base, inst.a, booleanValue(asInt32(operandB) <= immediate));
             } else {
@@ -6743,7 +6743,7 @@ export struct Runtime {
           }
           cmpGtImm => {
             const operandB = this.reg(base, inst.b);
-            const immediate = immediateOf(inst.c);
+            const immediate = wideImmediateOf(inst);
             if (isInt32(operandB)) {
               this.setReg(base, inst.a, booleanValue(asInt32(operandB) > immediate));
             } else {
@@ -6752,7 +6752,7 @@ export struct Runtime {
           }
           cmpGeImm => {
             const operandB = this.reg(base, inst.b);
-            const immediate = immediateOf(inst.c);
+            const immediate = wideImmediateOf(inst);
             if (isInt32(operandB)) {
               this.setReg(base, inst.a, booleanValue(asInt32(operandB) >= immediate));
             } else {
@@ -6977,6 +6977,16 @@ export struct Runtime {
             const operand5 = numericSub(numberB, numberC);
             this.setReg(base, inst.a, operand5);
           }
+          mulImm => {
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
+            this.setReg(base, inst.a, numericMul(numberB, int32Value(wideImmediateOf(inst))));
+          }
+          modImm => {
+            const rawB = this.reg(base, inst.b);
+            const numberB = this.numericOperand(rawB);
+            this.setReg(base, inst.a, numericMod(numberB, int32Value(wideImmediateOf(inst))));
+          }
           mul => {
             const rawB = this.reg(base, inst.b);
             const numberB = this.numericOperand(rawB);
@@ -7052,28 +7062,28 @@ export struct Runtime {
           bitOrImm => {
             const rawB = this.reg(base, inst.b);
             if (isInt32(rawB)) {
-              this.setReg(base, inst.a, int32Value(asInt32(rawB) | immediateOf(inst.c)));
+              this.setReg(base, inst.a, int32Value(asInt32(rawB) | wideImmediateOf(inst)));
             } else {
               const numberB = this.numericOperand(rawB);
-              this.setReg(base, inst.a, int32Value(toInt32(numberB) | immediateOf(inst.c)));
+              this.setReg(base, inst.a, int32Value(toInt32(numberB) | wideImmediateOf(inst)));
             }
           }
           bitAndImm => {
             const rawB = this.reg(base, inst.b);
             if (isInt32(rawB)) {
-              this.setReg(base, inst.a, int32Value(asInt32(rawB) & immediateOf(inst.c)));
+              this.setReg(base, inst.a, int32Value(asInt32(rawB) & wideImmediateOf(inst)));
             } else {
               const numberB = this.numericOperand(rawB);
-              this.setReg(base, inst.a, int32Value(toInt32(numberB) & immediateOf(inst.c)));
+              this.setReg(base, inst.a, int32Value(toInt32(numberB) & wideImmediateOf(inst)));
             }
           }
           bitXorImm => {
             const rawB = this.reg(base, inst.b);
             if (isInt32(rawB)) {
-              this.setReg(base, inst.a, int32Value(asInt32(rawB) ^ immediateOf(inst.c)));
+              this.setReg(base, inst.a, int32Value(asInt32(rawB) ^ wideImmediateOf(inst)));
             } else {
               const numberB = this.numericOperand(rawB);
-              this.setReg(base, inst.a, int32Value(toInt32(numberB) ^ immediateOf(inst.c)));
+              this.setReg(base, inst.a, int32Value(toInt32(numberB) ^ wideImmediateOf(inst)));
             }
           }
           shlImm => {
@@ -7946,9 +7956,12 @@ export function branchImmediateOf(inst: Inst, word: Inst): i32 {
   return bits >= 0x800000 ? bits - 0x1000000 : bits;
 }
 
-export function immediateOf(c: u8): i32 {
-  return c >= 128 ? i32(c) - 256 : i32(c);
+// An operand literal: c its low byte, d its high, signed.
+export function wideImmediateOf(inst: Inst): i32 {
+  const bits = i32(inst.c) | (i32(inst.d) << 8);
+  return bits >= 0x8000 ? bits - 0x10000 : bits;
 }
+
 
 export function numericAdd(a: Value, b: Value): Value {
   if (isInt32(a) && isInt32(b)) return int32OrDouble(i64(asInt32(a)) + i64(asInt32(b)));
