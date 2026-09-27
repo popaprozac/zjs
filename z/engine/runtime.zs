@@ -4832,6 +4832,63 @@ export struct Runtime {
   function enterCallable(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): boolean {
     const handle = asCell(callee);
     const target = this.heap.functionIndex(handle);
+    const code = usize(target);
+    if (this.functions[code].isGenerator || this.functions[code].isAsync || this.functions[code].isClassConstructor) {
+      return this.enterSpecial(callee, returnDst, thisValue, argsBase, argc, constructThis);
+    }
+    let env: u32 = 0;
+    let boundThis = thisValue;
+    if (this.heap.isClosure(handle)) {
+      env = this.heap.linkOf(handle);
+      if (this.functions[code].isArrow) boundThis = this.heap.slot(handle, 0);
+    }
+    // A sloppy function called with no receiver sees the global object.
+    if (!this.functions[code].strict && (isUndefined(boundThis) || isNull(boundThis))) boundThis = cellValue(this.globalObject);
+    // The frame, as openFrame makes it, with no calls on the way.
+    let regCount = this.functions[code].registerCount;
+    const paramCount = this.functions[code].paramCount;
+    if (regCount < paramCount) regCount = paramCount;
+    const thisReg = this.functions[code].thisReg;
+    const base = this.regTop;
+    const top = usize(base) + usize(regCount);
+    while (this.regStack.length < top) { this.regStack.push(undefinedValue()); }
+    const copied = argc < paramCount ? argc : paramCount;
+    let source = usize(argsBase);
+    let slot = usize(base);
+    const copiedEnd = slot + usize(copied);
+    while (slot < copiedEnd) {
+      const passed = this.regStack[source];
+      this.regStack[slot] = passed;
+      source = source + 1;
+      slot = slot + 1;
+    }
+    let i = copied;
+    while (i < regCount) {
+      this.regStack[usize(base + i)] = undefinedValue();
+      i = i + 1;
+    }
+    this.regTop = base + regCount;
+    const frame = Frame({
+      functionIndex: target, ip: 0, regsBase: base, regCount: regCount, returnDst: returnDst,
+      savedThis: this.hostThis, tryDepthAtEntry: this.tryDepth, constructThis: constructThis,
+      env: env, callee: callee, argsBase: argsBase, argc: argc, generator: 0, newTarget: undefinedValue(),
+    });
+    if (usize(this.frameCount) < this.frames.length) {
+      this.frames[usize(this.frameCount)] = frame;
+    } else {
+      this.frames.push(frame);
+    }
+    this.frameCount = this.frameCount + 1;
+    this.hostThis = boundThis;
+    if (thisReg >= 0) this.setReg(base, u8(thisReg), boundThis);
+    return true;
+  }
+
+  // A class constructor (an error without `new`), a generator, or an
+  // async function.
+  function enterSpecial(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): boolean {
+    const handle = asCell(callee);
+    const target = this.heap.functionIndex(handle);
     if (this.functions[usize(target)].isClassConstructor && isUndefined(constructThis)) {
       const message: String = "Class constructor cannot be invoked without 'new'";
       const error = this.typeError(in message);

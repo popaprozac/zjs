@@ -131,7 +131,10 @@ cycles averaged over eight placements: calls -7.1%, arrays -2.7%
 spread); a `forEach` whose callback is one instruction +7.7%, since a
 nested dispatch loop entered and left that quickly stalls on its own
 epilogue. Measured then: a call and return cost about 40 cycles here,
-28 in QuickJS, 35 in JavaScriptCore's interpreter.
+28 in QuickJS, 35 in JavaScriptCore's interpreter. Then a call to an
+ordinary function (not a generator, not async, not a class constructor)
+builds its frame inline, with no call on the way: calls -5.9%, closures
+-3.6%, map/filter/reduce -4.7%, arrays -1.0%, the rest level.
 
 The dispatch loop's shape belongs to this lever too. It is one large
 function in the generated C, and the C compiler's register allocation
