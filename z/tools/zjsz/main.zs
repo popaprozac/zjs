@@ -324,8 +324,6 @@ function reportMemStats(in runtime: Runtime): void {
   appendDecimal(inout line, kib(runtime.heap.bytesInUse()));
   appendText(inout line, " held-arena-kib ");
   appendDecimal(inout line, kib(runtime.heap.arenaBytesHeld()));
-  appendText(inout line, " held-spare-arena-kib ");
-  appendDecimal(inout line, kib(runtime.heap.spareArenaBytesHeld()));
   appendText(inout line, " held-table-kib ");
   appendDecimal(inout line, kib(runtime.heap.tableBytesHeld()));
   appendText(inout line, " held-strings-kib ");

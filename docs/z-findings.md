@@ -1838,6 +1838,39 @@ pair: `inline` for the fast half and a cold or never-inline mark for the
 slow half (`__attribute__((noinline, cold))`), the standard shape of a
 barrier or any fast path with a rare exit.
 
+## G54 — A growing array leaves its old storage resident (macOS)
+
+**Status:** `proposed` · **Size:** medium · **Priority:** medium for the
+engine's memory goal · **Confirmed:** z-lang `bdc237d2`, Stage 0, macOS
+26 arm64 · **Blocks:** no
+
+`Array<T>` grows through `realloc`. Past a megabyte or so the macOS
+allocator usually moves the block, and it keeps the block it left in its
+large-block cache, dirty and counted in the process's resident size, for
+a later allocation of that size that a monotonically growing heap never
+makes. `malloc_zone_pressure_relief` releases none of it; only the
+process-wide `MallocLargeCache=0` does, which a library cannot set.
+
+Measured 2026-09-26 on the engine's large-heap benchmark
+(`z/bench/memory`, 400,000 records kept): the handle table grew 0.6 ->
+40 MB and the slot arena 0.5 -> 32 MB by doubling, every step a move, and
+peak resident memory was 113 MB against 67 MB with the cache disabled.
+Growing those two arrays four times at a step instead leaves fewer and
+smaller blocks behind (98 MB; at 1.2 million records 249 MB against 339
+doubling and 200 without the cache), and is what the engine does now;
+the rest is the last move's block, which no growth factor avoids.
+
+The ask is a growth path for large arrays that does not leave the old
+storage resident: arrays past a size threshold backed by pages from the
+system and grown by remapping them (`mremap`, `mach_vm_remap`), or a way
+to reserve address space for an array to grow into in place, committed
+as it is touched. Either is how collectors keep large heaps; the engine
+cannot build them on `Array<T>` from Z code.
+
+Reproduction: `/usr/bin/time -l z/build/zjsz run
+z/bench/memory/large-heap.js`, then the same with `MallocLargeCache=0`
+in the environment.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

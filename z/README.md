@@ -370,13 +370,16 @@ the missing `Date` and `RegExp`, classes, and the rest of
 Phase 6, the collector: mark-sweep over the handle heap with stable handles.
 Marking walks from the runtime's roots (registers, globals, frames, the
 realm, compiled code's constants and property names); sweeping frees dead
-headers onto a free list for reuse and compacts every live cell's slots into
-another arena, so an object that outgrew its range leaves no permanent hole
-and nothing outside the heap needs updating. That arena is sized once,
-for the slots traced plus what the next cycle is expected to allocate;
-while it is under about nine megabytes the two arenas change places at
-every collection and neither is allocated again, and a larger heap sizes
-a fresh one and frees the old. The handle table has an extent: when a
+headers onto a free list for reuse and compacts the live cells' slots in
+place, so an object that outgrew its range leaves no permanent hole and
+nothing outside the heap needs updating. Compaction slides: the survivors'
+slot ranges are sorted into arena order (by buckets of eight slots, then
+a pass of insertion sort) and each moves down over the dead ones, and the
+small strings' bytes the same way once their arena holds twice what is
+live. No second arena is made: on macOS the allocator keeps a freed large
+block resident, so a copy into a fresh arena cost the whole old one. For
+the same reason the arena and the handle table grow four times at a step,
+not twice (docs/z-findings.md has the measurements). The handle table has an extent: when a
 large table's survivors all sit in its lowest quarter a sweep cuts the
 extent back to the highest of them, takes the handles above it off the
 free list, and rebuilds a table left far larger than it needs, so a

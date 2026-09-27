@@ -96,10 +96,16 @@ latent bugs took running everything with a collection at every safe
 point; the expectation cases now always run that way too. The barrier has to
 stay inside the C compiler's inlining budget for the slot store: one
 bounds check more put it over (cost 225 of 225) and cost properties and
-arrays 3%. Left: every allocation pushes its slots one call at a time
-(Z has no bulk append); a full collection copies every live slot into a
-second arena, which doubles the slot arena at its peak (a sliding
-compaction would not); cell headers are 20 bytes.
+arrays 3%. Peak memory (2026-09-26): a full collection compacts in
+place, sliding the survivors' slot ranges and string bytes down in arena
+order, where it copied them into a fresh arena; the arena and the handle
+table grow four times at a step. On macOS the allocator keeps a freed
+large block resident, so each copy or move had cost the old block's size
+for good: 117 -> about 100 MB on the large heap (67 with the allocator's
+cache disabled, what Hermes uses; at 1.2 million records 339 -> 249).
+Left: every allocation pushes its slots one call at a time (Z has no
+bulk append); growth that does not move (Z upstream: reserved address
+space or remapping); cell headers are 20 bytes.
 
 **Call protocol.** A call writes an 88-byte frame into one array and a
 register window into another, and leaves the dispatch loop to reload the

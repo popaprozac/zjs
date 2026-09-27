@@ -214,12 +214,10 @@ struct ElementAttrs {
 export struct Heap {
   headers: Array<CellHeader>;
   slots: Array<Value>;
-  // The arena a sweep compacts into. While the heap is small the two
-  // arenas change places at every collection, so neither is allocated
-  // or grown again; a large heap sizes a fresh one exactly and frees
-  // the old, keeping nothing spare. Never holds a live cell's slots
-  // between collections.
-  spareSlots: Array<Value>;
+  // A full collection's sorting scratch (see slideSlots), kept between
+  // collections.
+  slideCounts: Array<u32>;
+  slideOrder: Array<u32>;
   // Element attribute tables for the arrays that have any, and an
   // open-addressed index from array handle to entry (entry + 1, 0 empty).
   elementAttrs: Array<ElementAttrs>;
@@ -241,10 +239,9 @@ export struct Heap {
   // strings over it, with BUFFER_APPENDABLE set on a buffer a
   // concatenation made (see concatStorage).
   strings: Array<Array<u8>>;
-  // Small strings' storage, one byte arena filled from its top, and the
-  // one the collector compacts it into (see Strings).
+  // Small strings' storage, one byte arena filled from its top (see
+  // Strings).
   smallBytes: Array<u8>;
-  spareSmallBytes: Array<u8>;
   // The live small-string bytes the last collection counted: the arena
   // is compacted only once it holds twice that and some slack, so a
   // long-lived string is copied once per doubling, not every collection.
@@ -385,6 +382,7 @@ export struct Heap {
   // per-context heap at all.
   function allocate(inout this, tag: u8, slotCount: u32): u32 {
     const start = u32(this.slots.length);
+    if (this.slots.length + usize(slotCount) > this.slots.capacity) this.growArena(usize(slotCount));
     let index: u32 = 0;
     while (index < slotCount) {
       this.slots.push(undefinedValue());
@@ -413,6 +411,7 @@ export struct Heap {
     if (next < this.headers.length) {
       this.headers[next] = header;
     } else {
+      if (this.headers.length == this.headers.capacity) this.headers.reserveCapacity(grownCapacity(this.headers.capacity, 1));
       this.headers.push(header);
     }
     this.headerCount = next + 1;
@@ -599,16 +598,19 @@ export struct Heap {
     this.markCount = this.markCount + 1;
   }
 
-  // Free every unmarked cell, compact the live slots into the other
-  // arena, and clear the marks. When a large table's survivors all sit in
-  // its lowest quarter, the dead cells above the highest of them are not
-  // listed for reuse: the table's extent is cut back to that survivor, so
-  // a collection after a spike costs what is alive and not what once
-  // was, and a table left far larger than it needs gives its storage
-  // back. The arena is sized before the copy: the
-  // survivors' slots plus what the next cycle is expected to allocate
-  // (its threshold in cells times the slots a cell has been taking), so
-  // neither the copy nor the allocation that follows grows it.
+  // Free every unmarked cell and compact what the survivors keep in the
+  // arenas in place. When a large table's survivors all sit in its lowest
+  // quarter, the dead cells above the highest of them are not listed for
+  // reuse: the table's extent is cut back to that survivor, so a
+  // collection after a spike costs what is alive and not what once was,
+  // and a table left far larger than it needs gives its storage back.
+  //
+  // Compaction slides: the survivors' slot ranges, taken in arena order,
+  // move down over the dead ones, and the arena is cut back after the
+  // last (see slideSlots); the small strings' bytes the same way once the
+  // byte arena holds twice what is live (slideBytes). Nothing is copied
+  // into a second arena, which the allocator would keep resident after
+  // the first was freed.
   function sweep(inout this): void {
     const count = u32(this.headerCount);
     const liveSlots = this.markedSlots;
@@ -617,27 +619,13 @@ export struct Heap {
     const nextThreshold = proportional > this.collectFloor ? proportional : this.collectFloor;
     let cycleSlots: usize = 0;
     if (this.slots.length > this.slotsAfterSweep) cycleSlots = this.slots.length - this.slotsAfterSweep;
-    let cycleCells: usize = 1;
-    if (this.allocatedSinceCollect > 0) cycleCells = usize(this.allocatedSinceCollect);
-    let perCell = cycleSlots / cycleCells + 1;
-    if (survivors > 0 && liveSlots / usize(survivors) + 1 > perCell) perCell = liveSlots / usize(survivors) + 1;
-    const headroom = usize(nextThreshold) * perCell;
-    const needed = liveSlots + headroom + headroom / 8 + 64;
-    const retain = needed <= SPARE_RETAIN_SLOTS;
-    // The arena being filled is a local while it is filled.
-    let compacted = replace(inout this.spareSlots, Array<Value>());
-    // So is the byte arena the live small strings are copied into, when
-    // the arena has grown enough to be worth compacting.
     const compactBytes = this.smallBytes.length >= this.smallLiveBytes * 2 + SMALL_ARENA_SLACK;
-    let compactedBytes = replace(inout this.spareSmallBytes, Array<u8>());
-    compactedBytes.clear();
     let liveBytes: usize = 0;
-    if (retain) {
-      compacted.clear();
-      compacted.reserveCapacity(needed);
-    } else {
-      compacted = Array<Value>.withCapacity(needed);
-    }
+    // The collector's sorting scratch, locals while they are used.
+    let counts = replace(inout this.slideCounts, Array<u32>());
+    let order = replace(inout this.slideOrder, Array<u32>());
+    fillZeros(inout counts, (this.slots.length >> usize(SLIDE_SLOT_SHIFT)) + 1);
+    let ranges: usize = 0;
     // The highest survivor, found by looking down from the top -- but
     // the table is cut back to it only when that is worth a pass over
     // the free list: a large table that would shrink at least fourfold.
@@ -652,16 +640,18 @@ export struct Heap {
     // Handles are visited from the top down, so the cells this sweep
     // frees are listed highest first and the next allocations take the
     // lowest of them: survivors gather low in the table, which is what
-    // lets a later sweep cut it back.
+    // lets a later sweep cut it back. Each survivor's slot range is
+    // counted into its bucket of the arena for the slide.
     const listBelow: u32 = cutting ? top : count;
     let handle: u32 = count - 1;
     while (handle >= 1) {
-      const tag = this.headers[usize(handle)].tag;
+      const header = this.headers[usize(handle)];
+      const tag = header.tag;
       if (tag == TAG_FREE) {
         handle = handle - 1;
         continue;
       }
-      if (!this.headers[usize(handle)].marked) {
+      if (!header.marked) {
         this.releaseCell(handle, tag);
         // A cell above the highest survivor is cut off with the table,
         // not listed.
@@ -670,49 +660,26 @@ export struct Heap {
         continue;
       }
       // A survivor keeps its mark: it is old now.
-      if (tag == TAG_STRING && (this.headers[usize(handle)].payload & ARENA_BIT) != 0) {
-        const length = usize(this.headers[usize(handle)].slotStart);
-        liveBytes = liveBytes + length;
-        if (compactBytes) {
-          const origin = usize(this.headers[usize(handle)].payload & ~ARENA_BIT);
-          this.headers[usize(handle)].payload = ARENA_BIT | u32(compactedBytes.length);
-          let k: usize = 0;
-          while (k < length) {
-            compactedBytes.push(this.smallBytes[origin + k]);
-            k = k + 1;
-          }
-        }
-      }
-      const start = this.headers[usize(handle)].slotStart;
-      const slotCount: u32 = tag == TAG_STRING ? 0 : this.headers[usize(handle)].slotCount;
-      if (tag != TAG_STRING) this.headers[usize(handle)].slotStart = u32(compacted.length);
-      let index: u32 = 0;
-      while (index < slotCount) {
-        const kept = this.slots[usize(start + index)];
-        compacted.push(kept);
-        index = index + 1;
+      if (tag == TAG_STRING) {
+        if ((header.payload & ARENA_BIT) != 0) liveBytes = liveBytes + usize(header.slotStart);
+      } else if (header.slotCount > 0) {
+        const bucket = usize(header.slotStart >> SLIDE_SLOT_SHIFT);
+        counts[bucket] = counts[bucket] + 1;
+        ranges = ranges + 1;
       }
       handle = handle - 1;
     }
     if (cutting) this.trimHandleTable(top);
-    // The arenas change places. A large heap lets the old one go.
-    // An arena far larger than the heap now needs is let go rather than
-    // kept as the spare, so what a burst took goes back once it has passed.
-    const oldCapacity = this.slots.capacity;
-    const oldSlots = replace(inout this.slots, move compacted);
-    // A compacted byte arena takes the old one's place, which becomes the
-    // spare unless it grew far past what the live strings need.
+    this.slideSlots(inout counts, inout order, ranges);
     this.smallLiveBytes = liveBytes;
-    if (compactBytes) {
-      const oldBytes = replace(inout this.smallBytes, move compactedBytes);
-      if (oldBytes.capacity <= liveBytes * 4 + SMALL_ARENA_SLACK) {
-        const emptyBytes = replace(inout this.spareSmallBytes, move oldBytes);
-      }
-    } else {
-      const unused = replace(inout this.spareSmallBytes, move compactedBytes);
+    if (compactBytes) this.smallLiveBytes = this.slideBytes(inout counts, inout order);
+    // The scratch is kept for the next collection unless a burst grew it
+    // far past what the heap needs.
+    if (counts.capacity <= (this.slots.length >> usize(SLIDE_SLOT_SHIFT)) * 4 + LOG_RETAIN_ENTRIES) {
+      const emptyCounts = replace(inout this.slideCounts, move counts);
     }
-    if (retain && oldCapacity <= needed * 4 + 65536) {
-      const emptySlots = replace(inout this.spareSlots, move oldSlots);
+    if (order.capacity <= usize(survivors) * 2 + LOG_RETAIN_ENTRIES) {
+      const emptyOrder = replace(inout this.slideOrder, move order);
     }
     this.cellsBeforeCycle = this.cellsBeforeCycle + f64(this.allocatedSinceCollect);
     this.slotsBeforeCycle = this.slotsBeforeCycle + f64(cycleSlots);
@@ -725,6 +692,133 @@ export struct Heap {
     this.promotedCells = 0;
     this.promotedSlots = 0;
     this.endCycle();
+  }
+
+  // Slide every surviving slot range down in arena order. `counts` holds,
+  // per bucket of 2^SLIDE_SLOT_SHIFT arena slots, how many ranges start in
+  // it; the ranges are placed bucket by bucket into `order`, a pass of
+  // insertion sort puts each bucket's few in order, and each range moves
+  // to the cursor (never up: everything below it is placed).
+  function slideSlots(inout this, inout counts: Array<u32>, inout order: Array<u32>, ranges: usize): void {
+    prefixSums(inout counts);
+    order.clear();
+    fillZeros(inout order, ranges);
+    let handle: usize = 1;
+    while (handle < this.headerCount) {
+      const header = this.headers[handle];
+      if (header.tag != TAG_FREE && header.tag != TAG_STRING && header.slotCount > 0) {
+        const bucket = usize(header.slotStart >> SLIDE_SLOT_SHIFT);
+        order[usize(counts[bucket])] = u32(handle);
+        counts[bucket] = counts[bucket] + 1;
+      }
+      handle = handle + 1;
+    }
+    let i: usize = 1;
+    while (i < order.length) {
+      const moving = order[i];
+      const key = this.headers[usize(moving)].slotStart;
+      let j = i;
+      while (j > 0 && this.headers[usize(order[j - 1])].slotStart > key) {
+        order[j] = order[j - 1];
+        j = j - 1;
+      }
+      order[j] = moving;
+      i = i + 1;
+    }
+    let cursor: usize = 0;
+    i = 0;
+    while (i < order.length) {
+      const moving = order[i];
+      const start = this.headers[usize(moving)].slotStart;
+      const slotCount = this.headers[usize(moving)].slotCount;
+      cursor = this.slideRange(moving, start, slotCount, cursor);
+      i = i + 1;
+    }
+    while (this.slots.length > cursor) {
+      const dropped = this.slots.pop();
+    }
+  }
+
+  // Slide the surviving small strings' bytes down in arena order, as
+  // slideSlots does slot ranges; the bytes kept. Strings sharing a start
+  // (a run concatenation made; see sweepYoung) move together: the first
+  // of a run takes the cursor and each other copies only what it adds.
+  function slideBytes(inout this, inout counts: Array<u32>, inout order: Array<u32>): usize {
+    counts.clear();
+    fillZeros(inout counts, (this.smallBytes.length >> usize(SLIDE_BYTE_SHIFT)) + 1);
+    let strings: usize = 0;
+    let handle: usize = 1;
+    while (handle < this.headerCount) {
+      const header = this.headers[handle];
+      if (header.tag == TAG_STRING && (header.payload & ARENA_BIT) != 0) {
+        if (header.slotStart == 0) {
+          // An empty string keeps no bytes.
+          this.headers[handle].payload = ARENA_BIT;
+        } else {
+          const bucket = usize((header.payload & ~ARENA_BIT) >> SLIDE_BYTE_SHIFT);
+          counts[bucket] = counts[bucket] + 1;
+          strings = strings + 1;
+        }
+      }
+      handle = handle + 1;
+    }
+    prefixSums(inout counts);
+    order.clear();
+    fillZeros(inout order, strings);
+    handle = 1;
+    while (handle < this.headerCount) {
+      const header = this.headers[handle];
+      if (header.tag == TAG_STRING && (header.payload & ARENA_BIT) != 0 && header.slotStart != 0) {
+        const bucket = usize((header.payload & ~ARENA_BIT) >> SLIDE_BYTE_SHIFT);
+        order[usize(counts[bucket])] = u32(handle);
+        counts[bucket] = counts[bucket] + 1;
+      }
+      handle = handle + 1;
+    }
+    let i: usize = 1;
+    while (i < order.length) {
+      const moving = order[i];
+      const key = this.headers[usize(moving)].payload;
+      let j = i;
+      while (j > 0 && this.headers[usize(order[j - 1])].payload > key) {
+        order[j] = order[j - 1];
+        j = j - 1;
+      }
+      order[j] = moving;
+      i = i + 1;
+    }
+    let cursor: usize = 0;
+    let runOrigin: usize = 0;
+    let runTarget: usize = 0;
+    let runLength: usize = 0;
+    i = 0;
+    while (i < order.length) {
+      const moving = order[i];
+      const origin = usize(this.headers[usize(moving)].payload & ~ARENA_BIT);
+      const length = usize(this.headers[usize(moving)].slotStart);
+      let copied: usize = 0;
+      if (i > 0 && origin == runOrigin) {
+        copied = runLength;
+      } else {
+        runOrigin = origin;
+        runTarget = cursor;
+        runLength = 0;
+      }
+      let k = copied;
+      while (k < length) {
+        const byte = this.smallBytes[origin + k];
+        this.smallBytes[runTarget + k] = byte;
+        k = k + 1;
+      }
+      if (length > runLength) runLength = length;
+      if (runTarget + runLength > cursor) cursor = runTarget + runLength;
+      this.headers[usize(moving)].payload = ARENA_BIT | u32(runTarget);
+      i = i + 1;
+    }
+    while (this.smallBytes.length > cursor) {
+      const dropped = this.smallBytes.pop();
+    }
+    return cursor;
   }
 
   // What every sweep leaves: no young cells, so an empty log and
@@ -1011,12 +1105,23 @@ export struct Heap {
     const oldStack = replace(inout this.markStack, Array<u32>());
   }
 
+  // Room for `extra` more slots. The arena and the handle table grow by
+  // four times, not the doubling an array's push would do: each time a
+  // large block grows it moves, and the allocator may keep the block it
+  // left resident for reuse (macOS does), so the fewer moves, the less
+  // memory is held for nothing. The capacity nothing has touched costs
+  // address space only.
+  function growArena(inout this, extra: usize): void {
+    this.slots.reserveCapacity(grownCapacity(this.slots.capacity, this.slots.length + extra));
+  }
+
   // Move a cell's slots to a fresh, larger range. The old range is
   // abandoned until the collector compacts.
   function growSlots(inout this, handle: u32, newCount: u32): void {
     const oldStart = this.headers[usize(handle)].slotStart;
     const oldCount = this.headers[usize(handle)].slotCount;
     const start = u32(this.slots.length);
+    if (this.slots.length + usize(newCount) > this.slots.capacity) this.growArena(usize(newCount));
     let index: u32 = 0;
     while (index < oldCount) {
       const kept = this.slots[usize(oldStart + index)];
@@ -3153,13 +3258,9 @@ export struct Heap {
     return f64(this.majorCells + this.promotedCells) * HEADER_BYTES + f64(this.majorSlots + this.promotedSlots) * 8.0;
   }
 
-  // The active arena and the spare one kept to compact into.
+  // The slot arena, and the full collection's sorting scratch.
   function arenaBytesHeld(): f64 {
-    return f64(this.slots.capacity) * 8.0;
-  }
-
-  function spareArenaBytesHeld(): f64 {
-    return f64(this.spareSlots.capacity) * 8.0;
+    return f64(this.slots.capacity) * 8.0 + f64(this.slideCounts.capacity + this.slideOrder.capacity) * 4.0;
   }
 
   // The handle table with its free list, the mark stack, and the
@@ -3171,7 +3272,7 @@ export struct Heap {
   // The string table: an array per string plus each one's content.
   function stringBytesHeld(): f64 {
     let held: f64 = f64(this.strings.capacity) * 24.0 + f64(this.freeStrings.capacity) * 4.0;
-    held = held + f64(this.smallBytes.capacity) + f64(this.spareSmallBytes.capacity);
+    held = held + f64(this.smallBytes.capacity);
     let index: usize = 0;
     while (index < this.strings.length) {
       held = held + f64(this.strings[index].capacity);
@@ -3227,6 +3328,38 @@ export struct Heap {
   }
 }
 
+// A large array's next capacity: four times the current, at least
+// `needed`.
+function grownCapacity(capacity: usize, needed: usize): usize {
+  let next = capacity * 4;
+  if (next < 1024) next = 1024;
+  if (next < needed) next = needed;
+  return next;
+}
+
+// `count` zeros, whatever `values` held.
+function fillZeros(inout values: Array<u32>, count: usize): void {
+  values.clear();
+  values.reserveCapacity(count);
+  let i: usize = 0;
+  while (i < count) {
+    values.push(0);
+    i = i + 1;
+  }
+}
+
+// Each count replaced by the sum of those before it.
+function prefixSums(inout values: Array<u32>): void {
+  let running: u32 = 0;
+  let i: usize = 0;
+  while (i < values.length) {
+    const counted = values[i];
+    values[i] = running;
+    running = running + counted;
+    i = i + 1;
+  }
+}
+
 function sameStorage(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, length: usize): boolean {
   let index: usize = 0;
   while (index < length) {
@@ -3247,7 +3380,7 @@ export function createHeap(): Heap {
     transitionNames: Array<u32>(), transitionAttrs: Array<u8>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), spareSlots: Array<Value>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), spareSmallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), slideCounts: Array<u32>(), slideOrder: Array<u32>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
@@ -3260,9 +3393,11 @@ export function createHeap(): Heap {
   });
 }
 
-// A compacted arena no larger than this many slots (about nine
-// megabytes) is kept to be compacted into next time.
-const SPARE_RETAIN_SLOTS: usize = 1048576;
+// A full collection sorts the survivors' slot ranges by buckets of 8
+// arena slots, and small strings by buckets of 16 bytes: a bucket holds
+// few enough that one pass of insertion sort orders them.
+const SLIDE_SLOT_SHIFT: u32 = 3;
+const SLIDE_BYTE_SHIFT: u32 = 4;
 // A handle table never made larger than this is not worth rebuilding.
 const HANDLE_TABLE_SHRINK_AT: usize = 65536;
 // A table shorter than this is walked whole rather than cut back.
@@ -4212,4 +4347,51 @@ test "young strings sharing bytes keep their text through a minor collection" {
   expect(heap.stringsEqual(abcdef, heap.allocateText("abcdef"))).toEqual(true);
   expect(heap.stringsEqual(abcdefgh, heap.allocateText("abcdefgh"))).toEqual(true);
   expect(heap.stringsEqual(tail, heap.allocateText("tail"))).toEqual(true);
+}
+
+test "a full collection slides the survivors' slots and string bytes down in place" {
+  let heap = createHeap();
+  let roots = Array<u32>();
+  const first = heap.allocateObject(0);
+  const dead = heap.allocateArray(3);
+  const grown = heap.allocateArray(2);
+  const last = heap.allocateObject(0);
+  heap.setSlot(first, 1, int32Value(1));
+  heap.arraySet(grown, 0, int32Value(2));
+  heap.setSlot(last, 3, int32Value(4));
+  // Its slots move above `last`'s: arena order is no longer handle order.
+  heap.arraySet(grown, 9, int32Value(3));
+  // Enough dead small strings that the byte arena is compacted too, and a
+  // run of strings sharing bytes whose first member dies.
+  let filler: u32 = 0;
+  while (filler < 1200) {
+    const junk = heap.allocateText("0123456789012345678901234567890123456789012345678901234567890123");
+    filler = filler + 1;
+  }
+  const abc = heap.allocateText("abc");
+  const def: String = "def";
+  const defBytes = bytesOf(in def);
+  const abcdef = heap.concatAscii(abc, defBytes, 3, false);
+  const gh: String = "gh";
+  const ghBytes = bytesOf(in gh);
+  const abcdefgh = heap.concatAscii(abcdef, ghBytes, 2, false);
+  roots.push(first);
+  roots.push(grown);
+  roots.push(last);
+  roots.push(abcdefgh);
+  roots.push(abcdef);
+  collectFull(inout heap, in roots);
+  expect(heap.isReleased(dead)).toEqual(true);
+  expect(heap.isReleased(abc)).toEqual(true);
+  const expected = heap.slotCountOf(first) + heap.slotCountOf(grown) + heap.slotCountOf(last);
+  expect(heap.slotsInUse()).toEqual(expected);
+  expect(asInt32(heap.slot(first, 1))).toEqual(1);
+  expect(asInt32(heap.arrayGet(grown, 0))).toEqual(2);
+  expect(asInt32(heap.arrayGet(grown, 9))).toEqual(3);
+  expect(asInt32(heap.slot(last, 3))).toEqual(4);
+  // The run keeps one copy of its bytes.
+  const eight: usize = 8;
+  expect(heap.smallBytes.length).toEqual(eight);
+  expect(heap.stringsEqual(abcdef, heap.allocateText("abcdef"))).toEqual(true);
+  expect(heap.stringsEqual(abcdefgh, heap.allocateText("abcdefgh"))).toEqual(true);
 }

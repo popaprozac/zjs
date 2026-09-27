@@ -11,14 +11,22 @@ and layout decide.
 /usr/bin/time -l z/build/zjsz run --gc-stats --mem-stats z/bench/memory/large-heap.js
 ```
 
-Peak resident memory, macOS arm64, 2026-09-26 (engine with its young
-generation; the engine before it; the others as in `z/bench/speed`):
+Peak resident memory, macOS arm64, 2026-09-26 (the engine now; with its
+young generation and a copying full collection; before either; the
+others as in `z/bench/speed`):
 
 | Engine | Peak resident |
 |---|---|
-| zjsz | 117 MB |
+| zjsz | 98-101 MB |
+| zjsz, young generation, copying | 117 MB |
 | zjsz, one generation | 247 MB |
 | QuickJS | 131 MB |
 | Hermes 0.13 | 67 MB |
 | JavaScriptCore, no JIT | 188 MB |
 | V8, jitless | 240 MB |
+
+The peak depends on the allocator as much as on the engine: run with
+`MallocLargeCache=0` in the environment, macOS's allocator stops keeping
+freed large blocks resident and the engine peaks at 67 MB. The engine's
+arrays grow by moving, and each move leaves the old block behind
+(docs/z-findings.md).
