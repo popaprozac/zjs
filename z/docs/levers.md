@@ -176,7 +176,8 @@ argument, which still goes to its block. Fused branches for equality
 (`===` and the rest in a condition, one instruction for two) were
 written and measured: the four new arms in the dispatch loop cost the
 kernels 1-3% (calls, closures, properties), more than they saved where
-equality is tested, so they wait for the loop's restructuring.
+equality is tested, so they waited for the loop's restructuring (done
+below).
 Loops (2026-09-27): `while` and `for` test their condition at the
 bottom, entered by one jump, so an iteration runs one compare-and-branch
 where it ran a test and a jump back (that jump was 6% of the instructions
@@ -194,6 +195,12 @@ the flag), regexp +2.3%. Then an operand literal takes 16 bits, the
 instruction's spare byte its high half, and `*` and `%` take one too:
 `(i * 7919 + round) % 10007` is three instructions where it was five
 (arrays -4.4%, allocation -3.6%, maps -1.6%, the rest within noise).
+Array literal elements compile into their slots (allocation -3.8%), and
+`===` and `!==` in a condition compare and branch in one instruction,
+against a register or a literal, with the jump-when-true flag serving
+both operators and a loop's bottom, so two arms serve all four cases
+(allocation -5.9%, properties -2.9%, polymorphic -2.2%, maps and
+closures -1.2%).
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches

@@ -188,5 +188,6 @@ export function opName(op: Op): String {
     defineNamed => "defineNamed";
     mulImm => "mulImm";
     modImm => "modImm";
+    jmpIfNotStrictEqImm => "jmpIfNotStrictEqImm";
   };
 }

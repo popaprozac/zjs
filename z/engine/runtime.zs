@@ -6858,6 +6858,29 @@ export struct Runtime {
               if (offset < 0) this.backEdge(frameIndex, ip);
             }
           }
+          jmpIfNotStrictEq => {
+            const left = this.reg(base, inst.a);
+            const right = this.reg(base, inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            if (this.strictEquals(left, right) == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
+          }
+          jmpIfNotStrictEqImm => {
+            const left = this.reg(base, inst.a);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const immediate = branchImmediateOf(inst, word);
+            const same = isInt32(left) ? asInt32(left) == immediate : isDouble(left) && asDouble(left) == f64(immediate);
+            if (same == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
+          }
           // ++ and -- on a value: ToNumeric first, so a string counts.
           inc => {
             const operandB = this.reg(base, inst.b);

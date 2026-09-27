@@ -319,9 +319,30 @@ export struct Compiler {
         this.emit(instABC(fused, left, right, 0));
         return this.emit(instAI16(Op.halt, 0, 0));
       }
+      if (compare == Op.cmpStrictEq || compare == Op.cmpStrictNe) {
+        // `===` jumps when the two differ, `!==` when they are the same.
+        return this.emitStrictBranch(in parser, inout runtime, n.left, n.right, compare == Op.cmpStrictNe ? 1 : 0);
+      }
     }
     const condition = this.compileOperand(in parser, inout runtime, node, NO_NODE);
     return this.emit(instAI16(Op.jmpIfFalse, condition, 0));
+  }
+
+  // A fused === branch, jumping when the operands differ (d = 0) or are
+  // the same (d = 1); the offset word, returned for patching.
+  function emitStrictBranch(inout this, in parser: Parser, inout runtime: Runtime, leftNode: u32, rightNode: u32, when: u8): u32 {
+    const immediate = branchImmediate(in parser, rightNode);
+    if (immediate != NO_BRANCH_IMMEDIATE) {
+      const operand = this.compileOperand(in parser, inout runtime, leftNode, NO_NODE);
+      const bits = u32(i64(immediate) & 0xFFFFFF);
+      const low = u16(bits & 0xFFFF);
+      this.emit(instABCD(Op.jmpIfNotStrictEqImm, operand, u8(low & 0xFF), u8(low >> 8), when));
+      return this.emit(instAI16(Op.halt, u8(bits >> 16), 0));
+    }
+    const left = this.compileOperand(in parser, inout runtime, leftNode, rightNode);
+    const right = this.compileOperand(in parser, inout runtime, rightNode, NO_NODE);
+    this.emit(instABCD(Op.jmpIfNotStrictEq, left, right, 0, when));
+    return this.emit(instAI16(Op.halt, 0, 0));
   }
 
   // A jump back to `target` taken when a condition is true: a loop's
@@ -351,6 +372,11 @@ export struct Compiler {
         this.emit(instABCD(fused, left, right, 0, 1));
         const here = i32(this.code.length);
         this.emit(instAI16(Op.halt, 0, i32(target) - (here + 1)));
+        return;
+      }
+      if (compare == Op.cmpStrictEq || compare == Op.cmpStrictNe) {
+        const word = this.emitStrictBranch(in parser, inout runtime, n.left, n.right, compare == Op.cmpStrictEq ? 1 : 0);
+        this.patchJumpTo(word, target);
         return;
       }
     }

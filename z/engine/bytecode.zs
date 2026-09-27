@@ -80,6 +80,9 @@ export enum Op {
   jmpIfNotGeImm,
   jmpIfNotEq,
   jmpIfNotNe,
+  // a and b compared with ===, the offset in the next word's bc: jumps
+  // when they differ, or with d = 1 when they are the same (`!==` in a
+  // condition, and `===` at a loop's bottom).
   jmpIfNotStrictEq,
   jmpIfNotStrictNe,
   returnOp,
@@ -218,6 +221,9 @@ export enum Op {
   // integer: `*` and `%` against a small integer literal.
   mulImm,
   modImm,
+  // a against a 24-bit literal, as jmpIfNotLtImm, compared with ===; d
+  // as in jmpIfNotStrictEq.
+  jmpIfNotStrictEqImm,
 }
 
 export struct Inst {
@@ -461,6 +467,7 @@ export function opCode(op: Op): i32 {
     defineNamed => 181;
     mulImm => 182;
     modImm => 183;
+    jmpIfNotStrictEqImm => 184;
   };
 }
 
