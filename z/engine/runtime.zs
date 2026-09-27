@@ -6132,20 +6132,7 @@ export struct Runtime {
       }
       _ => {
         // Opcode pairs that share a handler, and the unimplemented rest.
-        if (op == Op.cmpEq || op == Op.cmpNe) {
-          const operandB = this.reg(base, inst.b);
-          const operandC = this.reg(base, inst.c);
-          const equal = this.looseEquals(operandB, operandC);
-          this.setReg(base, inst.a, booleanValue(op == Op.cmpEq ? equal : !equal));
-          if (this.pendingThrow) {
-            // The throw stays pending for the loop to take.
-          }
-        } else if (op == Op.cmpStrictEq || op == Op.cmpStrictNe) {
-          const operandB = this.reg(base, inst.b);
-          const operandC = this.reg(base, inst.c);
-          const equal = this.strictEquals(operandB, operandC);
-          this.setReg(base, inst.a, booleanValue(op == Op.cmpStrictEq ? equal : !equal));
-        } else if (op == Op.setFunctionName) {
+        if (op == Op.setFunctionName) {
           // NamedEvaluation for a computed key: the function made for the
           // value takes the key as its name (a symbol as "[description]",
           // an accessor with its "get " or "set " prefix), unless it has
@@ -7026,6 +7013,28 @@ export struct Runtime {
               const length = this.heap.arrayLength(asCell(array));
               this.heap.arraySet(asCell(array), length, element);
             }
+          }
+          cmpStrictEq => {
+            const operandB = this.reg(base, inst.b);
+            const operandC = this.reg(base, inst.c);
+            this.setReg(base, inst.a, booleanValue(this.strictEquals(operandB, operandC)));
+          }
+          cmpStrictNe => {
+            const operandB = this.reg(base, inst.b);
+            const operandC = this.reg(base, inst.c);
+            this.setReg(base, inst.a, booleanValue(!this.strictEquals(operandB, operandC)));
+          }
+          cmpEq => {
+            const operandB = this.reg(base, inst.b);
+            const operandC = this.reg(base, inst.c);
+            const equal = this.looseEquals(operandB, operandC);
+            this.setReg(base, inst.a, booleanValue(equal));
+          }
+          cmpNe => {
+            const operandB = this.reg(base, inst.b);
+            const operandC = this.reg(base, inst.c);
+            const equal = this.looseEquals(operandB, operandC);
+            this.setReg(base, inst.a, booleanValue(!equal));
           }
           loadProp => {
             const object = this.reg(base, inst.b);
