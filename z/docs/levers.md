@@ -54,13 +54,21 @@ Map storage moved out of the arena, pushing attribute bytes was 13% of
 number-keyed `Map.set`. Arrays could keep elements without attributes
 until one is given any. Done so far: an object literal's property with
 a name known at compile time defines through a cached transition at its
-site (allocation -6.5%); JSON reads objects through their shapes. Measured
-2026-09-26, the attribute check is under 4% of the properties kernel,
-where dispatch is a third: moving attributes into classes is worth it for
-memory and for letting caches skip the check, but it needs attribute-keyed
-transitions and reconfiguration (a prototype's methods are non-enumerable,
-so falling back to dictionary mode on any attribute change is not an
-option).
+site (allocation -6.5%); JSON reads objects through their shapes. Attributes
+now belong to shapes: a hidden class keeps its properties' attributes
+and transitions are keyed by name and attributes; changing an existing
+property's attributes replays the class chain with that one changed, so
+slots stay put and objects reconfigured alike share the result (no
+dictionary fallback, which prototypes with non-enumerable methods could
+not afford). Dictionary objects keep attributes per pair; an array's
+elements have the default ones unless a flag says a side table holds
+them. The attribute byte per slot is gone from allocation, slot growth,
+and collection, and a cache hit no longer checks attributes, since the
+class it matched fixes them (loads never cache an accessor; a store
+checks the attributes the entry recorded). Peak memory for 300,000 small
+objects -9.6%. An object literal's property now has a cache of its own:
+it had shared one with every read of the same name in the function, and
+the two evicted each other every iteration (allocation -19%).
 
 **Allocator and collector.** A cell is a header pushed into a table and
 slots pushed into an arena one at a time; every string is its own

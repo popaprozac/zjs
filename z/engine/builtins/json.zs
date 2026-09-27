@@ -752,10 +752,8 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
       }
       // A present data element is read in place; a hole or an accessor
       // goes through Get.
-      let element = undefinedValue();
-      if (index < runtime.heap.arrayLength(handle) && runtime.heap.arrayHasIndex(handle, index) && (runtime.heap.attrOf(handle, index) & PROP_ACCESSOR) == 0) {
-        element = runtime.heap.arrayGet(handle, index);
-      } else {
+      let element = runtime.heap.dataElement(handle, index);
+      if (isDeleted(element)) {
         element = runtime.getProperty(value, int32Value(i32(index)));
         if (runtime.pendingThrow) return false;
       }

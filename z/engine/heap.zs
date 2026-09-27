@@ -71,6 +71,10 @@ export const FLAG_NON_EXTENSIBLE: u8 = 1;
 export const FLAG_LENGTH_READONLY: u8 = 2;
 // A symbol cell minted as a class private name: never an own key.
 export const FLAG_PRIVATE_NAME: u8 = 4;
+// On an array (the same bit, which only symbols otherwise use): some
+// element has attributes other than the default, kept in the heap's
+// element attribute tables.
+export const FLAG_ELEMENT_ATTRS: u8 = 4;
 // A string cell that is the runtime's atom for its bytes.
 export const FLAG_INTERNED: u8 = 8;
 // A string cell whose units are stored two bytes each (some unit is above
@@ -125,7 +129,13 @@ struct HiddenClass {
   transitionName: u32;
   transitionSlot: u32;
   propCount: u32;
+  // The attributes of every property the class has, by slot: an
+  // object's attributes are its class's, so objects of one shape share
+  // them and a cache that matched the class knows them.
+  slotAttrs: Array<u8>;
+  // The classes reached from this one: by name and attributes.
   transitionNames: Array<u32>;
+  transitionAttrs: Array<u8>;
   transitionChildren: Array<u32>;
 }
 
@@ -179,6 +189,16 @@ struct Dictionary {
   mask: u32;
   used: u32;
   live: u32;
+  // Each pair's attributes.
+  attrs: Array<u8>;
+}
+
+// An array's element attributes, for an array whose elements do not all
+// have the default ones (FLAG_ELEMENT_ATTRS on it): by index, the default
+// past the end.
+struct ElementAttrs {
+  owner: u32;
+  attrs: Array<u8>;
 }
 
 // String cells keep their bytes in a Z-owned Array<u8>, held in a side
@@ -188,15 +208,16 @@ struct Dictionary {
 export struct Heap {
   headers: Array<CellHeader>;
   slots: Array<Value>;
-  // One attribute byte per slot, in step with `slots`.
-  attrs: Array<u8>;
   // The arena a sweep compacts into. While the heap is small the two
   // arenas change places at every collection, so neither is allocated
   // or grown again; a large heap sizes a fresh one exactly and frees
   // the old, keeping nothing spare. Never holds a live cell's slots
   // between collections.
   spareSlots: Array<Value>;
-  spareAttrs: Array<u8>;
+  // Element attribute tables for the arrays that have any, and an
+  // open-addressed index from array handle to entry (entry + 1, 0 empty).
+  elementAttrs: Array<ElementAttrs>;
+  elementAttrIndex: Array<u32>;
   // Slots in use right after the last sweep, to tell how many the cycle
   // since has allocated.
   slotsAfterSweep: usize;
@@ -299,7 +320,6 @@ export struct Heap {
     let index: u32 = 0;
     while (index < slotCount) {
       this.slots.push(undefinedValue());
-      this.attrs.push(PROP_DEFAULT);
       index = index + 1;
     }
     this.allocatedSinceCollect = this.allocatedSinceCollect + 1;
@@ -440,7 +460,6 @@ export struct Heap {
     const retain = needed <= SPARE_RETAIN_SLOTS;
     // The arena being filled is a local while it is filled.
     let compacted = replace(inout this.spareSlots, Array<Value>());
-    let compactedAttrs = replace(inout this.spareAttrs, Array<u8>());
     // So is the byte arena the live small strings are copied into, when
     // the arena has grown enough to be worth compacting.
     const compactBytes = this.smallBytes.length >= this.smallLiveBytes * 2 + SMALL_ARENA_SLACK;
@@ -449,12 +468,9 @@ export struct Heap {
     let liveBytes: usize = 0;
     if (retain) {
       compacted.clear();
-      compactedAttrs.clear();
       compacted.reserveCapacity(needed);
-      compactedAttrs.reserveCapacity(needed);
     } else {
       compacted = Array<Value>.withCapacity(needed);
-      compactedAttrs = Array<u8>.withCapacity(needed);
     }
     // The highest survivor, found by looking down from the top -- but
     // the table is cut back to it only when that is worth a pass over
@@ -492,6 +508,7 @@ export struct Heap {
           const table = this.headers[usize(handle)].payload;
           this.releaseTable(table);
         }
+        if (tag == TAG_ARRAY && (this.headers[usize(handle)].flags & FLAG_ELEMENT_ATTRS) != 0) this.releaseElementAttrs(handle);
         this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
         // A cell above the highest survivor is cut off with the table,
         // not listed.
@@ -526,9 +543,7 @@ export struct Heap {
       let index: u32 = 0;
       while (index < slotCount) {
         const kept = this.slots[usize(start + index)];
-        const keptAttr = this.attrs[usize(start + index)];
         compacted.push(kept);
-        compactedAttrs.push(keptAttr);
         index = index + 1;
       }
       handle = handle - 1;
@@ -539,7 +554,6 @@ export struct Heap {
     // kept as the spare, so what a burst took goes back once it has passed.
     const oldCapacity = this.slots.capacity;
     const oldSlots = replace(inout this.slots, move compacted);
-    const oldAttrs = replace(inout this.attrs, move compactedAttrs);
     // A compacted byte arena takes the old one's place, which becomes the
     // spare unless it grew far past what the live strings need.
     this.smallLiveBytes = liveBytes;
@@ -553,7 +567,6 @@ export struct Heap {
     }
     if (retain && oldCapacity <= needed * 4 + 65536) {
       const emptySlots = replace(inout this.spareSlots, move oldSlots);
-      const emptyAttrs = replace(inout this.spareAttrs, move oldAttrs);
     }
     this.cellsBeforeCycle = this.cellsBeforeCycle + f64(this.allocatedSinceCollect);
     this.slotsBeforeCycle = this.slotsBeforeCycle + f64(cycleSlots);
@@ -609,14 +622,11 @@ export struct Heap {
     let index: u32 = 0;
     while (index < oldCount) {
       const kept = this.slots[usize(oldStart + index)];
-      const keptAttr = this.attrs[usize(oldStart + index)];
       this.slots.push(kept);
-      this.attrs.push(keptAttr);
       index = index + 1;
     }
     while (index < newCount) {
       this.slots.push(undefinedValue());
-      this.attrs.push(PROP_DEFAULT);
       index = index + 1;
     }
     this.headers[usize(handle)].slotStart = start;
@@ -647,23 +657,63 @@ export struct Heap {
     return -1;
   }
 
-  // The class reached by adding `atom` to `classId`, created on first use.
+  // The class reached by adding `atom` to `classId` with the default
+  // attributes, created on first use.
   function classTransition(inout this, classId: u32, atom: u32): u32 {
+    return this.classTransitionWith(classId, atom, PROP_DEFAULT);
+  }
+
+  // The class reached by adding `atom` with `attr` to `classId`: a
+  // property's attributes are part of the shape, so the same name with
+  // other attributes is another class.
+  function classTransitionWith(inout this, classId: u32, atom: u32, attr: u8): u32 {
     const count = this.classes[usize(classId)].transitionNames.length;
     let index: usize = 0;
     while (index < count) {
-      if (this.classes[usize(classId)].transitionNames[index] == atom) return this.classes[usize(classId)].transitionChildren[index];
+      if (this.classes[usize(classId)].transitionNames[index] == atom && this.classes[usize(classId)].transitionAttrs[index] == attr) return this.classes[usize(classId)].transitionChildren[index];
       index = index + 1;
     }
     const propCount = this.classes[usize(classId)].propCount;
+    let slotAttrs = Array<u8>.withCapacity(usize(propCount) + 1);
+    let k: usize = 0;
+    while (k < usize(propCount)) {
+      slotAttrs.push(this.classes[usize(classId)].slotAttrs[k]);
+      k = k + 1;
+    }
+    slotAttrs.push(attr);
     this.classes.push(HiddenClass({
-      parent: classId, transitionName: atom, transitionSlot: propCount, propCount: propCount + 1,
-      transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
+      parent: classId, transitionName: atom, transitionSlot: propCount, propCount: propCount + 1, slotAttrs: move slotAttrs,
+      transitionNames: Array<u32>(), transitionAttrs: Array<u8>(), transitionChildren: Array<u32>(),
     }));
     const child = u32(this.classes.length - 1);
     this.classes[usize(classId)].transitionNames.push(atom);
+    this.classes[usize(classId)].transitionAttrs.push(attr);
     this.classes[usize(classId)].transitionChildren.push(child);
     return child;
+  }
+
+  // The class an object of `classId` moves to when the property in
+  // `slot` takes `attr`: the chain replayed from the root with that one
+  // property's attributes changed, so the slots stay where they are and
+  // every object reconfigured the same way shares the result.
+  function classWithAttr(inout this, classId: u32, slot: u32, attr: u8): u32 {
+    let chain = Array<u32>();
+    let current = classId;
+    while (current != 0) {
+      chain.push(current);
+      current = this.classes[usize(current)].parent;
+    }
+    let result: u32 = 0;
+    let k = chain.length;
+    while (k > 0) {
+      k = k - 1;
+      const step = chain[k];
+      const stepSlot = this.classes[usize(step)].transitionSlot;
+      const stepAttr = stepSlot == slot ? attr : this.classes[usize(step)].slotAttrs[usize(stepSlot)];
+      const stepName = this.classes[usize(step)].transitionName;
+      result = this.classTransitionWith(result, stepName, stepAttr);
+    }
+    return result;
   }
 
   // Whether `child` is the class `parent` reaches by adding `atom`.
@@ -686,7 +736,6 @@ export struct Heap {
     }
     this.headers[usize(handle)].payload = classId;
     this.setSlot(handle, slotIndex, value);
-    this.setAttr(handle, slotIndex, PROP_DEFAULT);
   }
 
   // --- Objects ---
@@ -742,18 +791,23 @@ export struct Heap {
   // attributes: what filling a fresh object needs, without looking the
   // name up first.
   function objectAdd(inout this, handle: u32, atom: u32, value: Value): void {
+    this.objectAddWith(handle, atom, value, PROP_DEFAULT);
+  }
+
+  // Add a property the object does not have yet, with `attr`.
+  function objectAddWith(inout this, handle: u32, atom: u32, value: Value, attr: u8): void {
     if ((this.headers[usize(atom)].flags & FLAG_INDEX_KEY) != 0) this.indexKeysDefined = true;
     const parentClass = this.headers[usize(handle)].payload;
     if ((parentClass & DICT_BIT) != 0) {
-      this.dictionaryInsert(handle, parentClass & (DICT_BIT - 1), atom, value);
+      this.dictionaryInsert(handle, parentClass & (DICT_BIT - 1), atom, value, attr);
       return;
     }
     if (this.classes[usize(parentClass)].propCount >= this.dictThreshold) {
       const dictionary = this.toDictionary(handle);
-      this.dictionaryInsert(handle, dictionary, atom, value);
+      this.dictionaryInsert(handle, dictionary, atom, value, attr);
       return;
     }
-    const child = this.classTransition(parentClass, atom);
+    const child = this.classTransitionWith(parentClass, atom, attr);
     const slotIndex = this.classes[usize(child)].transitionSlot;
     if (slotIndex >= this.headers[usize(handle)].slotCount) {
       const grown: u32 = this.headers[usize(handle)].slotCount * 2;
@@ -778,7 +832,6 @@ export struct Heap {
     if (this.classes[usize(payload)].transitionName == atom && this.classes[usize(payload)].transitionSlot == slot) {
       this.headers[usize(handle)].payload = this.classes[usize(payload)].parent;
       this.setSlot(handle, slot, undefinedValue());
-      this.setAttr(handle, slot, PROP_DEFAULT);
       return;
     }
     const dictionary = this.toDictionary(handle);
@@ -903,7 +956,7 @@ export struct Heap {
   }
 
   // Add a pair for a name the object does not have.
-  function dictionaryInsert(inout this, handle: u32, dictionary: u32, atom: u32, value: Value): void {
+  function dictionaryInsert(inout this, handle: u32, dictionary: u32, atom: u32, value: Value, attr: u8): void {
     const capacity = this.headers[usize(handle)].slotCount / 2;
     if (this.dictionaries[usize(dictionary)].used >= capacity) {
       // Full: drop the retired pairs when they are the larger part,
@@ -920,7 +973,7 @@ export struct Heap {
     this.dictionaries[usize(dictionary)].live = this.dictionaries[usize(dictionary)].live + 1;
     this.setSlot(handle, pair * 2, cellValue(atom));
     this.setSlot(handle, pair * 2 + 1, value);
-    this.setAttr(handle, pair * 2 + 1, PROP_DEFAULT);
+    this.setPairAttr(dictionary, pair, attr);
     this.dictionaryIndexPair(dictionary, atom, pair);
   }
 
@@ -936,7 +989,7 @@ export struct Heap {
   function dictionaryRemove(inout this, dictionary: u32, handle: u32, slot: u32): void {
     this.setSlot(handle, slot - 1, deletedValue());
     this.setSlot(handle, slot, undefinedValue());
-    this.setAttr(handle, slot, PROP_DEFAULT);
+    this.setPairAttr(dictionary, (slot - 1) / 2, PROP_DEFAULT);
     this.dictionaries[usize(dictionary)].live = this.dictionaries[usize(dictionary)].live - 1;
   }
 
@@ -974,10 +1027,10 @@ export struct Heap {
       if (!isDeleted(key)) {
         if (write != read) {
           const value = this.slot(handle, read * 2 + 1);
-          const attr = this.attrOf(handle, read * 2 + 1);
+          const attr = this.pairAttr(dictionary, read);
           this.setSlot(handle, write * 2, key);
           this.setSlot(handle, write * 2 + 1, value);
-          this.setAttr(handle, write * 2 + 1, attr);
+          this.setPairAttr(dictionary, write, attr);
         }
         write = write + 1;
       }
@@ -987,7 +1040,7 @@ export struct Heap {
     while (clear < used) {
       this.setSlot(handle, clear * 2, undefinedValue());
       this.setSlot(handle, clear * 2 + 1, undefinedValue());
-      this.setAttr(handle, clear * 2 + 1, PROP_DEFAULT);
+      this.setPairAttr(dictionary, clear, PROP_DEFAULT);
       clear = clear + 1;
     }
     this.dictionaries[usize(dictionary)].used = write;
@@ -1022,9 +1075,9 @@ export struct Heap {
     if (this.freeDictionaryCount > 0) {
       this.freeDictionaryCount = this.freeDictionaryCount - 1;
       dictionary = this.freeDictionaries[this.freeDictionaryCount];
-      this.dictionaries[usize(dictionary)] = Dictionary({ index: Array<u32>(), mask: 0, used: count, live: count });
+      this.dictionaries[usize(dictionary)] = Dictionary({ index: Array<u32>(), mask: 0, used: count, live: count, attrs: Array<u8>() });
     } else {
-      this.dictionaries.push(Dictionary({ index: Array<u32>(), mask: 0, used: count, live: count }));
+      this.dictionaries.push(Dictionary({ index: Array<u32>(), mask: 0, used: count, live: count, attrs: Array<u8>() }));
       dictionary = u32(this.dictionaries.length - 1);
     }
     let pair: u32 = 0;
@@ -1034,14 +1087,13 @@ export struct Heap {
       const attr = attrs[usize(pair)];
       this.setSlot(handle, pair * 2, cellValue(name));
       this.setSlot(handle, pair * 2 + 1, value);
-      this.setAttr(handle, pair * 2 + 1, attr);
+      this.setPairAttr(dictionary, pair, attr);
       pair = pair + 1;
     }
     let clear = count * 2;
     const total = this.headers[usize(handle)].slotCount;
     while (clear < total) {
       this.setSlot(handle, clear, undefinedValue());
-      this.setAttr(handle, clear, PROP_DEFAULT);
       clear = clear + 1;
     }
     this.headers[usize(handle)].payload = DICT_BIT | dictionary;
@@ -1049,8 +1101,20 @@ export struct Heap {
     return dictionary;
   }
 
+  function pairAttr(dictionary: u32, pair: u32): u8 {
+    if (usize(pair) >= this.dictionaries[usize(dictionary)].attrs.length) return PROP_DEFAULT;
+    return this.dictionaries[usize(dictionary)].attrs[usize(pair)];
+  }
+
+  function setPairAttr(inout this, dictionary: u32, pair: u32, attr: u8): void {
+    while (this.dictionaries[usize(dictionary)].attrs.length <= usize(pair)) {
+      this.dictionaries[usize(dictionary)].attrs.push(PROP_DEFAULT);
+    }
+    this.dictionaries[usize(dictionary)].attrs[usize(pair)] = attr;
+  }
+
   function releaseDictionary(inout this, dictionary: u32): void {
-    this.dictionaries[usize(dictionary)] = Dictionary({ index: Array<u32>(), mask: 0, used: 0, live: 0 });
+    this.dictionaries[usize(dictionary)] = Dictionary({ index: Array<u32>(), mask: 0, used: 0, live: 0, attrs: Array<u8>() });
     if (this.freeDictionaryCount < this.freeDictionaries.length) {
       this.freeDictionaries[this.freeDictionaryCount] = dictionary;
     } else {
@@ -1287,6 +1351,29 @@ export struct Heap {
     return !isDeleted(this.slot(handle, index));
   }
 
+  // An array's element as a plain read sees it: the value of a present
+  // data element, or the deleted marker for a hole, an accessor, or an
+  // index past the length -- one pass over the header, for the paths that
+  // read elements in place.
+  function dataElement(handle: u32, index: u32): Value {
+    const header = this.headers[usize(handle)];
+    if (index >= header.payload || index >= header.slotCount) return deletedValue();
+    const value = this.slots[usize(header.slotStart + index)];
+    if ((header.flags & FLAG_ELEMENT_ATTRS) != 0 && !isDeleted(value) && (this.elementAttrOf(handle, index) & PROP_ACCESSOR) != 0) return deletedValue();
+    return value;
+  }
+
+  // Whether an array's element is present, writable data: a write in
+  // place is what assignment would do.
+  function writableElement(handle: u32, index: u32): boolean {
+    const header = this.headers[usize(handle)];
+    if (index >= header.payload || index >= header.slotCount) return false;
+    if (isDeleted(this.slots[usize(header.slotStart + index)])) return false;
+    if ((header.flags & FLAG_ELEMENT_ATTRS) == 0) return true;
+    const attr = this.elementAttrOf(handle, index);
+    return (attr & PROP_ACCESSOR) == 0 && (attr & PROP_WRITABLE) != 0;
+  }
+
   function arrayGet(handle: u32, index: u32): Value {
     if (!this.arrayHasIndex(handle, index)) return undefinedValue();
     return this.slot(handle, index);
@@ -1309,7 +1396,8 @@ export struct Heap {
     if (index >= this.headers[usize(handle)].payload) this.headers[usize(handle)].payload = index + 1;
   }
 
-  // Shrinking drops elements; growing exposes holes.
+  // Shrinking drops elements, and their attributes with them; growing
+  // exposes holes.
   function setArrayLength(inout this, handle: u32, length: u32): void {
     const old = this.headers[usize(handle)].payload;
     let index = length;
@@ -1318,6 +1406,12 @@ export struct Heap {
       index = index + 1;
     }
     this.headers[usize(handle)].payload = length;
+    const entry = this.elementAttrEntry(handle);
+    if (entry >= 0) {
+      while (this.elementAttrs[usize(entry)].attrs.length > usize(length)) {
+        const dropped = this.elementAttrs[usize(entry)].attrs.pop();
+      }
+    }
   }
 
   // --- Weak records ---
@@ -2428,12 +2522,134 @@ export struct Heap {
     this.slots[usize(start + index)] = value;
   }
 
+  // A property's attributes, by the slot its value is in: an object's
+  // from its class or its dictionary, an array element's from its
+  // array's table when it has one; the default for anything else.
+  // Kept small, so it inlines where array elements are read: an array
+  // without element attributes answers at once.
   function attrOf(handle: u32, index: u32): u8 {
-    return this.attrs[usize(this.headers[usize(handle)].slotStart + index)];
+    const tag = this.headers[usize(handle)].tag;
+    if (tag == TAG_ARRAY) {
+      if ((this.headers[usize(handle)].flags & FLAG_ELEMENT_ATTRS) == 0) return PROP_DEFAULT;
+      return this.elementAttrOf(handle, index);
+    }
+    if (tag == TAG_OBJECT) return this.objectAttrOf(handle, index);
+    return PROP_DEFAULT;
   }
 
+  function objectAttrOf(handle: u32, index: u32): u8 {
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & DICT_BIT) != 0) return this.pairAttr(payload & (DICT_BIT - 1), (index - 1) / 2);
+    if (usize(index) >= this.classes[usize(payload)].slotAttrs.length) return PROP_DEFAULT;
+    return this.classes[usize(payload)].slotAttrs[usize(index)];
+  }
+
+  function elementAttrOf(handle: u32, index: u32): u8 {
+    const entry = this.elementAttrEntry(handle);
+    if (entry < 0 || usize(index) >= this.elementAttrs[usize(entry)].attrs.length) return PROP_DEFAULT;
+    return this.elementAttrs[usize(entry)].attrs[usize(index)];
+  }
+
+  // Give the property in a slot `attr`. A class-mode object moves to the
+  // class with that property's attributes changed (see classWithAttr).
   function setAttr(inout this, handle: u32, index: u32, attr: u8): void {
-    this.attrs[usize(this.headers[usize(handle)].slotStart + index)] = attr;
+    const tag = this.headers[usize(handle)].tag;
+    if (tag == TAG_OBJECT) {
+      const payload = this.headers[usize(handle)].payload;
+      if ((payload & DICT_BIT) != 0) {
+        this.setPairAttr(payload & (DICT_BIT - 1), (index - 1) / 2, attr);
+        return;
+      }
+      if (usize(index) >= this.classes[usize(payload)].slotAttrs.length) return;
+      if (this.classes[usize(payload)].slotAttrs[usize(index)] == attr) return;
+      this.headers[usize(handle)].payload = this.classWithAttr(payload, index, attr);
+      return;
+    }
+    if (tag == TAG_ARRAY) {
+      let entry = this.elementAttrEntry(handle);
+      if (entry < 0) {
+        if (attr == PROP_DEFAULT) return;
+        entry = this.addElementAttrs(handle);
+      }
+      while (this.elementAttrs[usize(entry)].attrs.length <= usize(index)) {
+        this.elementAttrs[usize(entry)].attrs.push(PROP_DEFAULT);
+      }
+      this.elementAttrs[usize(entry)].attrs[usize(index)] = attr;
+    }
+  }
+
+  // --- Element attributes ---
+
+  function elementAttrHash(handle: u32, mask: usize): usize {
+    return usize(handle.wrappingMultiply(2654435761) >> 7) & mask;
+  }
+
+  // The entry holding an array's element attributes, or -1.
+  function elementAttrEntry(handle: u32): i32 {
+    if ((this.headers[usize(handle)].flags & FLAG_ELEMENT_ATTRS) == 0) return -1;
+    const size = this.elementAttrIndex.length;
+    if (size == 0) return -1;
+    let probe = this.elementAttrHash(handle, size - 1);
+    while (true) {
+      const held = this.elementAttrIndex[probe];
+      if (held == 0) return -1;
+      if (this.elementAttrs[usize(held - 1)].owner == handle) return i32(held - 1);
+      probe = (probe + 1) & (size - 1);
+    }
+    return -1;
+  }
+
+  function addElementAttrs(inout this, handle: u32): i32 {
+    let entry: usize = 0;
+    let found = false;
+    while (entry < this.elementAttrs.length) {
+      if (this.elementAttrs[entry].owner == 0) {
+        found = true;
+        break;
+      }
+      entry = entry + 1;
+    }
+    if (found) {
+      this.elementAttrs[entry] = ElementAttrs({ owner: handle, attrs: Array<u8>() });
+    } else {
+      this.elementAttrs.push(ElementAttrs({ owner: handle, attrs: Array<u8>() }));
+      entry = this.elementAttrs.length - 1;
+    }
+    this.headers[usize(handle)].flags = this.headers[usize(handle)].flags | FLAG_ELEMENT_ATTRS;
+    this.rebuildElementAttrIndex();
+    return i32(entry);
+  }
+
+  function releaseElementAttrs(inout this, handle: u32): void {
+    const entry = this.elementAttrEntry(handle);
+    if (entry < 0) return;
+    this.elementAttrs[usize(entry)] = ElementAttrs({ owner: 0, attrs: Array<u8>() });
+    this.rebuildElementAttrIndex();
+  }
+
+  // The index at least twice the entries, rebuilt over the live ones.
+  function rebuildElementAttrIndex(inout this): void {
+    let size: usize = 8;
+    while (size < this.elementAttrs.length * 2) {
+      size = size * 2;
+    }
+    let index = Array<u32>.withCapacity(size);
+    let k: usize = 0;
+    while (k < size) {
+      index.push(0);
+      k = k + 1;
+    }
+    let entry: usize = 0;
+    while (entry < this.elementAttrs.length) {
+      const owner = this.elementAttrs[entry].owner;
+      if (owner != 0) {
+        let probe = this.elementAttrHash(owner, size - 1);
+        while (index[probe] != 0) { probe = (probe + 1) & (size - 1); }
+        index[probe] = u32(entry + 1);
+      }
+      entry = entry + 1;
+    }
+    this.elementAttrIndex = move index;
   }
 
   function flagsOf(handle: u32): u8 {
@@ -2444,11 +2660,16 @@ export struct Heap {
     this.headers[usize(handle)].flags = flags;
   }
 
-  // Define an own property with attributes, adding it if absent.
+  // Define an own property with attributes, adding it if absent: a new
+  // one takes its attributes in the transition that adds it.
   function objectDefine(inout this, handle: u32, atom: u32, value: Value, attr: u8): void {
-    this.objectSet(handle, atom, value);
-    const slot = this.objectFindSlot(handle, atom);
-    this.setAttr(handle, u32(slot), attr);
+    const existing = this.objectFindSlot(handle, atom);
+    if (existing >= 0) {
+      this.setSlot(handle, u32(existing), value);
+      this.setAttr(handle, u32(existing), attr);
+      return;
+    }
+    this.objectAddWith(handle, atom, value, attr);
   }
 
   // An accessor pair, held in a slot flagged PROP_ACCESSOR.
@@ -2513,16 +2734,16 @@ export struct Heap {
 
   // Headers and slots of the cells the last collection traced.
   function bytesLiveAtLastCollection(): f64 {
-    return f64(this.markedCells) * HEADER_BYTES + f64(this.markedSlots) * 9.0;
+    return f64(this.markedCells) * HEADER_BYTES + f64(this.markedSlots) * 8.0;
   }
 
   // The active arena and the spare one kept to compact into.
   function arenaBytesHeld(): f64 {
-    return f64(this.slots.capacity) * 8.0 + f64(this.attrs.capacity);
+    return f64(this.slots.capacity) * 8.0;
   }
 
   function spareArenaBytesHeld(): f64 {
-    return f64(this.spareSlots.capacity) * 8.0 + f64(this.spareAttrs.capacity);
+    return f64(this.spareSlots.capacity) * 8.0;
   }
 
   // The handle table with its free list and the mark stack.
@@ -2545,16 +2766,23 @@ export struct Heap {
   // Hidden classes, dictionary indexes, and the collector's weak and
   // pending-ephemeron scratch.
   function otherBytesHeld(): f64 {
-    let held: f64 = f64(this.classes.capacity) * 64.0 + f64(this.dictionaries.capacity) * 40.0 + f64(this.freeDictionaries.capacity) * 4.0;
+    let held: f64 = f64(this.classes.capacity) * 112.0 + f64(this.dictionaries.capacity) * 64.0 + f64(this.freeDictionaries.capacity) * 4.0;
     held = held + f64(this.weakRecords.capacity) * 4.0 + f64(this.pendingScratchBytes());
     let index: usize = 0;
     while (index < this.classes.length) {
       held = held + f64(this.classes[index].transitionNames.capacity) * 4.0 + f64(this.classes[index].transitionChildren.capacity) * 4.0;
+      held = held + f64(this.classes[index].transitionAttrs.capacity) + f64(this.classes[index].slotAttrs.capacity);
       index = index + 1;
     }
     index = 0;
     while (index < this.dictionaries.length) {
-      held = held + f64(this.dictionaries[index].index.capacity) * 4.0;
+      held = held + f64(this.dictionaries[index].index.capacity) * 4.0 + f64(this.dictionaries[index].attrs.capacity);
+      index = index + 1;
+    }
+    held = held + f64(this.elementAttrs.capacity) * 32.0 + f64(this.elementAttrIndex.capacity) * 4.0;
+    index = 0;
+    while (index < this.elementAttrs.length) {
+      held = held + f64(this.elementAttrs[index].attrs.capacity);
       index = index + 1;
     }
     held = held + f64(this.tables.capacity) * 104.0 + f64(this.freeTables.capacity) * 4.0;
@@ -2578,7 +2806,7 @@ export struct Heap {
       stringBytes = stringBytes + f64(this.strings[index].length);
       index = index + 1;
     }
-    return f64(this.headerCount) * HEADER_BYTES + f64(this.slots.length) * 9.0 + stringBytes + f64(this.smallBytes.length);
+    return f64(this.headerCount) * HEADER_BYTES + f64(this.slots.length) * 8.0 + stringBytes + f64(this.smallBytes.length);
   }
 }
 
@@ -2598,11 +2826,11 @@ export function createHeap(): Heap {
   let classes = Array<HiddenClass>();
   // Class 0 is the empty root every object starts from.
   classes.push(HiddenClass({
-    parent: 0, transitionName: 0, transitionSlot: 0, propCount: 0,
-    transitionNames: Array<u32>(), transitionChildren: Array<u32>(),
+    parent: 0, transitionName: 0, transitionSlot: 0, propCount: 0, slotAttrs: Array<u8>(),
+    transitionNames: Array<u32>(), transitionAttrs: Array<u8>(), transitionChildren: Array<u32>(),
   }));
   return Heap({
-    headers: move headers, slots: Array<Value>(), attrs: Array<u8>(), spareSlots: Array<Value>(), spareAttrs: Array<u8>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), spareSmallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), spareSlots: Array<Value>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), spareSmallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,

@@ -68,10 +68,7 @@ function hasIndex(inout runtime: Runtime, object: Value, index: f64): boolean {
 // general path.
 function ownElement(in runtime: Runtime, object: Value, index: f64): Value {
   if (!isArrayValue(in runtime, object) || index >= 4294967295.0) return deletedValue();
-  const handle = asCell(object);
-  const at = u32(index);
-  if (!runtime.heap.arrayHasIndex(handle, at) || (runtime.heap.attrOf(handle, at) & PROP_ACCESSOR) != 0) return deletedValue();
-  return runtime.heap.arrayGet(handle, at);
+  return runtime.heap.dataElement(asCell(object), u32(index));
 }
 
 // Set(O, P, V, true).

@@ -461,14 +461,13 @@ export struct Runtime {
           return deletedValue();
         }
       }
-      if ((this.heap.attrOf(handle, slot) & PROP_ACCESSOR) != 0) return deletedValue();
+      // Only data properties are cached, and the class fixes that.
       return this.heap.slot(handle, slot);
     }
     if (cache.kind == CACHE_PROTO) {
       if (this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
       const proto = this.heap.objectProto(handle);
       if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return deletedValue();
-      if ((this.heap.attrOf(proto, cache.slot) & PROP_ACCESSOR) != 0) return deletedValue();
       return this.heap.slot(proto, cache.slot);
     }
     return deletedValue();
@@ -492,7 +491,6 @@ export struct Runtime {
     if (cache.kind != CACHE_INHERITED) return deletedValue();
     const proto = this.inheritingProto(handle);
     if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return deletedValue();
-    if ((this.heap.attrOf(proto, cache.slot) & PROP_ACCESSOR) != 0) return deletedValue();
     return this.heap.slot(proto, cache.slot);
   }
 
@@ -501,8 +499,10 @@ export struct Runtime {
     if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return;
     const inherited = this.heap.objectFindSlot(proto, atom);
     if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
+    const inheritedAttr = this.heap.attrOf(proto, u32(inherited));
+    if ((inheritedAttr & PROP_ACCESSOR) != 0) return;
     const protoClass = this.heap.objectClass(proto);
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_INHERITED, depth: 1, receiverClass: 0, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_INHERITED, attr: inheritedAttr, depth: 1, receiverClass: 0, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
@@ -511,6 +511,9 @@ export struct Runtime {
     const own = this.heap.objectFindSlot(handle, atom);
     if (own >= 0) {
       if (isDeleted(this.heap.slot(handle, u32(own)))) return;
+      // An accessor is not cached: a hit reads the slot as data.
+      const ownAttr = this.heap.attrOf(handle, u32(own));
+      if ((ownAttr & PROP_ACCESSOR) != 0) return;
       if (this.functions[usize(fi)].caches[nameSlot].kind == CACHE_OWN && this.functions[usize(fi)].caches[nameSlot].receiverClass != receiverClass) {
         // Another shape at an own-property site: kept beside the first.
         let cache = this.functions[usize(fi)].caches[nameSlot];
@@ -530,15 +533,17 @@ export struct Runtime {
         this.functions[usize(fi)].caches[nameSlot] = cache;
         return;
       }
-      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, attr: ownAttr, depth: 0, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
       return;
     }
     const proto = this.heap.objectProto(handle);
     if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return;
     const inherited = this.heap.objectFindSlot(proto, atom);
     if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
+    const inheritedAttr = this.heap.attrOf(proto, u32(inherited));
+    if ((inheritedAttr & PROP_ACCESSOR) != 0) return;
     const protoClass = this.heap.objectClass(proto);
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, depth: 1, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, attr: inheritedAttr, depth: 1, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   // A cached store; false for a miss.
@@ -546,8 +551,7 @@ export struct Runtime {
     const cache = this.functions[usize(fi)].caches[nameSlot];
     if (cache.kind == CACHE_OWN) {
       if (this.heap.objectClass(handle) != cache.receiverClass) return false;
-      const attr = this.heap.attrOf(handle, cache.slot);
-      if ((attr & PROP_ACCESSOR) != 0 || (attr & PROP_WRITABLE) == 0) return false;
+      if ((cache.attr & PROP_ACCESSOR) != 0 || (cache.attr & PROP_WRITABLE) == 0) return false;
       if (isDeleted(this.heap.slot(handle, cache.slot))) return false;
       this.heap.setSlot(handle, cache.slot, value);
       return true;
@@ -587,7 +591,7 @@ export struct Runtime {
     if (classAfter == classBefore || !this.heap.isTransitionOf(classAfter, classBefore, atom)) return;
     const slot = this.heap.objectFindSlot(handle, atom);
     if (slot < 0) return;
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_DEFINE, depth: 0, receiverClass: classBefore, slot: u32(slot), targetClass: classAfter, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_DEFINE, attr: 0, depth: 0, receiverClass: classBefore, slot: u32(slot), targetClass: classAfter, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   // After a slow-path store on an object: remember an own writable data
@@ -602,7 +606,7 @@ export struct Runtime {
     if (isDeleted(this.heap.slot(handle, u32(own)))) return;
     const classAfter = this.heap.objectClass(handle);
     if (classAfter == classBefore) {
-      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, depth: 0, receiverClass: classAfter, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, attr: attr, depth: 0, receiverClass: classAfter, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
       return;
     }
     if (!this.heap.isTransitionOf(classAfter, classBefore, atom)) return;
@@ -627,7 +631,7 @@ export struct Runtime {
       proto = this.heap.objectProto(proto);
     }
     if (proto != 0) return;
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, depth: depth, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, attr: 0, depth: depth, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   function functionValue(inout this, index: u32): Value {
@@ -2673,6 +2677,8 @@ export struct Runtime {
         if (this.heap.arrayHasIndex(handle, u32(index))) {
           if ((this.heap.attrOf(handle, u32(index)) & PROP_CONFIGURABLE) == 0) return false;
           this.heap.setSlot(handle, u32(index), deletedValue());
+          // An element added here later is a new property.
+          this.heap.setAttr(handle, u32(index), PROP_DEFAULT);
         }
         return true;
       }
@@ -4856,12 +4862,12 @@ export struct Runtime {
       this.heap.setAttr(cookedArray, index, PROP_ENUMERABLE);
       index = index + 1;
     }
-    this.heap.setFlags(rawArray, FLAG_NON_EXTENSIBLE | FLAG_LENGTH_READONLY);
+    this.heap.setFlags(rawArray, this.heap.flagsOf(rawArray) | FLAG_NON_EXTENSIBLE | FLAG_LENGTH_READONLY);
     const rawText: String = "raw";
     const rawAtom = this.atomOf(in rawText);
     const bag = this.arrayBag(cookedArray);
     this.heap.objectDefine(bag, rawAtom, cellValue(rawArray), PROP_NONE);
-    this.heap.setFlags(cookedArray, FLAG_NON_EXTENSIBLE | FLAG_LENGTH_READONLY);
+    this.heap.setFlags(cookedArray, this.heap.flagsOf(cookedArray) | FLAG_NON_EXTENSIBLE | FLAG_LENGTH_READONLY);
     this.popTempRoot();
     this.popTempRoot();
     return cellValue(cookedArray);
@@ -7131,9 +7137,7 @@ export struct Runtime {
             let direct = deletedValue();
             if (isInt32(key) && asInt32(key) >= 0 && isCell(object) && asCell(object) != 0 && this.heap.isArray(asCell(object))) {
               const index = u32(asInt32(key));
-              if (this.heap.arrayHasIndex(asCell(object), index) && (this.heap.attrOf(asCell(object), index) & PROP_ACCESSOR) == 0) {
-                direct = this.heap.slot(asCell(object), index);
-              }
+              direct = this.heap.dataElement(asCell(object), index);
             }
             if (!isDeleted(direct)) {
               this.setReg(base, inst.a, direct);
@@ -7165,12 +7169,9 @@ export struct Runtime {
             let stored = false;
             if (isInt32(key) && asInt32(key) >= 0 && isCell(object) && asCell(object) != 0 && this.heap.isArray(asCell(object))) {
               const index = u32(asInt32(key));
-              if (this.heap.arrayHasIndex(asCell(object), index)) {
-                const attr = this.heap.attrOf(asCell(object), index);
-                if ((attr & PROP_ACCESSOR) == 0 && (attr & PROP_WRITABLE) != 0) {
-                  this.heap.setSlot(asCell(object), index, value);
-                  stored = true;
-                }
+              if (this.heap.writableElement(asCell(object), index)) {
+                this.heap.setSlot(asCell(object), index, value);
+                stored = true;
               }
             }
             if (stored) {

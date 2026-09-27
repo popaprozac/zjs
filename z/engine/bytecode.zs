@@ -463,6 +463,9 @@ export const CACHE_DEFINE: u8 = 5;
 export struct PropertyCache {
   kind: u8;
   depth: u8;
+  // The attributes of the property the first entry found, fixed by its
+  // class: a hit needs no attribute check.
+  attr: u8;
   receiverClass: u32;
   slot: u32;
   targetClass: u32;
@@ -484,7 +487,7 @@ export struct PropertyCache {
 }
 
 export function emptyCache(): PropertyCache {
-  return PropertyCache({ kind: CACHE_EMPTY, depth: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+  return PropertyCache({ kind: CACHE_EMPTY, attr: 0, depth: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
 }
 
 // One compiled function. Fields beyond the code and constants are added

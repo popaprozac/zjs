@@ -246,6 +246,9 @@ export struct Compiler {
   // Interned names for LoadProp / StoreProp; the instruction carries an
   // index into this table.
   propertyNames: Array<u32>;
+  // Name slots a single instruction site owns (see siteNameSlot), which a
+  // search for a shared slot skips.
+  siteOwned: Array<boolean>;
 
   // --- Emission ---
 
@@ -1997,11 +2000,23 @@ export struct Compiler {
   function freeNameSlot(inout this, atom: u32): i32 {
     let index: usize = 0;
     while (index < this.propertyNames.length) {
-      if (this.propertyNames[index] == atom) return i32(index);
+      if (this.propertyNames[index] == atom && !this.siteOwned[index]) return i32(index);
       index = index + 1;
     }
     if (this.propertyNames.length >= 256) return -1;
     this.propertyNames.push(atom);
+    this.siteOwned.push(false);
+    return i32(this.propertyNames.length - 1);
+  }
+
+  // A name slot of its own for one instruction site, whose cache then
+  // belongs to that site alone: a literal's property keeps its
+  // transition even when the same name is read elsewhere in the function
+  // (reads and writes of one name share a slot, and its cache).
+  function siteNameSlot(inout this, atom: u32): i32 {
+    if (this.propertyNames.length >= 256) return -1;
+    this.propertyNames.push(atom);
+    this.siteOwned.push(true);
     return i32(this.propertyNames.length - 1);
   }
 
@@ -2664,7 +2679,7 @@ export struct Compiler {
           // A data property's name rides in the instruction, through the
           // site's cache, while the function has name slots to spare.
           const accessor = property.op == TokenKind.kwGet || property.op == TokenKind.kwSet;
-          if (!accessor && this.propertyNames.length < 128) named = this.freeNameSlot(atom);
+          if (!accessor && this.propertyNames.length < 128) named = this.siteNameSlot(atom);
           if (named < 0) key = this.emitKey(atom);
           let prefix: u32 = 0;
           if (property.op == TokenKind.kwGet) prefix = 1;
@@ -4545,7 +4560,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
   compiler.isArrow = n.kind == NodeKind.arrowFunc;
@@ -5421,7 +5436,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
-    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(),
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));
