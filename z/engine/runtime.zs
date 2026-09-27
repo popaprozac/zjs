@@ -4780,16 +4780,23 @@ export struct Runtime {
     const paramCount = this.functions[usize(functionIndex)].paramCount;
     if (regCount < paramCount) regCount = paramCount;
     const base = this.regTop;
-    const needed = usize(base + regCount);
-    while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    // Indices in usize, where a sum of two u32s cannot overflow.
+    const top = usize(base) + usize(regCount);
+    while (this.regStack.length < top) { this.regStack.push(undefinedValue()); }
     // The arguments lie below the stack top, so below `base`.
     const copied = argc < paramCount ? argc : paramCount;
-    let i: u32 = 0;
-    while (i < copied) {
-      const passed = this.regStack[usize(argsBase + i)];
-      this.regStack[usize(base + i)] = passed;
-      i = i + 1;
+    let source = usize(argsBase);
+    let target = usize(base);
+    const copiedEnd = target + usize(copied);
+    while (target < copiedEnd) {
+      const passed = this.regStack[source];
+      this.regStack[target] = passed;
+      source = source + 1;
+      target = target + 1;
     }
+    // Counted in u32 as the frame is: in usize, clang makes this loop a
+    // library call, slower for the few registers a frame has.
+    let i = copied;
     while (i < regCount) {
       this.regStack[usize(base + i)] = undefinedValue();
       i = i + 1;
@@ -7173,6 +7180,34 @@ export struct Runtime {
           }
           returnOp => {
             let value = this.reg(base, inst.a);
+            // An ordinary call's frame, with no generator to finish and no
+            // object under construction: popped field by field.
+            if (this.frames[frameIndex].generator == 0 && isUndefined(this.frames[frameIndex].constructThis)) {
+              const returnDst = this.frames[frameIndex].returnDst;
+              this.hostThis = this.frames[frameIndex].savedThis;
+              const tryDepthAtEntry = this.frames[frameIndex].tryDepthAtEntry;
+              if (this.tryDepth > tryDepthAtEntry) this.tryDepth = tryDepthAtEntry;
+              this.frameCount = this.frameCount - 1;
+              this.regTop = base;
+              if (this.heap.shouldCollect()) {
+                this.setReg(base, 0, value);
+                this.regTop = base + 1;
+                this.collectGarbage();
+                this.regTop = base;
+              }
+              if (this.frameCount <= entryDepth) {
+                result = value;
+                returned = true;
+                break;
+              }
+              frameIndex = usize(this.frameCount - 1);
+              fi = this.frames[frameIndex].functionIndex;
+              base = this.frames[frameIndex].regsBase;
+              ip = this.frames[frameIndex].ip;
+              codeStart = usize(this.functions[usize(fi)].codeStart);
+              this.setReg(base, returnDst, value);
+              continue;
+            }
             const frame = this.popFrame();
             if (frame.generator != 0) {
               this.completeGenerator(frame.generator);

@@ -121,7 +121,17 @@ the dispatch loop instead of leaving it to reload the frame (closures
 -20%, calls -7%). Measured 2026-09-26, callbacks from built-ins are not
 the gap (`map` and `forEach` level with QuickJS, `sort` 1.2x); a plain
 call is (1.7x QuickJS). In `fib` the frame protocol (enter, open, pop)
-is about a quarter of the time.
+is about a quarter of the time. Then (2026-09-27): a return from an
+ordinary call (no generator, no object under construction) pops its
+frame field by field instead of copying the whole record out, and a
+frame's arguments are copied with indices clang can prove in range. In
+cycles averaged over eight placements: calls -7.1%, arrays -2.7%
+(map/filter/reduce -3.9%), closures -2.0%, maps, properties, regexp
+-1%, allocation +2.7% and json +1.0% (both within their placement
+spread); a `forEach` whose callback is one instruction +7.7%, since a
+nested dispatch loop entered and left that quickly stalls on its own
+epilogue. Measured then: a call and return cost about 40 cycles here,
+28 in QuickJS, 35 in JavaScriptCore's interpreter.
 
 The dispatch loop's shape belongs to this lever too. It is one large
 function in the generated C, and the C compiler's register allocation
