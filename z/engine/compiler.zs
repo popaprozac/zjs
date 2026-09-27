@@ -324,6 +324,40 @@ export struct Compiler {
     return this.emit(instAI16(Op.jmpIfFalse, condition, 0));
   }
 
+  // A jump back to `target` taken when a condition is true: a loop's
+  // test at its bottom, fused like emitBranchIfFalse's, with d = 1.
+  function emitBranchBackIfTrue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, target: u32): void {
+    let current = node;
+    while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+      current = parser.ast.node(current).left;
+    }
+    if (current != NO_NODE && parser.ast.node(current).kind == NodeKind.binary) {
+      const n = parser.ast.node(current);
+      const compare = binaryOp(n.op);
+      const fused = fusedBranch(compare);
+      if (fused != Op.halt) {
+        const immediate = branchImmediate(in parser, n.right);
+        if (immediate != NO_BRANCH_IMMEDIATE) {
+          const operand = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+          const bits = u32(i64(immediate) & 0xFFFFFF);
+          const low = u16(bits & 0xFFFF);
+          this.emit(instABCD(fusedImmediateBranch(compare), operand, u8(low & 0xFF), u8(low >> 8), 1));
+          const here = i32(this.code.length);
+          this.emit(instAI16(Op.halt, u8(bits >> 16), i32(target) - (here + 1)));
+          return;
+        }
+        const left = this.compileOperand(in parser, inout runtime, n.left, n.right);
+        const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+        this.emit(instABCD(fused, left, right, 0, 1));
+        const here = i32(this.code.length);
+        this.emit(instAI16(Op.halt, 0, i32(target) - (here + 1)));
+        return;
+      }
+    }
+    const condition = this.compileOperand(in parser, inout runtime, node, NO_NODE);
+    this.emitJumpBackIf(Op.jmpIfTrue, condition, target);
+  }
+
   function isConditional(in parser: Parser, node: u32): boolean {
     let current = node;
     while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
@@ -4190,15 +4224,18 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.whileStmt) {
+      // The test at the bottom, entered by a jump: one branch an
+      // iteration, not a test and a jump back.
       this.resetCompletion();
-      const loopTop = u32(this.code.length);
       this.loopPush(true);
-      this.loopSetContinue(loopTop);
-      const jumpExit = this.emitBranchIfFalse(in parser, inout runtime, n.left);
+      const jumpTest = this.emit(instI16(Op.jmp, 0));
+      const bodyTop = u32(this.code.length);
       this.resetTemps();
       this.compileStmt(in parser, inout runtime, n.right);
-      this.emitJumpBack(loopTop);
-      this.patchJump(jumpExit);
+      this.patchJump(jumpTest);
+      this.loopSetContinue(u32(this.code.length));
+      this.emitBranchBackIfTrue(in parser, inout runtime, n.left, bodyTop);
+      this.resetTemps();
       this.loopPop();
       return;
     }
@@ -4241,14 +4278,13 @@ export struct Compiler {
       }
       if (this.hadError) return;
       if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
+      // As a while loop, the test at the bottom.
       this.resetCompletion();
-      const loopTop = u32(this.code.length);
       this.loopPush(true);
-      let jumpExit: i32 = -1;
-      if (n.right != NO_NODE) {
-        jumpExit = i32(this.emitBranchIfFalse(in parser, inout runtime, n.right));
-        this.resetTemps();
-      }
+      let jumpTest: i32 = -1;
+      if (n.right != NO_NODE) jumpTest = i32(this.emit(instI16(Op.jmp, 0)));
+      const bodyTop = u32(this.code.length);
+      this.resetTemps();
       if (n.childrenCount > 0) this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
       const bound5 = u32(this.code.length);
       this.loopSetContinue(bound5);
@@ -4258,8 +4294,13 @@ export struct Compiler {
         const unused = this.compileExpr(in parser, inout runtime, n.third);
         this.resetTemps();
       }
-      this.emitJumpBack(loopTop);
-      if (jumpExit >= 0) this.patchJump(u32(jumpExit));
+      if (jumpTest >= 0) {
+        this.patchJump(u32(jumpTest));
+        this.emitBranchBackIfTrue(in parser, inout runtime, n.right, bodyTop);
+        this.resetTemps();
+      } else {
+        this.emitJumpBack(bodyTop);
+      }
       this.loopPop();
       if (captures.length > 0) this.leaveIterationEnv(iterReg, in captures, in saved);
       this.closeScope(in mark);

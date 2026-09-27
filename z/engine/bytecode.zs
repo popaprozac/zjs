@@ -66,6 +66,10 @@ export enum Op {
   jmpIfFalse,
   jmpIfNotNullish,
   jmpIfNullish,
+  // a and b (or a and a 24-bit literal, its low 16 bits in b and c and
+  // its top 8 in the next word's a) compared, the offset in the next
+  // word's bc: jumps when the comparison is false, or with d = 1 when it
+  // is true (a loop's test at its bottom).
   jmpIfNotLt,
   jmpIfNotLe,
   jmpIfNotGt,

@@ -15,7 +15,7 @@ import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, i
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -421,8 +421,13 @@ export struct Runtime {
 
   // Reserve a function index before its body is compiled, so a named
   // function expression can refer to itself; fill it in afterwards.
+  // Until then it runs the stub at the start of the code segment, which
+  // returns undefined.
   function reserveFunction(inout this): u32 {
-    this.functions.push(createFunctionCode());
+    let placeholder = createFunctionCode();
+    placeholder.codeLength = 2;
+    placeholder.registerCount = 1;
+    this.functions.push(move placeholder);
     return u32(this.functions.length - 1);
   }
 
@@ -6493,26 +6498,65 @@ export struct Runtime {
     return ColdStep({ ip: ip, returned: returned, result: result });
   }
 
+  // A loop's back edge is a safe point too, so a program that allocates
+  // without calling collects all the same.
+  function backEdge(inout this, frameIndex: usize, ip: usize): void {
+    if (this.heap.shouldCollect()) {
+      this.frames[frameIndex].ip = ip;
+      this.collectGarbage();
+    }
+  }
+
   // The dispatch loop, until the frame stack is back to `entryDepth`.
   function runFrames(inout this, entryDepth: u32): RunResult {
     let result = undefinedValue();
-    while (this.frameCount > entryDepth) {
+    // A throw pending on entry is thrown into the running frame.
+    let throwing = false;
+    let thrown = undefinedValue();
+    if (this.pendingThrow && this.frameCount > entryDepth) {
+      thrown = this.takePending();
+      throwing = true;
+    }
+    while (true) {
+      if (throwing) {
+        // Unwind to the nearest handler, popping frames as needed. The
+        // handler's frame resumes at its catch block with the value in
+        // the catch register; with no handler left, the throw escapes.
+        let caught = false;
+        while (!caught && this.frameCount > entryDepth) {
+          const top = this.frameCount - 1;
+          if (this.tryDepth > 0 && this.tryStack[usize(this.tryDepth - 1)].frameIndex == top) {
+            const handler = this.tryStack[usize(this.tryDepth - 1)];
+            this.frames[usize(top)].ip = handler.catchIp;
+            this.frames[usize(top)].env = handler.env;
+            const handlerBase = this.frames[usize(top)].regsBase;
+            this.setReg(handlerBase, handler.catchReg, thrown);
+            this.tryDepth = this.tryDepth - 1;
+            caught = true;
+          } else {
+            const generator = this.frames[usize(top)].generator;
+            if (generator != 0) this.completeGenerator(generator);
+            this.popFrame();
+          }
+        }
+        if (!caught) {
+          this.lastResult = thrown;
+          return RunResult({ isThrow: true, value: thrown });
+        }
+        throwing = false;
+      }
+      if (this.frameCount <= entryDepth) break;
       // The running frame's state, reloaded here after a throw or a
       // generator's switch, and in place by an ordinary call or return.
       let frameIndex = usize(this.frameCount - 1);
       let fi = this.frames[frameIndex].functionIndex;
       let base = this.frames[frameIndex].regsBase;
       let ip = this.frames[frameIndex].ip;
-      let codeLength = usize(this.functions[usize(fi)].codeLength);
       let codeStart = usize(this.functions[usize(fi)].codeStart);
       let returned = false;
-      let throwing = false;
-      let thrown = undefinedValue();
-      if (this.pendingThrow) {
-        thrown = this.takePending();
-        throwing = true;
-      }
-      while (ip < codeLength && !returned && !throwing) {
+      // Every function's code ends in a return, so the loop is left only
+      // by a return or a throw, from the instruction that does it.
+      while (true) {
         const inst = this.codeSegment[codeStart.wrappingAdd(ip)];
         ip = ip.wrappingAdd(1);
         const op = inst.op;
@@ -6567,6 +6611,7 @@ export struct Runtime {
               const operand3 = this.globals[slot].value;
               this.setReg(base, inst.a, operand3);
             }
+            if (returned || throwing) break;
           }
           add => {
             const rawLeft = this.reg(base, inst.b);
@@ -6583,6 +6628,7 @@ export struct Runtime {
                 this.setReg(base, inst.a, sum);
               }
             }
+            if (returned || throwing) break;
           }
           // An operand and a small integer in the instruction (c, as i8).
           addImm => {
@@ -6599,6 +6645,7 @@ export struct Runtime {
                 this.setReg(base, inst.a, sum);
               }
             }
+            if (returned || throwing) break;
           }
           subImm => {
             const rawLeft = this.reg(base, inst.b);
@@ -6610,6 +6657,7 @@ export struct Runtime {
             } else {
               this.setReg(base, inst.a, numericSub(left, immediate));
             }
+            if (returned || throwing) break;
           }
           cmpLtImm => {
             const operandB = this.reg(base, inst.b);
@@ -6647,16 +6695,20 @@ export struct Runtime {
               this.setReg(base, inst.a, booleanValue(this.lessThan(int32Value(immediate), operandB, true)));
             }
           }
-          // Compare and jump when the comparison is false; the offset is
-          // the next word's bc, relative to the instruction after it. Two
-          // int32s compare in place.
+          // Compare and jump when the comparison is false, or with d = 1
+          // when it is true; the offset is the next word's bc, relative to
+          // the instruction after it. Two int32s compare in place.
           jmpIfNotLt => {
             const left = this.reg(base, inst.a);
             const right = this.reg(base, inst.b);
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) < asInt32(right) : this.lessThan(left, right, false);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfNotLe => {
             const left = this.reg(base, inst.a);
@@ -6664,7 +6716,11 @@ export struct Runtime {
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) <= asInt32(right) : this.lessThan(left, right, true);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfNotGt => {
             const left = this.reg(base, inst.a);
@@ -6672,7 +6728,11 @@ export struct Runtime {
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) > asInt32(right) : this.greaterThan(left, right, false);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfNotGe => {
             const left = this.reg(base, inst.a);
@@ -6680,7 +6740,11 @@ export struct Runtime {
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) >= asInt32(right) : this.greaterThan(left, right, true);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfNotLtImm => {
             const left = this.reg(base, inst.a);
@@ -6688,7 +6752,11 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) < immediate : this.lessThan(left, int32Value(immediate), false);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfNotLeImm => {
             const left = this.reg(base, inst.a);
@@ -6696,7 +6764,11 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) <= immediate : this.lessThan(left, int32Value(immediate), true);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfNotGtImm => {
             const left = this.reg(base, inst.a);
@@ -6704,7 +6776,11 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) > immediate : this.lessThan(int32Value(immediate), left, false);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfNotGeImm => {
             const left = this.reg(base, inst.a);
@@ -6712,7 +6788,11 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) >= immediate : this.lessThan(int32Value(immediate), left, true);
-            if (!holds) ip = usize(i64(ip) + i64(bcI16(word)));
+            if (holds == (inst.d != 0)) {
+              const offset = bcI16(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           // ++ and -- on a value: ToNumeric first, so a string counts.
           inc => {
@@ -6728,6 +6808,7 @@ export struct Runtime {
                 this.setReg(base, inst.a, numericAdd(number, int32Value(1)));
               }
             }
+            if (returned || throwing) break;
           }
           dec => {
             const operandB = this.reg(base, inst.b);
@@ -6742,6 +6823,7 @@ export struct Runtime {
                 this.setReg(base, inst.a, numericSub(number, int32Value(1)));
               }
             }
+            if (returned || throwing) break;
           }
           toNumeric => {
             const operandB = this.reg(base, inst.b);
@@ -6752,6 +6834,7 @@ export struct Runtime {
             } else {
               this.setReg(base, inst.a, number);
             }
+            if (returned || throwing) break;
           }
           // Two int32s, the loop-counter case, compare without a call.
           cmpLt => {
@@ -6797,18 +6880,17 @@ export struct Runtime {
           jmp => {
             const offset = bcI16(inst);
             ip = usize(i64(ip) + i64(offset));
-            // A loop's back edge is a safe point too, so a program that
-            // allocates without calling collects all the same.
-            if (offset < 0 && this.heap.shouldCollect()) {
-              this.frames[frameIndex].ip = ip;
-              this.collectGarbage();
-            }
+            if (offset < 0) this.backEdge(frameIndex, ip);
           }
           // A boolean, what a comparison leaves, branches without a call.
           jmpIfTrue => {
             const operandA = this.reg(base, inst.a);
             const taken = isBoolean(operandA) ? isTrue(operandA) : this.toBooleanValue(operandA);
-            if (taken) ip = usize(i64(ip) + i64(bcI16(inst)));
+            if (taken) {
+              const offset = bcI16(inst);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0) this.backEdge(frameIndex, ip);
+            }
           }
           jmpIfFalse => {
             const operandA = this.reg(base, inst.a);
@@ -6995,7 +7077,6 @@ export struct Runtime {
                 fi = this.frames[frameIndex].functionIndex;
                 base = this.frames[frameIndex].regsBase;
                 ip = 0;
-                codeLength = usize(this.functions[usize(fi)].codeLength);
                 codeStart = usize(this.functions[usize(fi)].codeStart);
               } else {
                 thrown = this.takePending();
@@ -7015,6 +7096,7 @@ export struct Runtime {
               thrown = this.typeError(in message);
               throwing = true;
             }
+            if (returned || throwing) break;
           }
           methodInvoke => {
             // Callee at b, receiver at c, d arguments from b + 2.
@@ -7030,7 +7112,6 @@ export struct Runtime {
                 fi = this.frames[frameIndex].functionIndex;
                 base = this.frames[frameIndex].regsBase;
                 ip = 0;
-                codeLength = usize(this.functions[usize(fi)].codeLength);
                 codeStart = usize(this.functions[usize(fi)].codeStart);
               } else {
                 thrown = this.takePending();
@@ -7050,6 +7131,7 @@ export struct Runtime {
               thrown = this.typeError(in message);
               throwing = true;
             }
+            if (returned || throwing) break;
           }
           newInvoke => {
             // Construct: a fresh object whose prototype is the callee's
@@ -7069,7 +7151,6 @@ export struct Runtime {
                 fi = this.frames[frameIndex].functionIndex;
                 base = this.frames[frameIndex].regsBase;
                 ip = 0;
-                codeLength = usize(this.functions[usize(fi)].codeLength);
                 codeStart = usize(this.functions[usize(fi)].codeStart);
               } else {
                 thrown = this.takePending();
@@ -7088,6 +7169,7 @@ export struct Runtime {
               thrown = this.typeError(in message);
               throwing = true;
             }
+            if (returned || throwing) break;
           }
           returnOp => {
             let value = this.reg(base, inst.a);
@@ -7143,10 +7225,10 @@ export struct Runtime {
                 fi = this.frames[callerIndex].functionIndex;
                 base = callerBase;
                 ip = this.frames[callerIndex].ip;
-                codeLength = usize(this.functions[usize(fi)].codeLength);
                 codeStart = usize(this.functions[usize(fi)].codeStart);
               }
             }
+            if (returned || throwing) break;
           }
           newObject => {
             const objectProto = this.objectProto;
@@ -7234,6 +7316,7 @@ export struct Runtime {
                 }
               }
             }
+            if (returned || throwing) break;
           }
           storeProp => {
             const object = this.reg(base, inst.a);
@@ -7261,6 +7344,7 @@ export struct Runtime {
                 }
               }
             }
+            if (returned || throwing) break;
           }
           loadElem => {
             const object = this.reg(base, inst.b);
@@ -7292,6 +7376,7 @@ export struct Runtime {
                 this.setReg(base, inst.a, found);
               }
             }
+            if (returned || throwing) break;
           }
           storeElem => {
             const object = this.reg(base, inst.a);
@@ -7327,6 +7412,7 @@ export struct Runtime {
                 throwing = true;
               }
             }
+            if (returned || throwing) break;
           }
           defineNamed => {
             // An object literal's property named at compile time: the
@@ -7368,6 +7454,7 @@ export struct Runtime {
             } else {
               this.setReg(base, inst.a, current);
             }
+            if (returned || throwing) break;
           }
           typeofOp => {
             const operand = this.reg(base, inst.b);
@@ -7394,6 +7481,7 @@ export struct Runtime {
               const present = this.hasProperty(object, key);
               this.setReg(base, inst.a, booleanValue(present));
             }
+            if (returned || throwing) break;
           }
           instanceofOp => {
             const value = this.reg(base, inst.b);
@@ -7405,6 +7493,7 @@ export struct Runtime {
             } else {
               this.setReg(base, inst.a, booleanValue(found));
             }
+            if (returned || throwing) break;
           }
           iterPrepare => {
             const source = this.reg(base, inst.b);
@@ -7513,6 +7602,7 @@ export struct Runtime {
               thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
               throwing = true;
             }
+            if (returned || throwing) break;
           }
           envToReg => {
             const env = this.frames[frameIndex].env;
@@ -7546,43 +7636,16 @@ export struct Runtime {
               returned = true;
               result = step.result;
             }
+            if (returned || throwing) break;
           }
         }
         // A coercion inside any handler may have raised (a Symbol in
         // arithmetic, a throwing valueOf); it surfaces here.
-        if (this.pendingThrow && !throwing) {
+        if (this.pendingThrow) {
           thrown = this.takePending();
           throwing = true;
+          break;
         }
-      }
-      if (throwing) {
-        // Unwind to the nearest handler, popping frames as needed. The
-        // handler's frame resumes at its catch block with the value in
-        // the catch register; with no handler left, the throw escapes.
-        let caught = false;
-        while (!caught && this.frameCount > entryDepth) {
-          const top = this.frameCount - 1;
-          if (this.tryDepth > 0 && this.tryStack[usize(this.tryDepth - 1)].frameIndex == top) {
-            const handler = this.tryStack[usize(this.tryDepth - 1)];
-            this.frames[usize(top)].ip = handler.catchIp;
-            this.frames[usize(top)].env = handler.env;
-            const handlerBase = this.frames[usize(top)].regsBase;
-            this.setReg(handlerBase, handler.catchReg, thrown);
-            this.tryDepth = this.tryDepth - 1;
-            caught = true;
-          } else {
-            const generator = this.frames[usize(top)].generator;
-            if (generator != 0) this.completeGenerator(generator);
-            this.popFrame();
-          }
-        }
-        if (!caught) {
-          this.lastResult = thrown;
-          return RunResult({ isThrow: true, value: thrown });
-        }
-      } else if (!returned) {
-        // Fell off the end without Return: pop and yield undefined.
-        this.popFrame();
       }
     }
     this.lastResult = result;
@@ -7656,6 +7719,9 @@ export function createRuntime(): Runtime {
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });
+  // The code a reserved function runs until its own is installed.
+  runtime.codeSegment.push(instA(Op.loadUndefined, 0));
+  runtime.codeSegment.push(instA(Op.returnOp, 0));
   runtime.installIntrinsics();
   runtime.registerSharedHost(HOST_PROMISE_RESOLVE, promiseResolveFunction);
   runtime.registerSharedHost(HOST_PROMISE_REJECT, promiseRejectFunction);

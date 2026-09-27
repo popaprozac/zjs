@@ -40,7 +40,7 @@ is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
-| Bytecode quality | all | about even | 1-2 days | calls and stores done |
+| Bytecode quality | all | about even | 1-2 days | calls, stores, loops done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp done; arrays next |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
@@ -163,6 +163,20 @@ argument, which still goes to its block. Fused branches for equality
 written and measured: the four new arms in the dispatch loop cost the
 kernels 1-3% (calls, closures, properties), more than they saved where
 equality is tested, so they wait for the loop's restructuring.
+Loops (2026-09-27): `while` and `for` test their condition at the
+bottom, entered by one jump, so an iteration runs one compare-and-branch
+where it ran a test and a jump back (that jump was 6% of the instructions
+dispatched over the kernels). The fused branches take a flag in the
+spare byte to jump when the comparison holds, so no arm was added, and a
+backward branch taken is a safe point as the jump was. The dispatch loop
+is left only by the instruction that returns or throws, rather than
+testing for either, and for the end of the code, after every
+instruction. Over the kernels, in cycles averaged over eight placements
+of the dispatch loop's code (a change to one arm moves every other, and
+one placement alone swung a kernel by up to 12%): allocation -8.0%,
+polymorphic -7.5%, properties -3.9%, closures -3.3%, arrays -2.3%,
+strings -1.9%, json -1.4%, calls +1.3% (no loops; its branch now tests
+the flag), regexp +2.3%.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
