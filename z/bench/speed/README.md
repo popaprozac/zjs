@@ -10,6 +10,7 @@ kernels are how that is tracked.
 | `kernels/` | One program per kind of work. Each ends by assigning `result`; the runner prints it, and an engine whose checksum differs from the Z engine's gets no time. |
 | `run.py` | Runs every engine present, median of `RUNS` (default 5) interleaved runs less that engine's startup, and prints a table; with a path, also writes JSON. |
 | `results/` | Recorded runs, with the date, the load average, and each engine's startup. |
+| `placements.py` | Two builds of the Z engine compared in cycles over eight placements of the dispatch loop's code, for changes smaller than what one placement swings (up to 10% a kernel). |
 
 Engines, each measured only when present:
 
