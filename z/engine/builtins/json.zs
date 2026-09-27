@@ -398,14 +398,27 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
   return undefinedValue();
 }
 
-// InternalizeJSONProperty: the reviver walks the result bottom-up.
+// InternalizeJSONProperty: the reviver walks the result bottom-up. The
+// holder, the key, the value, and the value's keys are rooted while the
+// reviver runs, since a collection may come in any call.
 function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Value): Value {
+  const mark = runtime.tempRoots.length;
+  runtime.pushTempRoot(holder);
+  runtime.pushTempRoot(key);
   const value = runtime.getProperty(holder, key);
-  if (runtime.pendingThrow) return undefinedValue();
+  if (runtime.pendingThrow) {
+    runtime.popTempRootsTo(mark);
+    return undefinedValue();
+  }
   if (runtime.isObjectLike(value)) {
     runtime.pushTempRoot(value);
     const keys = runtime.ownKeys(value);
     let index: usize = 0;
+    while (index < keys.length) {
+      runtime.pushTempRoot(keys[index]);
+      index = index + 1;
+    }
+    index = 0;
     while (index < keys.length) {
       const childKey = keys[index];
       if (runtime.isStringValue(childKey)) {
@@ -413,7 +426,7 @@ function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Valu
         if (desc.present && (desc.attr & PROP_ENUMERABLE) != 0) {
           const revived = revive(inout runtime, value, childKey, reviver);
           if (runtime.pendingThrow) {
-            runtime.popTempRoot();
+            runtime.popTempRootsTo(mark);
             return undefinedValue();
           }
           if (isUndefined(revived)) {
@@ -434,9 +447,10 @@ function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Valu
       }
       index = index + 1;
     }
-    runtime.popTempRoot();
   }
-  return runtime.callValue2(reviver, holder, key, value);
+  const result = runtime.callValue2(reviver, holder, key, value);
+  runtime.popTempRootsTo(mark);
+  return result;
 }
 
 function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

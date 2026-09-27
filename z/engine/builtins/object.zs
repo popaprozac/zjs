@@ -614,17 +614,35 @@ function objectFromEntries(inout runtime: Runtime, thisValue: Value, argsBase: u
   }
   const array = asCell(entries);
   const length = runtime.heap.arrayLength(array);
+  // The result, and each key and value until stored, are rooted: the
+  // reads and the key's conversion may run the program.
+  const mark = runtime.tempRoots.length;
+  runtime.pushTempRoot(cellValue(result));
   let index: u32 = 0;
   while (index < length) {
     const pair = runtime.heap.arrayGet(array, index);
     const key = runtime.getProperty(pair, int32Value(0));
-    if (runtime.pendingThrow) return undefinedValue();
+    if (runtime.pendingThrow) {
+      runtime.popTempRootsTo(mark);
+      return undefinedValue();
+    }
+    runtime.pushTempRoot(key);
     const value = runtime.getProperty(pair, int32Value(1));
-    if (runtime.pendingThrow) return undefinedValue();
+    if (runtime.pendingThrow) {
+      runtime.popTempRootsTo(mark);
+      return undefinedValue();
+    }
+    runtime.pushTempRoot(value);
     const atom = runtime.propertyKey(key);
+    if (runtime.pendingThrow) {
+      runtime.popTempRootsTo(mark);
+      return undefinedValue();
+    }
     runtime.heap.objectSet(result, atom, value);
+    runtime.popTempRootsTo(mark + 1);
     index = index + 1;
   }
+  runtime.popTempRootsTo(mark);
   return cellValue(result);
 }
 

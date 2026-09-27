@@ -111,6 +111,9 @@ function thisStringHandle(inout runtime: Runtime, thisValue: Value, in method: S
   const source = isDeleted(primitive) ? thisValue : primitive;
   const text = runtime.toStringValue(source);
   if (runtime.pendingThrow) return 0;
+  // Rooted until the builtin returns (callHost pops it): converting the
+  // arguments that follow may run the program.
+  runtime.pushTempRoot(text);
   return asCell(text);
 }
 
@@ -822,6 +825,8 @@ function argumentBytes(inout runtime: Runtime, value: Value): Array<u16> {
 function argumentHandle(inout runtime: Runtime, value: Value): u32 {
   const text = runtime.toStringValue(value);
   if (runtime.pendingThrow) return 0;
+  // Rooted until the builtin returns, as thisStringHandle's is.
+  runtime.pushTempRoot(text);
   return asCell(text);
 }
 
@@ -958,7 +963,11 @@ function stringMatchLike(inout runtime: Runtime, thisValue: Value, argsBase: u32
       return runtime.callValue1(matcher, regexp, thisValue);
     }
   }
+  // The flags (a fresh string for matchAll) are held through the
+  // receiver's conversion, which may run the program.
+  runtime.pushTempRoot(flags);
   const text = runtime.toStringValue(thisValue);
+  runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   runtime.pushTempRoot(text);
   const regexProto = runtime.regexProto;

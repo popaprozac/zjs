@@ -101,6 +101,9 @@ function construct(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   const adderKey = runtime.internText(in adderName);
   const adder = runtime.getProperty(thisValue, adderKey);
   if (runtime.pendingThrow) return undefinedValue();
+  // A getter may have made the adder: it is held until the builtin
+  // returns.
+  runtime.pushTempRoot(adder);
   if (!runtime.isCallable(adder)) {
     const message: String = `${name}: adder is not a function`;
     const error = runtime.typeError(in message);
@@ -139,10 +142,7 @@ function construct(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   if (runtime.pendingThrow) {
     // A throw from the adder or an entry read closes the iterator, and
     // wins over anything the close throws.
-    const thrown = runtime.takePending();
-    runtime.iteratorClose(iterator);
-    if (runtime.pendingThrow) runtime.takePending();
-    runtime.raise(thrown);
+    runtime.closeAfterThrow(iterator);
     return undefinedValue();
   }
   return thisValue;
@@ -568,10 +568,7 @@ function groupItems(inout runtime: Runtime, argsBase: u32, argc: u32, asMap: boo
     let key = runtime.callValue(callback, undefinedValue(), move args);
     if (runtime.pendingThrow) {
       runtime.popTempRoot();
-      const thrown = runtime.takePending();
-      runtime.iteratorClose(iterator);
-      if (runtime.pendingThrow) runtime.takePending();
-      runtime.raise(thrown);
+      runtime.closeAfterThrow(iterator);
       break;
     }
     if (asMap) {
@@ -582,10 +579,7 @@ function groupItems(inout runtime: Runtime, argsBase: u32, argc: u32, asMap: boo
       runtime.popTempRoot();
       if (runtime.pendingThrow) {
         runtime.popTempRoot();
-        const thrown = runtime.takePending();
-        runtime.iteratorClose(iterator);
-        if (runtime.pendingThrow) runtime.takePending();
-        runtime.raise(thrown);
+        runtime.closeAfterThrow(iterator);
         break;
       }
       key = cellValue(atom);

@@ -1,0 +1,11 @@
+[{"id":0,"tag":"T0"},{"id":1,"tag":"T1"},{"id":2,"tag":"T2"}]
+TypeError:true,TypeError:true,TypeError:true
+300 159600 300 gone7_399
+ReferenceError: neverDefinedAnywhere is not defined
+3 true 7
+cd b 2
+{"k1":"v1","k2":"v2"}
+123 2
+TypeError 1
+async returned 7
+async returned n

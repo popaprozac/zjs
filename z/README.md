@@ -641,7 +641,8 @@ Z_BIN=<native z> ./z/build.sh     # the same, built by a native compiler binary 
 ./z/oracle-tokens.sh              # lexer oracle: diff token dumps, both engines
 ./z/oracle-ast.sh                 # parser oracle: diff AST dumps, both engines
 ./z/oracle-eval.sh                # behavioral oracle: diff eval results, both engines
-./z/expect.sh                     # expectation cases recorded from node (z/tests/expect)
+./z/expect.sh                     # expectation cases recorded from node (z/tests/expect),
+                                  #   each also run collecting at every safe point
 ./z/gc-check.sh                   # collector checks on engine counters (z/tests/gc)
 ./z/probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 Z_BIN=<native z> ./z/probes/native/run.sh   # programs Stage 0 accepts that a native compiler rejects

@@ -3246,6 +3246,17 @@ export struct Runtime {
     return result;
   }
 
+  // Close an iterator after a throw: the throw stands whatever closing
+  // does, and is rooted while `return` runs.
+  function closeAfterThrow(inout this, iterator: Value): void {
+    const thrown = this.takePending();
+    this.pushTempRoot(thrown);
+    this.iteratorClose(iterator);
+    if (this.pendingThrow) this.takePending();
+    this.popTempRoot();
+    this.raise(thrown);
+  }
+
   function iteratorClose(inout this, iterator: Value): void {
     if (!this.isObjectLike(iterator)) return;
     if (this.isPristineArrayIterator(iterator)) return;
@@ -3642,7 +3653,11 @@ export struct Runtime {
     }
     const proto = this.prototypeOf(callee);
     const created = cellValue(this.heap.allocateObject(proto));
+    // Nothing else holds the new object while the builtin runs, and it
+    // may run the program (a ToString on an argument, for one).
+    this.pushTempRoot(created);
     const outcome = this.callHost(builtin, created, argsBase, argc, callee);
+    this.popTempRoot();
     if (this.pendingThrow) return undefinedValue();
     return this.isObjectLike(outcome) ? outcome : created;
   }
@@ -3693,9 +3708,14 @@ export struct Runtime {
     this.heap.objectDefine(bag, atom, value, attr);
   }
 
+  // A builtin's temporary roots last until it returns: what it pushes
+  // and does not pop is popped here.
   function callHost(inout this, id: u32, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value {
     const fn = this.hostTable[usize(id)];
-    return fn(inout this, thisValue, argsBase, argc, callee);
+    const mark = this.tempRoots.length;
+    const result = fn(inout this, thisValue, argsBase, argc, callee);
+    this.popTempRootsTo(mark);
+    return result;
   }
 
   // CanBeHeldWeakly: an object, or a symbol that is not in the global
@@ -3749,6 +3769,13 @@ export struct Runtime {
 
   function popTempRoot(inout this): void {
     const dropped = this.tempRoots.pop();
+  }
+
+  // Pop every temporary root pushed since the count was `mark`.
+  function popTempRootsTo(inout this, mark: usize): void {
+    while (this.tempRoots.length > mark) {
+      const dropped = this.tempRoots.pop();
+    }
   }
 
   // Call a function value from Z with the arguments given, running the
@@ -4200,6 +4227,9 @@ export struct Runtime {
     while (index < this.globals.length) {
       const value = this.globals[index].value;
       this.heap.markValue(value);
+      // A binding's name: for one never defined, nothing else holds it.
+      const atom = this.globals[index].atom;
+      this.heap.markHandle(atom);
       index = index + 1;
     }
     index = 0;
@@ -5405,7 +5435,14 @@ export struct Runtime {
   function asyncStep(inout this, gen: u32, sent: Value, mode: u32): void {
     const record = this.generatorRecord(gen);
     const promise = this.heap.slot(record, 3);
+    // Held through the body's run: once the body returns, nothing else
+    // may reach the generator or its promise (the caller has not been
+    // handed it yet on the first run), and the return is a safe point.
+    this.pushTempRoot(cellValue(gen));
+    this.pushTempRoot(promise);
     const outcome = this.generatorResume(gen, sent, mode);
+    this.popTempRoot();
+    this.popTempRoot();
     if (this.pendingThrow) {
       const thrown = this.takePending();
       this.rejectPromise(asCell(promise), thrown);
@@ -5592,7 +5629,10 @@ export struct Runtime {
 
   // Run the body from where it stopped and act on how it stops.
   function asyncGeneratorStep(inout this, gen: u32, sent: Value, mode: u32): void {
+    // Held through the body's run, as asyncStep holds its generator.
+    this.pushTempRoot(cellValue(gen));
     const outcome = this.generatorResume(gen, sent, mode);
+    this.popTempRoot();
     const record = this.generatorRecord(gen);
     if (this.pendingThrow) {
       const thrown = this.takePending();
@@ -7054,11 +7094,14 @@ export struct Runtime {
               value = frame.constructThis;
             }
             // A safe point: the frame is gone, so the value it hands back is
-            // parked in the caller's next register through the collection.
+            // parked in the caller's next register through the collection,
+            // and an error the return raised is rooted with it.
             if (this.heap.shouldCollect()) {
               this.setReg(frame.regsBase, 0, value);
               this.regTop = frame.regsBase + 1;
+              if (throwing) this.pushTempRoot(thrown);
               this.collectGarbage();
+              if (throwing) this.popTempRoot();
               this.regTop = frame.regsBase;
             }
             if (this.frameCount <= entryDepth) {
