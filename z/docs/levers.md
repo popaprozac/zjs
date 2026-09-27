@@ -41,7 +41,7 @@ is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
 | Bytecode quality | all | about even | 1-2 days | calls and stores done |
-| Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON and strings in progress |
+| Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp done; arrays next |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -184,6 +184,13 @@ search the two strings' storage in place where they copied both; a
 small string appended to a concatenation's buffer is copied from the
 arena directly; `+` on two primitives skips the conversions an object
 would need. strings -15% in cycles.
+Regular expressions (2026-09-27): `replace` builds its result through
+the same builder, reading the input where it is, and copies the input
+to units only for a template with a `$`; a regular expression whose
+class and prototype's class were seen with the builtin `exec` skips the
+lookup of `exec` while the prototype's slot still holds it, and reads
+and writes `lastIndex` and its flags at known slots. regexp -12% in
+cycles.
 ToString(Number) formats a double through up to 17 `snprintf` and
 `strtod` passes. Regular-expression results still build every capture
 string eagerly. Done so far: in-place element reads in the callback

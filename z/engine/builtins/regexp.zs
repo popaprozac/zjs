@@ -5,11 +5,12 @@
 // regexpExecRaw over the backend; this file is the specification's
 // algorithms around it, over byte offsets.
 import { Value, undefinedValue, nullValue, booleanValue, isTrue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isNumber, asInt32, isInt32 } from "../value.zs";
-import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT } from "../heap.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_WRITABLE } from "../heap.zs";
 import { unitsOf, sliceUnits, copyUnits, appendUnits, appendUnitRange, isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { Runtime, HostFunction, toNumber, truncateDouble, appendBytes } from "../runtime.zs";
 import { REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH } from "../regex.zs";
 import { thread } from "std/thread";
+import { textBuilder, putUnits, putStringRange, finishText } from "./builder.zs";
 
 // --- Helpers ---
 
@@ -84,6 +85,13 @@ function advanceIndex(in bytes: Array<u16>, index: usize, unicode: boolean): usi
   return index + 1;
 }
 
+// AdvanceStringIndex over a string cell's units, read in place.
+function advanceStringIndex(in runtime: Runtime, handle: u32, index: usize, unicode: boolean): usize {
+  if (!unicode || index + 1 >= runtime.heap.stringLength(handle)) return index + 1;
+  if (isHighSurrogate(runtime.heap.stringUnit(handle, index)) && isLowSurrogate(runtime.heap.stringUnit(handle, index + 1))) return index + 2;
+  return index + 1;
+}
+
 // Get(rx, "lastIndex") as a length.
 function getLastIndex(inout runtime: Runtime, rx: Value): usize {
   const atomLastIndex = runtime.atomLastIndex;
@@ -145,9 +153,18 @@ function builtinMatch(inout runtime: Runtime, rx: u32, input: Value): i32 {
   const rxValue = cellValue(rx);
   const inputHandle = asCell(input);
   const length = runtime.heap.stringLength(inputHandle);
-  let lastIndex = getLastIndex(inout runtime, rxValue);
-  if (runtime.pendingThrow) return -1;
-  const bits = runtime.regexpFlagBits(rx);
+  // An object of the recorded class keeps lastIndex and its flags in
+  // known slots, lastIndex a writable data property (see noteBuiltinExec).
+  const known = runtime.execShapeClass != 0 && runtime.heap.isObject(rx) && runtime.heap.objectClass(rx) == runtime.execShapeClass;
+  let lastIndex: usize = 0;
+  const held = known ? runtime.heap.slot(rx, runtime.execLastIndexSlot) : undefinedValue();
+  if (known && isInt32(held) && asInt32(held) >= 0) {
+    lastIndex = usize(asInt32(held));
+  } else {
+    lastIndex = getLastIndex(inout runtime, rxValue);
+    if (runtime.pendingThrow) return -1;
+  }
+  const bits = known ? asInt32(runtime.heap.slot(rx, runtime.execFlagsSlot)) : runtime.regexpFlagBits(rx);
   const global = (bits & REGEX_GLOBAL) != 0;
   const sticky = (bits & REGEX_STICKY) != 0;
   if (!global && !sticky) lastIndex = 0;
@@ -166,7 +183,13 @@ function builtinMatch(inout runtime: Runtime, rx: u32, input: Value): i32 {
     return 0;
   }
   if (global || sticky) {
-    if (!setLastIndex(inout runtime, rxValue, usize(runtime.regexBackend.captureEnd(0)))) return -1;
+    const next = runtime.regexBackend.captureEnd(0);
+    if (known && next >= 0) {
+      const lastIndexSlot = runtime.execLastIndexSlot;
+      runtime.heap.setSlot(rx, lastIndexSlot, int32Value(next));
+    } else if (!setLastIndex(inout runtime, rxValue, usize(next))) {
+      return -1;
+    }
   }
   return runtime.regexBackend.matchedCaptures();
 }
@@ -297,9 +320,16 @@ function builtinExec(inout runtime: Runtime, rx: u32, input: Value): Value {
 // something was thrown.
 function execMatch(inout runtime: Runtime, rx: Value, input: Value): Value {
   const atomExec = runtime.atomExec;
+  const builtin = runtime.regexExecFn;
+  if (knownBuiltinExec(in runtime, rx)) {
+    const count = builtinMatch(inout runtime, asCell(rx), input);
+    if (count < 0) return undefinedValue();
+    if (count == 0) return nullValue();
+    return booleanValue(true);
+  }
   const exec = runtime.getProperty(rx, cellValue(atomExec));
   if (runtime.pendingThrow) return undefinedValue();
-  const builtin = runtime.regexExecFn;
+  if (isCell(exec) && asCell(exec) == builtin) noteBuiltinExec(inout runtime, rx);
   if (runtime.isCallable(exec) && !(isCell(exec) && asCell(exec) == builtin)) {
     const result = runtime.callValue1(exec, rx, input);
     if (runtime.pendingThrow) return undefinedValue();
@@ -317,6 +347,48 @@ function execMatch(inout runtime: Runtime, rx: Value, input: Value): Value {
   if (count < 0) return undefinedValue();
   if (count == 0) return nullValue();
   return booleanValue(true);
+}
+
+// Whether `rx` has the classes recorded by noteBuiltinExec, so its
+// `exec` is the builtin without a lookup: its own class has no `exec`
+// (a class fixes its properties) and its prototype, RegExp.prototype in
+// that class, still holds the builtin in the recorded slot (assigning
+// to a property keeps the class, so the slot itself is checked).
+function knownBuiltinExec(in runtime: Runtime, rx: Value): boolean {
+  if (runtime.execShapeClass == 0 || !isCell(rx) || asCell(rx) == 0) return false;
+  const handle = asCell(rx);
+  if (!runtime.heap.isObject(handle) || runtime.heap.objectClass(handle) != runtime.execShapeClass) return false;
+  const proto = runtime.heap.objectProto(handle);
+  if (proto == 0 || proto != runtime.regexProto || runtime.heap.objectClass(proto) != runtime.execProtoClass) return false;
+  const held = runtime.heap.slot(proto, runtime.execSlot);
+  return isCell(held) && asCell(held) == runtime.regexExecFn && runtime.isRegExpObject(rx);
+}
+
+// After a lookup found the builtin exec: record the classes when the
+// object has no `exec` of its own and its prototype is RegExp.prototype
+// holding the builtin as a plain data property, both in class mode.
+function noteBuiltinExec(inout runtime: Runtime, rx: Value): void {
+  const handle = asCell(rx);
+  if (!runtime.heap.isObject(handle) || runtime.heap.isDictionary(handle)) return;
+  const atomExec = runtime.atomExec;
+  if (runtime.heap.objectFindSlot(handle, atomExec) >= 0) return;
+  const proto = runtime.heap.objectProto(handle);
+  if (proto == 0 || proto != runtime.regexProto || runtime.heap.isDictionary(proto)) return;
+  const slot = runtime.heap.objectFindSlot(proto, atomExec);
+  if (slot < 0 || (runtime.heap.attrOf(proto, u32(slot)) & PROP_ACCESSOR) != 0) return;
+  const atomLastIndex = runtime.atomLastIndex;
+  const lastIndexSlot = runtime.heap.objectFindSlot(handle, atomLastIndex);
+  if (lastIndexSlot < 0) return;
+  const lastIndexAttr = runtime.heap.attrOf(handle, u32(lastIndexSlot));
+  if ((lastIndexAttr & PROP_ACCESSOR) != 0 || (lastIndexAttr & PROP_WRITABLE) == 0) return;
+  const atomRegexFlags = runtime.atomRegexFlags;
+  const flagsSlot = runtime.heap.objectFindSlot(handle, atomRegexFlags);
+  if (flagsSlot < 0) return;
+  runtime.execShapeClass = runtime.heap.objectClass(handle);
+  runtime.execProtoClass = runtime.heap.objectClass(proto);
+  runtime.execSlot = u32(slot);
+  runtime.execLastIndexSlot = u32(lastIndexSlot);
+  runtime.execFlagsSlot = u32(flagsSlot);
 }
 
 // RegExpExec: a user `exec` when the object has one, else the builtin.
@@ -735,7 +807,7 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const input = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
   runtime.pushTempRoot(input);
-  const bytes = stringBytesOf(inout runtime, input);
+  const inputLength = runtime.heap.stringLength(asCell(input));
   let replaceValue = runtime.argument(argsBase, argc, 1);
   const functional = runtime.isCallable(replaceValue);
   let template = Array<u16>();
@@ -750,6 +822,10 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   }
   // A template without a `$` is its own replacement, whatever matched.
   const literal = !functional && !hasUnit(in template, 36);
+  // Only a template's substitutions read the input as units; the result
+  // is put together from its storage.
+  let bytes = Array<u16>();
+  if (!functional && !literal) bytes = stringBytesOf(inout runtime, input);
   runtime.pushTempRoot(replaceValue);
   const flags = flagsStringOf(inout runtime, thisValue);
   if (runtime.pendingThrow) {
@@ -809,10 +885,10 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     if (emptyMatch) {
       const thisIndex = getLastIndex(inout runtime, thisValue);
       if (runtime.pendingThrow) break;
-      if (!setLastIndex(inout runtime, thisValue, advanceIndex(in bytes, thisIndex, unicode))) break;
+      if (!setLastIndex(inout runtime, thisValue, advanceStringIndex(in runtime, asCell(input), thisIndex, unicode))) break;
     }
   }
-  let accumulated = Array<u16>();
+  let accumulated = textBuilder(inputLength + 16);
   let nextSourcePosition: usize = 0;
   let at: usize = 0;
   let r: u32 = 0;
@@ -889,7 +965,7 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
         }
         if (indexNumber == indexNumber && indexNumber > 0.0) {
           const clipped = truncateDouble(indexNumber);
-          position = clipped >= f64(bytes.length) ? bytes.length : usize(clipped);
+          position = clipped >= f64(inputLength) ? inputLength : usize(clipped);
         }
         let n: usize = 1;
         while (n <= nCaptures) {
@@ -955,12 +1031,11 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     }
     r = r + 1;
     if (position >= nextSourcePosition) {
-      appendUnitRange(inout accumulated, in bytes, nextSourcePosition, position);
+      putStringRange(in runtime, inout accumulated, asCell(input), nextSourcePosition, position);
       if (literal) {
-        const templateLength = template.length;
-        appendUnitRange(inout accumulated, in template, 0, templateLength);
+        putUnits(inout accumulated, in template);
       } else {
-        appendUnits(inout accumulated, move replacement);
+        putUnits(inout accumulated, in replacement);
       }
       nextSourcePosition = position + matchLength;
     }
@@ -969,9 +1044,8 @@ function regexpReplace(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   runtime.popTempRoot();
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  const inputLength = bytes.length;
-  appendUnitRange(inout accumulated, in bytes, nextSourcePosition, inputLength);
-  return runtime.newStringUnits(move accumulated);
+  putStringRange(in runtime, inout accumulated, asCell(input), nextSourcePosition, inputLength);
+  return finishText(inout runtime, inout accumulated);
 }
 
 // --- @@split ---
