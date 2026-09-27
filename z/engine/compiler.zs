@@ -2849,6 +2849,7 @@ export struct Compiler {
       i = 0;
       while (i < count) {
         const target = base + u8(i);
+        this.targetReg = i32(target);
         const element = this.compileExpr(in parser, inout runtime, parser.ast.child(node, i));
         if (element != target) this.emit(instAB(Op.mov, target, element));
         this.nextReg = base + u8(count);
