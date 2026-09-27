@@ -1,0 +1,73 @@
+"plain"
+"quote\"back\\slash"
+"ctl\u0001\b\f\n\r\t"
+"latin é ÿ ©"
+"wide 中文 😀"
+"lone \ud800 x \udc00"
+{"a":"é","b":["x",1,true,null,2.5,0,1e+21]}
+[null,null,null]
+{"nested":{"deep":[{"k":"v "}]}}
+"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxé"
+"Ā after"
+123456789
+-2147483648
+{
+  "a": [
+    1,
+    {
+      "b": 2
+    }
+  ],
+  "c": "é"
+}
+{
+	"a": [
+		1,
+		{
+			"b": 2
+		}
+	],
+	"c": "中"
+}
+{"a":1,"b":"é"}
+{"a":"n1é","b":"n2é"}
+{"x":"中é"}
+"é中"
+["é","中"]
+[{"x":1},"B",{"x":1}]
+[{},{}]2
+[{"v":1},{"v":2,"w":3},"late"]
+[{"n":1},{"n":2}]
+["P3",{"n":4},"P5"]
+[{"q":1},{"q":1}]
+{"d":"1970-01-01T00:00:00.000Z"}
+[{"s":1},"swapped"]
+{"a":1,"b":[true,false,null],"c":"xé\n"}
+[1.5,0,1000,-12,0.001,123456789012345680]
+"😀 wide"
+{"中":"文","k":"é"}
+[{"x":"y"},"z"]
+"Āabc"
+{"a":"ééééé","b":"中中中"}
+[{"id":0,"t":"p0"},{"id":1,"t":"p1"},{"id":2,"t":"p2"},{"id":3,"t":"p3"},{"id":4,"t":"p4"},{"id":5,"t":"p5"},{"id":6,"t":"p6"},{"id":7,"t":"p7"},{"id":8,"t":"p8"},{"id":9,"t":"p9"},{"id":10,"t":"p10"},{"id":11,"t":"p11"},{"id":12,"t":"p12"},{"id":13,"t":"p13"},{"id":14,"t":"p14"},{"id":15,"t":"p15"},{"id":16,"t":"p16"},{"id":17,"t":"p17"},{"id":18,"t":"p18"},{"id":19,"t":"p19"},{"id":20,"t":"p20"},{"id":21,"t":"p21"},{"id":22,"t":"p22"},{"id":23,"t":"p23"},{"id":24,"t":"p24"},{"id":25,"t":"p25"},{"id":26,"t":"p26"},{"id":27,"t":"p27"},{"id":28,"t":"p28"},{"id":29,"t":"p29"},{"id":30,"t":"p30"},{"id":31,"t":"p31"},{"id":32,"t":"p32"},{"id":33,"t":"p33"},{"id":34,"t":"p34"},{"id":35,"t":"p35"},{"id":36,"t":"p36"},{"id":37,"t":"p37"},{"id":38,"t":"p38"},{"id":39,"t":"p39"}]
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+SyntaxError
+{"s":"中é😀","n":[1,2]}
+"中"
+{"k中":"v文"}
+SyntaxError
+SyntaxError
+SyntaxError
+"a\"中\\"
+{"a":"中中"}
+"😀😀"
+"é中"
+"\"中"
+["x","中","中","中","y"]
+"\\中"
+"中"
+"中\n"
+SyntaxError

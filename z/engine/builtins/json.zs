@@ -1,6 +1,7 @@
 // JSON.parse and JSON.stringify over byte strings.
-import { unitsOf, isHighSurrogate, isLowSurrogate } from "../text.zs";
+import { isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { thread } from "std/thread";
+import { replace } from "std/memory";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32, isDeleted } from "../value.zs";
 import { Runtime, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber } from "../runtime.zs";
 import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN } from "../heap.zs";
@@ -11,8 +12,8 @@ struct JsonParser {
   bytes: Array<u16>;
   position: usize;
   failed: boolean;
-  // A string being read: its units, whether any is past Latin-1, and the
-  // Latin-1 bytes a narrow one becomes. Reused from string to string.
+  // A string being read: its Latin-1 bytes while every unit fits in one,
+  // its units once one does not. Reused from string to string.
   units: Array<u16>;
   wide: boolean;
   narrow: Array<u8>;
@@ -117,6 +118,7 @@ function parseHex4(inout parser: JsonParser): u32 {
 // The body of a string, after its opening quote, into parser.units (and
 // parser.narrow when every unit is Latin-1).
 function parseStringBody(inout parser: JsonParser): void {
+  parser.narrow.clear();
   parser.units.clear();
   parser.wide = false;
   while (true) {
@@ -126,10 +128,7 @@ function parseStringBody(inout parser: JsonParser): void {
       return;
     }
     parser.position = parser.position + 1;
-    if (byte == 34) {
-      finishString(inout parser);
-      return;
-    }
+    if (byte == 34) return;
     if (byte < 32) {
       parser.failed = true;
       return;
@@ -169,18 +168,20 @@ function parseStringBody(inout parser: JsonParser): void {
 }
 
 function pushUnit(inout parser: JsonParser, unit: u16): void {
-  if (unit > 255) parser.wide = true;
-  parser.units.push(unit);
-}
-
-function finishString(inout parser: JsonParser): void {
-  parser.narrow.clear();
-  if (parser.wide) return;
-  let index: usize = 0;
-  while (index < parser.units.length) {
-    parser.narrow.push(u8(parser.units[index]));
-    index = index + 1;
+  if (!parser.wide) {
+    if (unit <= 255) {
+      parser.narrow.push(u8(unit));
+      return;
+    }
+    // The first unit past a byte: the string so far becomes units.
+    let index: usize = 0;
+    while (index < parser.narrow.length) {
+      parser.units.push(u16(parser.narrow[index]));
+      index = index + 1;
+    }
+    parser.wide = true;
   }
+  parser.units.push(unit);
 }
 
 // The string just read, as a fresh string value.
@@ -492,55 +493,156 @@ struct Stringifier {
   // no object allocates a list of its own.
   names: Array<u32>;
   slots: Array<u32>;
+  // A chain of up to three ordinary objects in class mode, found to have
+  // no toJSON anywhere: their classes, and the prototypes that link them
+  // (0 past the end). An object whose chain has these classes has none
+  // either -- a class fixes its properties -- and needs no lookup.
+  plainClass: u32;
+  plainProto: u32;
+  plainProtoClass: u32;
+  plainProto2: u32;
+  plainProto2Class: u32;
+  plainKnown: boolean;
 }
 
-function hexChar(digit: u32): u16 {
-  if (digit < 10) return u16(48 + digit);
-  return u16(87 + digit);
+function hexChar(digit: u32): u8 {
+  if (digit < 10) return u8(48 + digit);
+  return u8(87 + digit);
+}
+
+// The text JSON.stringify builds: bytes while every unit fits in one,
+// which is nearly always, and units once one does not.
+struct JsonText {
+  bytes: Array<u8>;
+  units: Array<u16>;
+  wide: boolean;
+}
+
+function putByte(inout text: JsonText, byte: u8): void {
+  if (text.wide) {
+    text.units.push(u16(byte));
+    return;
+  }
+  text.bytes.push(byte);
+}
+
+function putUnit(inout text: JsonText, unit: u16): void {
+  if (!text.wide) {
+    if (unit <= 0xFF) {
+      text.bytes.push(u8(unit));
+      return;
+    }
+    // The first unit past a byte: what is written so far becomes units.
+    let units = Array<u16>.withCapacity(text.bytes.length * 2 + 16);
+    let index: usize = 0;
+    while (index < text.bytes.length) {
+      units.push(u16(text.bytes[index]));
+      index = index + 1;
+    }
+    text.units = move units;
+    text.bytes = Array<u8>();
+    text.wide = true;
+  }
+  text.units.push(unit);
+}
+
+function putUnits(inout text: JsonText, in units: Array<u16>): void {
+  let index: usize = 0;
+  while (index < units.length) {
+    putUnit(inout text, units[index]);
+    index = index + 1;
+  }
+}
+
+function textLength(in text: JsonText): usize {
+  return text.wide ? text.units.length : text.bytes.length;
 }
 
 // A string's JSON form, read from the heap cell: nothing is copied out
-// first. A narrow string has no surrogates to check.
-function quoteString(in runtime: Runtime, inout text: Array<u16>, handle: u32): void {
-  text.push(34);
+// first. A narrow string's bytes are read straight from its storage and
+// have no surrogates to check.
+function quoteString(in runtime: Runtime, inout text: JsonText, handle: u32): void {
+  putByte(inout text, 34);
   const length = runtime.heap.stringLength(handle);
+  if (!runtime.heap.isWideString(handle) && !text.wide) {
+    const arena = runtime.heap.isArenaString(handle);
+    const start = runtime.heap.stringStorageStart(handle);
+    const buffer = usize(runtime.heap.stringBuffer(handle));
+    let index: usize = 0;
+    while (index < length) {
+      let byte: u8 = 0;
+      if (arena) {
+        byte = runtime.heap.smallBytes[start + index];
+      } else {
+        byte = runtime.heap.strings[buffer][index];
+      }
+      if (byte >= 32 && byte != 34 && byte != 92) {
+        text.bytes.push(byte);
+      } else {
+        escapeUnit(inout text, u16(byte));
+      }
+      index = index + 1;
+    }
+    putByte(inout text, 34);
+    return;
+  }
   const wide = runtime.heap.isWideString(handle);
   let index: usize = 0;
   while (index < length) {
     const unit = wide ? runtime.heap.stringUnit(handle, index) : u16(runtime.heap.stringStorageByte(handle, index));
     if (unit >= 32 && unit != 34 && unit != 92 && (unit < 0xD800 || unit > 0xDFFF)) {
-      text.push(unit);
-    } else if (unit == 34 || unit == 92) {
-      text.push(92);
-      text.push(unit);
-    } else if (unit == 8) {
-      text.push(92);
-      text.push(98);
-    } else if (unit == 12) {
-      text.push(92);
-      text.push(102);
-    } else if (unit == 10) {
-      text.push(92);
-      text.push(110);
-    } else if (unit == 13) {
-      text.push(92);
-      text.push(114);
-    } else if (unit == 9) {
-      text.push(92);
-      text.push(116);
-    } else if (unit < 32 || loneAt(in runtime, handle, index, length)) {
-      text.push(92);
-      text.push(117);
-      text.push(hexChar(u32(unit) >> 12));
-      text.push(hexChar((u32(unit) >> 8) & 15));
-      text.push(hexChar((u32(unit) >> 4) & 15));
-      text.push(hexChar(u32(unit) & 15));
+      putUnit(inout text, unit);
+    } else if (unit >= 0xD800 && unit <= 0xDFFF && !loneAt(in runtime, handle, index, length)) {
+      putUnit(inout text, unit);
     } else {
-      text.push(unit);
+      escapeUnit(inout text, unit);
     }
     index = index + 1;
   }
-  text.push(34);
+  putByte(inout text, 34);
+}
+
+// A string's content as it is, unquoted (a number's text): a narrow
+// string's bytes read from its storage.
+function putStringText(in runtime: Runtime, inout text: JsonText, handle: u32): void {
+  const length = runtime.heap.stringLength(handle);
+  let index: usize = 0;
+  if (runtime.heap.isWideString(handle)) {
+    while (index < length) {
+      putUnit(inout text, runtime.heap.stringUnit(handle, index));
+      index = index + 1;
+    }
+    return;
+  }
+  while (index < length) {
+    putByte(inout text, runtime.heap.stringStorageByte(handle, index));
+    index = index + 1;
+  }
+}
+
+// A unit that does not go out as itself: a short escape, or \u and four
+// hex digits (a control character, a lone surrogate).
+function escapeUnit(inout text: JsonText, unit: u16): void {
+  putByte(inout text, 92);
+  if (unit == 34 || unit == 92) {
+    putByte(inout text, u8(unit));
+  } else if (unit == 8) {
+    putByte(inout text, 98);
+  } else if (unit == 12) {
+    putByte(inout text, 102);
+  } else if (unit == 10) {
+    putByte(inout text, 110);
+  } else if (unit == 13) {
+    putByte(inout text, 114);
+  } else if (unit == 9) {
+    putByte(inout text, 116);
+  } else {
+    putByte(inout text, 117);
+    putByte(inout text, hexChar(u32(unit) >> 12));
+    putByte(inout text, hexChar((u32(unit) >> 8) & 15));
+    putByte(inout text, hexChar((u32(unit) >> 4) & 15));
+    putByte(inout text, hexChar(u32(unit) & 15));
+  }
 }
 
 // Whether the surrogate at `index` of a wide string lacks its partner.
@@ -552,43 +654,49 @@ function loneAt(in runtime: Runtime, handle: u32, index: usize, length: usize): 
 }
 
 // An int32's decimal digits.
-function pushInt32(inout text: Array<u16>, value: i32): void {
+function pushInt32(inout text: JsonText, value: i32): void {
   let magnitude: u32 = 0;
   if (value < 0) {
-    text.push(45);
+    putByte(inout text, 45);
     magnitude = value == -2147483648 ? 2147483648 : u32(0 - value);
   } else {
     magnitude = u32(value);
   }
-  let digits: u16[10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  let digits: u8[10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
   let count: usize = 0;
   if (magnitude == 0) {
     digits[0] = 48;
     count = 1;
   }
   while (magnitude > 0) {
-    digits[count] = u16(48 + magnitude % 10);
+    digits[count] = u8(48 + magnitude % 10);
     magnitude = magnitude / 10;
     count = count + 1;
   }
   while (count > 0) {
     count = count - 1;
-    text.push(digits[count]);
+    putByte(inout text, digits[count]);
   }
 }
 
 // Drop what was written after `mark` (a property whose value has no JSON
 // form after its key went out).
-function truncateTo(inout text: Array<u16>, mark: usize): void {
-  while (text.length > mark) {
-    const dropped = text.pop();
+function truncateTo(inout text: JsonText, mark: usize): void {
+  if (text.wide) {
+    while (text.units.length > mark) {
+      const dropped = text.units.pop();
+    }
+    return;
+  }
+  while (text.bytes.length > mark) {
+    const dropped = text.bytes.pop();
   }
 }
 
-function appendAll(inout text: Array<u16>, in more: Array<u16>): void {
+function appendAll(inout target: Array<u16>, in more: Array<u16>): void {
   let index: usize = 0;
   while (index < more.length) {
-    text.push(more[index]);
+    target.push(more[index]);
     index = index + 1;
   }
 }
@@ -603,16 +711,16 @@ function copyBytes(in bytes: Array<u16>): Array<u16> {
   return copied;
 }
 
-function pushNull(inout text: Array<u16>): void {
-  text.push(110);
-  text.push(117);
-  text.push(108);
-  text.push(108);
+function pushNull(inout text: JsonText): void {
+  putByte(inout text, 110);
+  putByte(inout text, 117);
+  putByte(inout text, 108);
+  putByte(inout text, 108);
 }
 
 // SerializeJSONProperty: returns false when the value has no JSON form
 // (undefined, functions, symbols), leaving `text` untouched.
-function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, inout text: Array<u16>): boolean {
+function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, inout text: JsonText): boolean {
   const value = runtime.getProperty(holder, key);
   if (runtime.pendingThrow) return false;
   return serializeValue(inout runtime, inout state, holder, key, value, inout text);
@@ -655,12 +763,51 @@ function popKeys(inout state: Stringifier, mark: usize): void {
   }
 }
 
+// Whether `handle`'s chain is the one recorded as having no toJSON.
+function knownWithoutToJSON(in runtime: Runtime, in state: Stringifier, handle: u32): boolean {
+  if (!state.plainKnown || !runtime.heap.isObject(handle)) return false;
+  if (runtime.heap.objectClass(handle) != state.plainClass) return false;
+  const proto = runtime.heap.objectProto(handle);
+  if (proto != state.plainProto) return false;
+  if (proto == 0) return true;
+  if (runtime.heap.objectClass(proto) != state.plainProtoClass) return false;
+  const proto2 = runtime.heap.objectProto(proto);
+  if (proto2 != state.plainProto2) return false;
+  if (proto2 == 0) return true;
+  return runtime.heap.objectClass(proto2) == state.plainProto2Class && runtime.heap.objectProto(proto2) == 0;
+}
+
+// After a lookup of toJSON found nothing: record the chain when every
+// object on it is ordinary, in class mode, and truly without the
+// property (not an accessor that gave undefined).
+function noteWithoutToJSON(in runtime: Runtime, inout state: Stringifier, handle: u32): void {
+  const atom = asCell(state.toJSONKey);
+  let chain: u32[3] = [0, 0, 0];
+  let count: usize = 0;
+  let current = handle;
+  while (current != 0) {
+    if (count == 3) return;
+    if (!runtime.heap.isObject(current) || runtime.heap.isDictionary(current)) return;
+    if (runtime.heap.objectFindSlot(current, atom) >= 0) return;
+    chain[count] = current;
+    count = count + 1;
+    current = runtime.heap.objectProto(current);
+  }
+  state.plainClass = runtime.heap.objectClass(chain[0]);
+  state.plainProto = chain[1];
+  state.plainProtoClass = chain[1] == 0 ? 0 : runtime.heap.objectClass(chain[1]);
+  state.plainProto2 = chain[2];
+  state.plainProto2Class = chain[2] == 0 ? 0 : runtime.heap.objectClass(chain[2]);
+  state.plainKnown = true;
+}
+
 // SerializeJSONProperty with the property's value already read.
-function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, given: Value, inout text: Array<u16>): boolean {
+function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, given: Value, inout text: JsonText): boolean {
   let value = given;
-  if (runtime.isObjectLike(value)) {
+  if (runtime.isObjectLike(value) && !knownWithoutToJSON(in runtime, in state, asCell(value))) {
     const toJSONKey = state.toJSONKey;
     const toJSON = runtime.getProperty(value, toJSONKey);
+    if (!runtime.pendingThrow && isUndefined(toJSON)) noteWithoutToJSON(in runtime, inout state, asCell(value));
     if (runtime.pendingThrow) return false;
     if (runtime.isCallable(toJSON)) {
       let args = Array<Value>();
@@ -696,9 +843,18 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
     return true;
   }
   if (isBoolean(value)) {
-    const boolText: String = isTrue(value) ? "true" : "false";
-    const boolBytes = unitsOf(in boolText);
-    appendAll(inout text, in boolBytes);
+    if (isTrue(value)) {
+      putByte(inout text, 116);
+      putByte(inout text, 114);
+      putByte(inout text, 117);
+      putByte(inout text, 101);
+    } else {
+      putByte(inout text, 102);
+      putByte(inout text, 97);
+      putByte(inout text, 108);
+      putByte(inout text, 115);
+      putByte(inout text, 101);
+    }
     return true;
   }
   if (runtime.isStringValue(value)) {
@@ -716,8 +872,7 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
       return true;
     }
     const rendered = runtime.toStringValue(value);
-    const renderedBytes = runtime.heap.stringUnits(asCell(rendered));
-    appendAll(inout text, in renderedBytes);
+    putStringText(in runtime, inout text, asCell(rendered));
     return true;
   }
   if (!runtime.isObjectLike(value) || runtime.isCallable(value)) return false;
@@ -752,17 +907,17 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
   if (!isArray && !state.useAllowed && runtime.heap.isObject(handle) && handle != runtime.globalObject) {
     plainStart = pushPlainKeys(inout runtime, inout state, handle);
   }
-  const open: u16 = isArray ? 91 : 123;
-  text.push(open);
+  const open: u8 = isArray ? 91 : 123;
+  putByte(inout text, open);
   let wroteAny = false;
   if (isArray) {
     const length = runtime.heap.arrayLength(handle);
     let index: u32 = 0;
     while (index < length) {
-      if (index > 0) text.push(44);
+      if (index > 0) putByte(inout text, 44);
       if (state.gap.length > 0) {
-        text.push(10);
-        appendAll(inout text, in state.indent);
+        putByte(inout text, 10);
+        putUnits(inout text, in state.indent);
       }
       // A present data element is read in place; a hole or an accessor
       // goes through Get.
@@ -788,15 +943,15 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
     while (k < end) {
       const name = state.names[k];
       const slot = state.slots[k];
-      const mark = text.length;
-      if (wroteAny) text.push(44);
+      const mark = textLength(in text);
+      if (wroteAny) putByte(inout text, 44);
       if (pretty) {
-        text.push(10);
-        appendAll(inout text, in state.indent);
+        putByte(inout text, 10);
+        putUnits(inout text, in state.indent);
       }
       quoteString(in runtime, inout text, name);
-      text.push(58);
-      if (pretty) text.push(32);
+      putByte(inout text, 58);
+      if (pretty) putByte(inout text, 32);
       let propertyValue = runtime.heap.slot(handle, slot);
       if (runtime.heap.objectClass(handle) != shape || isDeleted(propertyValue) || (runtime.heap.attrOf(handle, slot) & PROP_ACCESSOR) != 0) {
         propertyValue = runtime.getProperty(value, cellValue(name));
@@ -836,15 +991,15 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
     while (index < keys.length) {
       const propertyKey = keys[index];
       // The key goes out first; a value with no JSON form takes it back.
-      const mark = text.length;
-      if (wroteAny) text.push(44);
+      const mark = textLength(in text);
+      if (wroteAny) putByte(inout text, 44);
       if (pretty) {
-        text.push(10);
-        appendAll(inout text, in state.indent);
+        putByte(inout text, 10);
+        putUnits(inout text, in state.indent);
       }
       quoteString(in runtime, inout text, asCell(propertyKey));
-      text.push(58);
-      if (pretty) text.push(32);
+      putByte(inout text, 58);
+      if (pretty) putByte(inout text, 32);
       const wrote = serialize(inout runtime, inout state, value, propertyKey, inout text);
       if (runtime.pendingThrow) return false;
       if (wrote) {
@@ -856,11 +1011,11 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
     }
   }
   if (wroteAny && state.gap.length > 0) {
-    text.push(10);
-    appendAll(inout text, in outerIndent);
+    putByte(inout text, 10);
+    putUnits(inout text, in outerIndent);
   }
-  const close: u16 = isArray ? 93 : 125;
-  text.push(close);
+  const close: u8 = isArray ? 93 : 125;
+  putByte(inout text, close);
   if (pretty) state.indent = move outerIndent;
   state.stackCount = state.stackCount - 1;
   return true;
@@ -875,6 +1030,7 @@ function jsonStringify(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     allowed: Array<u32>(), useAllowed: false, stack: Array<u32>(), stackCount: 0,
     toJSONKey: runtime.internText(in toJSONText),
     names: Array<u32>(), slots: Array<u32>(),
+    plainClass: 0, plainProto: 0, plainProtoClass: 0, plainProto2: 0, plainProto2Class: 0, plainKnown: false,
   });
   if (runtime.isCallable(replacer)) {
     state.replacer = replacer;
@@ -940,12 +1096,20 @@ function jsonStringify(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const emptyAtom = runtime.propertyKey(emptyKey);
   runtime.heap.objectSet(holder, emptyAtom, value);
   runtime.pushTempRoot(cellValue(holder));
-  let text = Array<u16>();
+  let hint = runtime.jsonTextHint + 16;
+  if (hint > 1048576) hint = 1048576;
+  let text = JsonText({ bytes: Array<u8>.withCapacity(hint), units: Array<u16>(), wide: false });
   const wrote = serialize(inout runtime, inout state, cellValue(holder), emptyKey, inout text);
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   if (!wrote) return undefinedValue();
-  return runtime.newStringUnits(move text);
+  runtime.jsonTextHint = textLength(in text);
+  if (text.wide) {
+    const units = replace(inout text.units, Array<u16>());
+    return runtime.newStringUnits(move units);
+  }
+  const bytes = replace(inout text.bytes, Array<u8>());
+  return runtime.newStringLatin1(move bytes);
 }
 
 export function installJson(inout runtime: Runtime): void {

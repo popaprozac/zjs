@@ -41,7 +41,7 @@ is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
 | Bytecode quality | all | about even | 1-2 days | calls and stores done |
-| Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | started |
+| Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON in progress |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -167,7 +167,16 @@ equality is tested, so they wait for the loop's restructuring.
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
 the transitions it takes (json 49 -> 28 ms, ahead of QuickJS and Hermes,
-still 3.5x JavaScriptCore).
+still 3.5x JavaScriptCore). Then (2026-09-27): stringify writes bytes
+and widens only when a unit needs it (it had built units and narrowed
+them at the end), reads a narrow string's storage in place, writes
+`true` and `false` without an array each (an allocation per boolean had
+been most of the gap), and skips the lookup of `toJSON` for a chain of
+ordinary objects in class mode already found to have none; parse builds
+a narrow string's bytes directly; the output buffer starts at the last
+result's length. json -28% in cycles (stringify -38%, parse -14%).
+Tried: parsing a narrow text as bytes, not units -- a branch per
+character between the two forms cost more than the copy it saved.
 ToString(Number) formats a double through up to 17 `snprintf` and
 `strtod` passes. Regular-expression results still build every capture
 string eagerly. Done so far: in-place element reads in the callback

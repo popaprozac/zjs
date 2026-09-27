@@ -2427,6 +2427,18 @@ export struct Heap {
       }
       return this.allocateArenaString(offset, byteCount, wide);
     }
+    // A buffer holding far more than its bytes (one sized for a larger
+    // text) is not kept at that size for the string's life.
+    if (bytes.capacity > bytes.length * 2 + 64) {
+      let fitted = Array<u8>.withCapacity(bytes.length);
+      let k: usize = 0;
+      while (k < bytes.length) {
+        fitted.push(bytes[k]);
+        k = k + 1;
+      }
+      const stringIndex = this.adoptBuffer(move fitted);
+      return this.allocateStringOver(stringIndex, byteCount, wide);
+    }
     const stringIndex = this.adoptBuffer(move bytes);
     return this.allocateStringOver(stringIndex, byteCount, wide);
   }

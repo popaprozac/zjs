@@ -256,6 +256,9 @@ export struct Runtime {
   symbolProto: u32;
   // Math.random's state.
   randomState: u64;
+  // The length of the last JSON.stringify result: the next one's buffer
+  // starts that large, rather than growing from nothing each time.
+  jsonTextHint: usize;
   // The completion value of the last run, kept alive for the embedder.
   lastResult: Value;
   // Builtins, indexed by a host function cell's payload.
@@ -7623,7 +7626,7 @@ export function createRuntime(): Runtime {
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
-    randomState: 0x9E3779B97F4A7C15, lastResult: undefinedValue(),
+    randomState: 0x9E3779B97F4A7C15, jsonTextHint: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
