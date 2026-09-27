@@ -8,33 +8,36 @@ lever's status in the same commit that moves it.
 
 ## The gap
 
-`z/bench/speed`, `results/2026-09-26-hermes.json`, milliseconds per
-kernel, against the fastest engine without a JIT on each:
+`z/bench/speed`, `results/2026-09-26-heap.json` (engine `084b463`),
+milliseconds per kernel, against the fastest engine without a JIT on
+each, and the first measurement of this plan (`results/2026-09-26-hermes.json`):
 
-| Kernel | zjsz | Fastest jit-less | Engine | Gap |
-|---|---|---|---|---|
-| allocation | 39 | 20 | V8 | 2.0x |
-| arrays | 167 | 81 | V8 | 2.1x |
-| calls | 17 | 8 | Hermes, precompiled | 2.1x |
-| closures | 35 | 13 | Hermes | 2.7x |
-| json | 49 | 8 | JavaScriptCore | 6.1x |
-| maps | 52 | 49 | V8 | 1.1x |
-| polymorphic | 20 | 17 | V8, QuickJS | 1.2x |
-| properties | 46 | 25 | JavaScriptCore | 1.8x |
-| regexp | 27 | 16 | JavaScriptCore | 1.7x |
-| strings | 23 | 9 | JavaScriptCore, V8 | 2.6x |
+| Kernel | zjsz | then | Fastest jit-less | Engine | Gap |
+|---|---|---|---|---|---|
+| allocation | 35 | 39 | 23 | JavaScriptCore, V8 | 1.5x |
+| arrays | 174 | 167 | 86 | V8 | 2.0x |
+| calls | 16 | 17 | 8 | Hermes, precompiled | 2.0x |
+| closures | 29 | 35 | 14 | Hermes | 2.1x |
+| json | 28 | 49 | 8 | JavaScriptCore | 3.5x |
+| maps | 46 | 52 | 46 | the engine | 1.0x |
+| polymorphic | 22 | 20 | 17 | V8 | 1.3x |
+| properties | 45 | 46 | 26 | JavaScriptCore | 1.7x |
+| regexp | 26 | 27 | 17 | JavaScriptCore | 1.5x |
+| strings | 19 | 23 | 9 | V8 | 2.1x |
 
-Over all ten, QuickJS is 1.19 times faster than the engine, Hermes 1.25
-(1.28 on precompiled bytecode), JavaScriptCore's interpreter 1.7, V8's
-1.9. For size, the engine's minimal embedder is 0.69 MB of code; the
-Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
+Over all ten, QuickJS and the engine are level (QuickJS was 1.19 times
+faster when this plan began), Hermes is 1.08 times faster (1.10 on
+precompiled bytecode; 1.25 and 1.28 then), JavaScriptCore's interpreter
+1.45 (1.7), V8's 1.54 (1.9). For size, the engine's minimal embedder is
+0.69 MB of code; the Hermes VM alone is 2.75 MB, with its compiler 3.34
+MB (arm64).
 
 ## The levers
 
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
-| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | open |
-| Allocator and collector | allocation, strings, json, maps, closures | about even | 3-5 days | open |
+| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
+| Allocator and collector | allocation, strings, json, maps, closures | about even | 3-5 days | started |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
 | Bytecode quality | all | about even | 1-2 days | in progress |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | started |
@@ -49,7 +52,15 @@ hidden class, shared by every object of a shape, not in a byte beside
 every slot; an object's slots can sit beside its header. Evidence: before
 Map storage moved out of the arena, pushing attribute bytes was 13% of
 number-keyed `Map.set`. Arrays could keep elements without attributes
-until one is given any.
+until one is given any. Done so far: an object literal's property with
+a name known at compile time defines through a cached transition at its
+site (allocation -6.5%); JSON reads objects through their shapes. Measured
+2026-09-26, the attribute check is under 4% of the properties kernel,
+where dispatch is a third: moving attributes into classes is worth it for
+memory and for letting caches skip the check, but it needs attribute-keyed
+transitions and reconfiguration (a prototype's methods are non-enumerable,
+so falling back to dictionary mode on any attribute change is not an
+option).
 
 **Allocator and collector.** A cell is a header pushed into a table and
 slots pushed into an arena one at a time; every string is its own
@@ -58,7 +69,13 @@ heap. V8 and JavaScriptCore allocate a young object by bumping a pointer
 and let short-lived ones die cheaply. Evidence: allocation 39 ms against
 V8's 20; `malloc`, `free`, and the sweep were 15-20% of the Map kernel.
 A young generation, bump allocation, and strings stored in the heap are
-the candidates; a different collector is in scope.
+the candidates; a different collector is in scope. Done so far: strings
+of up to 256 bytes live in a byte arena, written in place and dropped by
+not being copied, compacted only once it holds twice its live bytes
+(strings -17%, maps -16%, regexp -8%); malloc and free went from 12-26%
+of those kernels to 1-4%. Left: every allocation pushes its slots and
+attribute bytes one call at a time (Z has no bulk append), and the sweep
+visits every handle.
 
 **Call protocol.** A call writes an 88-byte frame into one array and a
 register window into another, and leaves the dispatch loop to reload the
@@ -107,9 +124,10 @@ lookup; tried as `getMethod`, it saved about 1% where it applied and set
 off the dispatch-loop fragility under Call protocol, so it waits for the
 loop's restructuring.
 
-**Built-in fast paths.** JSON is the widest gap (6x): parse should reuse
-the hidden class of the previous object with the same keys, stringify
-should walk an object's shape instead of looking each key up.
+**Built-in fast paths.** JSON was the widest gap (6x); stringify now
+walks an object's shape with no allocation per object and parse caches
+the transitions it takes (json 49 -> 28 ms, ahead of QuickJS and Hermes,
+still 3.5x JavaScriptCore).
 ToString(Number) formats a double through up to 17 `snprintf` and
 `strtod` passes. Regular-expression results still build every capture
 string eagerly. Done so far: in-place element reads in the callback
