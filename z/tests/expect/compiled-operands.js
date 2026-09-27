@@ -31,3 +31,15 @@ var count = 0; for (var k = 0; k < 300000; k++) count++; out.push(count);
 var down = 0; for (var d = 10; d >= -300000; d -= 1000) down++; out.push(down);
 out.push([Object.is(-0, -(0)), 1 / -0, - -1, -(1e400), -(0x10), -(-(0)), 1 / -(-0), -2147483648, -2147483649, - - -3.5, (-5) + 1, 3 - -2, typeof -1].map(String).join(" "));
 console.log(out.join("\n"));
+// A return of a conditional branches to a return in each arm, nested
+// alike; a fused test in a conditional expression; names inferred for
+// functions after an initializer read in place; compound assignment to a
+// captured binding with a right side that has effects.
+function classify(n) { return n < 0 ? "negative" : n === 0 ? "zero" : (n < 10 ? "small" : "large"); }
+out = [classify(-3), classify(0), classify(4), classify(40), (function (x) { return x > 2 ? x * 2 : x; })(5)];
+out.push([1, 5, 9].map(function (v) { return v < 5 ? "lo" : v <= 5 ? "mid" : "hi"; }).join(""));
+function namer(start) { var n = start; var f = function () {}; return [f.name, (function () {}).name, (() => 0).name]; }
+out.push(namer(1).join("|"));
+function capture(start) { let total = start; const add = (step) => { total += step; return total; }; add(2); let calls = 0; total += (calls++, 5); return total + ":" + calls; }
+out.push(capture(1));
+console.log(out.join(","));

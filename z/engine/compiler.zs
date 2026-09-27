@@ -324,6 +324,38 @@ export struct Compiler {
     return this.emit(instAI16(Op.jmpIfFalse, condition, 0));
   }
 
+  function isConditional(in parser: Parser, node: u32): boolean {
+    let current = node;
+    while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+      current = parser.ast.node(current).left;
+    }
+    return current != NO_NODE && parser.ast.node(current).kind == NodeKind.conditional;
+  }
+
+  // `return test ? a : b` in a body with nothing to unwind: a branch and
+  // a return in each arm, so neither value is moved into a common
+  // register and no jump joins the arms; nested conditionals alike.
+  function emitReturnValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
+    let current = node;
+    while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+      current = parser.ast.node(current).left;
+    }
+    if (current != NO_NODE && parser.ast.node(current).kind == NodeKind.conditional) {
+      const n = parser.ast.node(current);
+      const savedNext = this.nextReg;
+      const jumpElse = this.emitBranchIfFalse(in parser, inout runtime, n.left);
+      this.nextReg = savedNext;
+      this.emitReturnValue(in parser, inout runtime, n.right);
+      this.patchJump(jumpElse);
+      this.nextReg = savedNext;
+      this.emitReturnValue(in parser, inout runtime, n.third);
+      this.nextReg = savedNext;
+      return;
+    }
+    const r = this.compileOperand(in parser, inout runtime, node, NO_NODE);
+    this.emit(instA(Op.returnOp, r));
+  }
+
   function emitJumpBack(inout this, target: u32): void {
     const here = i32(this.code.length);
     this.emit(instI16(Op.jmp, i32(target) - (here + 1)));
@@ -1072,7 +1104,15 @@ export struct Compiler {
   // temporary as usual.
   function compileOperand(inout this, in parser: Parser, inout runtime: Runtime, node: u32, later: u32): u8 {
     const direct = this.operandLocalReg(in parser, node);
-    if (direct >= 0 && !mayAssign(in parser, later)) return u8(direct);
+    if (direct >= 0 && !mayAssign(in parser, later)) {
+      // Read in place: what compileExpr would have consumed -- a name
+      // waiting for a function expression, a destination hint -- is
+      // consumed here, so neither reaches a later expression.
+      this.pendingNameLength = 0;
+      this.pendingNamePrefix = 0;
+      this.targetReg = -1;
+      return u8(direct);
+    }
     return this.compileExpr(in parser, inout runtime, node);
   }
 
@@ -2224,9 +2264,9 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.conditional) {
-      // Each branch leaves its value in dst directly where it can.
-      const condition = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
-      const jumpElse = this.emit(instAI16(Op.jmpIfFalse, condition, 0));
+      // Each branch leaves its value in dst directly where it can; a
+      // comparison test fuses with the branch.
+      const jumpElse = this.emitBranchIfFalse(in parser, inout runtime, n.left);
       const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       const savedNext = this.nextReg;
       this.targetReg = i32(dst);
@@ -3072,9 +3112,10 @@ export struct Compiler {
           this.nameNext(target.nameStart, target.nameLength, 0);
           value = this.compileExpr(in parser, inout runtime, n.right);
         } else {
-          // Compound assignment: current value, operator, right operand.
+          // Compound assignment: current value, operator, right operand,
+          // the right read in place (the operator follows at once).
           const current = this.compileExpr(in parser, inout runtime, n.left);
-          const right = this.compileExpr(in parser, inout runtime, n.right);
+          const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
           const op = compoundOp(n.op);
           if (op == Op.halt) {
             this.hadError = true;
@@ -3866,7 +3907,14 @@ export struct Compiler {
             if (this.locals[index].envSlot < 0 && !this.mustCheck(index) && !this.locals[index].isConst) {
               this.targetReg = i32(this.locals[index].reg);
             }
-            const value = this.compileExpr(in parser, inout runtime, decl.left);
+            // A binding in the environment is stored at once: its
+            // initializer is read in place.
+            let value: u8 = 0;
+            if (this.locals[index].envSlot >= 0) {
+              value = this.compileOperand(in parser, inout runtime, decl.left, NO_NODE);
+            } else {
+              value = this.compileExpr(in parser, inout runtime, decl.left);
+            }
             this.storeLocal(index, value);
           }
         } else if (n.op == TokenKind.kwVar) {
@@ -3894,8 +3942,13 @@ export struct Compiler {
             // Its register is written only by the initializer's last
             // instruction, after every read of the binding (checked for
             // the hole) has happened.
-            if (this.locals[usize(local)].envSlot < 0) this.targetReg = i32(this.locals[usize(local)].reg);
-            const value = this.compileExpr(in parser, inout runtime, decl.left);
+            let value: u8 = 0;
+            if (this.locals[usize(local)].envSlot < 0) {
+              this.targetReg = i32(this.locals[usize(local)].reg);
+              value = this.compileExpr(in parser, inout runtime, decl.left);
+            } else {
+              value = this.compileOperand(in parser, inout runtime, decl.left, NO_NODE);
+            }
             this.initLocal(usize(local), value);
           } else {
             const undefinedReg = this.allocReg();
@@ -3963,6 +4016,11 @@ export struct Compiler {
       return;
     }
     if (k == NodeKind.returnStmt) {
+      if (n.left != NO_NODE && this.regionDepth == 0 && !this.isAsyncGeneratorBody && this.isConditional(in parser, n.left)) {
+        this.emitReturnValue(in parser, inout runtime, n.left);
+        this.resetTemps();
+        return;
+      }
       let r: u8 = 0;
       if (n.left != NO_NODE && this.regionDepth == 0 && !this.isAsyncGeneratorBody) {
         // Nothing runs between the read and the return: no finally block

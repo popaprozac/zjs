@@ -32,3 +32,4 @@ NaN:
 300000
 301
 true -Infinity 1 -Infinity -16 0 Infinity -2147483648 -2147483649 -3.5 -4 5 number
+negative,zero,small,large,10,lomidhi,f||,8:1
