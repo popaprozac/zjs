@@ -4535,6 +4535,15 @@ export struct Runtime {
   // on each, then concatenation if either is a string, else numeric
   // addition. A throw is left pending.
   function addValues(inout this, rawLeft: Value, rawRight: Value): Value {
+    // Two primitives, as nearly always: no conversion can run the program.
+    if (!this.isObjectLike(rawLeft) && !this.isObjectLike(rawRight)) {
+      if (this.isStringValue(rawLeft) || this.isStringValue(rawRight)) return this.concatStrings(rawLeft, rawRight);
+      const leftNumber = this.numericOperand(rawLeft);
+      if (this.pendingThrow) return undefinedValue();
+      const rightNumber = this.numericOperand(rawRight);
+      if (this.pendingThrow) return undefinedValue();
+      return numericAdd(leftNumber, rightNumber);
+    }
     const left = this.toPrimitiveWithHint(rawLeft, HINT_DEFAULT);
     if (this.pendingThrow) return undefinedValue();
     const right = this.toPrimitiveWithHint(rawRight, HINT_DEFAULT);

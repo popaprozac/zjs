@@ -111,9 +111,10 @@ function thisStringHandle(inout runtime: Runtime, thisValue: Value, in method: S
   const source = isDeleted(primitive) ? thisValue : primitive;
   const text = runtime.toStringValue(source);
   if (runtime.pendingThrow) return 0;
-  // Rooted until the builtin returns (callHost pops it): converting the
-  // arguments that follow may run the program.
-  runtime.pushTempRoot(text);
+  // A string made here is rooted until the builtin returns (callHost
+  // pops it): converting the arguments that follow may run the program.
+  // A string receiver is already held by the caller's register.
+  if (!runtime.isStringValue(source)) runtime.pushTempRoot(text);
   return asCell(text);
 }
 
@@ -825,8 +826,9 @@ function argumentBytes(inout runtime: Runtime, value: Value): Array<u16> {
 function argumentHandle(inout runtime: Runtime, value: Value): u32 {
   const text = runtime.toStringValue(value);
   if (runtime.pendingThrow) return 0;
-  // Rooted until the builtin returns, as thisStringHandle's is.
-  runtime.pushTempRoot(text);
+  // Rooted until the builtin returns, as thisStringHandle's is, when it
+  // was made here.
+  if (!runtime.isStringValue(value)) runtime.pushTempRoot(text);
   return asCell(text);
 }
 
@@ -843,11 +845,9 @@ function stringIndexOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   if (narrow(in runtime, handle) && narrow(in runtime, needleHandle)) {
-    const hay = runtime.heap.stringStorageBytes(handle);
-    const key = runtime.heap.stringStorageBytes(needleHandle);
-    const position = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(hay.length));
+    const position = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), i32(runtime.heap.stringLength(handle)));
     if (runtime.pendingThrow) return undefinedValue();
-    return int32Value(findBytes(in hay, in key, usize(position)));
+    return int32Value(runtime.heap.findNarrow(handle, needleHandle, usize(position)));
   }
   const bytes = runtime.heap.stringUnits(handle);
   const needle = runtime.heap.stringUnits(needleHandle);
@@ -1033,9 +1033,7 @@ function stringIncludes(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   const position = clampPosition(integerArgument(inout runtime, runtime.argument(argsBase, argc, 1), 0), length);
   if (runtime.pendingThrow) return undefinedValue();
   if (narrow(in runtime, handle) && narrow(in runtime, needleHandle)) {
-    const hay = runtime.heap.stringStorageBytes(handle);
-    const key = runtime.heap.stringStorageBytes(needleHandle);
-    return booleanValue(findBytes(in hay, in key, usize(position)) >= 0);
+    return booleanValue(runtime.heap.findNarrow(handle, needleHandle, usize(position)) >= 0);
   }
   const bytes = runtime.heap.stringUnits(handle);
   const needle = runtime.heap.stringUnits(needleHandle);
@@ -1701,11 +1699,10 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   }
   let cuts = Array<usize>();
   if (narrow(in runtime, handle) && narrow(in runtime, separatorHandle)) {
-    const hay = runtime.heap.stringStorageBytes(handle);
-    const key = runtime.heap.stringStorageBytes(separatorHandle);
+    // Searched where the bytes are.
     let searchFrom: usize = 0;
     while (true) {
-      const found = findBytes(in hay, in key, searchFrom);
+      const found = runtime.heap.findNarrow(handle, separatorHandle, searchFrom);
       if (found < 0) break;
       cuts.push(usize(found));
       searchFrom = usize(found) + separatorLength;

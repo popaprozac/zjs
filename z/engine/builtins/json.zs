@@ -1,7 +1,7 @@
 // JSON.parse and JSON.stringify over byte strings.
 import { isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { thread } from "std/thread";
-import { replace } from "std/memory";
+import { TextBuilder, textBuilder, putByte, putUnit, putUnits, putString, textLength, truncateTo, finishText } from "./builder.zs";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32, isDeleted } from "../value.zs";
 import { Runtime, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber } from "../runtime.zs";
 import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN } from "../heap.zs";
@@ -510,58 +510,10 @@ function hexChar(digit: u32): u8 {
   return u8(87 + digit);
 }
 
-// The text JSON.stringify builds: bytes while every unit fits in one,
-// which is nearly always, and units once one does not.
-struct JsonText {
-  bytes: Array<u8>;
-  units: Array<u16>;
-  wide: boolean;
-}
-
-function putByte(inout text: JsonText, byte: u8): void {
-  if (text.wide) {
-    text.units.push(u16(byte));
-    return;
-  }
-  text.bytes.push(byte);
-}
-
-function putUnit(inout text: JsonText, unit: u16): void {
-  if (!text.wide) {
-    if (unit <= 0xFF) {
-      text.bytes.push(u8(unit));
-      return;
-    }
-    // The first unit past a byte: what is written so far becomes units.
-    let units = Array<u16>.withCapacity(text.bytes.length * 2 + 16);
-    let index: usize = 0;
-    while (index < text.bytes.length) {
-      units.push(u16(text.bytes[index]));
-      index = index + 1;
-    }
-    text.units = move units;
-    text.bytes = Array<u8>();
-    text.wide = true;
-  }
-  text.units.push(unit);
-}
-
-function putUnits(inout text: JsonText, in units: Array<u16>): void {
-  let index: usize = 0;
-  while (index < units.length) {
-    putUnit(inout text, units[index]);
-    index = index + 1;
-  }
-}
-
-function textLength(in text: JsonText): usize {
-  return text.wide ? text.units.length : text.bytes.length;
-}
-
 // A string's JSON form, read from the heap cell: nothing is copied out
 // first. A narrow string's bytes are read straight from its storage and
 // have no surrogates to check.
-function quoteString(in runtime: Runtime, inout text: JsonText, handle: u32): void {
+function quoteString(in runtime: Runtime, inout text: TextBuilder, handle: u32): void {
   putByte(inout text, 34);
   const length = runtime.heap.stringLength(handle);
   if (!runtime.heap.isWideString(handle) && !text.wide) {
@@ -602,27 +554,9 @@ function quoteString(in runtime: Runtime, inout text: JsonText, handle: u32): vo
   putByte(inout text, 34);
 }
 
-// A string's content as it is, unquoted (a number's text): a narrow
-// string's bytes read from its storage.
-function putStringText(in runtime: Runtime, inout text: JsonText, handle: u32): void {
-  const length = runtime.heap.stringLength(handle);
-  let index: usize = 0;
-  if (runtime.heap.isWideString(handle)) {
-    while (index < length) {
-      putUnit(inout text, runtime.heap.stringUnit(handle, index));
-      index = index + 1;
-    }
-    return;
-  }
-  while (index < length) {
-    putByte(inout text, runtime.heap.stringStorageByte(handle, index));
-    index = index + 1;
-  }
-}
-
 // A unit that does not go out as itself: a short escape, or \u and four
 // hex digits (a control character, a lone surrogate).
-function escapeUnit(inout text: JsonText, unit: u16): void {
+function escapeUnit(inout text: TextBuilder, unit: u16): void {
   putByte(inout text, 92);
   if (unit == 34 || unit == 92) {
     putByte(inout text, u8(unit));
@@ -654,7 +588,7 @@ function loneAt(in runtime: Runtime, handle: u32, index: usize, length: usize): 
 }
 
 // An int32's decimal digits.
-function pushInt32(inout text: JsonText, value: i32): void {
+function pushInt32(inout text: TextBuilder, value: i32): void {
   let magnitude: u32 = 0;
   if (value < 0) {
     putByte(inout text, 45);
@@ -679,20 +613,6 @@ function pushInt32(inout text: JsonText, value: i32): void {
   }
 }
 
-// Drop what was written after `mark` (a property whose value has no JSON
-// form after its key went out).
-function truncateTo(inout text: JsonText, mark: usize): void {
-  if (text.wide) {
-    while (text.units.length > mark) {
-      const dropped = text.units.pop();
-    }
-    return;
-  }
-  while (text.bytes.length > mark) {
-    const dropped = text.bytes.pop();
-  }
-}
-
 function appendAll(inout target: Array<u16>, in more: Array<u16>): void {
   let index: usize = 0;
   while (index < more.length) {
@@ -711,7 +631,7 @@ function copyBytes(in bytes: Array<u16>): Array<u16> {
   return copied;
 }
 
-function pushNull(inout text: JsonText): void {
+function pushNull(inout text: TextBuilder): void {
   putByte(inout text, 110);
   putByte(inout text, 117);
   putByte(inout text, 108);
@@ -720,7 +640,7 @@ function pushNull(inout text: JsonText): void {
 
 // SerializeJSONProperty: returns false when the value has no JSON form
 // (undefined, functions, symbols), leaving `text` untouched.
-function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, inout text: JsonText): boolean {
+function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, inout text: TextBuilder): boolean {
   const value = runtime.getProperty(holder, key);
   if (runtime.pendingThrow) return false;
   return serializeValue(inout runtime, inout state, holder, key, value, inout text);
@@ -802,7 +722,7 @@ function noteWithoutToJSON(in runtime: Runtime, inout state: Stringifier, handle
 }
 
 // SerializeJSONProperty with the property's value already read.
-function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, given: Value, inout text: JsonText): boolean {
+function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, given: Value, inout text: TextBuilder): boolean {
   let value = given;
   if (runtime.isObjectLike(value) && !knownWithoutToJSON(in runtime, in state, asCell(value))) {
     const toJSONKey = state.toJSONKey;
@@ -872,7 +792,7 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
       return true;
     }
     const rendered = runtime.toStringValue(value);
-    putStringText(in runtime, inout text, asCell(rendered));
+    putString(in runtime, inout text, asCell(rendered));
     return true;
   }
   if (!runtime.isObjectLike(value) || runtime.isCallable(value)) return false;
@@ -1098,18 +1018,13 @@ function jsonStringify(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   runtime.pushTempRoot(cellValue(holder));
   let hint = runtime.jsonTextHint + 16;
   if (hint > 1048576) hint = 1048576;
-  let text = JsonText({ bytes: Array<u8>.withCapacity(hint), units: Array<u16>(), wide: false });
+  let text = textBuilder(hint);
   const wrote = serialize(inout runtime, inout state, cellValue(holder), emptyKey, inout text);
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   if (!wrote) return undefinedValue();
   runtime.jsonTextHint = textLength(in text);
-  if (text.wide) {
-    const units = replace(inout text.units, Array<u16>());
-    return runtime.newStringUnits(move units);
-  }
-  const bytes = replace(inout text.bytes, Array<u8>());
-  return runtime.newStringLatin1(move bytes);
+  return finishText(inout runtime, inout text);
 }
 
 export function installJson(inout runtime: Runtime): void {

@@ -2594,10 +2594,21 @@ export struct Heap {
       const appendable = (this.bufferRefs[leftBuffer] & BUFFER_APPENDABLE) != 0;
       if (appendable && rightPayload != leftPayload && u32(this.strings[leftBuffer].length) == leftBytes) {
         let index: usize = 0;
-        while (index < usize(rightBytes)) {
-          const byte = this.storageByte(right, index);
-          this.strings[leftBuffer].push(byte);
-          index = index + 1;
+        if ((rightPayload & ARENA_BIT) != 0) {
+          // A small right side, the usual piece appended: its arena bytes
+          // read directly.
+          const origin = usize(rightPayload & ~ARENA_BIT);
+          while (index < usize(rightBytes)) {
+            const byte = this.smallBytes[origin + index];
+            this.strings[leftBuffer].push(byte);
+            index = index + 1;
+          }
+        } else {
+          while (index < usize(rightBytes)) {
+            const byte = this.storageByte(right, index);
+            this.strings[leftBuffer].push(byte);
+            index = index + 1;
+          }
         }
         this.bufferRefs[leftBuffer] = this.bufferRefs[leftBuffer] + 1;
         return this.allocateStringOver(u32(leftBuffer), joinedBytes, wide);
@@ -2919,6 +2930,26 @@ export struct Heap {
   // Keep a string's hash, computed elsewhere from the same content.
   function cacheStringHash(inout this, handle: u32, hash: u32): void {
     this.headers[usize(handle)].slotCount = hash;
+  }
+
+  // Where the bytes of narrow string `needle` first occur in those of
+  // narrow string `hay` at or after `startAt`, or -1: both read where they
+  // are, nothing copied.
+  function findNarrow(hay: u32, needle: u32, startAt: usize): i32 {
+    const hayLength = usize(this.headers[usize(hay)].slotStart);
+    const needleLength = usize(this.headers[usize(needle)].slotStart);
+    if (needleLength == 0) return i32(startAt <= hayLength ? startAt : hayLength);
+    if (needleLength > hayLength || startAt > hayLength - needleLength) return -1;
+    const hayPayload = this.headers[usize(hay)].payload;
+    const needlePayload = this.headers[usize(needle)].payload;
+    const hayStart = usize(hayPayload & ~ARENA_BIT);
+    const needleStart = usize(needlePayload & ~ARENA_BIT);
+    const hayArena = (hayPayload & ARENA_BIT) != 0;
+    const needleArena = (needlePayload & ARENA_BIT) != 0;
+    if (hayArena && needleArena) return findIn(this.smallBytes, hayStart, hayLength, this.smallBytes, needleStart, needleLength, startAt);
+    if (hayArena) return findIn(this.smallBytes, hayStart, hayLength, this.strings[usize(needlePayload)], 0, needleLength, startAt);
+    if (needleArena) return findIn(this.strings[usize(hayPayload)], 0, hayLength, this.smallBytes, needleStart, needleLength, startAt);
+    return findIn(this.strings[usize(hayPayload)], 0, hayLength, this.strings[usize(needlePayload)], 0, needleLength, startAt);
   }
 
   // The buffer in `strings` a string's storage is in, for a string that
@@ -3370,6 +3401,24 @@ function prefixSums(inout values: Array<u32>): void {
     running = running + counted;
     i = i + 1;
   }
+}
+
+// The first offset at or after `startAt` where the `needleLength` bytes at
+// `needleStart` of `needle` occur among the `hayLength` at `hayStart` of
+// `hay`, or -1 (the needle is not empty and fits).
+function findIn(hay: Slice<u8>, hayStart: usize, hayLength: usize, needle: Slice<u8>, needleStart: usize, needleLength: usize, startAt: usize): i32 {
+  const first = needle[needleStart];
+  const last = hayLength - needleLength;
+  let start = startAt;
+  while (start <= last) {
+    if (hay[hayStart + start] == first) {
+      let k: usize = 1;
+      while (k < needleLength && hay[hayStart + start + k] == needle[needleStart + k]) { k = k + 1; }
+      if (k == needleLength) return i32(start);
+    }
+    start = start + 1;
+  }
+  return -1;
 }
 
 function sameStorage(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, length: usize): boolean {

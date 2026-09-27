@@ -10,6 +10,7 @@ import { Value, undefinedValue, nullValue, deletedValue, booleanValue, int32Valu
 import { thread } from "std/thread";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, PROP_ACCESSOR, bytesOf } from "../heap.zs";
 import { Runtime, HostFunction, ERROR_KIND_RANGE, DescriptorInput, emptyDescriptorInput, toNumber, isIntegralDouble, truncateDouble } from "../runtime.zs";
+import { textBuilder, putByte, putString, finishText } from "./builder.zs";
 
 const MAX_SAFE_LENGTH: f64 = 9007199254740991.0;
 const MAX_ARRAY_LENGTH: f64 = 4294967295.0;
@@ -1093,16 +1094,6 @@ function arrayFlatMap(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   return result;
 }
 
-function appendStringBytes(inout runtime: Runtime, inout joined: Array<u16>, text: Value): void {
-  const handle = asCell(text);
-  const count = runtime.heap.stringLength(handle);
-  let i: usize = 0;
-  while (i < count) {
-    joined.push(runtime.heap.stringUnit(handle, i));
-    i = i + 1;
-  }
-}
-
 // join(separator): elements through ToString, holes and nullish empty.
 function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Value, locale: boolean): Value {
   const object = receiverObject(inout runtime, thisValue);
@@ -1110,22 +1101,22 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
   runtime.pushTempRoot(object);
   const length = lengthOf(inout runtime, object);
   if (length < 0.0) { runtime.popTempRoot(); return undefinedValue(); }
-  let separator = Array<u16>();
-  if (isUndefined(separatorGiven)) {
-    separator.push(44);
-  } else {
+  // The separator: a comma, or its string, rooted while elements convert.
+  let separator: u32 = 0;
+  if (!isUndefined(separatorGiven)) {
     const text = runtime.toStringValue(separatorGiven);
     if (runtime.pendingThrow) { runtime.popTempRoot(); return undefinedValue(); }
-    separator = runtime.heap.stringUnits(asCell(text));
+    separator = asCell(text);
+    runtime.pushTempRoot(text);
   }
-  let joined = Array<u16>();
+  let joined = textBuilder(64);
   let k = 0.0;
   while (k < length) {
     if (k > 0.0) {
-      let s: usize = 0;
-      while (s < separator.length) {
-        joined.push(separator[s]);
-        s = s + 1;
+      if (separator == 0) {
+        putByte(inout joined, 44);
+      } else {
+        putString(in runtime, inout joined, separator);
       }
     }
     const element = getIndex(inout runtime, object, k);
@@ -1153,13 +1144,14 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
         text = runtime.toStringValue(element);
       }
       if (runtime.pendingThrow) break;
-      appendStringBytes(inout runtime, inout joined, text);
+      putString(in runtime, inout joined, asCell(text));
     }
     k = k + 1.0;
   }
+  if (separator != 0) runtime.popTempRoot();
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.newStringUnits(move joined);
+  return finishText(inout runtime, inout joined);
 }
 
 function arrayJoin(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
