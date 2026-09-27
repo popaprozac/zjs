@@ -165,6 +165,18 @@ per-access check redundant (every bounds check off: -6% to -13% on every
 kernel; the register file and instruction fetch alone: properties -8%,
 closures -6%, calls -5%).
 
+**Profile-guided optimization** (measured 2026-09-26, not yet a lever
+with a place in the build). The generated C built with clang's
+instrumentation, trained, and rebuilt with the profile: trained on the
+speed kernels and the expectation cases, every kernel -7% to -19%
+(binary +6 KB); trained on the expectation cases alone and measured on
+the kernels, allocation -17% and maps -10% but regexp +15% and json +9%.
+What it gives depends on a training set that stands for real programs,
+which small correctness cases do not. It also answers the code-layout
+noise that moves single kernels by up to 10% from unrelated changes.
+Needs: a training corpus of realistic programs, and a way to pass the
+profile through `z build` (or a build step compiling the emitted C).
+
 ## Order
 
 1. Bytecode quality
