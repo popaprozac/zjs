@@ -1,7 +1,9 @@
 # The engine against its goals
 
-What the rewrite is for, in order, and where it stands. Measured
-2026-09-26 at engine commit `798b7eb`, z-lang `bdc237d2`, macOS arm64.
+What the rewrite is for, in order, and where it stands. Size measured
+2026-09-26 at engine commit `798b7eb` (the engine's own code has since
+grown from 610 to about 625 KB, `325838b`); speed and memory 2026-09-27
+at `325838b`; z-lang `bdc237d2`, macOS arm64.
 
 1. **Small, with features opt-in.** The core is ECMAScript and nothing
    else; web APIs, WinterTC, and the like are modules an embedder links
@@ -52,36 +54,41 @@ the minimal context and the default one are the same engine.
 
 ## 2. Speed
 
-`z/bench/speed` (`results/2026-09-26-hermes.json`), milliseconds per
-kernel with each engine's startup subtracted, median of five interleaved
-runs, load average 4.2. Hermes is 0.13.0, run from source and on bytecode
-`hermesc -O` made beforehand:
+`z/bench/speed` (`results/2026-09-27.json`, engine `325838b`),
+milliseconds per kernel with each engine's startup subtracted, median of
+five interleaved runs, load average 4.0. Hermes is 0.13.0, run from
+source and on bytecode `hermesc -O` made beforehand:
 
 | Kernel | zjsz | Zen-c reference | QuickJS | Hermes | Hermes, precompiled | JSC, no JIT | V8, jitless |
 |---|---|---|---|---|---|---|---|
-| allocation | 39 | 46 | 43 | 35 | 34 | 22 | 20 |
-| arrays | 167 | 158 | 145 | 306 | 304 | 172 | 81 |
-| calls | 17 | 15 | 10 | 9 | 8 | 9 | 9 |
-| closures | 35 | 47 | 32 | 13 | 13 | 21 | 17 |
-| json | 49 | 33 | 42 | 32 | 32 | 8 | 12 |
-| maps | 52 | 7,574 | 53 | 52 | 52 | 56 | 49 |
-| polymorphic | 20 | 29 | 17 | 21 | 21 | 22 | 17 |
-| properties | 46 | 63 | 40 | 32 | 32 | 25 | 31 |
-| regexp | 27 | 40 | 19 | 29 | 28 | 16 | 17 |
-| strings | 23 | 40 | 17 | 15 | 15 | 9 | 9 |
-| startup | 2.4 | 4.5 | 3.1 | 4.4 | 4.1 | 5.3 | 26.5 |
-| geometric mean, relative to zjsz | 1.00 | 1.90 | 0.84 | 0.80 | 0.78 | 0.58 | 0.54 |
+| allocation | 26 | 47 | 44 | 35 | 36 | 22 | 21 |
+| arrays | 162 | 162 | 150 | 314 | 312 | 175 | 82 |
+| calls | 14 | 15 | 11 | 9 | 8 | 10 | 10 |
+| closures | 25 | 49 | 34 | 13 | 13 | 22 | 18 |
+| json | 27 | 34 | 44 | 34 | 33 | 8 | 13 |
+| maps | 44 | 7,498 | 55 | 53 | 53 | 58 | 48 |
+| polymorphic | 21 | 28 | 18 | 21 | 21 | 22 | 16 |
+| properties | 45 | 63 | 41 | 33 | 32 | 25 | 32 |
+| regexp | 25 | 41 | 19 | 29 | 29 | 16 | 17 |
+| strings | 18 | 41 | 18 | 15 | 15 | 9 | 9 |
+| startup | 2.2 | 4.4 | 2.9 | 4.5 | 3.8 | 5.1 | 28.1 |
+| geometric mean, engine / zjsz | 1.00 | 2.38 | 1.06 | 0.99 | 0.99 | 0.73 | 0.67 |
 
-Over these kernels QuickJS is 1.19 times faster than the engine, Hermes
-1.25 (1.28 precompiled), JavaScriptCore's interpreter 1.7, and V8's 1.9;
-on 2026-09-25 (`results/2026-09-25.json`, when the kernels still ran at
-the top level) QuickJS, JavaScriptCore, and V8 were 2.2, 3.3, and 4.5
-times faster. The engine is level with the others on Map and Set, ahead
-of Hermes on arrays and regular expressions, and starts fastest. The
-Hermes VM alone is 2.75 MB of code and 3.34 MB with its compiler (arm64),
-against the engine's 0.69 MB minimal embedder. The largest gaps left:
-JSON (6x JavaScriptCore), closures (2.7x Hermes), strings (2.6x),
-calls (2.1x). The plan to close them is [levers.md](levers.md).
+Over these kernels the engine is 1.06 times faster than QuickJS and
+level with Hermes, from source or precompiled; JavaScriptCore's
+interpreter is 1.37 times faster and V8's 1.49. On 2026-09-26
+(`results/2026-09-26-hermes.json`) QuickJS was 1.19 times faster,
+Hermes 1.25 (1.28 precompiled), JavaScriptCore 1.7, V8 1.9. The engine
+is fastest on Map and Set, ahead of Hermes on arrays, allocation, JSON,
+and regular expressions, and starts fastest. The Hermes VM alone is
+2.75 MB of code and 3.34 MB with its compiler (arm64), against the
+engine's minimal embedder of about 0.70 MB. The largest gaps left: JSON
+(3.4x JavaScriptCore), strings and arrays (2.0x), closures (1.9x
+Hermes), properties (1.8x JavaScriptCore), calls (1.75x). The plan to
+close them is [levers.md](levers.md).
+
+Memory, on a large live heap (`z/bench/memory`): about 100 MB at peak,
+against QuickJS 131, JavaScriptCore 188, V8 240, and Hermes 67.
 
 Tried and not kept: direct-threaded dispatch (computed goto), measured by
 rewriting the generated C by hand, was slower on Apple silicon

@@ -8,29 +8,30 @@ lever's status in the same commit that moves it.
 
 ## The gap
 
-`z/bench/speed`, `results/2026-09-26-heap.json` (engine `084b463`),
-milliseconds per kernel, against the fastest engine without a JIT on
-each, and the first measurement of this plan (`results/2026-09-26-hermes.json`):
+`z/bench/speed`, `results/2026-09-27.json` (engine `325838b`, load
+4.0), milliseconds per kernel, against the fastest engine without a JIT
+on each, and the first measurement of this plan
+(`results/2026-09-26-hermes.json`):
 
 | Kernel | zjsz | then | Fastest jit-less | Engine | Gap |
 |---|---|---|---|---|---|
-| allocation | 35 | 39 | 23 | JavaScriptCore, V8 | 1.5x |
-| arrays | 174 | 167 | 86 | V8 | 2.0x |
-| calls | 16 | 17 | 8 | Hermes, precompiled | 2.0x |
-| closures | 29 | 35 | 14 | Hermes | 2.1x |
-| json | 28 | 49 | 8 | JavaScriptCore | 3.5x |
-| maps | 46 | 52 | 46 | the engine | 1.0x |
-| polymorphic | 22 | 20 | 17 | V8 | 1.3x |
-| properties | 45 | 46 | 26 | JavaScriptCore | 1.7x |
-| regexp | 26 | 27 | 17 | JavaScriptCore | 1.5x |
-| strings | 19 | 23 | 9 | V8 | 2.1x |
+| allocation | 26 | 39 | 21 | V8 | 1.2x |
+| arrays | 162 | 167 | 82 | V8 | 2.0x |
+| calls | 14 | 17 | 8 | Hermes, precompiled | 1.75x |
+| closures | 25 | 35 | 13 | Hermes | 1.9x |
+| json | 27 | 49 | 8 | JavaScriptCore | 3.4x |
+| maps | 44 | 52 | 44 | the engine | 1.0x |
+| polymorphic | 21 | 20 | 16 | V8 | 1.3x |
+| properties | 45 | 46 | 25 | JavaScriptCore | 1.8x |
+| regexp | 25 | 27 | 16 | JavaScriptCore | 1.6x |
+| strings | 18 | 23 | 9 | JavaScriptCore, V8 | 2.0x |
 
-Over all ten, QuickJS and the engine are level (QuickJS was 1.19 times
-faster when this plan began), Hermes is 1.08 times faster (1.10 on
-precompiled bytecode; 1.25 and 1.28 then), JavaScriptCore's interpreter
-1.45 (1.7), V8's 1.54 (1.9). For size, the engine's minimal embedder is
-0.69 MB of code; the Hermes VM alone is 2.75 MB, with its compiler 3.34
-MB (arm64).
+Over all ten the engine is 1.06 times faster than QuickJS (QuickJS was
+1.19 times faster when this plan began), level with Hermes run from
+source and precompiled (1.25 and 1.28 faster then), and JavaScriptCore's
+interpreter is 1.37 times faster (1.7), V8's 1.49 (1.9). For size, the
+engine's minimal embedder is about 0.70 MB of code; the Hermes VM alone
+is 2.75 MB, with its compiler 3.34 MB (arm64).
 
 ## The levers
 
