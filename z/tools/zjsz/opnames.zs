@@ -185,5 +185,6 @@ export function opName(op: Op): String {
     shlImm => "shlImm";
     shrImm => "shrImm";
     uShrImm => "uShrImm";
+    defineNamed => "defineNamed";
   };
 }

@@ -15,7 +15,7 @@ import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, i
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -569,6 +569,25 @@ export struct Runtime {
       return true;
     }
     return false;
+  }
+
+  // An object literal's cached definition; false for a miss.
+  function defineCached(inout this, fi: u32, nameSlot: usize, handle: u32, value: Value): boolean {
+    const cache = this.functions[usize(fi)].caches[nameSlot];
+    if (cache.kind != CACHE_DEFINE || this.heap.objectClass(handle) != cache.receiverClass) return false;
+    this.heap.transitionTo(handle, cache.targetClass, cache.slot, value);
+    return true;
+  }
+
+  // After a literal's property was defined by name: remember the
+  // transition it took, if it took one.
+  function populateDefineCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, classBefore: u32): void {
+    if (this.heap.isDictionary(handle)) return;
+    const classAfter = this.heap.objectClass(handle);
+    if (classAfter == classBefore || !this.heap.isTransitionOf(classAfter, classBefore, atom)) return;
+    const slot = this.heap.objectFindSlot(handle, atom);
+    if (slot < 0) return;
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_DEFINE, depth: 0, receiverClass: classBefore, slot: u32(slot), targetClass: classAfter, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   // After a slow-path store on an object: remember an own writable data
@@ -7172,6 +7191,24 @@ export struct Runtime {
                 thrown = this.readOnlyError(this.propertyKey(key));
                 throwing = true;
               }
+            }
+          }
+          defineNamed => {
+            // An object literal's property named at compile time: the
+            // site's transition when the literal has the class it last saw,
+            // else defined by name and the transition remembered.
+            const object = asCell(this.reg(base, inst.a));
+            const nameSlot = usize(inst.b);
+            const value = this.reg(base, inst.c);
+            if (!this.defineCached(fi, nameSlot, object, value)) {
+              const atom = this.functions[usize(fi)].propertyNames[nameSlot];
+              const classBefore = this.heap.objectClass(object);
+              this.heap.objectSet(object, atom, value);
+              this.populateDefineCache(fi, nameSlot, object, atom, classBefore);
+            }
+            if (this.isCompiledCallable(value)) {
+              const atomHome = this.atomHome;
+              this.setFunctionHidden(asCell(value), atomHome, cellValue(object));
             }
           }
           initObjData => {

@@ -1414,8 +1414,7 @@ export struct Compiler {
         return;
       }
       const atom = this.propertyNameAtom(in parser, inout runtime, callee.nameStart, callee.nameLength);
-      const nameIndex = this.nameSlot(atom);
-      this.emit(instABC(Op.loadProp, base, base + 1, nameIndex));
+      this.emitLoadNamed(base, base + 1, atom);
       return;
     }
     const key = this.compileExpr(in parser, inout runtime, callee.right);
@@ -1458,7 +1457,7 @@ export struct Compiler {
           this.emit(instABC(Op.loadElem, dst, object, key));
         } else {
           const atom = this.propertyNameAtom(in parser, inout runtime, n.nameStart, n.nameLength);
-          this.emit(instABC(Op.loadProp, dst, object, this.nameSlot(atom)));
+          this.emitLoadNamed(dst, object, atom);
         }
       } else {
         const key = this.compileExpr(in parser, inout runtime, n.right);
@@ -1493,7 +1492,7 @@ export struct Compiler {
             this.emit(instABC(Op.loadElem, base, base + 1, key));
           } else {
             const atom = this.propertyNameAtom(in parser, inout runtime, callee.nameStart, callee.nameLength);
-            this.emit(instABC(Op.loadProp, base, base + 1, this.nameSlot(atom)));
+            this.emitLoadNamed(base, base + 1, atom);
           }
         } else {
           const key = this.compileExpr(in parser, inout runtime, callee.right);
@@ -1532,7 +1531,7 @@ export struct Compiler {
     this.emit(instAB(Op.mov, base + 1, iterator));
     const nextText: String = "next";
     const nextAtom = runtime.atomOf(in nextText);
-    this.emit(instABC(Op.loadProp, base, base + 1, this.nameSlot(nextAtom)));
+    this.emitLoadNamed(base, base + 1, nextAtom);
     if (withArgument) {
       this.emit(instAB(Op.mov, base + 2, sent));
       this.emit(instABC(Op.methodInvoke, base, base, 1));
@@ -1968,18 +1967,42 @@ export struct Compiler {
 
   // The name operand of LoadProp / StoreProp: an index into the
   // function's property-name table, shared by every use of the name.
-  function nameSlot(inout this, atom: u32): u8 {
+  // `dst = object.name`: through a name slot, which the property cache
+  // hangs off, while the function has one to spare, else through a key
+  // register, so a function naming more than 256 properties still
+  // compiles.
+  function emitLoadNamed(inout this, dst: u8, object: u8, atom: u32): void {
+    const slot = this.freeNameSlot(atom);
+    if (slot >= 0) {
+      this.emit(instABC(Op.loadProp, dst, object, u8(slot)));
+      return;
+    }
+    const key = this.emitKey(atom);
+    this.emit(instABC(Op.loadElem, dst, object, key));
+  }
+
+  // `object.name = value`, the same way.
+  function emitStoreNamed(inout this, object: u8, atom: u32, value: u8): void {
+    const slot = this.freeNameSlot(atom);
+    if (slot >= 0) {
+      this.emit(instABC(Op.storeProp, object, u8(slot), value));
+      return;
+    }
+    const key = this.emitKey(atom);
+    this.emit(instABC(Op.storeElem, object, key, value));
+  }
+
+  // The name slot for `atom` if it has one or one is left, else -1: for
+  // an instruction that has a form taking its name another way.
+  function freeNameSlot(inout this, atom: u32): i32 {
     let index: usize = 0;
     while (index < this.propertyNames.length) {
-      if (this.propertyNames[index] == atom) return u8(index);
+      if (this.propertyNames[index] == atom) return i32(index);
       index = index + 1;
     }
-    if (this.propertyNames.length >= 256) {
-      this.hadError = true;
-      return 0;
-    }
+    if (this.propertyNames.length >= 256) return -1;
     this.propertyNames.push(atom);
-    return u8(this.propertyNames.length - 1);
+    return i32(this.propertyNames.length - 1);
   }
 
   // A key register holding an interned name.
@@ -2421,10 +2444,10 @@ export struct Compiler {
         this.emit(instAB(Op.awaitOp, result, result));
         this.emit(instA(Op.requireIterResult, result));
         const returnDone = this.allocReg();
-        this.emit(instABC(Op.loadProp, returnDone, result, this.nameSlot(doneAtom)));
+        this.emitLoadNamed(returnDone, result, doneAtom);
         const toYield = this.emit(instAI16(Op.jmpIfFalse, returnDone, 0));
         const returned = this.allocReg();
-        this.emit(instABC(Op.loadProp, returned, result, this.nameSlot(valueAtom)));
+        this.emitLoadNamed(returned, result, valueAtom);
         const toUnwind = this.emit(instI16(Op.jmp, 0));
         this.patchJump(toPlainReturn);
         this.emit(instAB(Op.mov, returned, received));
@@ -2440,17 +2463,17 @@ export struct Compiler {
         this.patchJump(toCheck);
         this.patchJump(toCheck2);
         const done = this.allocReg();
-        this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
+        this.emitLoadNamed(done, result, doneAtom);
         const finished = this.emit(instAI16(Op.jmpIfTrue, done, 0));
         this.patchJump(toYield);
         const value = this.allocReg();
-        this.emit(instABC(Op.loadProp, value, result, this.nameSlot(valueAtom)));
+        this.emitLoadNamed(value, result, valueAtom);
         this.emit(instAB(Op.yieldDelegate, received, value));
         this.emit(instA(Op.resumeMode, mode));
         this.emitJumpBack(loopTop);
         this.patchJump(finished);
         const dst = this.allocReg();
-        this.emit(instABC(Op.loadProp, dst, result, this.nameSlot(valueAtom)));
+        this.emitLoadNamed(dst, result, valueAtom);
         return dst;
       }
       if (n.boolValue) {
@@ -2493,11 +2516,11 @@ export struct Compiler {
         this.patchJump(toReturn);
         this.emit(instABC(Op.iterReturnWith, result, iterator, received));
         const returnDone = this.allocReg();
-        this.emit(instABC(Op.loadProp, returnDone, result, this.nameSlot(doneAtom)));
+        this.emitLoadNamed(returnDone, result, doneAtom);
         const toYield = this.emit(instAI16(Op.jmpIfFalse, returnDone, 0));
         // The delegate finished a return: this generator returns its value.
         const returned = this.allocReg();
-        this.emit(instABC(Op.loadProp, returned, result, this.nameSlot(valueAtom)));
+        this.emitLoadNamed(returned, result, valueAtom);
         if (this.regionDepth > 0) {
           const savedFixed = this.fixedRegs;
           if (returned + 1 > this.fixedRegs) this.fixedRegs = returned + 1;
@@ -2508,7 +2531,7 @@ export struct Compiler {
         this.patchJump(toCheck);
         this.patchJump(toCheck2);
         const done = this.allocReg();
-        this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
+        this.emitLoadNamed(done, result, doneAtom);
         const finished = this.emit(instAI16(Op.jmpIfTrue, done, 0));
         this.patchJump(toYield);
         this.emit(instAB(Op.yieldDelegate, received, result));
@@ -2516,7 +2539,7 @@ export struct Compiler {
         this.emitJumpBack(loopTop);
         this.patchJump(finished);
         const dst = this.allocReg();
-        this.emit(instABC(Op.loadProp, dst, result, this.nameSlot(valueAtom)));
+        this.emitLoadNamed(dst, result, valueAtom);
         return dst;
       }
       let value: u8 = 0;
@@ -2575,9 +2598,8 @@ export struct Compiler {
         return dst;
       }
       const atom = this.propertyNameAtom(in parser, inout runtime, n.nameStart, n.nameLength);
-      const slot = this.nameSlot(atom);
       const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
-      this.emit(instABC(Op.loadProp, dst, object, slot));
+      this.emitLoadNamed(dst, object, atom);
       return dst;
     }
     if (k == NodeKind.computed) {
@@ -2622,6 +2644,7 @@ export struct Compiler {
           return 0;
         }
         let key: u8 = 0;
+        let named: i32 = -1;
         if (property.third != NO_NODE) {
           key = this.compileExpr(in parser, inout runtime, property.third);
         } else {
@@ -2638,7 +2661,11 @@ export struct Compiler {
             i = i + 1;
             continue;
           }
-          key = this.emitKey(atom);
+          // A data property's name rides in the instruction, through the
+          // site's cache, while the function has name slots to spare.
+          const accessor = property.op == TokenKind.kwGet || property.op == TokenKind.kwSet;
+          if (!accessor && this.propertyNames.length < 128) named = this.freeNameSlot(atom);
+          if (named < 0) key = this.emitKey(atom);
           let prefix: u32 = 0;
           if (property.op == TokenKind.kwGet) prefix = 1;
           if (property.op == TokenKind.kwSet) prefix = 2;
@@ -2662,6 +2689,8 @@ export struct Compiler {
           this.emit(instABC(Op.defineGetter, dst, key, value));
         } else if (property.op == TokenKind.kwSet) {
           this.emit(instABC(Op.defineSetter, dst, key, value));
+        } else if (named >= 0) {
+          this.emit(instABC(Op.defineNamed, dst, u8(named), value));
         } else {
           this.emit(instABC(Op.initObjData, dst, key, value));
         }
@@ -3072,9 +3101,15 @@ export struct Compiler {
         if (n.op == TokenKind.eq) {
           if (target.kind == NodeKind.member) {
             const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
-            const slot = this.nameSlot(atom);
+            const slot = this.freeNameSlot(atom);
+            let key: u8 = 0;
+            if (slot < 0) key = this.emitKey(atom);
             const value = this.compileExpr(in parser, inout runtime, n.right);
-            this.emit(instABC(Op.storeProp, object, slot, value));
+            if (slot >= 0) {
+              this.emit(instABC(Op.storeProp, object, u8(slot), value));
+            } else {
+              this.emit(instABC(Op.storeElem, object, key, value));
+            }
             return value;
           }
           const key = this.compileExpr(in parser, inout runtime, target.right);
@@ -3425,7 +3460,7 @@ export struct Compiler {
       this.emitAsyncIteratorStep(inout runtime, iterator, value, false, result);
       const doneText: String = "done";
       const doneAtom = runtime.atomOf(in doneText);
-      this.emit(instABC(Op.loadProp, done, result, this.nameSlot(doneAtom)));
+      this.emitLoadNamed(done, result, doneAtom);
     } else {
       this.emit(instABC(Op.iterStep, value, iterator, done));
     }
@@ -3433,7 +3468,7 @@ export struct Compiler {
     if (isAwait) {
       const valueText: String = "value";
       const valueAtom = runtime.atomOf(in valueText);
-      this.emit(instABC(Op.loadProp, value, result, this.nameSlot(valueAtom)));
+      this.emitLoadNamed(value, result, valueAtom);
     }
     // A throw from the binding or the body closes the iterator (quietly)
     // and continues unwinding.
@@ -3531,8 +3566,7 @@ export struct Compiler {
         return;
       }
       const atom = this.propertyNameAtom(in parser, inout runtime, n.nameStart, n.nameLength);
-      const slot = this.nameSlot(atom);
-      this.emit(instABC(Op.storeProp, object, slot, value));
+      this.emitStoreNamed(object, atom, value);
       return;
     }
     if (n.kind == NodeKind.computed) {
@@ -3611,8 +3645,7 @@ export struct Compiler {
         if (hasRest) this.emit(instAB(Op.arrayPush, keys, key));
       } else {
         const atom = this.propertyNameAtom(in parser, inout runtime, entry.nameStart, entry.nameLength);
-        const slot = this.nameSlot(atom);
-        this.emit(instABC(Op.loadProp, value, source, slot));
+        this.emitLoadNamed(value, source, atom);
         if (hasRest) {
           const keyReg = this.emitKey(atom);
           this.emit(instAB(Op.arrayPush, keys, keyReg));

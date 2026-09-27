@@ -1,0 +1,21 @@
+1,2,a,b,q r={"1":"one","2":0,"a":100,"b":"x0","q r":true}
+1,2,a,b,q r={"1":"one","2":2,"a":101,"b":"x1","q r":true}
+1,2,a,b,q r={"1":"one","2":4,"a":102,"b":"x2","q r":true}
+1,2,a,b,q r={"1":"one","2":6,"a":103,"b":"x3","q r":true}
+1,2,a,b,q r={"1":"one","2":8,"a":104,"b":"x4","q r":true}
+proto hi
+2
+9
+true
+x,y,z,w
+derived+base
+d
+[{"k":0,"v":[0],"f":null},{"k":"s","v":[1],"f":null},{"k":2,"v":[2]},{"k":"s","v":[3]}]
+function
+300
+299
+p299
+onetwo|twoone|onetwo|twoone|onetwo|twoone
+2
+false
+{"toString":1,"valueOf":2,"constructor":3,"hasOwnProperty":4}

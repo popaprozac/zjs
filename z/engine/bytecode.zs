@@ -202,6 +202,9 @@ export enum Op {
   shlImm,
   shrImm,
   uShrImm,
+  // a = object, b = name slot, c = value: an object literal's property
+  // with a name known at compile time, through the site's cache.
+  defineNamed,
 }
 
 export struct Inst {
@@ -435,6 +438,7 @@ export function opCode(op: Op): i32 {
     shlImm => 178;
     shrImm => 179;
     uShrImm => 180;
+    defineNamed => 181;
   };
 }
 
@@ -452,6 +456,9 @@ export const CACHE_TRANSITION: u8 = 3;
 // string, of a name its prototype holds: the prototype and its class,
 // and the slot there.
 export const CACHE_INHERITED: u8 = 4;
+// An object literal's property defined by a transition: the literal's
+// class before and after, and the slot.
+export const CACHE_DEFINE: u8 = 5;
 
 export struct PropertyCache {
   kind: u8;
