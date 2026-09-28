@@ -3,7 +3,7 @@
 What the rewrite is for, in order, and where it stands. Size measured
 2026-09-26 at engine commit `798b7eb` (the engine's own code has since
 grown from 610 to about 625 KB, `325838b`); speed 2026-09-28 at
-`884e2c3`, memory at `325838b`; z-lang `bdc237d2`, macOS arm64.
+`f4dcab3`, memory at `325838b`; z-lang `bdc237d2`, macOS arm64.
 
 1. **Small, with features opt-in.** The core is ECMAScript and nothing
    else; web APIs, WinterTC, and the like are modules an embedder links
@@ -54,31 +54,31 @@ the minimal context and the default one are the same engine.
 
 ## 2. Speed
 
-`z/bench/speed` (`results/2026-09-28-helpers.json`, engine `884e2c3`),
+`z/bench/speed` (`results/2026-09-28-inline.json`, engine `f4dcab3`),
 milliseconds per kernel with each engine's startup subtracted, median of
-five interleaved runs, load average 2.9. Hermes is 0.13.0, run from
+five interleaved runs, load average 3.3. Hermes is 0.13.0, run from
 source and on bytecode `hermesc -O` made beforehand. `helpers`, calls to
 small functions from a loop, joined the suite that day:
 
 | Kernel | zjsz | Zen-c reference | QuickJS | Hermes | Hermes, precompiled | JSC, no JIT | V8, jitless |
 |---|---|---|---|---|---|---|---|
-| allocation | 19 | 45 | 42 | 34 | 34 | 22 | 21 |
-| arrays | 104 | 155 | 142 | 302 | 300 | 169 | 80 |
-| calls | 11 | 14 | 10 | 8 | 7 | 9 | 9 |
-| closures | 21 | 46 | 32 | 13 | 13 | 20 | 17 |
-| helpers | 40 | 83 | 51 | 22 | 22 | 55 | 49 |
-| json | 18 | 32 | 41 | 32 | 31 | 7 | 12 |
-| maps | 40 | 7,159 | 52 | 52 | 52 | 57 | 47 |
-| polymorphic | 17 | 29 | 18 | 22 | 22 | 22 | 19 |
-| properties | 36 | 63 | 40 | 33 | 33 | 25 | 33 |
-| regexp | 21 | 39 | 18 | 28 | 28 | 16 | 17 |
-| strings | 15 | 40 | 17 | 16 | 16 | 10 | 14 |
-| startup | 2.7 | 4.2 | 3.0 | 4.7 | 3.9 | 5.4 | 26.2 |
-| geometric mean, engine / zjsz | 1.00 | 2.83 | 1.30 | 1.15 | 1.14 | 0.93 | 0.92 |
+| allocation | 20 | 47 | 44 | 35 | 35 | 22 | 22 |
+| arrays | 108 | 162 | 149 | 312 | 310 | 175 | 82 |
+| calls | 12 | 15 | 10 | 9 | 8 | 10 | 9 |
+| closures | 22 | 49 | 34 | 13 | 13 | 21 | 18 |
+| helpers | 24 | 88 | 53 | 24 | 24 | 58 | 54 |
+| json | 19 | 34 | 43 | 33 | 33 | 8 | 14 |
+| maps | 41 | 7,460 | 54 | 53 | 52 | 56 | 48 |
+| polymorphic | 16 | 28 | 18 | 22 | 21 | 21 | 18 |
+| properties | 38 | 65 | 42 | 33 | 33 | 26 | 34 |
+| regexp | 22 | 41 | 20 | 30 | 30 | 16 | 18 |
+| strings | 16 | 42 | 18 | 15 | 15 | 10 | 11 |
+| startup | 2.3 | 4.2 | 2.8 | 4.3 | 3.8 | 5.1 | 26.6 |
+| geometric mean, engine / zjsz | 1.00 | 2.98 | 1.37 | 1.20 | 1.19 | 0.98 | 0.94 |
 
-Over these eleven kernels the engine is 1.30 times faster than QuickJS
-and 1.15 times faster than Hermes (1.14 precompiled); JavaScriptCore's
-interpreter is 1.07 times faster and V8's 1.08. Over the ten before
+Over these eleven kernels the engine is 1.37 times faster than QuickJS
+and 1.20 times faster than Hermes (1.19 precompiled); JavaScriptCore's
+interpreter is 1.02 times faster and V8's 1.06. Over the ten before
 `helpers` (`results/2026-09-28.json`, engine `4143c54`): 1.33 QuickJS,
 1.27 Hermes, JavaScriptCore 1.09 faster, V8 1.10. On 2026-09-27
 (`results/2026-09-27.json`, engine `325838b`) the engine was 1.06 times
@@ -86,12 +86,12 @@ faster than QuickJS and level with Hermes, and JavaScriptCore was 1.37
 times faster, V8 1.49; on 2026-09-26 (`results/2026-09-26-hermes.json`)
 QuickJS was 1.19 times faster, Hermes 1.25 (1.28 precompiled),
 JavaScriptCore 1.7, V8 1.9. The engine is the fastest of these on
-allocation, polymorphic access, and Map and Set, and starts fastest.
-The Hermes VM alone is 2.75 MB of code and 3.34 MB with its compiler
-(arm64), against the engine's minimal embedder of about 0.70 MB. The
-largest gaps left: JSON (2.5x JavaScriptCore), helpers (1.8x Hermes,
-whose compiler inlines the four helpers), closures (1.7x Hermes), calls
-(1.6x Hermes precompiled), strings (1.5x JavaScriptCore), properties and
+allocation, polymorphic access, and Map and Set, level with Hermes on
+helpers, and starts fastest. The Hermes VM alone is 2.75 MB of code and
+3.34 MB with its compiler (arm64), against the engine's minimal
+embedder of about 0.70 MB. The largest gaps left: JSON (2.4x
+JavaScriptCore), closures (1.7x Hermes), strings (1.6x JavaScriptCore),
+calls (1.5x Hermes precompiled), properties (1.5x JavaScriptCore),
 regular expressions (1.4x JavaScriptCore), arrays (1.3x V8). The plan
 to close them is [levers.md](levers.md).
 
