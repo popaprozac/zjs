@@ -6099,6 +6099,19 @@ export struct Runtime {
         this.globals[slot].value = this.reg(base, inst.a);
         this.globals[slot].defined = true;
       }
+      storeGlobalStrict => {
+        // Strict code's store to a global: out of the dispatch loop's
+        // line, which strict code writing globals is too rare to earn. A
+        // defined, writable global is stored at once; anything else goes
+        // through the global object (see storeGlobalStrictly).
+        const slot = usize(bcU16(inst));
+        const stored = this.reg(base, inst.a);
+        if (this.globals[slot].defined && (this.globals[slot].attr & PROP_WRITABLE) != 0) {
+          this.globals[slot].value = stored;
+        } else {
+          this.storeGlobalStrictly(slot, stored);
+        }
+      }
       loadGlobalOrUndefined => {
         const slot = usize(bcU16(inst));
         const operand4 = this.globals[slot].defined ? this.globals[slot].value : undefinedValue();
@@ -8236,6 +8249,29 @@ export struct Runtime {
     }
     this.lastResult = result;
     return RunResult({ isThrow: false, value: result });
+  }
+
+  // Strict code's assignment to a name bound nowhere but, perhaps, in
+  // the global scope: a ReferenceError unless a global or a property of
+  // the global object (own or inherited) declares it; then the global
+  // object's [[Set]], a TypeError when that fails (a read-only global, a
+  // non-extensible global object).
+  function storeGlobalStrictly(inout this, slot: usize, value: Value): void {
+    const atom = this.globals[slot].atom;
+    const globalObject = cellValue(this.globalObject);
+    if (!this.globals[slot].defined && !this.hasProperty(globalObject, cellValue(atom))) {
+      let message = this.heap.stringUtf8(atom);
+      const notDefined: String = " is not defined";
+      appendBytes(inout message, bytesOf(in notDefined));
+      const missing = this.makeError(ERROR_KIND_REFERENCE, move message);
+      this.raise(missing);
+      return;
+    }
+    if (this.pendingThrow) return;
+    if (!this.setProperty(globalObject, cellValue(atom), value) && !this.pendingThrow) {
+      const refused = this.readOnlyError(atom);
+      this.raise(refused);
+    }
   }
 
   // The TypeError for a rejected write in strict code.

@@ -2271,7 +2271,8 @@ export struct Compiler {
       return;
     }
     const slot = runtime.globalSlotBytes(globalNameBytes(in parser, target.nameStart, target.nameLength));
-    this.emit(instAU16(Op.storeGlobal, value, slot));
+    // Strict code may not create a global by assigning to it.
+    this.emit(instAU16(this.strict ? Op.storeGlobalStrict : Op.storeGlobal, value, slot));
   }
 
   // A local bound to a register chosen by the caller (a catch parameter).

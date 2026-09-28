@@ -1,0 +1,17 @@
+plain ReferenceError
+compound ReferenceError
+logical ReferenceError
+update ReferenceError
+array pattern ReferenceError
+object pattern ReferenceError
+for-in head ReferenceError
+for-of head ReferenceError
+class method ReferenceError
+eval code ReferenceError
+right side first ReferenceError
+right side ran: true created: undefined undefined
+global object property stored
+5 5
+read-only global TypeError
+Infinity
+3 number number
