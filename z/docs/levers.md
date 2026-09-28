@@ -8,28 +8,29 @@ lever's status in the same commit that moves it.
 
 ## The gap
 
-`z/bench/speed`, `results/2026-09-28.json` (engine `4143c54`, load
-3.8), milliseconds per kernel, against the fastest engine without a JIT
-on each, and the first measurement of this plan
-(`results/2026-09-26-hermes.json`):
+`z/bench/speed`, `results/2026-09-28-helpers.json` (engine `884e2c3`,
+load 2.9), milliseconds per kernel, against the fastest engine without
+a JIT on each, and the first measurement of this plan
+(`results/2026-09-26-hermes.json`; `helpers` joined on 2026-09-28):
 
 | Kernel | zjsz | then | Fastest jit-less | Engine | Gap |
 |---|---|---|---|---|---|
-| allocation | 21 | 39 | 23 | JavaScriptCore | ahead |
-| arrays | 106 | 167 | 83 | V8 | 1.3x |
-| calls | 11 | 17 | 8 | Hermes, precompiled | 1.4x |
-| closures | 22 | 35 | 13 | Hermes, from source and precompiled | 1.6x |
-| json | 19 | 49 | 8 | JavaScriptCore | 2.4x |
-| maps | 42 | 52 | 52 | Hermes, precompiled | ahead |
-| polymorphic | 17 | 20 | 18 | QuickJS, V8 | ahead |
-| properties | 36 | 46 | 25 | JavaScriptCore | 1.5x |
-| regexp | 23 | 27 | 18 | JavaScriptCore | 1.3x |
-| strings | 16 | 23 | 11 | JavaScriptCore | 1.5x |
+| allocation | 19 | 39 | 21 | V8 | ahead |
+| arrays | 104 | 167 | 80 | V8 | 1.3x |
+| calls | 11 | 17 | 7 | Hermes, precompiled | 1.6x |
+| closures | 21 | 35 | 13 | Hermes, from source and precompiled | 1.7x |
+| helpers | 40 | -- | 22 | Hermes, from source and precompiled | 1.8x |
+| json | 18 | 49 | 7 | JavaScriptCore | 2.5x |
+| maps | 40 | 52 | 47 | V8 | ahead |
+| polymorphic | 17 | 20 | 18 | QuickJS | ahead |
+| properties | 36 | 46 | 25 | JavaScriptCore | 1.4x |
+| regexp | 21 | 27 | 16 | JavaScriptCore | 1.4x |
+| strings | 15 | 23 | 10 | JavaScriptCore | 1.5x |
 
-Over all ten the engine is 1.33 times faster than QuickJS (QuickJS was
-1.19 times faster when this plan began) and 1.27 times faster than
-Hermes run from source, 1.24 precompiled (1.25 and 1.28 faster then);
-JavaScriptCore's interpreter is 1.09 times faster (1.7), V8's 1.10
+Over all eleven the engine is 1.30 times faster than QuickJS (QuickJS
+was 1.19 times faster when this plan began) and 1.15 times faster than
+Hermes run from source, 1.14 precompiled (1.25 and 1.28 faster then);
+JavaScriptCore's interpreter is 1.07 times faster (1.7), V8's 1.08
 (1.9). For size, the engine's minimal embedder is about 0.70 MB of
 code; the Hermes VM alone is 2.75 MB, with its compiler 3.34 MB
 (arm64).
@@ -41,7 +42,7 @@ code; the Hermes VM alone is 2.75 MB, with its compiler 3.34 MB
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
-| Bytecode quality | all | about even | 1-2 days | calls, stores, loops done |
+| Bytecode quality | all | about even | 1-2 days | calls, stores, loops done; inlining open |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp done; arrays next |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
@@ -235,6 +236,10 @@ both operators and a loop's bottom, so two arms serve all four cases
 closures -1.2%). A closure is made from its function's constant by one
 instruction, where a load of the function preceded it (closures -1.9%,
 calls -1.3%).
+Open: inlining. Hermes's compiler inlines a small function a scope
+declares and never reassigns (the `helpers` kernel's four become a
+multiply, a compare, and two property reads in its loop: 22 ms to our
+40); the engine's leaf runner saves the frame but still makes the call.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
