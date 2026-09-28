@@ -132,7 +132,15 @@ cycles averaged over eight placements: calls -7.1%, arrays -2.7%
 spread); a `forEach` whose callback is one instruction +7.7%, since a
 nested dispatch loop entered and left that quickly stalls on its own
 epilogue. Measured then: a call and return cost about 40 cycles here,
-28 in QuickJS, 35 in JavaScriptCore's interpreter. Then a call to an
+28 in QuickJS, 35 in JavaScriptCore's interpreter. Tried
+(2026-09-28): builtins that call back (map, forEach, reduce) keeping
+their state in a continuation frame so each callback ran in the one
+dispatch loop -- 7-11% slower on every such method, since a callback
+from a builtin already costs about 74 cycles (QuickJS 81,
+JavaScriptCore 101), less than a call from bytecode (89); the state in
+registers cost more than the nested loop saved. The arrays gap to V8 is
+per callback, not per nesting: sort makes as many comparisons as V8
+(262k against 260k) at about 100 cycles each to its 56. Then a call to an
 ordinary function (not a generator, not async, not a class constructor)
 builds its frame inline, with no call on the way: calls -5.9%, closures
 -3.6%, map/filter/reduce -4.7%, arrays -1.0%, the rest level.
@@ -239,6 +247,11 @@ class and prototype's class were seen with the builtin `exec` skips the
 lookup of `exec` while the prototype's slot still holds it, and reads
 and writes `lastIndex` and its flags at known slots. regexp -12% in
 cycles.
+Sort (2026-09-28): the merge sort merges each level from one buffer into
+the other, copying nothing back, and joins halves of four or more that
+are already in order after one comparison: sorted input takes 24k
+comparisons for 20k elements where it took 139k (V8 20k), -53% in
+cycles; random input level (1.6% more comparisons).
 ToString(Number) formats a double through up to 17 `snprintf` and
 `strtod` passes. Regular-expression results still build every capture
 string eagerly. Done so far: in-place element reads in the callback

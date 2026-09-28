@@ -1,0 +1,53 @@
+asc 0 true true
+desc 0 true true
+saw 0 true true
+rnd 0 true true
+asc 1 true true
+desc 1 true true
+saw 1 true true
+rnd 1 true true
+asc 2 true true
+desc 2 true true
+saw 2 true true
+rnd 2 true true
+asc 7 true true
+desc 7 true true
+saw 7 true true
+rnd 7 true true
+asc 8 true true
+desc 8 true true
+saw 8 true true
+rnd 8 true true
+asc 9 true true
+desc 9 true true
+saw 9 true true
+rnd 9 true true
+asc 15 true true
+desc 15 true true
+saw 15 true true
+rnd 15 true true
+asc 16 true true
+desc 16 true true
+saw 16 true true
+rnd 16 true true
+asc 17 true true
+desc 17 true true
+saw 17 true true
+rnd 17 true true
+asc 100 true true
+desc 100 true true
+saw 100 true true
+rnd 100 true true
+asc 1000 true true
+desc 1000 true true
+saw 1000 true true
+rnd 1000 true true
+sorted 4096 compares under 6000: true
+stable true 0 197
+[1,2,3,null,null,null,null] 7 true false
+1,10,100,25,9
+3,1,2
+1,2,3
+0,1,2,3,4,5,6,7,8,9
+stop
+5,3,9,1,7,2,8,6,4,0,11,10

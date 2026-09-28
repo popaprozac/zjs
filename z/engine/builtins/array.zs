@@ -1219,49 +1219,68 @@ function sortCompare(inout runtime: Runtime, comparator: Value, x: Value, y: Val
   return xb.length < yb.length ? -1.0 : 1.0;
 }
 
-// A stable merge sort over a rooted heap array, with `scratch` of the
-// same length. Stops early on a throw.
-function mergeSort(inout runtime: Runtime, items: u32, scratch: u32, low: u32, high: u32, comparator: Value): void {
+// A stable merge sort of target[low, high) in place, `source` holding the
+// same elements in the same order on entry: each half is sorted into
+// `source` (with `target` as its scratch) and the halves are merged back
+// into `target`, so no level copies back. Halves of four or more that are
+// already in order are joined after one comparison, so sorted runs cost
+// little. Stops early on a throw.
+function sortInto(inout runtime: Runtime, target: u32, source: u32, low: u32, high: u32, comparator: Value): void {
   if (high - low < 2) return;
   const middle = low + (high - low) / 2;
-  mergeSort(inout runtime, items, scratch, low, middle, comparator);
+  sortInto(inout runtime, source, target, low, middle, comparator);
   if (runtime.pendingThrow) return;
-  mergeSort(inout runtime, items, scratch, middle, high, comparator);
+  sortInto(inout runtime, source, target, middle, high, comparator);
   if (runtime.pendingThrow) return;
+  if (high - low >= 8) {
+    const lastLeft = runtime.heap.slot(source, middle - 1);
+    const firstRight = runtime.heap.slot(source, middle);
+    const order = sortCompare(inout runtime, comparator, firstRight, lastLeft);
+    if (runtime.pendingThrow) return;
+    if (order >= 0.0) {
+      // Right's first is not less than left's last: left then right.
+      copySlots(inout runtime, source, target, low, high);
+      return;
+    }
+  }
   let left = low;
   let right = middle;
   let write = low;
   while (left < middle && right < high) {
-    const a = runtime.heap.slot(items, left);
-    const b = runtime.heap.slot(items, right);
+    const a = runtime.heap.slot(source, left);
+    const b = runtime.heap.slot(source, right);
     const order = sortCompare(inout runtime, comparator, b, a);
     if (runtime.pendingThrow) return;
     if (order < 0.0) {
-      runtime.heap.setSlot(scratch, write, b);
+      runtime.heap.setSlot(target, write, b);
       right = right + 1;
     } else {
-      runtime.heap.setSlot(scratch, write, a);
+      runtime.heap.setSlot(target, write, a);
       left = left + 1;
     }
     write = write + 1;
   }
   while (left < middle) {
-    const a = runtime.heap.slot(items, left);
-    runtime.heap.setSlot(scratch, write, a);
+    const a = runtime.heap.slot(source, left);
+    runtime.heap.setSlot(target, write, a);
     left = left + 1;
     write = write + 1;
   }
   while (right < high) {
-    const b = runtime.heap.slot(items, right);
-    runtime.heap.setSlot(scratch, write, b);
+    const b = runtime.heap.slot(source, right);
+    runtime.heap.setSlot(target, write, b);
     right = right + 1;
     write = write + 1;
   }
-  let i = low;
-  while (i < high) {
-    const sorted = runtime.heap.slot(scratch, i);
-    runtime.heap.setSlot(items, i, sorted);
-    i = i + 1;
+}
+
+// source[low, high) into target[low, high).
+function copySlots(inout runtime: Runtime, source: u32, target: u32, low: u32, high: u32): void {
+  let index = low;
+  while (index < high) {
+    const element = runtime.heap.slot(source, index);
+    runtime.heap.setSlot(target, index, element);
+    index = index + 1;
   }
 }
 
@@ -1295,7 +1314,8 @@ function sortedElements(inout runtime: Runtime, object: Value, length: f64, comp
   const count = runtime.heap.arrayLength(items);
   const scratch = runtime.heap.allocateArray(count);
   runtime.pushTempRoot(cellValue(scratch));
-  mergeSort(inout runtime, items, scratch, 0, count, comparator);
+  copySlots(inout runtime, items, scratch, 0, count);
+  sortInto(inout runtime, items, scratch, 0, count, comparator);
   runtime.popTempRoot();
   runtime.popTempRoot();
   if (runtime.pendingThrow) return 0;
