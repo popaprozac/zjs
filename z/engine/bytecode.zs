@@ -224,6 +224,9 @@ export enum Op {
   // a against a 24-bit literal, as jmpIfNotLtImm, compared with ===; d
   // as in jmpIfNotStrictEq.
   jmpIfNotStrictEqImm,
+  // a = dst, b = right operand, c = hops, d = slot: `x += b` on a binding
+  // in an environment, the sum stored there and left in a.
+  envAdd,
 }
 
 export struct Inst {
@@ -468,6 +471,7 @@ export function opCode(op: Op): i32 {
     mulImm => 182;
     modImm => 183;
     jmpIfNotStrictEqImm => 184;
+    envAdd => 185;
   };
 }
 

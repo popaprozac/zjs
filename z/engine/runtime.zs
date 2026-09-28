@@ -7941,6 +7941,31 @@ export struct Runtime {
             this.setReg(base, inst.a, value);
             continue;
           }
+          envAdd => {
+            let env = this.frames[frameIndex].env;
+            let hops = u32(inst.c);
+            while (hops > 0) {
+              env = this.heap.linkOf(env);
+              hops = hops - 1;
+            }
+            const current = this.heap.slot(env, u32(inst.d));
+            const right = this.reg(base, inst.b);
+            if (isNumber(current) && isNumber(right)) {
+              const sum = numericAdd(current, right);
+              this.heap.setSlot(env, u32(inst.d), sum);
+              this.setReg(base, inst.a, sum);
+              continue;
+            }
+            const sum = this.addValues(current, right);
+            if (this.pendingThrow) {
+              thrown = this.takePending();
+              throwing = true;
+              break;
+            }
+            this.heap.setSlot(env, u32(inst.d), sum);
+            this.setReg(base, inst.a, sum);
+            continue;
+          }
           storeEnvSlot => {
             let env = this.frames[frameIndex].env;
             let hops = u32(inst.b);

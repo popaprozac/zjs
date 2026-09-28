@@ -198,6 +198,11 @@ export struct Compiler {
   minOuterScope: usize;
   // The program's reserved result register, or -1 inside a function.
   lastExprReg: i32;
+  // The latest code position a jump may land on (conservatively: every
+  // position patched into a jump or captured as a loop's, a case's, or a
+  // continue's target). An instruction emitted there may not rely on the
+  // one before it having run.
+  lastTarget: i32;
   // Compiling a function body (as opposed to the script top level).
   isFunction: boolean;
   // The function being compiled (its parameters and body), NO_NODE for a
@@ -289,8 +294,15 @@ export struct Compiler {
   }
 
   // Patch a forward jump at `at` to land on the next emitted instruction.
+  // The current position, as a jump target.
+  function markTarget(inout this): u32 {
+    const here = u32(this.code.length);
+    if (i32(here) > this.lastTarget) this.lastTarget = i32(here);
+    return here;
+  }
+
   function patchJump(inout this, at: u32): void {
-    const here = i32(this.code.length);
+    const here = i32(this.markTarget());
     const inst = this.code[usize(at)];
     const offset = here - (i32(at) + 1);
     this.code[usize(at)] = instAI16(inst.op, inst.a, offset);
@@ -418,8 +430,24 @@ export struct Compiler {
       this.nextReg = savedNext;
       return;
     }
-    const r = this.compileOperand(in parser, inout runtime, node, NO_NODE);
+    const stored = this.justStored(in parser, current);
+    const r = stored >= 0 ? u8(stored) : this.compileOperand(in parser, inout runtime, node, NO_NODE);
     this.emit(instA(Op.returnOp, r));
+  }
+
+  // For a binding `node` names that the previous instruction stored in
+  // its environment from a register: that register, which still holds
+  // it -- unless a jump may land here, past that store. -1 otherwise.
+  function justStored(inout this, in parser: Parser, node: u32): i32 {
+    if (node == NO_NODE || parser.ast.node(node).kind != NodeKind.identExpr) return -1;
+    if (this.code.length == 0 || i32(this.code.length) == this.lastTarget) return -1;
+    const last = this.code[this.code.length - 1];
+    if (last.op != Op.envAdd && last.op != Op.storeEnvSlot) return -1;
+    const named = parser.ast.node(node);
+    const place = this.envPlace(in parser, named.nameStart, named.nameLength);
+    const stored = last.op == Op.envAdd ? (i32(last.c) << 8 | i32(last.d)) : (i32(last.b) << 8 | i32(last.c));
+    if (place < 0 || place != stored) return -1;
+    return i32(last.a);
   }
 
   function emitJumpBack(inout this, target: u32): void {
@@ -450,6 +478,7 @@ export struct Compiler {
   }
 
   function loopSetContinue(inout this, target: u32): void {
+    if (i32(target) > this.lastTarget) this.lastTarget = i32(target);
     const top = this.loops.length - 1;
     this.loops[top].continueTarget = target;
     this.loops[top].haveContinue = true;
@@ -580,6 +609,7 @@ export struct Compiler {
 
   // Patch a jump at `at` to land on instruction `target`.
   function patchJumpTo(inout this, at: u32, target: u32): void {
+    if (i32(target) > this.lastTarget) this.lastTarget = i32(target);
     const inst = this.code[usize(at)];
     this.code[usize(at)] = instAI16(inst.op, inst.a, i32(target) - (i32(at) + 1));
   }
@@ -2109,6 +2139,22 @@ export struct Compiler {
   }
 
   // Store a register into the binding an identifier names.
+  // The environment place of a binding a read or write may reach
+  // without a check -- captured, here or outside, initialized, not
+  // constant -- as hops << 8 | slot; -1 otherwise.
+  function envPlace(inout this, in parser: Parser, nameStart: u32, nameLength: u32): i32 {
+    const local = this.findLocal(in parser, nameStart, nameLength);
+    if (local >= 0) {
+      const index = usize(local);
+      const slot = this.locals[index].envSlot;
+      if (slot < 0 || slot > 255 || this.mustCheck(index) || this.locals[index].isConst) return -1;
+      return i32(this.openEnvs - this.locals[index].envDepth) << 8 | slot;
+    }
+    const outer = this.findOuter(in parser, nameStart, nameLength);
+    if (!outer.found || outer.slot < 0 || outer.slot > 255 || outer.needsCheck || outer.isConst) return -1;
+    return i32(outer.hops) << 8 | outer.slot;
+  }
+
   function storeIdent(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode, value: u8): void {
     const local = this.findLocal(in parser, target.nameStart, target.nameLength);
     if (local >= 0) {
@@ -2602,7 +2648,7 @@ export struct Compiler {
         const doneAtom = runtime.atomOf(in doneText);
         const valueText: String = "value";
         const valueAtom = runtime.atomOf(in valueText);
-        const loopTop = u32(this.code.length);
+        const loopTop = this.markTarget();
         const one = this.allocReg();
         this.emit(instAI16(Op.loadInt, one, 1));
         const isThrow = this.allocReg();
@@ -2708,7 +2754,7 @@ export struct Compiler {
         const doneAtom = runtime.atomOf(in doneText);
         const valueText: String = "value";
         const valueAtom = runtime.atomOf(in valueText);
-        const loopTop = u32(this.code.length);
+        const loopTop = this.markTarget();
         const one = this.allocReg();
         this.emit(instAI16(Op.loadInt, one, 1));
         const isThrow = this.allocReg();
@@ -3314,6 +3360,18 @@ export struct Compiler {
           this.nameNext(target.nameStart, target.nameLength, 0);
           value = this.compileExpr(in parser, inout runtime, n.right);
         } else {
+          // `x += e` on a binding in an environment, e a literal or a
+          // local in a register (so nothing it runs can change x between
+          // the read the operator makes and the store): one instruction.
+          if (n.op == TokenKind.plusEq) {
+            const place = this.envPlace(in parser, target.nameStart, target.nameLength);
+            if (place >= 0 && isQuietOperand(in parser, n.right, this.operandLocalReg(in parser, n.right))) {
+              const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+              const sum = this.allocReg();
+              this.emit(instABCD(Op.envAdd, sum, right, u8(place >> 8), u8(place & 0xFF)));
+              return sum;
+            }
+          }
           // Compound assignment: current value, operator, right operand,
           // the right read in place (the operator follows at once).
           const current = this.compileExpr(in parser, inout runtime, n.left);
@@ -3668,7 +3726,7 @@ export struct Compiler {
     let bodyStarts = Array<u32>();
     i = 0;
     while (i < count) {
-      bodyStarts.push(u32(this.code.length));
+      bodyStarts.push(this.markTarget());
       const clauseIndex = parser.ast.child(node, i);
       const clause = parser.ast.node(clauseIndex);
       let statement: u32 = 0;
@@ -3678,7 +3736,7 @@ export struct Compiler {
       }
       i = i + 1;
     }
-    const end = u32(this.code.length);
+    const end = this.markTarget();
     i = 0;
     while (i < count) {
       const clause = parser.ast.node(parser.ast.child(node, i));
@@ -3728,7 +3786,7 @@ export struct Compiler {
     const index = this.allocReg();
     this.emit(instAI16(Op.loadInt, index, 0));
     if (index + 1 > this.fixedRegs) this.fixedRegs = index + 1;
-    const loopTop = u32(this.code.length);
+    const loopTop = this.markTarget();
     this.loopPush(true);
     if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
     this.emit(instAB(Op.arrayLength, length, sequence));
@@ -3781,7 +3839,7 @@ export struct Compiler {
     const value = this.allocReg();
     const result = this.allocReg();
     if (result + 1 > this.fixedRegs) this.fixedRegs = result + 1;
-    const loopTop = u32(this.code.length);
+    const loopTop = this.markTarget();
     this.loopPush(true);
     const top = this.loops.length - 1;
     this.pushRegion(REGION_ITERATOR, NO_NODE, iterator, done);
@@ -4304,7 +4362,8 @@ export struct Compiler {
       if (n.left != NO_NODE && this.regionDepth == 0 && !this.isAsyncGeneratorBody) {
         // Nothing runs between the read and the return: no finally block
         // could assign the binding in between.
-        r = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+        const stored = this.justStored(in parser, n.left);
+        r = stored >= 0 ? u8(stored) : this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
       } else if (n.left != NO_NODE) {
         r = this.compileExpr(in parser, inout runtime, n.left);
         if (this.isAsyncGeneratorBody) {
@@ -4351,7 +4410,7 @@ export struct Compiler {
       this.resetCompletion();
       this.loopPush(true);
       const jumpTest = this.emit(instI16(Op.jmp, 0));
-      const bodyTop = u32(this.code.length);
+      const bodyTop = this.markTarget();
       this.resetTemps();
       this.compileStmt(in parser, inout runtime, n.right);
       this.patchJump(jumpTest);
@@ -4363,10 +4422,10 @@ export struct Compiler {
     }
     if (k == NodeKind.doWhileStmt) {
       this.resetCompletion();
-      const loopTop = u32(this.code.length);
+      const loopTop = this.markTarget();
       this.loopPush(true);
       this.compileStmt(in parser, inout runtime, n.left);
-      const bound4 = u32(this.code.length);
+      const bound4 = this.markTarget();
       this.loopSetContinue(bound4);
       const condition = this.compileExpr(in parser, inout runtime, n.right);
       this.emitJumpBackIf(Op.jmpIfTrue, condition, loopTop);
@@ -4405,10 +4464,10 @@ export struct Compiler {
       this.loopPush(true);
       let jumpTest: i32 = -1;
       if (n.right != NO_NODE) jumpTest = i32(this.emit(instI16(Op.jmp, 0)));
-      const bodyTop = u32(this.code.length);
+      const bodyTop = this.markTarget();
       this.resetTemps();
       if (n.childrenCount > 0) this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
-      const bound5 = u32(this.code.length);
+      const bound5 = this.markTarget();
       this.loopSetContinue(bound5);
       if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
       if (n.third != NO_NODE) {
@@ -4746,6 +4805,16 @@ function nameMayChange(in parser: Parser, node: u32, nameStart: u32, nameLength:
   return false;
 }
 
+// Whether reading `node` runs nothing: a number, string, boolean, or null
+// literal, or a local read in place from its register (`localReg`, as
+// operandLocalReg gives it).
+function isQuietOperand(in parser: Parser, node: u32, localReg: i32): boolean {
+  if (localReg >= 0) return true;
+  if (node == NO_NODE) return false;
+  const k = parser.ast.node(node).kind;
+  return k == NodeKind.numberExpr || k == NodeKind.stringExpr || k == NodeKind.boolExpr || k == NodeKind.nullExpr;
+}
+
 // Whether evaluating a subtree may assign a binding: an assignment (plain,
 // compound, logical, or destructuring) or an update anywhere in it,
 // outside a nested function body, which does not run as part of it.
@@ -5002,7 +5071,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
     locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
-    hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true, functionNode: node,
+    hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, lastTarget: -1, isFunction: true, functionNode: node,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
@@ -5878,7 +5947,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
     locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
-    hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false, functionNode: NO_NODE,
+    hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, lastTarget: -1, isFunction: false, functionNode: NO_NODE,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),

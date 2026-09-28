@@ -249,6 +249,13 @@ to the expression with the parameters bound to the arguments' registers.
 helpers -42.3%, the rest level. Not yet: bodies with more than one
 statement, functions that read the enclosing scope, calls through a
 property.
+Captured bindings (2026-09-28): `x += e` on a binding in an environment,
+e a literal or a local in a register (so nothing it runs can change x
+between the read and the store), is one instruction, and `return x`
+just after a store to x returns the register it was stored from -- unless
+a jump may land there, which the compiler now tracks. The closures
+kernel's closure runs 2 instructions where it ran 5: closures -13.1%,
+calls -2.6%, the rest level.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
