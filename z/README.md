@@ -82,9 +82,10 @@ nothing of them, so they call back into it, and through `callValue` into
 JavaScript, with no import cycle. Landed: the Error family, `Object` and
 its prototype's `toString` / `valueOf` / `hasOwnProperty` / `isPrototypeOf`,
 `Function.prototype.call` / `apply`, `Array` with `isArray` and the core
-prototype methods, `eval` (global scope), `parseInt` / `parseFloat` /
-`isNaN` / `isFinite`, and `globalThis` as a real object whose properties
-fall through to the globals table. ToPrimitive runs `valueOf` / `toString`,
+prototype methods, `eval` (a direct call in its caller's scope, below),
+`parseInt` / `parseFloat` / `isNaN` / `isFinite`, and `globalThis` as a
+real object whose properties fall through to the globals table.
+ToPrimitive runs `valueOf` / `toString`,
 so `"" + obj` and `obj + 1` follow user code. Top-level and sloppy-call
 `this` are the global object. Then `Boolean`, `Number` (with `toString`
 in any radix, `toFixed`, `toExponential`, and `toPrecision` on the
@@ -169,7 +170,9 @@ inline, and closes the `for`-`of` iterators it leaves; a throw inside a
 `for`-`of` body closes the iterator too. Anonymous functions take the name
 of the binding, property, or parameter they initialize (accessors with a
 `get ` / `set ` prefix); only a function expression written with a name
-binds it inside itself. Generators: a generator object is an ordinary
+binds it inside itself, immutably (sloppy code's assignment leaves it,
+strict code's throws), unless a parameter or declaration of the
+function takes the name. Generators: a generator object is an ordinary
 object holding a record under a hidden key; a call runs the parameter
 prologue and suspends at GeneratorStart, `yield` copies the frame's
 register window and open try handlers out, and `next` / `throw` / `return`
@@ -554,7 +557,22 @@ class it defines (a symbol as `[description]`, an accessor with its
 `get ` or `set ` prefix), converting the key once, unless the value
 already has an own `name`.
 
-Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, direct `eval` seeing the caller's locals, subclassing `Array`, a private name shadowed by an inner
+A direct `eval` -- a call spelled `eval(...)` while `eval` holds the
+intrinsic -- compiles its code as a function nested at the call: it
+reads and writes the caller's bindings and those of the functions
+around it, with the caller's `this` and `arguments`; any other call
+evaluates in the global scope. A function that calls eval directly
+keeps every binding in scope in an environment rather than a register.
+Sloppy eval code's var and function declarations bind in the calling
+function: its own var or parameter of that name, else a property of an
+object its environment holds for them, where every name the function
+and its closures leave unresolved is looked up first. A var over a
+lexical binding of the function is a SyntaxError, as is one over a
+parameter (or `arguments`) from eval code in a parameter list. Strict
+eval code keeps its declarations, and any eval code keeps its let,
+const, and class.
+
+Not yet: `RegExp.prototype.compile` and the legacy statics, `Promise.try`, `new.target` and `super` in direct eval code, `delete` of a var sloppy eval code added, a var scope of its own for eval code in a parameter list, sloppy eval code's var of a function expression's own name, subclassing `Array`, a private name shadowed by an inner
 class of the same spelling, `super()` from an arrow inside a
 constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and

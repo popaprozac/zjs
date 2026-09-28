@@ -1,20 +1,23 @@
 // Global functions: eval and the number-parsing conveniences.
 import { Value, undefinedValue, booleanValue, doubleValue, int32Value, cellValue, asCell, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, ERROR_KIND_SYNTAX, stringToNumber, toNumber, toInt32, isIntegralDouble } from "../runtime.zs";
+import { Runtime, DirectEval, ERROR_KIND_SYNTAX, stringToNumber, toNumber, toInt32, isIntegralDouble } from "../runtime.zs";
 import { isJsSpace, codePointAt, isHighSurrogate, isLowSurrogate, pushCodePoint, utf8Length } from "../text.zs";
-import { parseProgram } from "../parser.zs";
-import { compileProgram } from "../compiler.zs";
+import { parseProgram, parseScript } from "../parser.zs";
+import { compileProgram, compileEval } from "../compiler.zs";
 
-// eval(source): global evaluation of a string; anything else returns
-// as-is. The program runs in the global scope -- a direct eval does not
-// see the caller's locals yet -- and its completion value is the result.
+// eval(source): evaluation of a string; anything else returns as-is. A
+// direct call (`eval(...)` in code) runs it as a function nested at the
+// call, seeing the caller's bindings and `this`; any other call runs it
+// as a program in the global scope. Its completion value is the result.
 function evalSource(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const direct = runtime.takeDirectEval();
   const first = runtime.argument(argsBase, argc, 0);
   if (!runtime.isStringValue(first)) return first;
   // The source boundary: the parser reads UTF-8 bytes; a lone surrogate
   // travels in its generalized three-byte form and comes back as itself.
   const source = runtime.heap.stringWtf8(asCell(first));
+  if (direct.active) return evalDirect(inout runtime, move source, direct);
   const parsed = parseProgram(move source, false);
   if (parsed.hadError) {
     const message: String = "parse error";
@@ -35,6 +38,28 @@ function evalSource(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
     return undefinedValue();
   }
   return outcome.value;
+}
+
+// The caller's environment and `this` stay reachable from its frame
+// while the code compiles; the closure is made last and called at once.
+function evalDirect(inout runtime: Runtime, source: Array<u8>, direct: DirectEval): Value {
+  const strict = runtime.functions[usize(direct.caller)].evalSites[usize(direct.site)].strict;
+  let parsed = parseScript(move source, false, strict);
+  if (parsed.hadError) {
+    const message: String = "parse error";
+    const error = runtime.syntaxError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const functionIndex = compileEval(inout parsed.parser, parsed.root, inout runtime, direct.caller, direct.site);
+  if (functionIndex < 0) {
+    const message: String = "compile error";
+    const error = runtime.syntaxError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const closure = runtime.heap.allocateClosure(u32(functionIndex), direct.env, direct.thisValue);
+  return runtime.callValue(cellValue(closure), direct.thisValue, Array<Value>());
 }
 
 function isNaNGlobal(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -336,6 +361,7 @@ export function installGlobals(inout runtime: Runtime): void {
   const globalObject = runtime.globalObject;
   const evalText: String = "eval";
   const evalFn = runtime.defineHostFunction(evalSource, undefinedValue(), 1, in evalText);
+  runtime.evalHostId = runtime.heap.hostFunctionId(evalFn);
   runtime.setGlobal("eval", cellValue(evalFn));
   const isNaNText: String = "isNaN";
   runtime.setGlobal("isNaN", cellValue(runtime.defineHostFunction(isNaNGlobal, undefinedValue(), 1, in isNaNText)));

@@ -227,6 +227,20 @@ export enum Op {
   // a = dst, b = right operand, c = hops, d = slot: `x += b` on a binding
   // in an environment, the sum stored there and left in a.
   envAdd,
+  // A call spelled `eval(...)`: as invoke, and when the callee is the
+  // intrinsic eval, the code sees the caller's bindings. The next word:
+  // a = the register holding `this`, bc = the call's EvalSite.
+  directEval,
+  // The bindings a sloppy direct eval adds to a function live in an
+  // object in b hops, slot c, of the environment chain; the name is the
+  // constant in the next word's bc. loadEvalVar: a = the binding's
+  // value, or the deleted marker when there is none. storeEvalVar: a =
+  // whether there is one, assigned the next word's register a when so.
+  // declareEvalVar: the object made if need be, the binding added as
+  // undefined unless it exists.
+  loadEvalVar,
+  storeEvalVar,
+  declareEvalVar,
 }
 
 export struct Inst {
@@ -472,6 +486,10 @@ export function opCode(op: Op): i32 {
     modImm => 183;
     jmpIfNotStrictEqImm => 184;
     envAdd => 185;
+    directEval => 186;
+    loadEvalVar => 187;
+    storeEvalVar => 188;
+    declareEvalVar => 189;
   };
 }
 
@@ -523,6 +541,46 @@ export function emptyCache(): PropertyCache {
   return PropertyCache({ kind: CACHE_EMPTY, attr: 0, depth: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
 }
 
+// What a direct eval call sees: the scopes around it as the compiler saw
+// them at the call, outermost first, each binding spelled in `names` and
+// held in an environment slot. The eval code compiles against them as a
+// function nested at the call would.
+export struct EvalBinding {
+  nameStart: u32;
+  nameLength: u32;
+  slot: u32;
+  // Nested environments between the scope's function environment and
+  // the one holding the binding.
+  depth: u32;
+  isConst: boolean;
+  // A var of this name from sloppy eval code is a SyntaxError: the
+  // binding is lexical (let, const, class, a block's function), or a
+  // parameter and the call is in the parameter list.
+  conflicts: boolean;
+  // May still hold the hole: reads check.
+  checked: boolean;
+}
+
+export struct EvalLevel {
+  bindings: Array<EvalBinding>;
+  hasEnv: boolean;
+  openEnvs: u32;
+  isArrow: boolean;
+  thisSlot: i32;
+  // The slot of the object holding the bindings a sloppy direct eval
+  // adds to the function, -1 for none.
+  varSlot: i32;
+}
+
+export struct EvalSite {
+  names: Array<u8>;
+  levels: Array<EvalLevel>;
+  strict: boolean;
+  // The call is in a function's parameter list (not an arrow's), where
+  // the code may not declare `arguments` either.
+  inParameters: boolean;
+}
+
 // One compiled function. Fields beyond the code and constants are added
 // as the interpreter grows to need them (inline caches, template sites,
 // closure environment, class flags).
@@ -562,6 +620,8 @@ export struct FunctionCode {
   // back may run it without a frame (the runtime's runLeaf). Set when the
   // function is installed.
   leaf: boolean;
+  // Its direct eval calls, by the directEval instruction's index.
+  evalSites: Array<EvalSite>;
 }
 
 export function createFunctionCode(): FunctionCode {
@@ -569,7 +629,7 @@ export function createFunctionCode(): FunctionCode {
     code: Array<Inst>(), codeStart: 0, codeLength: 0, constants: Array<Value>(), propertyNames: Array<u32>(), caches: Array<PropertyCache>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
-    isClassConstructor: false, isDerived: false, isMethod: false, leaf: false,
+    isClassConstructor: false, isDerived: false, isMethod: false, leaf: false, evalSites: Array<EvalSite>(),
   });
 }
 

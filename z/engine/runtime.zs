@@ -208,6 +208,17 @@ export struct RunResult {
   value: Value;
 }
 
+// A direct eval call handing its scope to the intrinsic eval: the
+// calling function and its EvalSite, the environment at the call, and
+// the caller's `this`. Set just before the call, taken at entry.
+export struct DirectEval {
+  active: boolean;
+  caller: u32;
+  site: u32;
+  env: u32;
+  thisValue: Value;
+}
+
 // What an out-of-line instruction leaves the dispatch loop: where to go
 // on, and whether the frame stack changed, with the value the run ends
 // with when it came back to the entry depth.
@@ -275,6 +286,10 @@ export struct Runtime {
   lastResult: Value;
   // Builtins, indexed by a host function cell's payload.
   hostTable: Array<HostFunction>;
+  // The intrinsic eval's host table entry, and the direct call it is
+  // being handed, if any.
+  evalHostId: u32;
+  directEval: DirectEval;
   // Host table entries of the builtins instantiated at run time, by the
   // HOST_ constants.
   sharedHosts: Array<u32>;
@@ -3801,6 +3816,33 @@ export struct Runtime {
     }
   }
 
+  // The intrinsic eval's entry: the direct call handing it its scope,
+  // if that is how it was called, no longer pending.
+  function takeDirectEval(inout this): DirectEval {
+    const taken = this.directEval;
+    this.directEval.active = false;
+    return taken;
+  }
+
+  // The environment `hops` out from the frame's.
+  function envOut(frameIndex: usize, hops: u8): u32 {
+    let env = this.frames[frameIndex].env;
+    let remaining = u32(hops);
+    while (remaining > 0) {
+      env = this.heap.linkOf(env);
+      remaining = remaining - 1;
+    }
+    return env;
+  }
+
+  // A function's eval var object, in slot `slot` of its environment: 0
+  // before the first sloppy direct eval makes it.
+  function evalVarHolder(env: u32, slot: u8): u32 {
+    const held = this.heap.slot(env, u32(slot));
+    if (!isCell(held)) return 0;
+    return asCell(held);
+  }
+
   // Call a function value from Z with the arguments given, running the
   // interpreter re-entrantly for compiled code. A throw is left pending
   // for the caller to check; the result is then undefined.
@@ -6557,6 +6599,74 @@ export struct Runtime {
           this.raise(raised);
         }
       }
+      directEval => {
+        // Callee at b, d arguments from c, result into a, as invoke with
+        // an undefined receiver. The intrinsic eval is handed the call's
+        // scope: the next word's register a holds `this`, bc the site.
+        const word = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        ip = ip + 1;
+        const callee = this.reg(base, inst.b);
+        let args = Array<Value>();
+        let index: u32 = 0;
+        while (index < u32(inst.d)) {
+          const passed = this.regStack[usize(base + u32(inst.c) + index)];
+          args.push(passed);
+          index = index + 1;
+        }
+        if (isCell(callee) && asCell(callee) != 0 && this.heap.isHostFunction(asCell(callee)) && this.heap.hostFunctionId(asCell(callee)) == this.evalHostId) {
+          const env = this.frames[frameIndex].env;
+          const thisValue = this.reg(base, word.a);
+          this.directEval = DirectEval({ active: true, caller: fi, site: u32(bcU16(word)), env: env, thisValue: thisValue });
+        }
+        const produced = this.callValue(callee, undefinedValue(), move args);
+        if (!this.pendingThrow) this.setReg(base, inst.a, produced);
+      }
+      loadEvalVar => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        const skip = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + 1];
+        ip = ip + 2;
+        const holder = this.evalVarHolder(this.envOut(frameIndex, inst.b), inst.c);
+        if (holder != 0) {
+          const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+          const atom = this.propertyKey(key);
+          const own = this.heap.objectFindSlot(holder, atom);
+          if (own >= 0 && !isDeleted(this.heap.slot(holder, u32(own)))) {
+            const value = this.heap.slot(holder, u32(own));
+            this.setReg(base, inst.a, value);
+            ip = usize(i64(ip) + i64(bcI16(skip)));
+          }
+        }
+      }
+      storeEvalVar => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        const skip = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + 1];
+        ip = ip + 2;
+        const holder = this.evalVarHolder(this.envOut(frameIndex, inst.b), inst.c);
+        if (holder != 0) {
+          const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+          const atom = this.propertyKey(key);
+          const own = this.heap.objectFindSlot(holder, atom);
+          if (own >= 0 && !isDeleted(this.heap.slot(holder, u32(own)))) {
+            const value = this.reg(base, inst.a);
+            this.heap.setSlot(holder, u32(own), value);
+            ip = usize(i64(ip) + i64(bcI16(skip)));
+          }
+        }
+      }
+      declareEvalVar => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        ip = ip + 1;
+        const env = this.envOut(frameIndex, inst.b);
+        let holder = this.evalVarHolder(env, inst.c);
+        if (holder == 0) {
+          holder = this.heap.allocateObject(0);
+          this.heap.setSlot(env, u32(inst.c), cellValue(holder));
+        }
+        const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+        const atom = this.propertyKey(key);
+        const own = this.heap.objectFindSlot(holder, atom);
+        if (own < 0 || isDeleted(this.heap.slot(holder, u32(own)))) this.heap.objectSet(holder, atom, undefinedValue());
+      }
       newRegex => {
         const pattern = this.functions[usize(fi)].constants[usize(inst.b)];
         const flags = this.functions[usize(fi)].constants[usize(inst.c)];
@@ -8160,7 +8270,7 @@ export function createRuntime(): Runtime {
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
     randomState: 0x9E3779B97F4A7C15, jsonTextHint: 0, execShapeClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, lastResult: undefinedValue(),
-    hostTable: Array<HostFunction>(), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
+    hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,

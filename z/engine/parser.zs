@@ -122,6 +122,10 @@ export struct Parser {
   inDerivedConstructor: boolean;
   inStaticBlock: boolean;
   staticBlockDepth: u32;
+  // Where the source spells `arguments`, past the program's own text: the
+  // name of the binding a function makes when only direct eval code in
+  // it can read it.
+  argumentsName: u32;
 
   // --- Cursor ---
 
@@ -3634,6 +3638,12 @@ export function parseText(source: String, isModule: boolean): ParseResult {
 }
 
 export function parseProgram(source: Array<u8>, isModule: boolean): ParseResult {
+  return parseScript(move source, isModule, false);
+}
+
+// A program parsed as strict code from the start: direct eval code
+// called from strict code.
+export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean): ParseResult {
   const sourceLength = u32(source.length);
   const byteCount = source.length;
   const tokens = tokenize(sliceBytes(in source, 0, byteCount));
@@ -3650,10 +3660,11 @@ export function parseProgram(source: Array<u8>, isModule: boolean): ParseResult 
     inAsync: false,
     isModule: isModule,
     inGenerator: false,
-    strictMode: false,
+    strictMode: strict,
     inDerivedConstructor: false,
     inStaticBlock: false,
     staticBlockDepth: 0,
+    argumentsName: 0,
   });
 
   // A top-level "use strict" prologue makes the whole script strict.
@@ -3674,6 +3685,15 @@ export function parseProgram(source: Array<u8>, isModule: boolean): ParseResult 
   if (!parser.hadError) {
     let chain = Array<u32>();
     parser.validatePrivateNames(program, inout chain, 0);
+  }
+
+  parser.argumentsName = u32(parser.source.length);
+  const argumentsText: String = "arguments";
+  const spelling = bytesOf(in argumentsText);
+  let a: usize = 0;
+  while (a < spelling.length) {
+    parser.source.push(spelling[a]);
+    a = a + 1;
   }
 
   const hadError = parser.hadError;

@@ -15,7 +15,7 @@ import { Value, int32Value, doubleValue, isInt32, asInt32 } from "./value.zs";
 import { TokenKind } from "./token.zs";
 import { NodeKind, AstNode, NO_NODE } from "./ast.zs";
 import { Parser, ParseResult, parseProgram } from "./parser.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instABCD, instAU16, instAI16, instI16, instU16 } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instABCD, instAU16, instAI16, instI16, instU16, EvalSite, EvalLevel, EvalBinding } from "./bytecode.zs";
 import { Runtime } from "./runtime.zs";
 import { bytesOf, sliceBytes } from "./heap.zs";
 import { cellValue, deletedValue } from "./value.zs";
@@ -101,6 +101,8 @@ struct Local {
   // Lives in an environment; a block-level one takes its slot when its
   // scope opens.
   captured: boolean;
+  // Immutable: a const, or (not lexical) a named function expression's
+  // own name, which sloppy code's assignment leaves as it is.
   isConst: boolean;
   // Known to be initialized at the current point of this function. A
   // lexical binding read before that must check for the hole.
@@ -145,6 +147,9 @@ struct Scope {
   // A derived constructor's environment slot holding `this` for the
   // arrows inside it; -1 when it has none.
   thisSlot: i32;
+  // The environment slot of the function's eval var object (see
+  // Compiler.varSlot); -1 when it has none.
+  varSlot: i32;
 }
 
 // Where an identifier resolved outside the current function.
@@ -156,6 +161,9 @@ struct OuterRef {
   // The binding may still be a hole where the function was created.
   needsCheck: boolean;
   isConst: boolean;
+  // A named function expression's own name: sloppy code's assignment is
+  // ignored.
+  quiet: boolean;
 }
 
 // What compiling a nested function tells its parent.
@@ -196,17 +204,19 @@ export struct Compiler {
   // `outerScopes.length` for none. A function that reaches past its
   // parent makes the parent a closure too.
   minOuterScope: usize;
-  // The program's reserved result register, or -1 inside a function.
+  // The completion value's reserved register (a script's, or direct
+  // eval code's), or -1 inside a function.
   lastExprReg: i32;
   // The latest code position a jump may land on (conservatively: every
   // position patched into a jump or captured as a loop's, a case's, or a
   // continue's target). An instruction emitted there may not rely on the
   // one before it having run.
   lastTarget: i32;
-  // Compiling a function body (as opposed to the script top level).
+  // Compiling a function body (as opposed to the script top level), or
+  // direct eval code whose var declarations are not globals.
   isFunction: boolean;
   // The function being compiled (its parameters and body), NO_NODE for a
-  // script.
+  // script; direct eval code's program.
   functionNode: u32;
   hadError: boolean;
   strict: boolean;
@@ -260,6 +270,20 @@ export struct Compiler {
   // Name slots a single instruction site owns (see siteNameSlot), which a
   // search for a shared slot skips.
   siteOwned: Array<boolean>;
+  // A sloppy function whose own code calls eval directly: the slot of its
+  // environment holding the object that keeps the var and function
+  // bindings the eval code adds (made by the first one). A name bound
+  // nowhere nearer is looked up there first. -1 otherwise.
+  varSlot: i32;
+  // Compiling sloppy direct eval code in a function: its var and
+  // function declarations bind in that function, not in the code.
+  evalVars: boolean;
+  // Compiling a function's parameter list: how many of the locals are
+  // its parameters, which direct eval code there may not redeclare. 0
+  // otherwise.
+  parameterLocals: usize;
+  // The scopes each direct eval call in the function sees.
+  evalSites: Array<EvalSite>;
 
   // --- Emission ---
 
@@ -1236,7 +1260,7 @@ export struct Compiler {
       this.loadLocal(index, current);
     }
     if (this.locals[index].isConst) {
-      this.emit(instA(Op.throwConstAssign, 0));
+      if (this.strict || this.locals[index].lexical) this.emit(instA(Op.throwConstAssign, 0));
       return;
     }
     this.initLocal(index, value);
@@ -1355,13 +1379,68 @@ export struct Compiler {
           if (level < this.minOuterScope) this.minOuterScope = level;
           const above = this.outerScopes[level].openEnvs - outer.envDepth;
           const needsCheck = outer.needsHole && (outer.alwaysCheck || !outer.initialized);
-          return OuterRef({ found: true, hops: u8(hops + above), slot: outer.envSlot, scopeIndex: level, needsCheck: needsCheck, isConst: outer.isConst });
+          return OuterRef({ found: true, hops: u8(hops + above), slot: outer.envSlot, scopeIndex: level, needsCheck: needsCheck, isConst: outer.isConst, quiet: outer.isConst && !outer.lexical });
         }
       }
       hops = hops + this.outerScopes[level].openEnvs;
       if (this.outerScopes[level].hasEnv) hops = hops + 1;
     }
-    return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false });
+    return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false, quiet: false });
+  }
+
+  // The eval var objects a name bound nowhere in this function is looked
+  // up in before its static binding, innermost first: this function's,
+  // then each enclosing function's out to the one that binds the name.
+  // Each as its hops and slot, packed hops << 8 | slot.
+  function evalVarRefs(inout this, in parser: Parser, nameStart: u32, nameLength: u32): Array<u32> {
+    let refs = Array<u32>();
+    if (this.varSlot >= 0) refs.push((this.openEnvs << 8) | u32(this.varSlot));
+    let hops: u32 = this.openEnvs;
+    if (this.hasEnv) hops = hops + 1;
+    let level: usize = this.outerScopes.length;
+    while (level > 0) {
+      level = level - 1;
+      let index: usize = this.outerScopes[level].names.length;
+      while (index > 0) {
+        index = index - 1;
+        const outer = this.outerScopes[level].names[index];
+        if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) return refs;
+      }
+      const slot = this.outerScopes[level].varSlot;
+      if (slot >= 0) {
+        refs.push(((hops + this.outerScopes[level].openEnvs) << 8) | u32(slot));
+        if (level < this.minOuterScope) this.minOuterScope = level;
+      }
+      hops = hops + this.outerScopes[level].openEnvs;
+      if (this.outerScopes[level].hasEnv) hops = hops + 1;
+    }
+    return refs;
+  }
+
+  // Look a name up in the eval var objects around it (loadEvalVar into
+  // `reg`, or storeEvalVar from it): each lookup that finds the binding
+  // jumps past the static access emitted next, by the jumps returned.
+  function emitEvalVarAccess(inout this, in parser: Parser, inout runtime: Runtime, nameStart: u32, nameLength: u32, op: Op, reg: u8): Array<u32> {
+    let jumps = Array<u32>();
+    const refs = this.evalVarRefs(in parser, nameStart, nameLength);
+    if (refs.length == 0) return jumps;
+    const named = this.nameConstOf(in parser, inout runtime, nameStart, nameLength);
+    let i: usize = 0;
+    while (i < refs.length) {
+      this.emit(instABC(op, reg, u8(refs[i] >> 8), u8(refs[i] & 0xFF)));
+      this.emit(instAU16(Op.halt, 0, named));
+      jumps.push(this.emit(instAI16(Op.halt, 0, 0)));
+      i = i + 1;
+    }
+    return jumps;
+  }
+
+  function patchJumps(inout this, in jumps: Array<u32>): void {
+    let i: usize = 0;
+    while (i < jumps.length) {
+      this.patchJump(jumps[i]);
+      i = i + 1;
+    }
   }
 
   // --- Capture scan ---
@@ -1588,15 +1667,15 @@ export struct Compiler {
       level = level - 1;
       if (!this.outerScopes[level].isArrow) {
         const slot = this.outerScopes[level].thisSlot;
-        if (slot < 0) return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false });
+        if (slot < 0) return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false, quiet: false });
         hops = hops + this.outerScopes[level].openEnvs;
         if (level < this.minOuterScope) this.minOuterScope = level;
-        return OuterRef({ found: true, hops: u8(hops), slot: slot, scopeIndex: level, needsCheck: false, isConst: false });
+        return OuterRef({ found: true, hops: u8(hops), slot: slot, scopeIndex: level, needsCheck: false, isConst: false, quiet: false });
       }
       hops = hops + this.outerScopes[level].openEnvs;
       if (this.outerScopes[level].hasEnv) hops = hops + 1;
     }
-    return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false });
+    return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false, quiet: false });
   }
 
   // After super() binds `this`: the environment copy for the arrows.
@@ -1994,7 +2073,7 @@ export struct Compiler {
   function emitClassFunction(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32, role: u32, fieldCount: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2150,6 +2229,9 @@ export struct Compiler {
       if (slot < 0 || slot > 255 || this.mustCheck(index) || this.locals[index].isConst) return -1;
       return i32(this.openEnvs - this.locals[index].envDepth) << 8 | slot;
     }
+    // A binding a sloppy direct eval may have added comes first.
+    const refs = this.evalVarRefs(in parser, nameStart, nameLength);
+    if (refs.length > 0) return -1;
     const outer = this.findOuter(in parser, nameStart, nameLength);
     if (!outer.found || outer.slot < 0 || outer.slot > 255 || outer.needsCheck || outer.isConst) return -1;
     return i32(outer.hops) << 8 | outer.slot;
@@ -2161,6 +2243,14 @@ export struct Compiler {
       this.storeLocal(usize(local), value);
       return;
     }
+    const jumps = this.emitEvalVarAccess(in parser, inout runtime, target.nameStart, target.nameLength, Op.storeEvalVar, value);
+    this.storeOuter(in parser, inout runtime, target, value);
+    this.patchJumps(in jumps);
+  }
+
+  // Store into a binding outside this function: an enclosing function's,
+  // else a global.
+  function storeOuter(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode, value: u8): void {
     const outer = this.findOuter(in parser, target.nameStart, target.nameLength);
     if (outer.found) {
       if (outer.slot < 0) {
@@ -2174,7 +2264,7 @@ export struct Compiler {
         this.emit(instAU16(Op.throwIfHole, current, named));
       }
       if (outer.isConst) {
-        this.emit(instA(Op.throwConstAssign, 0));
+        if (this.strict || !outer.quiet) this.emit(instA(Op.throwConstAssign, 0));
         return;
       }
       this.emit(instABC(Op.storeEnvSlot, value, outer.hops, u8(outer.slot)));
@@ -2340,7 +2430,7 @@ export struct Compiler {
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, strict, nameStart, nameLength, namePrefix, 0, 0);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2354,6 +2444,153 @@ export struct Compiler {
       this.emit(instAU16(Op.loadConst, dst, constant));
     }
     if (compiled.minOuterScope < ownScope && compiled.minOuterScope < this.minOuterScope) this.minOuterScope = compiled.minOuterScope;
+  }
+
+  // --- Direct eval ---
+  //
+  // `eval(...)` is evaluated like any call: the callee into a block with
+  // the arguments above it. When the callee is the intrinsic eval, the
+  // code compiles as a function nested at the call, against the scopes
+  // recorded here, and runs with this function's `this`. Everything it
+  // could name lives in an environment: the capture scan counts a direct
+  // eval as referring to every binding in scope.
+  function compileDirectEval(inout this, in parser: Parser, inout runtime: Runtime, node: u32, hintReg: i32): u8 {
+    const n = parser.ast.node(node);
+    const argCount = n.childrenCount;
+    if (argCount > 250) {
+      this.hadError = true;
+      return 0;
+    }
+    // `this` unchecked: in a derived constructor the eval code reads it
+    // from the environment and checks it itself, as an arrow does.
+    let thisValue: u8 = 0;
+    if (this.thisReg >= 0) {
+      thisValue = u8(this.thisReg);
+    } else {
+      thisValue = this.thisSource();
+    }
+    const base = this.allocReg();
+    let slot: u32 = 0;
+    while (slot < argCount) {
+      this.allocReg();
+      slot = slot + 1;
+    }
+    this.targetReg = i32(base);
+    const calleeReg = this.compileExpr(in parser, inout runtime, n.left);
+    if (calleeReg != base) this.emit(instAB(Op.mov, base, calleeReg));
+    let j: u32 = 0;
+    while (j < argCount) {
+      const target = base + u8(1 + j);
+      this.targetReg = i32(target);
+      const argReg = this.compileExpr(in parser, inout runtime, parser.ast.child(node, j));
+      if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
+      j = j + 1;
+    }
+    const site = this.addEvalSite(in parser);
+    const result = hintReg >= 0 ? u8(hintReg) : base;
+    this.emit(instABCD(Op.directEval, result, base, base + 1, u8(argCount)));
+    this.emit(instAU16(Op.halt, thisValue, site));
+    // The code may name a binding of any enclosing function, so each is a
+    // closure over its environment.
+    this.minOuterScope = 0;
+    this.nextReg = base + 1;
+    return result;
+  }
+
+  // Record the scopes a direct eval call sees: the enclosing functions'
+  // and this one's, each binding with its environment slot and spelling.
+  function addEvalSite(inout this, in parser: Parser): u16 {
+    let site = EvalSite({ names: Array<u8>(), levels: Array<EvalLevel>(), strict: this.strict, inParameters: this.parameterLocals > 0 && !this.isArrow });
+    let level: usize = 0;
+    while (level < this.outerScopes.length) {
+      let bindings = Array<EvalBinding>();
+      let i: usize = 0;
+      while (i < this.outerScopes[level].names.length) {
+        const local = this.outerScopes[level].names[i];
+        if (local.nameLength > 0 && local.envSlot >= 0) bindings.push(evalBindingOf(in parser, inout site.names, local));
+        i = i + 1;
+      }
+      const hasEnv = this.outerScopes[level].hasEnv;
+      const openEnvs = this.outerScopes[level].openEnvs;
+      const isArrow = this.outerScopes[level].isArrow;
+      const thisSlot = this.outerScopes[level].thisSlot;
+      const varSlot = this.outerScopes[level].varSlot;
+      site.levels.push(EvalLevel({ bindings: move bindings, hasEnv: hasEnv, openEnvs: openEnvs, isArrow: isArrow, thisSlot: thisSlot, varSlot: varSlot }));
+      level = level + 1;
+    }
+    let own = Array<EvalBinding>();
+    let i: usize = 0;
+    while (i < this.locals.length) {
+      const local = this.locals[i];
+      if (local.nameLength > 0 && local.envSlot >= 0) {
+        let binding = evalBindingOf(in parser, inout site.names, local);
+        if (i < this.parameterLocals) binding.conflicts = true;
+        own.push(binding);
+      }
+      i = i + 1;
+    }
+    site.levels.push(EvalLevel({ bindings: move own, hasEnv: this.hasEnv, openEnvs: this.openEnvs, isArrow: this.isArrow, thisSlot: this.thisEnvSlot, varSlot: this.varSlot }));
+    this.evalSites.push(move site);
+    return u16(this.evalSites.length - 1);
+  }
+
+  // Sloppy eval code in a function, at entry: each var and function it
+  // declares at its top level names the function's own binding when the
+  // function (at `varLevel`) has one as a var or parameter; a lexical
+  // one there or in a scope between is a SyntaxError; otherwise the name
+  // becomes a binding of the function's eval var object.
+  function declareEvalVars(inout this, in parser: Parser, inout runtime: Runtime, root: u32, varLevel: usize, inParameters: boolean): void {
+    let names = Array<NameRef>();
+    collectVarNames(in parser, root, inout names);
+    const program = parser.ast.node(root);
+    let c: u32 = 0;
+    while (c < program.childrenCount) {
+      const statement = parser.ast.node(parser.ast.child(root, c));
+      if (statement.kind == NodeKind.functionDecl && statement.nameLength > 0) pushName(inout names, statement.nameStart, statement.nameLength, true);
+      c = c + 1;
+    }
+    let hops: u32 = this.openEnvs;
+    if (this.hasEnv) hops = hops + 1;
+    let level = this.outerScopes.length;
+    while (level > varLevel + 1) {
+      level = level - 1;
+      hops = hops + this.outerScopes[level].openEnvs;
+      if (this.outerScopes[level].hasEnv) hops = hops + 1;
+    }
+    hops = hops + this.outerScopes[varLevel].openEnvs;
+    const slot = u8(this.outerScopes[varLevel].varSlot);
+    let i: usize = 0;
+    while (i < names.length) {
+      const nameStart = names[i].start;
+      const nameLength = names[i].length;
+      if (inParameters && nameLength == 9 && parser.sliceEquals(nameStart, 9, "arguments")) {
+        this.hadError = true;
+        return;
+      }
+      let bound = false;
+      let scan = this.outerScopes.length;
+      while (scan > varLevel && !bound) {
+        scan = scan - 1;
+        let index = this.outerScopes[scan].names.length;
+        while (index > 0 && !bound) {
+          index = index - 1;
+          const outer = this.outerScopes[scan].names[index];
+          if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) {
+            if (outer.lexical) {
+              this.hadError = true;
+              return;
+            }
+            bound = true;
+          }
+        }
+      }
+      if (!bound) {
+        const named = this.nameConstOf(in parser, inout runtime, nameStart, nameLength);
+        this.emit(instABC(Op.declareEvalVar, 0, u8(hops), slot));
+        this.emit(instAU16(Op.halt, 0, named));
+      }
+      i = i + 1;
+    }
   }
 
   // --- Expressions ---
@@ -2506,6 +2743,7 @@ export struct Compiler {
         this.loadLocal(usize(local), dst);
         return dst;
       }
+      const jumps = this.emitEvalVarAccess(in parser, inout runtime, n.nameStart, n.nameLength, Op.loadEvalVar, dst);
       const outer = this.findOuter(in parser, n.nameStart, n.nameLength);
       if (outer.found) {
         if (outer.slot < 0) {
@@ -2518,10 +2756,11 @@ export struct Compiler {
           const named = this.nameConstOf(in parser, inout runtime, n.nameStart, n.nameLength);
           this.emit(instAU16(Op.throwIfHole, dst, named));
         }
-        return dst;
+      } else {
+        const slot = runtime.globalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+        this.emit(instAU16(Op.loadGlobal, dst, slot));
       }
-      const slot = runtime.globalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
-      this.emit(instAU16(Op.loadGlobal, dst, slot));
+      this.patchJumps(in jumps);
       return dst;
     }
     if (k == NodeKind.templatePartExpr) {
@@ -3239,7 +3478,9 @@ export struct Compiler {
               && !this.findOuter(in parser, target.nameStart, target.nameLength).found) {
             const slot = runtime.globalSlotBytes(globalNameBytes(in parser, target.nameStart, target.nameLength));
             const src = this.allocReg();
+            const jumps = this.emitEvalVarAccess(in parser, inout runtime, target.nameStart, target.nameLength, Op.loadEvalVar, src);
             this.emit(instAU16(Op.loadGlobalOrUndefined, src, slot));
+            this.patchJumps(in jumps);
             const dst = this.allocReg();
             this.emit(instAB(Op.typeofOp, dst, src));
             return dst;
@@ -3511,6 +3752,7 @@ export struct Compiler {
         this.hadError = true;
         return 0;
       }
+      if (isDirectEvalCall(in parser, node)) return this.compileDirectEval(in parser, inout runtime, node, hintReg);
       if (callee.kind == NodeKind.identExpr && callee.nameLength > 0) {
         const inlined = this.findInline(in parser, callee.nameStart, callee.nameLength);
         if (inlined != NO_NODE) return this.emitInline(in parser, inout runtime, node, inlined, hintReg);
@@ -4228,7 +4470,15 @@ export struct Compiler {
           i = i + 1;
           continue;
         }
-        if (n.op == TokenKind.kwVar && this.isFunction) {
+        if (n.op == TokenKind.kwVar && this.evalVars) {
+          // Sloppy eval code's var is the calling function's binding,
+          // declared at entry: this is an assignment to it.
+          if (decl.left != NO_NODE) {
+            this.nameNext(decl.nameStart, decl.nameLength, 0);
+            const value = this.compileExpr(in parser, inout runtime, decl.left);
+            this.storeIdent(in parser, inout runtime, decl, value);
+          }
+        } else if (n.op == TokenKind.kwVar && this.isFunction) {
           // A var inside a function is one of its locals.
           const local = this.findLocal(in parser, decl.nameStart, decl.nameLength);
           if (local < 0) {
@@ -4318,7 +4568,9 @@ export struct Compiler {
       const r = this.allocReg();
       this.emitFunctionValue(in parser, inout runtime, node, r, 0, 0, 0);
       if (this.hadError) return;
-      if (this.isFunction) {
+      if (this.evalVars) {
+        this.storeIdent(in parser, inout runtime, n, r);
+      } else if (this.isFunction) {
         const local = this.findLocal(in parser, n.nameStart, n.nameLength);
         if (local < 0) {
           this.hadError = true;
@@ -5041,7 +5293,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
   // name the parser attached to a method or accessor does not.
@@ -5056,7 +5308,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       names.push(enclosingScopes[i].names[j]);
       j = j + 1;
     }
-    scopes.push(Scope({ names: move names, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs, isArrow: enclosingScopes[i].isArrow, thisSlot: enclosingScopes[i].thisSlot }));
+    scopes.push(Scope({ names: move names, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs, isArrow: enclosingScopes[i].isArrow, thisSlot: enclosingScopes[i].thisSlot, varSlot: enclosingScopes[i].varSlot }));
     i = i + 1;
   }
   let parentNames = Array<Local>();
@@ -5065,7 +5317,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     parentNames.push(enclosingLocals[i]);
     i = i + 1;
   }
-  scopes.push(Scope({ names: move parentNames, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs, isArrow: enclosingIsArrow, thisSlot: enclosingThisSlot }));
+  scopes.push(Scope({ names: move parentNames, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs, isArrow: enclosingIsArrow, thisSlot: enclosingThisSlot, varSlot: enclosingVarSlot }));
   const scopeCount = scopes.length;
   const failed = CompiledFunction({ index: -1, minOuterScope: scopeCount });
   let compiler = Compiler({
@@ -5075,6 +5327,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
+    varSlot: -1, evalVars: false, parameterLocals: 0, evalSites: Array<EvalSite>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
   compiler.isArrow = n.kind == NodeKind.arrowFunc;
@@ -5123,21 +5376,31 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     p = p + 1;
   }
   const patternNamesEnd = compiler.locals.length;
-  // A named function expression binds its own name.
   const index = runtime.reserveFunction();
+  if (n.left != NO_NODE) compiler.collectBodyLocals(in parser, n.left);
+  // A named function expression binds its own name, immutably, unless a
+  // parameter or declaration of the function takes it.
   let selfReg: i32 = -1;
   let selfLocal: i32 = -1;
-  if (writtenName) {
+  if (writtenName && compiler.findLocal(in parser, n.nameStart, n.nameLength) < 0) {
     selfReg = i32(compiler.addLocal(n.nameStart, n.nameLength));
     selfLocal = i32(compiler.locals.length - 1);
+    compiler.locals[usize(selfLocal)].isConst = true;
   }
-  if (n.left != NO_NODE) compiler.collectBodyLocals(in parser, n.left);
-  if (n.left != NO_NODE && bodyUsesThis(in parser, n.left)) compiler.thisReg = i32(compiler.allocReg());
+  let usesThis = n.left != NO_NODE && bodyUsesThis(in parser, n.left);
+  p = 0;
+  while (p < n.childrenCount && !usesThis) {
+    usesThis = bodyUsesThis(in parser, parser.ast.child(node, p));
+    p = p + 1;
+  }
+  if (usesThis) compiler.thisReg = i32(compiler.allocReg());
   // `arguments`, when the body (or an arrow inside it) reads it and no
   // parameter or declaration takes the name, is a local built at entry.
   let argumentsIndex: i32 = -1;
   if (n.kind != NodeKind.arrowFunc && n.left != NO_NODE) {
-    const usage = argumentsUsage(in parser, n.left);
+    let usage = argumentsUsage(in parser, n.left);
+    // Direct eval code may read it.
+    if (usage == 0 && directEvalWithin(in parser, n.left, true)) usage = parser.argumentsName;
     if (usage != 0 && compiler.findLocal(in parser, usage, 9) < 0) {
       compiler.addLocal(usage, 9);
       argumentsIndex = i32(compiler.locals.length - 1);
@@ -5172,6 +5435,11 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.envSize = compiler.envSize + 1;
     compiler.hasEnv = true;
   }
+  if (!compiler.strict && ownsDirectEval(in parser, node)) {
+    compiler.varSlot = i32(compiler.envSize);
+    compiler.envSize = compiler.envSize + 1;
+    compiler.hasEnv = true;
+  }
   compiler.fixedRegs = compiler.nextReg;
 
   // The environment first, then the captured parameters into it (in
@@ -5198,7 +5466,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     const selfIndex = usize(selfLocal);
     const callee = compiler.allocReg();
     compiler.emit(instA(Op.loadCallee, callee));
-    compiler.storeLocal(selfIndex, callee);
+    compiler.initLocal(selfIndex, callee);
     compiler.resetTemps();
   }
   if (argumentsIndex >= 0) {
@@ -5221,6 +5489,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   const isCoroutine = isGenerator || isAsync;
   // Defaults: a parameter that arrived undefined takes its initializer.
   // A pattern parameter then destructures into its names.
+  compiler.parameterLocals = patternNamesEnd;
   p = 0;
   while (p < n.childrenCount) {
     const paramIndex = parser.ast.child(node, p);
@@ -5254,6 +5523,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     }
     p = p + 1;
   }
+  compiler.parameterLocals = 0;
   // A generator suspends here, its parameters initialized, and the call
   // returns the generator object.
   if (isCoroutine) {
@@ -5381,6 +5651,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   const propertyNames = replace(inout compiler.propertyNames, Array<u32>());
   compiled.propertyNames = move propertyNames;
+  const evalSites = replace(inout compiler.evalSites, Array<EvalSite>());
+  compiled.evalSites = move evalSites;
   runtime.setFunction(index, move compiled);
   return CompiledFunction({ index: i32(index), minOuterScope: compiler.minOuterScope });
 }
@@ -5514,6 +5786,7 @@ function nameReferencedBefore(in parser: Parser, node: u32, nameStart: u32, name
       && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength)) {
     return true;
   }
+  if (n.kind == NodeKind.call && (hoisted || n.start < limit) && isDirectEvalCall(in parser, node)) return true;
   const inside = hoisted || n.kind == NodeKind.functionDecl;
   if (nameReferencedBefore(in parser, n.left, nameStart, nameLength, limit, inside)) return true;
   if (nameReferencedBefore(in parser, n.right, nameStart, nameLength, limit, inside)) return true;
@@ -5536,6 +5809,8 @@ function capturedBy(in parser: Parser, node: u32, nameStart: u32, nameLength: u3
   if (node == NO_NODE) return false;
   const n = parser.ast.node(node);
   const k = n.kind;
+  // Direct eval code may name any binding in scope.
+  if (k == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
   if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef || k == NodeKind.staticBlock) {
     if (functionBinds(in parser, node, nameStart, nameLength)) return false;
     return capturedInside(in parser, node, nameStart, nameLength, true);
@@ -5558,6 +5833,72 @@ function capturedInside(in parser: Parser, node: u32, nameStart: u32, nameLength
     i = i + 1;
   }
   return false;
+}
+
+// A call spelled `eval(...)`, the callee perhaps parenthesized, with no
+// spread argument: a direct eval, when `eval` holds the intrinsic as the
+// call runs.
+function isDirectEvalCall(in parser: Parser, node: u32): boolean {
+  const n = parser.ast.node(node);
+  if (n.kind != NodeKind.call) return false;
+  let callee = n.left;
+  while (callee != NO_NODE && parser.ast.node(callee).kind == NodeKind.paren) {
+    callee = parser.ast.node(callee).left;
+  }
+  if (callee == NO_NODE) return false;
+  const c = parser.ast.node(callee);
+  if (c.kind != NodeKind.identExpr || c.nameLength != 4 || !parser.sliceEquals(c.nameStart, 4, "eval")) return false;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (parser.ast.node(parser.ast.child(node, i)).kind == NodeKind.spread) return false;
+    i = i + 1;
+  }
+  return true;
+}
+
+// Whether a function's own code -- its parameters and body, not the
+// functions inside -- calls eval directly.
+function ownsDirectEval(in parser: Parser, node: u32): boolean {
+  const n = parser.ast.node(node);
+  if (directEvalWithin(in parser, n.left, false)) return true;
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    if (directEvalWithin(in parser, parser.ast.child(node, p), false)) return true;
+    p = p + 1;
+  }
+  return false;
+}
+
+// Whether `node` calls eval directly outside any nested function, arrows
+// aside when `intoArrows`.
+function directEvalWithin(in parser: Parser, node: u32, intoArrows: boolean): boolean {
+  if (node == NO_NODE) return false;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.methodDef || k == NodeKind.staticBlock) return false;
+  if (k == NodeKind.arrowFunc && !intoArrows) return false;
+  if (k == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
+  if (directEvalWithin(in parser, n.left, intoArrows) || directEvalWithin(in parser, n.right, intoArrows) || directEvalWithin(in parser, n.third, intoArrows)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (directEvalWithin(in parser, parser.ast.child(node, i), intoArrows)) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
+// A binding as a direct eval call records it, its spelling appended to
+// `names`.
+function evalBindingOf(in parser: Parser, inout names: Array<u8>, local: Local): EvalBinding {
+  const start = u32(names.length);
+  let b: usize = usize(local.nameStart);
+  const end = b + usize(local.nameLength);
+  while (b < end) {
+    names.push(parser.source[b]);
+    b = b + 1;
+  }
+  const checked = local.needsHole && (local.alwaysCheck || !local.initialized);
+  return EvalBinding({ nameStart: start, nameLength: local.nameLength, slot: u32(local.envSlot), depth: local.envDepth, isConst: local.isConst, conflicts: local.lexical, checked: checked });
 }
 
 // Whether a function node binds the name itself: as a parameter, as its
@@ -5810,6 +6151,8 @@ function arrowsUseThis(in parser: Parser, node: u32): boolean {
   const k = n.kind;
   if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.methodDef || k == NodeKind.staticBlock) return false;
   if (k == NodeKind.arrowFunc) return bodyUsesThis(in parser, node);
+  // Direct eval code reads `this` as an arrow does.
+  if (k == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
   if (arrowsUseThis(in parser, n.left)) return true;
   if (arrowsUseThis(in parser, n.right)) return true;
   if (arrowsUseThis(in parser, n.third)) return true;
@@ -5826,8 +6169,9 @@ function bodyUsesThis(in parser: Parser, node: u32): boolean {
   const n = parser.ast.node(node);
   if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.methodDef || n.kind == NodeKind.staticBlock) return false;
   if (n.kind == NodeKind.thisExpr) return !n.boolValue;
-  // `super.x` reads through `this`.
+  // `super.x` reads through `this`; direct eval code may read it.
   if (n.kind == NodeKind.superExpr) return true;
+  if (n.kind == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
   if (bodyUsesThis(in parser, n.left)) return true;
   if (bodyUsesThis(in parser, n.right)) return true;
   if (bodyUsesThis(in parser, n.third)) return true;
@@ -5951,6 +6295,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
+    varSlot: -1, evalVars: false, parameterLocals: 0, evalSites: Array<EvalSite>(),
   });
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.loadUndefined, resultReg));
@@ -5994,5 +6339,115 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   compiled.strict = compiler.strict;
   const propertyNames = replace(inout compiler.propertyNames, Array<u32>());
   compiled.propertyNames = move propertyNames;
+  const evalSites = replace(inout compiler.evalSites, Array<EvalSite>());
+  compiled.evalSites = move evalSites;
+  return i32(runtime.addFunction(move compiled));
+}
+
+// Compiles direct eval code as a function nested at its call: the call's
+// EvalSite (`site` of function `caller`) gives the scopes around it, and
+// their names are spelled after the code's own source, where lookups by
+// spelling find them. Sloppy code in a function declares its vars and
+// functions in that function (see declareEvalVars); from a script, as
+// globals. Strict code keeps its own. The completion value is the
+// result. Returns the function index, or -1 on error.
+export function compileEval(inout parser: Parser, root: u32, inout runtime: Runtime, caller: u32, site: u32): i32 {
+  const spelled = u32(parser.source.length);
+  const nameCount = runtime.functions[usize(caller)].evalSites[usize(site)].names.length;
+  let b: usize = 0;
+  while (b < nameCount) {
+    parser.source.push(runtime.functions[usize(caller)].evalSites[usize(site)].names[b]);
+    b = b + 1;
+  }
+  let scopes = Array<Scope>();
+  let varLevel: i32 = -1;
+  const levelCount = runtime.functions[usize(caller)].evalSites[usize(site)].levels.length;
+  let level: usize = 0;
+  while (level < levelCount) {
+    let names = Array<Local>();
+    const bindingCount = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].bindings.length;
+    let i: usize = 0;
+    while (i < bindingCount) {
+      const binding = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].bindings[i];
+      names.push(Local({ nameStart: spelled + binding.nameStart, nameLength: binding.nameLength, reg: 0, envSlot: i32(binding.slot), envDepth: binding.depth, captured: true, isConst: binding.isConst, initialized: !binding.checked, alwaysCheck: binding.checked, needsHole: binding.checked, nameConst: -1, blockFunction: false, lexical: binding.conflicts, inlineFunction: NO_NODE }));
+      i = i + 1;
+    }
+    const hasEnv = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].hasEnv;
+    const openEnvs = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].openEnvs;
+    const isArrow = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].isArrow;
+    const thisSlot = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].thisSlot;
+    const varSlot = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].varSlot;
+    if (varSlot >= 0) varLevel = i32(level);
+    scopes.push(Scope({ names: move names, hasEnv: hasEnv, openEnvs: openEnvs, isArrow: isArrow, thisSlot: thisSlot, varSlot: varSlot }));
+    level = level + 1;
+  }
+  const scopeCount = scopes.length;
+  const strict = runtime.functions[usize(caller)].evalSites[usize(site)].strict || parser.strictMode;
+  const evalVars = !strict && varLevel >= 0;
+  let compiler = Compiler({
+    code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
+    locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
+    hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, lastTarget: -1, isFunction: strict || evalVars, functionNode: root,
+    hadError: false, strict: strict, loops: Array<LoopFrame>(),
+    pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
+    pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: true, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
+    varSlot: -1, evalVars: evalVars, parameterLocals: 0, evalSites: Array<EvalSite>(),
+  });
+  const resultReg = compiler.allocReg();
+  compiler.emit(instA(Op.loadUndefined, resultReg));
+  compiler.lastExprReg = i32(resultReg);
+
+  const program = parser.ast.node(root);
+  // Strict code's vars and functions are its own locals.
+  if (strict) {
+    let c: u32 = 0;
+    while (c < program.childrenCount) {
+      compiler.collectLocals(in parser, parser.ast.child(root, c), false);
+      c = c + 1;
+    }
+  }
+  // Its `this` is the caller's, captured by the closure it runs as.
+  if (bodyUsesThis(in parser, root)) compiler.thisReg = i32(compiler.allocReg());
+  if (!compiler.isFunction) {
+    let enclosingLexicals = Array<NameRef>();
+    hoistProgramDecls(in parser, inout runtime, root, false, inout enclosingLexicals);
+  }
+  compiler.scanCaptures(in parser, root);
+  compiler.fixedRegs = compiler.nextReg;
+  if (compiler.hasEnv) compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
+  const inParameters = runtime.functions[usize(caller)].evalSites[usize(site)].inParameters;
+  if (evalVars) compiler.declareEvalVars(in parser, inout runtime, root, usize(varLevel), inParameters);
+  compiler.checkBodyRedeclarations(in parser, NO_NODE, root);
+  compiler.declareBodyLexicals(in parser, inout runtime, root, false);
+  // Function declarations first, then everything else.
+  let s: u32 = 0;
+  while (s < program.childrenCount && !compiler.hadError) {
+    const statement = parser.ast.child(root, s);
+    if (parser.ast.node(statement).kind == NodeKind.functionDecl) compiler.compileStmt(in parser, inout runtime, statement);
+    s = s + 1;
+  }
+  s = 0;
+  while (s < program.childrenCount && !compiler.hadError) {
+    const statement = parser.ast.child(root, s);
+    if (parser.ast.node(statement).kind != NodeKind.functionDecl) compiler.compileStmt(in parser, inout runtime, statement);
+    s = s + 1;
+  }
+  compiler.emit(instA(Op.returnOp, resultReg));
+  if (compiler.hadError) return -1;
+
+  let compiled = createFunctionCode();
+  const code = replace(inout compiler.code, Array<Inst>());
+  const constants = replace(inout compiler.constants, Array<Value>());
+  compiled.code = move code;
+  compiled.constants = move constants;
+  compiled.registerCount = u32(compiler.maxReg);
+  compiled.fixedRegs = u32(compiler.fixedRegs);
+  compiled.strict = strict;
+  compiled.isArrow = true;
+  compiled.thisReg = compiler.thisReg;
+  const propertyNames = replace(inout compiler.propertyNames, Array<u32>());
+  compiled.propertyNames = move propertyNames;
+  const evalSites = replace(inout compiler.evalSites, Array<EvalSite>());
+  compiled.evalSites = move evalSites;
   return i32(runtime.addFunction(move compiled));
 }

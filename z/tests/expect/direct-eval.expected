@@ -1,0 +1,17 @@
+-3
+33
+2
+10 11
+global local local number 7 global undefined undefined
+42
+undefined undefined 7
+ReferenceError TypeError SyntaxError SyntaxError 1 1
+true TypeError 42
+T 3
+first
+true
+4
+2,5
+undefined not the intrinsic: 1
+iteration 0
+iteration 1

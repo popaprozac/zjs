@@ -190,5 +190,9 @@ export function opName(op: Op): String {
     modImm => "modImm";
     jmpIfNotStrictEqImm => "jmpIfNotStrictEqImm";
     envAdd => "envAdd";
+    directEval => "directEval";
+    loadEvalVar => "loadEvalVar";
+    storeEvalVar => "storeEvalVar";
+    declareEvalVar => "declareEvalVar";
   };
 }
