@@ -42,7 +42,7 @@ code; the Hermes VM alone is 2.75 MB, with its compiler 3.34 MB
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
-| Bytecode quality | all | about even | 1-2 days | calls, stores, loops done; inlining open |
+| Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp done; arrays next |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
@@ -236,10 +236,18 @@ both operators and a loop's bottom, so two arms serve all four cases
 closures -1.2%). A closure is made from its function's constant by one
 instruction, where a load of the function preceded it (closures -1.9%,
 calls -1.3%).
-Open: inlining. Hermes's compiler inlines a small function a scope
-declares and never reassigns (the `helpers` kernel's four become a
+Inlining (2026-09-28): Hermes's compiler inlines a small function a
+scope declares and never reassigns (the `helpers` kernel's four become a
 multiply, a compare, and two property reads in its loop: 22 ms to our
-40); the engine's leaf runner saves the frame but still makes the call.
+40). Now the engine's does too: a call to a function declared in a
+function body, whose body is `return <expression>` over its parameters
+alone (literals, operators, conditionals, property reads; 24 nodes at
+most), whose name nothing in that function writes (no assignment,
+update, pattern, loop head, other declaration, eval, or with), compiles
+to the expression with the parameters bound to the arguments' registers.
+helpers -42.3%, the rest level. Not yet: bodies with more than one
+statement, functions that read the enclosing scope, calls through a
+property.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches

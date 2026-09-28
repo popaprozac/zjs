@@ -119,6 +119,9 @@ struct Local {
   // Declared by let, const, class, or a block's function declaration (as
   // opposed to var, a parameter, or a catch parameter).
   lexical: boolean;
+  // A function declaration a call may inline (see emitInline): the
+  // declaration. NO_NODE otherwise.
+  inlineFunction: u32;
 }
 
 // What a scope records when it opens, to close it again.
@@ -197,6 +200,9 @@ export struct Compiler {
   lastExprReg: i32;
   // Compiling a function body (as opposed to the script top level).
   isFunction: boolean;
+  // The function being compiled (its parameters and body), NO_NODE for a
+  // script.
+  functionNode: u32;
   hadError: boolean;
   strict: boolean;
   // Open loops, innermost last.
@@ -1114,7 +1120,7 @@ export struct Compiler {
     if (envSlot == BLOCK_SLOT) envSlot = -1;
     let reg: u8 = 0;
     if (!captured) reg = this.allocReg();
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     return reg;
   }
 
@@ -1219,6 +1225,87 @@ export struct Compiler {
     this.locals[index].initialized = true;
   }
 
+  // --- Inlining ---
+  //
+  // A call `f(a, b)` whose `f` is a function declared in a function body,
+  // written `return <expression>;` over its parameters alone, and never
+  // written, compiles to that expression with the parameters bound to the
+  // arguments: no call is made, and nothing can tell -- the function
+  // still exists as a value for any other use.
+
+  // The declaration a call through the binding `name` inlines, or
+  // NO_NODE: the nearest binding of the name decides, here or outside.
+  function findInline(in parser: Parser, nameStart: u32, nameLength: u32): u32 {
+    const local = this.findLocal(in parser, nameStart, nameLength);
+    if (local >= 0) return this.locals[usize(local)].inlineFunction;
+    let level: usize = this.outerScopes.length;
+    while (level > 0) {
+      level = level - 1;
+      let index: usize = this.outerScopes[level].names.length;
+      while (index > 0) {
+        index = index - 1;
+        const outer = this.outerScopes[level].names[index];
+        if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) return outer.inlineFunction;
+      }
+    }
+    return NO_NODE;
+  }
+
+  // The call `call` inlined: its arguments evaluated in order, each into
+  // a register, the declaration's parameters bound to them (a missing
+  // one to undefined), and the returned expression compiled in their
+  // scope, which holds nothing else it reads.
+  function emitInline(inout this, in parser: Parser, inout runtime: Runtime, call: u32, declaration: u32, hintReg: i32): u8 {
+    const returned = inlineReturn(in parser, declaration);
+    const argCount = parser.ast.node(call).childrenCount;
+    // An argument is read where it is unless a later one may assign.
+    let assigns = false;
+    let a: u32 = 0;
+    while (a < argCount) {
+      if (mayAssign(in parser, parser.ast.child(call, a))) assigns = true;
+      a = a + 1;
+    }
+    let argRegs = Array<u8>();
+    a = 0;
+    while (a < argCount) {
+      const argument = parser.ast.child(call, a);
+      if (assigns) {
+        argRegs.push(this.compileExpr(in parser, inout runtime, argument));
+      } else {
+        argRegs.push(this.compileOperand(in parser, inout runtime, argument, NO_NODE));
+      }
+      a = a + 1;
+    }
+    const mark = this.locals.length;
+    const paramCount = parser.ast.node(declaration).childrenCount;
+    let p: u32 = 0;
+    while (p < paramCount) {
+      const param = parser.ast.node(parser.ast.child(declaration, p));
+      let reg: u8 = 0;
+      if (p < argCount) {
+        reg = argRegs[usize(p)];
+      } else {
+        reg = this.allocReg();
+        this.emit(instA(Op.loadUndefined, reg));
+      }
+      this.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+      p = p + 1;
+    }
+    this.targetReg = hintReg;
+    let result = this.compileExpr(in parser, inout runtime, returned);
+    while (this.locals.length > mark) {
+      const dropped = this.locals.pop();
+    }
+    // A parameter read in place is the caller's own binding: the call's
+    // value must not change with it.
+    if (!assigns && result < this.fixedRegs) {
+      const copy = hintReg >= 0 ? u8(hintReg) : this.allocReg();
+      this.emit(instAB(Op.mov, copy, result));
+      result = copy;
+    }
+    return result;
+  }
+
   // Resolve a name in the enclosing functions. `hops` counts the
   // environments between here and the one holding it: this function's
   // open nested ones and its own, then, per enclosing function, the
@@ -1264,7 +1351,7 @@ export struct Compiler {
         // The slot is on record for the binding's own statement too, so
         // a let / const bound later lands in the same slot the function
         // declarations compiled before it were resolved against.
-        this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+        this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
         this.envSize = this.envSize + 1;
       }
       index = index + 1;
@@ -1304,7 +1391,7 @@ export struct Compiler {
         if (captured) {
           const envSlot = i32(this.envSize);
           this.locals[index].envSlot = envSlot;
-          this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+          this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
           this.envSize = this.envSize + 1;
         }
       }
@@ -1321,7 +1408,7 @@ export struct Compiler {
       envSlot = i32(this.envSize);
       this.envSize = this.envSize + 1;
     }
-    this.capturedNames.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+    this.capturedNames.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
   }
 
   // The identifiers of a lexical pattern that nested functions capture.
@@ -1359,7 +1446,7 @@ export struct Compiler {
     // apart from the block-level binding the declaration creates.
     if (n.nameLength > 0 && capturedBy(in parser, node, n.nameStart, n.nameLength, false)) {
       const key = n.kind == NodeKind.classExpr ? n.nameStart : n.start;
-      this.capturedNames.push(Local({ nameStart: key, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+      this.capturedNames.push(Local({ nameStart: key, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
       this.envSize = this.envSize + 1;
     }
     let i: u32 = 0;
@@ -1368,14 +1455,14 @@ export struct Compiler {
       const member = parser.ast.node(memberIndex);
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength)) {
         if (this.capturedSlotByText(in parser, member.nameStart, member.nameLength) < 0) {
-          this.capturedNames.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+          this.capturedNames.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
           this.envSize = this.envSize + 1;
         }
       } else if (member.kind == NodeKind.classField && !member.boolValue && member.nameLength == 0 && member.third != NO_NODE) {
         // Named by the source from its opening bracket, so the binding
         // can never shadow an identifier the key expression reads.
         const key = parser.ast.node(member.third);
-        this.capturedNames.push(Local({ nameStart: key.start - 1, nameLength: key.end - key.start + 1, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+        this.capturedNames.push(Local({ nameStart: key.start - 1, nameLength: key.end - key.start + 1, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
         this.envSize = this.envSize + 1;
       }
       // Static initializers and computed keys run in this function.
@@ -1709,7 +1796,7 @@ export struct Compiler {
     let innerSlot: i32 = -1;
     if (n.nameLength > 0) {
       innerSlot = this.capturedSlot(n.kind == NodeKind.classExpr ? n.nameStart : n.start);
-      this.locals.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+      this.locals.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     }
     let fieldCount: u32 = 0;
     let ctorNode: u32 = NO_NODE;
@@ -1731,7 +1818,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
       }
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength) && this.findLocal(in parser, member.nameStart, member.nameLength) < 0) {
         const slot = this.capturedSlotByText(in parser, member.nameStart, member.nameLength);
@@ -1739,7 +1826,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+        this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
         const description = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(member.nameStart), usize(member.nameStart + member.nameLength))));
         const key = this.allocReg();
         this.emit(instAU16(Op.newPrivateName, key, description));
@@ -2058,7 +2145,7 @@ export struct Compiler {
     let envSlot = this.capturedSlot(nameStart);
     const captured = envSlot != -1;
     if (envSlot == BLOCK_SLOT) envSlot = -1;
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     return this.locals.length - 1;
   }
 
@@ -3366,6 +3453,10 @@ export struct Compiler {
         this.hadError = true;
         return 0;
       }
+      if (callee.kind == NodeKind.identExpr && callee.nameLength > 0) {
+        const inlined = this.findInline(in parser, callee.nameStart, callee.nameLength);
+        if (inlined != NO_NODE) return this.emitInline(in parser, inout runtime, node, inlined, hintReg);
+      }
       if (callee.kind == NodeKind.superExpr) {
         // super(...): the arguments above base, the constructed object
         // into base, then the instance fields.
@@ -4176,6 +4267,9 @@ export struct Compiler {
           return;
         }
         this.storeLocal(usize(local), r);
+        if (inlineReturn(in parser, node) != NO_NODE && !nameMayChange(in parser, this.functionNode, n.nameStart, n.nameLength, node, false)) {
+          this.locals[usize(local)].inlineFunction = node;
+        }
       } else {
         const slot = runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
         this.emit(instAU16(Op.defineGlobal, r, slot));
@@ -4558,6 +4652,100 @@ function branchImmediate(in parser: Parser, node: u32): i32 {
 }
 
 
+// At most this many nodes in an inlined expression.
+const INLINE_NODES: u32 = 24;
+
+// The expression a function declaration's body returns, when a call to
+// it may be inlined: plain parameters, not a generator or async, a body
+// that is `return <expression>;` of parameters, literals, operators,
+// conditionals, and property reads. NO_NODE otherwise.
+function inlineReturn(in parser: Parser, fn: u32): u32 {
+  const n = parser.ast.node(fn);
+  if (n.kind != NodeKind.functionDecl || n.num == 3.0 || n.boolValue || n.left == NO_NODE) return NO_NODE;
+  if (parametersHaveExpressions(in parser, fn)) return NO_NODE;
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    const param = parser.ast.node(parser.ast.child(fn, p));
+    if (param.kind != NodeKind.identExpr || param.nameLength == 0 || parameterPattern(in parser, parser.ast.child(fn, p)) != NO_NODE) return NO_NODE;
+    p = p + 1;
+  }
+  const body = parser.ast.node(n.left);
+  if (body.kind != NodeKind.blockStmt || body.childrenCount != 1) return NO_NODE;
+  const statement = parser.ast.node(parser.ast.child(n.left, 0));
+  if (statement.kind != NodeKind.returnStmt || statement.left == NO_NODE) return NO_NODE;
+  let count: u32 = 0;
+  if (!inlinable(in parser, fn, statement.left, inout count)) return NO_NODE;
+  return statement.left;
+}
+
+function inlinable(in parser: Parser, fn: u32, node: u32, inout count: u32): boolean {
+  if (node == NO_NODE) return true;
+  count = count + 1;
+  if (count > INLINE_NODES) return false;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.numberExpr || k == NodeKind.stringExpr || k == NodeKind.boolExpr || k == NodeKind.nullExpr) return true;
+  if (k == NodeKind.identExpr) return isParameterOf(in parser, fn, n.nameStart, n.nameLength);
+  if (k == NodeKind.paren) return inlinable(in parser, fn, n.left, inout count);
+  if (k == NodeKind.binary) return n.op != TokenKind.kwIn && n.op != TokenKind.kwInstanceof && inlinable(in parser, fn, n.left, inout count) && inlinable(in parser, fn, n.right, inout count);
+  if (k == NodeKind.logical) return inlinable(in parser, fn, n.left, inout count) && inlinable(in parser, fn, n.right, inout count);
+  if (k == NodeKind.unary) return (n.op == TokenKind.minus || n.op == TokenKind.plus || n.op == TokenKind.bang || n.op == TokenKind.tilde) && inlinable(in parser, fn, n.left, inout count);
+  if (k == NodeKind.conditional) return inlinable(in parser, fn, n.left, inout count) && inlinable(in parser, fn, n.right, inout count) && inlinable(in parser, fn, n.third, inout count);
+  if (k == NodeKind.member) return inlinable(in parser, fn, n.left, inout count);
+  if (k == NodeKind.computed) return inlinable(in parser, fn, n.left, inout count) && inlinable(in parser, fn, n.right, inout count);
+  return false;
+}
+
+function isParameterOf(in parser: Parser, fn: u32, nameStart: u32, nameLength: u32): boolean {
+  const n = parser.ast.node(fn);
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    const param = parser.ast.node(parser.ast.child(fn, p));
+    if (param.nameLength == nameLength && parser.slicesEqual(param.nameStart, param.nameLength, nameStart, nameLength)) return true;
+    p = p + 1;
+  }
+  return false;
+}
+
+// Whether the binding `name` of function declaration `declaration` may be
+// written anywhere under `node` (the function it is declared in, nested
+// functions included): as the target of an assignment, an update, a
+// pattern, or a for-in / for-of head; by another declaration of the name;
+// or through a direct eval or a with statement. Conservative: any doubt
+// is a yes.
+function nameMayChange(in parser: Parser, node: u32, nameStart: u32, nameLength: u32, declaration: u32, target: boolean): boolean {
+  if (node == NO_NODE) return false;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.withStmt) return true;
+  if (k == NodeKind.identExpr && n.nameLength == 4 && parser.sliceEquals(n.nameStart, 4, "eval")) return true;
+  const named = node != declaration && n.nameLength == nameLength && nameLength > 0 && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength);
+  if (named) {
+    if (target) return true;
+    // A read, a property name, or a label names nothing it could change.
+    const harmless = k == NodeKind.identExpr || k == NodeKind.member || k == NodeKind.optionalMember || k == NodeKind.objectProp
+      || k == NodeKind.methodDef || k == NodeKind.classField || k == NodeKind.labeledStmt || k == NodeKind.breakStmt || k == NodeKind.continueStmt;
+    if (!harmless) return true;
+  }
+  let leftTarget = target;
+  let restTarget = target;
+  if (k == NodeKind.assignment || k == NodeKind.forInStmt || k == NodeKind.forOfStmt) leftTarget = true;
+  if ((k == NodeKind.unary || k == NodeKind.postfix) && (n.op == TokenKind.plusPlus || n.op == TokenKind.minusMinus)) leftTarget = true;
+  if (k == NodeKind.arrayPattern || k == NodeKind.objectPattern || k == NodeKind.patternEntry || k == NodeKind.restParam) {
+    leftTarget = true;
+    restTarget = true;
+  }
+  if (nameMayChange(in parser, n.left, nameStart, nameLength, declaration, leftTarget)) return true;
+  if (nameMayChange(in parser, n.right, nameStart, nameLength, declaration, restTarget)) return true;
+  if (nameMayChange(in parser, n.third, nameStart, nameLength, declaration, restTarget)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (nameMayChange(in parser, parser.ast.child(node, i), nameStart, nameLength, declaration, restTarget)) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
 // Whether evaluating a subtree may assign a binding: an assignment (plain,
 // compound, logical, or destructuring) or an update anywhere in it,
 // outside a nested function body, which does not run as part of it.
@@ -4814,7 +5002,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
     locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
-    hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true,
+    hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, isFunction: true, functionNode: node,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
@@ -4844,7 +5032,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       // A pattern parameter: the argument lands in a register with no
       // name; the pattern's own names are locals bound at entry.
       const reg = compiler.allocReg();
-      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
       paramCount = paramCount + 1;
       p = p + 1;
       continue;
@@ -4853,7 +5041,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     // Parameters arrive in the first registers; a captured one is copied
     // into the environment once it exists.
     const reg = compiler.allocReg();
-    compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false }));
+    compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     paramCount = paramCount + 1;
     p = p + 1;
   }
@@ -5690,7 +5878,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
     locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
-    hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false,
+    hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, isFunction: false, functionNode: NO_NODE,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
