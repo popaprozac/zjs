@@ -13,7 +13,7 @@ import math from "std/math";
 import native from "./builtins/clock.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -656,7 +656,9 @@ export struct Runtime {
   }
 
   function functionValue(inout this, index: u32): Value {
-    return cellValue(this.heap.allocateFunction(index));
+    const handle = this.heap.allocateFunction(index);
+    if (this.functions[usize(index)].leaf) this.heap.setFlags(handle, FLAG_LEAF);
+    return cellValue(handle);
   }
 
   function isFunctionValue(value: Value): boolean {
@@ -3881,14 +3883,11 @@ export struct Runtime {
   // The call itself, its arguments already in registers from argsBase.
   function callPlaced(inout this, callee: Value, thisValue: Value, argsBase: u32, argc: u32): Value {
     let outcome = undefinedValue();
-    if (this.isCompiledCallable(callee)) {
-      const code = usize(this.heap.functionIndex(asCell(callee)));
-      if (this.functions[code].leaf) {
-        const quick = this.runLeaf(code, argsBase, argc);
-        if (!isDeleted(quick)) {
-          this.regTop = argsBase;
-          return quick;
-        }
+    if (this.isCompiledCallable(callee) && (this.heap.flagsOf(asCell(callee)) & FLAG_LEAF) != 0) {
+      const quick = this.runLeaf(usize(this.heap.functionIndex(asCell(callee))), argsBase, argc);
+      if (!isDeleted(quick)) {
+        this.regTop = argsBase;
+        return quick;
       }
     }
     if (this.isHostFunctionValue(callee)) {
@@ -7436,6 +7435,14 @@ export struct Runtime {
             const argc = u32(inst.d);
             const argsBase = base + u32(inst.c);
             if (this.isCompiledCallable(callee)) {
+              // A leaf runs without a frame (see runLeaf).
+              if ((this.heap.flagsOf(asCell(callee)) & FLAG_LEAF) != 0) {
+                const quick = this.runLeaf(usize(this.heap.functionIndex(asCell(callee))), argsBase, argc);
+                if (!isDeleted(quick)) {
+                  this.setReg(base, inst.a, quick);
+                  continue;
+                }
+              }
               this.frames[frameIndex].ip = ip;
               if (this.enterCallable(callee, inst.a, undefinedValue(), argsBase, argc, undefinedValue())) {
                 // The callee's frame, entered without leaving the loop.
@@ -7472,6 +7479,14 @@ export struct Runtime {
             const argc = u32(inst.d);
             const argsBase = base + u32(inst.b) + 2;
             if (this.isCompiledCallable(callee)) {
+              // A leaf runs without a frame (see runLeaf).
+              if ((this.heap.flagsOf(asCell(callee)) & FLAG_LEAF) != 0) {
+                const quick = this.runLeaf(usize(this.heap.functionIndex(asCell(callee))), argsBase, argc);
+                if (!isDeleted(quick)) {
+                  this.setReg(base, inst.a, quick);
+                  continue;
+                }
+              }
               this.frames[frameIndex].ip = ip;
               if (this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue())) {
                 // The callee's frame, entered without leaving the loop.
@@ -7945,6 +7960,7 @@ export struct Runtime {
             const capturedThis = this.hostThis;
             const wrapped = this.heap.functionIndex(asCell(fn));
             const closure = this.heap.allocateClosure(wrapped, env, capturedThis);
+            if (this.functions[usize(wrapped)].leaf) this.heap.setFlags(closure, FLAG_LEAF);
             if (this.functions[usize(wrapped)].isArrow) {
               const creator = this.frames[frameIndex].callee;
               if (isCell(creator) && asCell(creator) != 0) {

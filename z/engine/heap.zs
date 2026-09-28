@@ -87,6 +87,10 @@ export const FLAG_WIDE: u8 = 16;
 export const FLAG_HIDDEN: u8 = 32;
 // A symbol from the global registry (Symbol.for): not weakly holdable.
 export const FLAG_REGISTERED_SYMBOL: u8 = 64;
+// On a function or closure cell (the same bit, which only strings
+// otherwise use): its code is a leaf, which a call may run without a
+// frame (the runtime's runLeaf).
+export const FLAG_LEAF: u8 = 16;
 // A string cell that is the canonical spelling of an array index, set
 // when it is interned: the key it makes names an element.
 export const FLAG_INDEX_KEY: u8 = 128;

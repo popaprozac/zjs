@@ -150,7 +150,12 @@ call in full from the start (nothing a leaf does is observable): arrays
 -23.7%, map/filter/reduce -31.7%, sort -31.8%, the rest level, in cycles
 over eight placements. Its property read checks the site's cache itself:
 calling loadCached from a second place stopped clang inlining it into
-the dispatch loop, and properties and polymorphic lost 8-10%.
+the dispatch loop, and properties and polymorphic lost 8-10%. Then an
+ordinary call to a leaf runs it the same way, the leaf bit kept in the
+function cell's header so the check costs a flag test: code calling
+small helpers -22% (a helpers kernel, added for this), calls +3.6% and
+arrays +2.6% (every call tests the flag, and the callback path now calls
+the runner rather than inlining it).
 Then a call to an
 ordinary function (not a generator, not async, not a class constructor)
 builds its frame inline, with no call on the way: calls -5.9%, closures
