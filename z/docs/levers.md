@@ -140,7 +140,15 @@ from a builtin already costs about 74 cycles (QuickJS 81,
 JavaScriptCore 101), less than a call from bytecode (89); the state in
 registers cost more than the nested loop saved. The arrays gap to V8 is
 per callback, not per nesting: sort makes as many comparisons as V8
-(262k against 260k) at about 100 cycles each to its 56. Then a call to an
+(262k against 260k) at about 100 cycles each to its 56. What that
+costs is entering and leaving the dispatch loop for a callback of two
+or three instructions, so a leaf -- a function of straight-line
+arithmetic, comparisons, forward branches, and cached reads, with no
+call, store, loop, or `this` -- called back by a builtin runs in a small
+loop of its own with no frame, and anything off its fast paths runs the
+call in full from the start (nothing a leaf does is observable): arrays
+-22.5%, map/filter/reduce -31%, sort -29%, in cycles, one placement.
+Then a call to an
 ordinary function (not a generator, not async, not a class constructor)
 builds its frame inline, with no call on the way: calls -5.9%, closures
 -3.6%, map/filter/reduce -4.7%, arrays -1.0%, the rest level.

@@ -435,6 +435,7 @@ export struct Runtime {
     let installed = move code;
     installed.codeStart = u32(this.codeSegment.length);
     installed.codeLength = u32(installed.code.length);
+    installed.leaf = isLeafCode(in installed);
     let at: usize = 0;
     const count = installed.code.length;
     while (at < count) {
@@ -3880,6 +3881,16 @@ export struct Runtime {
   // The call itself, its arguments already in registers from argsBase.
   function callPlaced(inout this, callee: Value, thisValue: Value, argsBase: u32, argc: u32): Value {
     let outcome = undefinedValue();
+    if (this.isCompiledCallable(callee)) {
+      const code = usize(this.heap.functionIndex(asCell(callee)));
+      if (this.functions[code].leaf) {
+        const quick = this.runLeaf(code, argsBase, argc);
+        if (!isDeleted(quick)) {
+          this.regTop = argsBase;
+          return quick;
+        }
+      }
+    }
     if (this.isHostFunctionValue(callee)) {
       const handle = asCell(callee);
       const builtin = this.heap.hostFunctionId(handle);
@@ -3901,6 +3912,211 @@ export struct Runtime {
     }
     this.regTop = argsBase;
     return outcome;
+  }
+
+  // Run leaf function `code` (FunctionCode.leaf) on the `argc` arguments
+  // at `argsBase`, in registers above the stack top and with no frame:
+  // its result, or the deleted marker when an operand leaves the fast
+  // paths below -- nothing a leaf does is observable, so the call then
+  // runs in full from the start. Nothing here allocates, so no
+  // collection runs and the stack top can stay where it is.
+  function runLeaf(inout this, code: usize, argsBase: u32, argc: u32): Value {
+    let regCount = this.functions[code].registerCount;
+    const paramCount = this.functions[code].paramCount;
+    if (regCount < paramCount) regCount = paramCount;
+    const base = this.regTop;
+    const top = usize(base) + usize(regCount);
+    while (this.regStack.length < top) { this.regStack.push(undefinedValue()); }
+    let i: u32 = 0;
+    while (i < regCount) {
+      if (i < paramCount && i < argc) {
+        const passed = this.regStack[usize(argsBase + i)];
+        this.regStack[usize(base + i)] = passed;
+      } else {
+        this.regStack[usize(base + i)] = undefinedValue();
+      }
+      i = i + 1;
+    }
+    const fi = u32(code);
+    let ip = usize(this.functions[code].codeStart);
+    while (true) {
+      const inst = this.codeSegment[ip];
+      ip = ip + 1;
+      match (inst.op) {
+        loadInt => { this.setReg(base, inst.a, int32Value(bcI16(inst))); }
+        loadConst => {
+          const constant = this.functions[code].constants[usize(bcU16(inst))];
+          this.setReg(base, inst.a, constant);
+        }
+        loadUndefined => { this.setReg(base, inst.a, undefinedValue()); }
+        loadNull => { this.setReg(base, inst.a, nullValue()); }
+        loadTrue => { this.setReg(base, inst.a, booleanValue(true)); }
+        loadFalse => { this.setReg(base, inst.a, booleanValue(false)); }
+        mov => {
+          const moved = this.reg(base, inst.b);
+          this.setReg(base, inst.a, moved);
+        }
+        add => {
+          const left = this.reg(base, inst.b);
+          const right = this.reg(base, inst.c);
+          if (!isNumber(left) || !isNumber(right)) return deletedValue();
+          this.setReg(base, inst.a, numericAdd(left, right));
+        }
+        sub => {
+          const left = this.reg(base, inst.b);
+          const right = this.reg(base, inst.c);
+          if (!isNumber(left) || !isNumber(right)) return deletedValue();
+          this.setReg(base, inst.a, numericSub(left, right));
+        }
+        mul => {
+          const left = this.reg(base, inst.b);
+          const right = this.reg(base, inst.c);
+          if (!isNumber(left) || !isNumber(right)) return deletedValue();
+          this.setReg(base, inst.a, numericMul(left, right));
+        }
+        mod => {
+          const left = this.reg(base, inst.b);
+          const right = this.reg(base, inst.c);
+          if (!isNumber(left) || !isNumber(right)) return deletedValue();
+          this.setReg(base, inst.a, numericMod(left, right));
+        }
+        addImm => {
+          const left = this.reg(base, inst.b);
+          if (!isNumber(left)) return deletedValue();
+          this.setReg(base, inst.a, numericAdd(left, int32Value(wideImmediateOf(inst))));
+        }
+        subImm => {
+          const left = this.reg(base, inst.b);
+          if (!isNumber(left)) return deletedValue();
+          this.setReg(base, inst.a, numericSub(left, int32Value(wideImmediateOf(inst))));
+        }
+        mulImm => {
+          const left = this.reg(base, inst.b);
+          if (!isNumber(left)) return deletedValue();
+          this.setReg(base, inst.a, numericMul(left, int32Value(wideImmediateOf(inst))));
+        }
+        modImm => {
+          const left = this.reg(base, inst.b);
+          if (!isNumber(left)) return deletedValue();
+          this.setReg(base, inst.a, numericMod(left, int32Value(wideImmediateOf(inst))));
+        }
+        bitOrImm => {
+          const left = this.reg(base, inst.b);
+          if (!isInt32(left)) return deletedValue();
+          this.setReg(base, inst.a, int32Value(asInt32(left) | wideImmediateOf(inst)));
+        }
+        bitAndImm => {
+          const left = this.reg(base, inst.b);
+          if (!isInt32(left)) return deletedValue();
+          this.setReg(base, inst.a, int32Value(asInt32(left) & wideImmediateOf(inst)));
+        }
+        bitXorImm => {
+          const left = this.reg(base, inst.b);
+          if (!isInt32(left)) return deletedValue();
+          this.setReg(base, inst.a, int32Value(asInt32(left) ^ wideImmediateOf(inst)));
+        }
+        cmpLt => { if (!this.leafCompare(base, inst, 0)) return deletedValue(); }
+        cmpLe => { if (!this.leafCompare(base, inst, 1)) return deletedValue(); }
+        cmpGt => { if (!this.leafCompare(base, inst, 2)) return deletedValue(); }
+        cmpGe => { if (!this.leafCompare(base, inst, 3)) return deletedValue(); }
+        cmpLtImm => { if (!this.leafCompareImm(base, inst, 0)) return deletedValue(); }
+        cmpLeImm => { if (!this.leafCompareImm(base, inst, 1)) return deletedValue(); }
+        cmpGtImm => { if (!this.leafCompareImm(base, inst, 2)) return deletedValue(); }
+        cmpGeImm => { if (!this.leafCompareImm(base, inst, 3)) return deletedValue(); }
+        cmpStrictEq => {
+          const same = this.strictEquals(this.reg(base, inst.b), this.reg(base, inst.c));
+          this.setReg(base, inst.a, booleanValue(same));
+        }
+        cmpStrictNe => {
+          const same = this.strictEquals(this.reg(base, inst.b), this.reg(base, inst.c));
+          this.setReg(base, inst.a, booleanValue(!same));
+        }
+        logicalNot => {
+          const negated = !this.toBooleanValue(this.reg(base, inst.b));
+          this.setReg(base, inst.a, booleanValue(negated));
+        }
+        jmp => { ip = usize(i64(ip) + i64(bcI16(inst))); }
+        jmpIfTrue => { if (this.toBooleanValue(this.reg(base, inst.a))) ip = usize(i64(ip) + i64(bcI16(inst))); }
+        jmpIfFalse => { if (!this.toBooleanValue(this.reg(base, inst.a))) ip = usize(i64(ip) + i64(bcI16(inst))); }
+        jmpIfNotLt => { ip = this.leafBranch(base, inst, ip, 0); if (ip == 0) return deletedValue(); }
+        jmpIfNotLe => { ip = this.leafBranch(base, inst, ip, 1); if (ip == 0) return deletedValue(); }
+        jmpIfNotGt => { ip = this.leafBranch(base, inst, ip, 2); if (ip == 0) return deletedValue(); }
+        jmpIfNotGe => { ip = this.leafBranch(base, inst, ip, 3); if (ip == 0) return deletedValue(); }
+        jmpIfNotLtImm => { ip = this.leafBranchImm(base, inst, ip, 0); if (ip == 0) return deletedValue(); }
+        jmpIfNotLeImm => { ip = this.leafBranchImm(base, inst, ip, 1); if (ip == 0) return deletedValue(); }
+        jmpIfNotGtImm => { ip = this.leafBranchImm(base, inst, ip, 2); if (ip == 0) return deletedValue(); }
+        jmpIfNotGeImm => { ip = this.leafBranchImm(base, inst, ip, 3); if (ip == 0) return deletedValue(); }
+        jmpIfNotStrictEq => {
+          const word = this.codeSegment[ip];
+          ip = ip + 1;
+          const same = this.strictEquals(this.reg(base, inst.a), this.reg(base, inst.b));
+          if (same == (inst.d != 0)) ip = usize(i64(ip) + i64(bcI16(word)));
+        }
+        jmpIfNotStrictEqImm => {
+          const word = this.codeSegment[ip];
+          ip = ip + 1;
+          const left = this.reg(base, inst.a);
+          const immediate = branchImmediateOf(inst, word);
+          const same = isInt32(left) ? asInt32(left) == immediate : isDouble(left) && asDouble(left) == f64(immediate);
+          if (same == (inst.d != 0)) ip = usize(i64(ip) + i64(bcI16(word)));
+        }
+        loadProp => {
+          const object = this.reg(base, inst.b);
+          if (!isCell(object) || asCell(object) == 0 || !this.heap.isObject(asCell(object))) return deletedValue();
+          const cached = this.loadCached(fi, usize(inst.c), asCell(object));
+          if (isDeleted(cached)) return deletedValue();
+          this.setReg(base, inst.a, cached);
+        }
+        loadElem => {
+          const object = this.reg(base, inst.b);
+          const key = this.reg(base, inst.c);
+          if (!isInt32(key) || asInt32(key) < 0 || !isCell(object) || asCell(object) == 0 || !this.heap.isArray(asCell(object))) return deletedValue();
+          const element = this.heap.dataElement(asCell(object), u32(asInt32(key)));
+          if (isDeleted(element)) return deletedValue();
+          this.setReg(base, inst.a, element);
+        }
+        returnOp => { return this.reg(base, inst.a); }
+        _ => { return deletedValue(); }
+      }
+    }
+    return deletedValue();
+  }
+
+  // A leaf's comparison of two numbers into a; false for anything else.
+  function leafCompare(inout this, base: u32, inst: Inst, relation: u32): boolean {
+    const left = this.reg(base, inst.b);
+    const right = this.reg(base, inst.c);
+    if (!isNumber(left) || !isNumber(right)) return false;
+    this.setReg(base, inst.a, booleanValue(orderedNumbers(toNumber(left), toNumber(right), relation)));
+    return true;
+  }
+
+  function leafCompareImm(inout this, base: u32, inst: Inst, relation: u32): boolean {
+    const left = this.reg(base, inst.b);
+    if (!isNumber(left)) return false;
+    this.setReg(base, inst.a, booleanValue(orderedNumbers(toNumber(left), f64(wideImmediateOf(inst)), relation)));
+    return true;
+  }
+
+  // A leaf's fused compare-and-branch of two numbers: the next ip, or 0
+  // for anything but numbers.
+  function leafBranch(base: u32, inst: Inst, ip: usize, relation: u32): usize {
+    const word = this.codeSegment[ip];
+    const left = this.reg(base, inst.a);
+    const right = this.reg(base, inst.b);
+    if (!isNumber(left) || !isNumber(right)) return 0;
+    const holds = orderedNumbers(toNumber(left), toNumber(right), relation);
+    if (holds == (inst.d != 0)) return usize(i64(ip + 1) + i64(bcI16(word)));
+    return ip + 1;
+  }
+
+  function leafBranchImm(base: u32, inst: Inst, ip: usize, relation: u32): usize {
+    const word = this.codeSegment[ip];
+    const left = this.reg(base, inst.a);
+    if (!isNumber(left)) return 0;
+    const holds = orderedNumbers(toNumber(left), f64(branchImmediateOf(inst, word)), relation);
+    if (holds == (inst.d != 0)) return usize(i64(ip + 1) + i64(bcI16(word)));
+    return ip + 1;
   }
 
   // Construct from Z: a fresh object inheriting from newTarget's prototype
@@ -8035,6 +8251,46 @@ export function lengthValue(length: usize): Value {
 export function branchImmediateOf(inst: Inst, word: Inst): i32 {
   const bits = i32(bcU16(inst)) | (i32(word.a) << 16);
   return bits >= 0x800000 ? bits - 0x1000000 : bits;
+}
+
+// Whether a function's code qualifies as a leaf (FunctionCode.leaf):
+// every instruction one runLeaf runs, every jump forward.
+function isLeafCode(in code: FunctionCode): boolean {
+  if (code.isGenerator || code.isAsync || code.isClassConstructor || code.thisReg >= 0) return false;
+  let at: usize = 0;
+  const count = code.code.length;
+  while (at < count) {
+    const inst = code.code[at];
+    at = at + 1;
+    const op = inst.op;
+    const plain = op == Op.loadInt || op == Op.loadConst || op == Op.loadUndefined || op == Op.loadNull || op == Op.loadTrue || op == Op.loadFalse
+      || op == Op.mov || op == Op.add || op == Op.sub || op == Op.mul || op == Op.mod || op == Op.addImm || op == Op.subImm || op == Op.mulImm || op == Op.modImm
+      || op == Op.bitOrImm || op == Op.bitAndImm || op == Op.bitXorImm
+      || op == Op.cmpLt || op == Op.cmpLe || op == Op.cmpGt || op == Op.cmpGe || op == Op.cmpLtImm || op == Op.cmpLeImm || op == Op.cmpGtImm || op == Op.cmpGeImm
+      || op == Op.cmpStrictEq || op == Op.cmpStrictNe || op == Op.logicalNot || op == Op.loadProp || op == Op.loadElem || op == Op.returnOp;
+    if (plain) {
+      // nothing more to check
+    } else if (op == Op.jmp || op == Op.jmpIfTrue || op == Op.jmpIfFalse) {
+      if (bcI16(inst) < 0) return false;
+    } else if (op == Op.jmpIfNotLt || op == Op.jmpIfNotLe || op == Op.jmpIfNotGt || op == Op.jmpIfNotGe
+      || op == Op.jmpIfNotLtImm || op == Op.jmpIfNotLeImm || op == Op.jmpIfNotGtImm || op == Op.jmpIfNotGeImm
+      || op == Op.jmpIfNotStrictEq || op == Op.jmpIfNotStrictEqImm) {
+      // The offset word follows.
+      if (at >= count || bcI16(code.code[at]) < 0) return false;
+      at = at + 1;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+// `a` against `b` for numbers: 0 <, 1 <=, 2 >, 3 >=; NaN is never ordered.
+function orderedNumbers(a: f64, b: f64, relation: u32): boolean {
+  if (relation == 0) return a < b;
+  if (relation == 1) return a <= b;
+  if (relation == 2) return a > b;
+  return a >= b;
 }
 
 // An operand literal: c its low byte, d its high, signed.

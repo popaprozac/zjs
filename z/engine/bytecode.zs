@@ -553,6 +553,11 @@ export struct FunctionCode {
   isClassConstructor: boolean;
   isDerived: boolean;
   isMethod: boolean;
+  // Straight-line arithmetic, comparisons, forward branches, and cached
+  // reads, with no call, store, loop, or `this`: a builtin calling it
+  // back may run it without a frame (the runtime's runLeaf). Set when the
+  // function is installed.
+  leaf: boolean;
 }
 
 export function createFunctionCode(): FunctionCode {
@@ -560,7 +565,7 @@ export function createFunctionCode(): FunctionCode {
     code: Array<Inst>(), codeStart: 0, codeLength: 0, constants: Array<Value>(), propertyNames: Array<u32>(), caches: Array<PropertyCache>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
-    isClassConstructor: false, isDerived: false, isMethod: false,
+    isClassConstructor: false, isDerived: false, isMethod: false, leaf: false,
   });
 }
 
