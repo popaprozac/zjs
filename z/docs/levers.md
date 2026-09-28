@@ -263,6 +263,14 @@ a narrow string's bytes directly; the output buffer starts at the last
 result's length. json -28% in cycles (stringify -38%, parse -14%).
 Tried: parsing a narrow text as bytes, not units -- a branch per
 character between the two forms cost more than the copy it saved.
+Tried (2026-09-28): stringify caching each class's key list per call
+(json -1.0%, within noise, dropped); quoting a narrow string through a
+local array moved out of the builder, so its length stays in a register
+(json +1.6%: the strings are short and the move costs more than the
+bytes). What stringify spends is a call per byte: `putByte` is 60
+instructions with the array's growth inside, which clang will not inline
+at its 39 call sites, and a run of bytes cannot be appended at once (the
+inline hint and bulk append asked of Z, docs/z-findings.md).
 Strings (2026-09-27): the byte-first builder JSON uses became a shared
 one (`builtins/builder.zs`), which `join` now builds through where it
 built units and narrowed them; `indexOf`, `includes`, and `split`
