@@ -1,0 +1,22 @@
+plain returned a promise: true
+arrow returned a promise: true
+pattern returned a promise: true
+static returned a promise: true
+call returned a promise: true
+from a builtin returned a promise: true
+eval returned a promise: true
+fine returned a promise: true
+body returned a promise: true
+generator threw TypeError
+async generator threw TypeError
+not caught here
+plain rejected TypeError
+arrow rejected ReferenceError
+pattern rejected TypeError
+static rejected RangeError
+call rejected TypeError
+from a builtin rejected TypeError
+eval rejected SyntaxError
+fine fulfilled
+body rejected TypeError
+awaited TypeError

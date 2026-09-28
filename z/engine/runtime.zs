@@ -3580,6 +3580,17 @@ export struct Runtime {
     this.heap.setSlot(record, 0, int32Value(GEN_YIELDED));
   }
 
+  // An async function's frame still evaluating its parameters: its
+  // generator has not reached GeneratorStart, which makes its promise.
+  function inAsyncPrologue(frameIndex: usize): boolean {
+    const gen = this.frames[frameIndex].generator;
+    if (gen == 0) return false;
+    const code = usize(this.frames[frameIndex].functionIndex);
+    if (!this.functions[code].isAsync || this.functions[code].isGenerator) return false;
+    const record = this.generatorRecord(gen);
+    return asInt32(this.heap.slot(record, 0)) == GEN_START;
+  }
+
   // A finished body lets go of the registers and handlers it had saved.
   function completeGenerator(inout this, gen: u32): void {
     const record = this.generatorRecord(gen);
@@ -6930,6 +6941,22 @@ export struct Runtime {
             const handlerBase = this.frames[usize(top)].regsBase;
             this.setReg(handlerBase, handler.catchReg, thrown);
             this.tryDepth = this.tryDepth - 1;
+            caught = true;
+          } else if (this.inAsyncPrologue(usize(top))) {
+            // An async function whose parameters threw: the call returns
+            // a promise rejected with the value, as GeneratorStart would
+            // have returned its promise.
+            const generator = this.frames[usize(top)].generator;
+            this.completeGenerator(generator);
+            const frame = this.popFrame();
+            const rejected = this.newPromise();
+            this.rejectPromise(asCell(rejected), thrown);
+            if (this.frameCount <= entryDepth) {
+              this.lastResult = rejected;
+              return RunResult({ isThrow: false, value: rejected });
+            }
+            const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+            this.setReg(callerBase, frame.returnDst, rejected);
             caught = true;
           } else {
             const generator = this.frames[usize(top)].generator;
