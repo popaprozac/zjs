@@ -147,7 +147,10 @@ arithmetic, comparisons, forward branches, and cached reads, with no
 call, store, loop, or `this` -- called back by a builtin runs in a small
 loop of its own with no frame, and anything off its fast paths runs the
 call in full from the start (nothing a leaf does is observable): arrays
--22.5%, map/filter/reduce -31%, sort -29%, in cycles, one placement.
+-23.7%, map/filter/reduce -31.7%, sort -31.8%, the rest level, in cycles
+over eight placements. Its property read checks the site's cache itself:
+calling loadCached from a second place stopped clang inlining it into
+the dispatch loop, and properties and polymorphic lost 8-10%.
 Then a call to an
 ordinary function (not a generator, not async, not a class constructor)
 builds its frame inline, with no call on the way: calls -5.9%, closures

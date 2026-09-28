@@ -4063,7 +4063,7 @@ export struct Runtime {
         loadProp => {
           const object = this.reg(base, inst.b);
           if (!isCell(object) || asCell(object) == 0 || !this.heap.isObject(asCell(object))) return deletedValue();
-          const cached = this.loadCached(fi, usize(inst.c), asCell(object));
+          const cached = this.leafLoad(fi, usize(inst.c), asCell(object));
           if (isDeleted(cached)) return deletedValue();
           this.setReg(base, inst.a, cached);
         }
@@ -4080,6 +4080,15 @@ export struct Runtime {
       }
     }
     return deletedValue();
+  }
+
+  // A leaf's property read: loadCached's own-property hit for the site's
+  // first class only, deleted for anything else. (loadCached itself stays
+  // with its one caller in the dispatch loop, where it is inlined.)
+  function leafLoad(fi: u32, nameSlot: usize, handle: u32): Value {
+    const cache = this.functions[usize(fi)].caches[nameSlot];
+    if (cache.kind != CACHE_OWN || this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
+    return this.heap.slot(handle, cache.slot);
   }
 
   // A leaf's comparison of two numbers into a; false for anything else.
