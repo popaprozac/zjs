@@ -319,7 +319,13 @@ makes one string; anything else takes the general path from the start.
 The builder's range copy moves its bytes to a local first, since an
 array behind an `inout` reloads its length and data after every byte
 pushed. Over 8 placements: split -19.8%, join -22.5%, strings -10.5%,
-regexp -1.7%, the rest within 0.4%.
+regexp -1.7%, the rest within 0.4%. Then a chain's pieces are copied
+into the gather buffer as blocks, and indexOf tries a start only when
+the needle's first and last bytes both match there: strings -2.3%,
+indexOf -5.1%. Left against JavaScriptCore's interpreter (millions of
+cycles, startup excluded): building 16.2 vs 11.8, split 7.2 vs 5.0,
+join 4.4 vs 3.2, indexOf 2.9 vs 2.1. Extending a string's buffer in
+place stays a loop that reloads per byte until Z has a block append.
 Sort (2026-09-28): the merge sort merges each level from one buffer into
 the other, copying nothing back, and joins halves of four or more that
 are already in order after one comparison: sorted input takes 24k

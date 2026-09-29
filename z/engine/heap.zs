@@ -3446,11 +3446,15 @@ function prefixSums(inout values: Array<u32>): void {
 // `needleStart` of `needle` occur among the `hayLength` at `hayStart` of
 // `hay`, or -1 (the needle is not empty and fits).
 function findIn(hay: Slice<u8>, hayStart: usize, hayLength: usize, needle: Slice<u8>, needleStart: usize, needleLength: usize, startAt: usize): i32 {
+  // A start is tried only when the needle's first and last bytes both
+  // match there, which rules out most starts that share a prefix.
   const first = needle[needleStart];
+  const lastOffset = needleLength - 1;
+  const lastByte = needle[needleStart + lastOffset];
   const last = hayLength - needleLength;
   let start = startAt;
   while (start <= last) {
-    if (hay[hayStart + start] == first) {
+    if (hay[hayStart + start] == first && hay[hayStart + start + lastOffset] == lastByte) {
       let k: usize = 1;
       while (k < needleLength && hay[hayStart + start + k] == needle[needleStart + k]) { k = k + 1; }
       if (k == needleLength) return i32(start);
