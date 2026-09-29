@@ -332,6 +332,8 @@ else both general paths: polymorphic -10.1%, the rest level. An object
 literal assigned to a local is built in the local's register when nothing
 can see it half-built (the literal does not name the local or call eval,
 and no try in the function is open): allocation -2.6%, the rest level.
+`a[k]` with k a small integer literal carries k in the instruction:
+allocation -1.6%, the rest level.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches

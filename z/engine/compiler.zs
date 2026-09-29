@@ -3323,6 +3323,14 @@ export struct Compiler {
         this.emit(instAB(Op.loadSuper, dst, key));
         return dst;
       }
+      // `a[k]` with k a small non-negative integer literal.
+      const literalIndex = smallIntegerLiteral(in parser, n.right);
+      if (literalIndex != NO_IMMEDIATE && literalIndex >= 0) {
+        const indexed = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+        const into = hintReg >= 0 ? u8(hintReg) : this.allocReg();
+        this.emit(immediateInst(Op.loadElemImm, into, indexed, literalIndex));
+        return into;
+      }
       const object = this.compileOperand(in parser, inout runtime, n.left, n.right);
       const key = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
       const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();

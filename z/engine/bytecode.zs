@@ -265,6 +265,8 @@ export enum Op {
   // a = b[c].name, d the name slot: loadElem then loadProp, the element
   // not kept.
   loadElemProp,
+  // a = b[k], k a non-negative integer literal in c (low byte) and d.
+  loadElemImm,
 }
 
 export struct Inst {
@@ -521,6 +523,7 @@ export function opCode(op: Op): i32 {
     incJmpIfLtLength => 194;
     addToInt32 => 195;
     loadElemProp => 196;
+    loadElemImm => 197;
   };
 }
 

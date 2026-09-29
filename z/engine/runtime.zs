@@ -4256,6 +4256,13 @@ export struct Runtime {
           if (isDeleted(element)) return deletedValue();
           this.setReg(base, inst.a, element);
         }
+        loadElemImm => {
+          const object = this.reg(base, inst.b);
+          if (!isCell(object) || asCell(object) == 0 || !this.heap.isArray(asCell(object))) return deletedValue();
+          const element = this.heap.dataElement(asCell(object), u32(wideImmediateOf(inst)));
+          if (isDeleted(element)) return deletedValue();
+          this.setReg(base, inst.a, element);
+        }
         loadElemProp => {
           const object = this.reg(base, inst.b);
           const key = this.reg(base, inst.c);
@@ -4293,6 +4300,19 @@ export struct Runtime {
       }
     }
     return this.heap.slot(handle, slot);
+  }
+
+  // loadElemImm's general path: the element at `index` as loadElem reads
+  // it, a TypeError for undefined and null.
+  function loadIndexSlow(inout this, object: Value, index: i32): Value {
+    const key = int32Value(index);
+    if (isUndefined(object) || isNull(object)) {
+      const keyAtom = this.propertyKey(key);
+      const error = this.propertyOfNullish(object, keyAtom, true);
+      this.raise(error);
+      return undefinedValue();
+    }
+    return this.getProperty(object, key);
   }
 
   // loadElemProp's general path: the element as loadElem reads it, then
@@ -8322,6 +8342,21 @@ export struct Runtime {
             }
             if (returned || throwing) break;
           }
+          loadElemImm => {
+            // `a[k]`, k an integer literal: an array's present element read
+            // in place, anything else as loadElem reads it.
+            const object = this.reg(base, inst.b);
+            const index = wideImmediateOf(inst);
+            if (isCell(object) && asCell(object) != 0 && this.heap.isArray(asCell(object))) {
+              const element = this.heap.dataElement(asCell(object), u32(index));
+              if (!isDeleted(element)) {
+                this.setReg(base, inst.a, element);
+                continue;
+              }
+            }
+            const found = this.loadIndexSlow(object, index);
+            if (!this.pendingThrow) this.setReg(base, inst.a, found);
+          }
           loadElemProp => {
             // `a[i].name`: an array's element read in place, then the name
             // through the site's cache; anything else takes both general
@@ -8918,7 +8953,7 @@ function isLeafCode(in code: FunctionCode): boolean {
       || op == Op.mov || op == Op.add || op == Op.sub || op == Op.mul || op == Op.mod || op == Op.addImm || op == Op.subImm || op == Op.mulImm || op == Op.modImm
       || op == Op.bitOrImm || op == Op.bitAndImm || op == Op.bitXorImm
       || op == Op.cmpLt || op == Op.cmpLe || op == Op.cmpGt || op == Op.cmpGe || op == Op.cmpLtImm || op == Op.cmpLeImm || op == Op.cmpGtImm || op == Op.cmpGeImm
-      || op == Op.cmpStrictEq || op == Op.cmpStrictNe || op == Op.logicalNot || op == Op.loadProp || op == Op.loadElem || op == Op.loadElemProp || op == Op.returnOp;
+      || op == Op.cmpStrictEq || op == Op.cmpStrictNe || op == Op.logicalNot || op == Op.loadProp || op == Op.loadElem || op == Op.loadElemProp || op == Op.loadElemImm || op == Op.returnOp;
     if (plain) {
       // nothing more to check
     } else if (op == Op.jmp || op == Op.jmpIfTrue || op == Op.jmpIfFalse) {
