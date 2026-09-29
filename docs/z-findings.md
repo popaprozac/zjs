@@ -1913,6 +1913,46 @@ Reproduction: `/usr/bin/time -l z/build/zjsz run
 z/bench/memory/large-heap.js`, then the same with `MallocLargeCache=0`
 in the environment.
 
+## G55 — No way to optimize a function for size, or mark it cold
+
+**Status:** `proposed` · **Size:** small · **Priority:** high for the
+engine's size goal · **Confirmed:** z-lang `bdc237d2`, Stage 0 ·
+**Blocks:** no
+
+Z compiles every release build at `-O2` (`compiler/src/cli.ts`), one
+translation unit, and gives a program no say in how a function is
+optimized. The engine's size goal and its speed goal want different
+answers for different code: the dispatch loop, the heap, and the
+builtins programs call in loops at `-O2`; the rest -- most builtins,
+error paths, one-time installation -- for size. Measured 2026-09-29 on
+the minimal embedder (linked, dead-stripped, not stripped; `__TEXT` 770
+KB at `-O2`, KB = 1000 bytes), eleven speed kernels, and a compile-heavy script (4,000
+functions, 0.8 MB):
+
+- the whole engine at `-Os`: 557 KB (-28%), kernels 5% to 79% slower;
+  at `-Oz`: 442 KB (-43%), 2 to 6 times slower;
+- `__attribute__((minsize))` added, in a copy of the generated C, to
+  every function over 256 bytes that no profile of the kernels or of the
+  compile-heavy script saw: 705 KB (-66 KB, -8.5%), the kernels within
+  2.3% either way, the script's parse and compile +3.8%;
+- the same with only the kernels profiled (so the front end marked too):
+  655 KB (-115 KB, -15%), kernels level, parse and compile 60% slower --
+  a function's helpers are not inlined into a size-optimized caller, so
+  the mark has to be chosen, not applied wholesale.
+
+The ask, any of: a function attribute for size or coldness (lowering to
+`minsize` / `cold`) that the engine's author places; a `z.json` setting
+naming a profile the C compiler uses (clang's profile-guided build
+optimizes code the profile finds cold for size); or a per-target
+optimization level and extra C flags in `z.json`. The first is the
+smallest change and keeps the choice in the source, where it is
+reviewed; the second is the least work for a program this size.
+Related: the inline hint (G53) is the same kind of mark in the other
+direction.
+
+No probe: every Z function lowers to a plain `static` C function with no
+attributes; the measurement edits the generated C.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

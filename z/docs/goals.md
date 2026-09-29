@@ -19,11 +19,28 @@ segment sizes; nothing is stripped):
 
 | | `__TEXT` | `__DATA` |
 |---|---|---|
-| The engine (one translation unit from Z) | 610 KB | 14 KB |
-| Regular-expression backend (QuickJS 2026-06-04's `libregexp`, `libunicode`, and `cutils`; the adapter) | 96 KB (73 KB once dead-stripped) | under 1 KB |
+| The engine (one translation unit from Z) | 683 KB | 14 KB |
+| Regular-expression backend (QuickJS 2026-06-04's `libregexp`, `libunicode`, and `cutils`; the adapter) | 97 KB (74 KB once dead-stripped) | under 1 KB |
 | ABI shim | under 1 KB | under 1 KB |
-| **A minimal embedder, linked and dead-stripped (macOS)** | **688 KB** | **16 KB** |
-| The same, iOS device (arm64) | 705 KB | 16 KB |
+| **A minimal embedder, linked and dead-stripped (macOS)** | **770 KB** | **16 KB** |
+| The same, iOS device (arm64), 2026-09-26 (688 KB on macOS then) | 705 KB | 16 KB |
+
+KB is 1000 bytes. Measured 2026-09-29 at `525afba`; on 2026-09-26
+(`d259ae4`) the minimal embedder was 688 KB, its code 640 KB where it is
+712 KB now. The 72 KB went to the dispatch loop's split into hot and
+cold handlers and the frameless runner for leaf callbacks (12 KB), direct
+eval seeing and writing a function's locals (8 KB), the compiler's
+inlining, string joins, and fused instructions (6 KB), the young
+generation's collector (3 KB), and JSON's single-buffer rewrite (2 KB);
+the rest is spread thin. Two ways down, both measured: an embedder that
+leaves out RegExp, Date, Map and Set, Promise, JSON, Reflect, and
+generators links 623 KB (-147 KB, -19%) with nothing else changed, since
+dead-stripping drops what is never installed -- what it needs is
+installers an embedder calls, which the frozen ABI does not have for
+these; and optimizing for size the large functions no profile of the
+speed kernels or of compiling a large script touches gives 705 KB (-66
+KB) at no measured cost, which needs a mark Z does not have
+(docs/z-findings.md).
 
 Where the engine's code goes (share of 569 KB of functions, measured
 2026-09-25 at 584 KB of `__TEXT`):
