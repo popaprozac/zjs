@@ -1731,15 +1731,7 @@ export struct Heap {
   // The position of `key`, whose hash is `hash`, or -1.
   function tableFind(handle: u32, key: Value, hash: u32): i32 {
     const table = usize(this.headers[usize(handle)].payload);
-    const mask = u32(this.tables[table].index.length) - 1;
-    let slot = hash & mask;
-    while (true) {
-      const held = this.tables[table].index[usize(slot)];
-      if (held == TABLE_EMPTY) return -1;
-      if (held >= 0 && this.tables[table].hashes[usize(held)] == hash && this.sameKey(this.tables[table].keys[usize(held)], key)) return held;
-      slot = (slot + 1) & mask;
-    }
-    return -1;
+    return probeTable(in this, this.tables[table].index, this.tables[table].hashes, this.tables[table].keys, key, hash);
   }
 
   // Append an entry the table does not hold.
@@ -3534,6 +3526,24 @@ export function appendRange(storage: Slice<u8>, first: usize, last: usize, bytes
     index = index + 1;
   }
   return appended;
+}
+
+// The position of `key` among a table's entries, or -1: its index,
+// hashes, and keys passed as slices, so the probe keeps their bounds in
+// registers.
+function probeTable(in heap: Heap, index: Slice<i32>, hashes: Slice<u32>, keys: Slice<Value>, key: Value, hash: u32): i32 {
+  const mask = u32(index.length) - 1;
+  let slot = hash & mask;
+  while (true) {
+    const held = index[usize(slot)];
+    if (held == TABLE_EMPTY) return -1;
+    if (held >= 0 && hashes[usize(held)] == hash) {
+      const candidate = keys[usize(held)];
+      if (candidate.bits == key.bits || heap.sameKey(candidate, key)) return held;
+    }
+    slot = (slot + 1) & mask;
+  }
+  return -1;
 }
 
 function sameStorage(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, length: usize): boolean {
