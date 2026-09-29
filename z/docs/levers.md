@@ -41,7 +41,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
-| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
+| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; the rest measured, waits on checked indexing |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
@@ -74,6 +74,24 @@ checks the attributes the entry recorded). Peak memory for 300,000 small
 objects -9.6%. An object literal's property now has a cache of its own:
 it had shared one with every read of the same name in the function, and
 the two evicted each other every iteration (allocation -19%).
+Measured before the next step (2026-09-29): the dispatch loop runs about
+9 instructions a cycle, so time follows instruction count. A `mov` costs
+about 35 instructions, a cached property read 92, a cached store 104, an
+array element read 147 (loops differing by one instruction, instructions
+retired). Of a property read's 70 past dispatch: 14 to read and test the
+object's register, 11 for the header's bounds and tag, 22 to reach the
+site's cache (the function table, then its cache array, each bounds
+checked), 5 for the class, 11 for the slot (overflow and bounds checks),
+4 for the hole test, 4 to write the result. Slots beside the header
+would keep the same two dependent loads (the handle's record, then the
+slot) and change only cache locality, which the kernels do not lack;
+the costs are the checks and the dispatch (docs/z-findings.md: dispatch,
+and checked indexing, which measured -6% to -13% unchecked). Tried and
+dropped: all caches in one runtime table indexed from a dispatch-loop
+local beside `codeStart` (properties +2.8%, polymorphic +4.5%: the local
+costs more than the indirection it saves); moving 33 arms no kernel uses
+(loose equality, `**`, iterator steps, TDZ checks, ...) out of the loop
+to relieve its registers (4% fewer instructions, cycles level).
 
 **Allocator and collector.** A cell is a header pushed into a table and
 slots pushed into an arena one at a time; every string is its own
