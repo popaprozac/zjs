@@ -2541,6 +2541,11 @@ export struct Runtime {
       while (current != 0) {
         const slot = this.heap.objectFindSlot(current, atom);
         if (slot >= 0 && !isDeleted(this.heap.slot(current, u32(slot)))) return true;
+        // The global object's builtins live in the globals table.
+        if (current == this.globalObject) {
+          const global = this.findGlobalByAtom(atom);
+          if (global >= 0 && this.globals[usize(global)].defined) return true;
+        }
         current = this.heap.objectProto(current);
         // The chain may continue through an array or a function.
         if (current != 0 && !this.heap.isObject(current)) return this.hasProperty(cellValue(current), key);
