@@ -194,5 +194,7 @@ export function opName(op: Op): String {
     loadEvalVar => "loadEvalVar";
     storeEvalVar => "storeEvalVar";
     declareEvalVar => "declareEvalVar";
+    toStringOp => "toStringOp";
+    concatN => "concatN";
   };
 }

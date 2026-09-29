@@ -241,6 +241,15 @@ export enum Op {
   loadEvalVar,
   storeEvalVar,
   declareEvalVar,
+  // a = ToString(b): a template substitution's conversion (the string
+  // hint, unlike `+`).
+  toStringOp,
+  // a = the c registers from b joined as `+` joins them, in one string:
+  // each piece after the first converted in order (as `+` would), then
+  // all appended at once. A first piece that is not a string: d = 0, the
+  // additions left to right; d = 1 (`x += "a" + y`), the rest joined
+  // first, then added to it.
+  concatN,
 }
 
 export struct Inst {
@@ -490,6 +499,8 @@ export function opCode(op: Op): i32 {
     loadEvalVar => 187;
     storeEvalVar => 188;
     declareEvalVar => 189;
+    toStringOp => 190;
+    concatN => 191;
   };
 }
 

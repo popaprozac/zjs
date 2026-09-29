@@ -1279,6 +1279,92 @@ export struct Compiler {
     this.locals[index].initialized = true;
   }
 
+  // --- String joins ---
+  //
+  // `"a" + x + "b"`: a chain of `+` whose first piece is a string (or whose
+  // second is, the first a quiet operand) is one string, so its pieces are
+  // joined at once (concatN) rather than through a string per `+`. Every
+  // piece after the first reads without effects -- a literal or a local in
+  // a register -- so converting them all after reading them all runs
+  // nothing in a different order.
+
+  // The pieces of the `+` chain `node` in order, and whether it can be
+  // joined at once: three pieces or more, as above.
+  function concatChain(in parser: Parser, node: u32, inout pieces: Array<u32>): boolean {
+    let spine = Array<u32>();
+    let current = node;
+    while (current != NO_NODE) {
+      const n = parser.ast.node(current);
+      if (n.kind == NodeKind.paren) {
+        current = n.left;
+      } else if (n.kind == NodeKind.binary && n.op == TokenKind.plus) {
+        spine.push(n.right);
+        current = n.left;
+      } else {
+        spine.push(current);
+        current = NO_NODE;
+      }
+    }
+    if (spine.length < 3 || spine.length > 32) return false;
+    let index = spine.length;
+    while (index > 0) {
+      index = index - 1;
+      pieces.push(spine[index]);
+    }
+    let k: usize = 1;
+    while (k < pieces.length) {
+      if (!isQuietOperand(in parser, pieces[k], this.operandLocalReg(in parser, pieces[k]))) return false;
+      k = k + 1;
+    }
+    if (isStringLiteral(in parser, pieces[0])) return true;
+    return isStringLiteral(in parser, pieces[1]) && isQuietOperand(in parser, pieces[0], this.operandLocalReg(in parser, pieces[0]));
+  }
+
+  // The pieces joined into `hintReg` (or a fresh register): each in a
+  // register of a contiguous run, then one concatN. With `accumulator`
+  // (a register binding's node), `x += pieces`: x first in the run, the
+  // pieces added to it after they are joined.
+  function emitConcat(inout this, in parser: Parser, inout runtime: Runtime, in pieces: Array<u32>, accumulator: u32, hintReg: i32): u8 {
+    const lead: u32 = accumulator != NO_NODE ? 1 : 0;
+    const count = u32(pieces.length) + lead;
+    const first = this.nextReg;
+    let i: u32 = 0;
+    while (i < count) {
+      this.allocReg();
+      i = i + 1;
+    }
+    if (accumulator != NO_NODE) {
+      this.targetReg = i32(first);
+      const held = this.compileExpr(in parser, inout runtime, accumulator);
+      if (held != first) this.emit(instAB(Op.mov, first, held));
+      this.nextReg = first + u8(count);
+    }
+    i = 0;
+    while (i < u32(pieces.length)) {
+      const slot = first + u8(lead + i);
+      this.targetReg = i32(slot);
+      const piece = this.compileExpr(in parser, inout runtime, pieces[usize(i)]);
+      if (piece != slot) this.emit(instAB(Op.mov, slot, piece));
+      this.nextReg = first + u8(count);
+      i = i + 1;
+    }
+    const dst = hintReg >= 0 ? u8(hintReg) : first;
+    this.emit(instABCD(Op.concatN, dst, first, u8(count), u8(lead)));
+    this.nextReg = first + 1;
+    if (dst >= this.nextReg) this.nextReg = dst + 1;
+    return dst;
+  }
+
+  // A template's part (its cooked text) or substitution (made a string)
+  // into `slot`.
+  function templatePiece(inout this, in parser: Parser, inout runtime: Runtime, part: u32, slot: u8): u8 {
+    this.targetReg = i32(slot);
+    const value = this.compileExpr(in parser, inout runtime, part);
+    if (value != slot) this.emit(instAB(Op.mov, slot, value));
+    if (parser.ast.node(part).kind != NodeKind.templatePartExpr) this.emit(instAB(Op.toStringOp, slot, slot));
+    return slot;
+  }
+
   // --- Inlining ---
   //
   // A call `f(a, b)` whose `f` is a function declared in a function body,
@@ -2782,17 +2868,38 @@ export struct Compiler {
         this.emit(instAU16(Op.loadConst, dst, index));
         return dst;
       }
-      let acc = this.compileExpr(in parser, inout runtime, parser.ast.child(node, 0));
-      let i: u32 = 1;
-      while (i < n.childrenCount) {
-        const next = this.compileExpr(in parser, inout runtime, parser.ast.child(node, i));
-        // The last join writes the result, so it may land in the target.
-        const dst = i + 1 == n.childrenCount && hintReg >= 0 ? u8(hintReg) : this.allocReg();
-        this.emit(instABC(Op.add, dst, acc, next));
-        acc = dst;
+      // Each substitution evaluated and made a string (ToString, the
+      // string hint) in turn, all the parts then joined in one string.
+      const count = n.childrenCount;
+      if (count > 64) {
+        let acc = this.templatePiece(in parser, inout runtime, parser.ast.child(node, 0), this.allocReg());
+        let i: u32 = 1;
+        while (i < count) {
+          const next = this.templatePiece(in parser, inout runtime, parser.ast.child(node, i), this.allocReg());
+          const dst = i + 1 == count && hintReg >= 0 ? u8(hintReg) : this.allocReg();
+          this.emit(instABC(Op.add, dst, acc, next));
+          acc = dst;
+          i = i + 1;
+        }
+        return acc;
+      }
+      const first = this.nextReg;
+      let i: u32 = 0;
+      while (i < count) {
+        this.allocReg();
         i = i + 1;
       }
-      return acc;
+      i = 0;
+      while (i < count) {
+        const placed = this.templatePiece(in parser, inout runtime, parser.ast.child(node, i), first + u8(i));
+        this.nextReg = first + u8(count);
+        i = i + 1;
+      }
+      if (count == 1) return first;
+      const dst = hintReg >= 0 ? u8(hintReg) : first;
+      this.emit(instABCD(Op.concatN, dst, first, u8(count), 0));
+      this.nextReg = first + 1;
+      return dst;
     }
     if (k == NodeKind.taggedTemplate) {
       // tag`...`: the site's template object (built once, a constant)
@@ -3355,6 +3462,10 @@ export struct Compiler {
       this.emit(instABC(n.op == TokenKind.kwIn ? Op.inOp : Op.instanceofOp, dst, left, right));
       return dst;
     }
+    if (k == NodeKind.binary && n.op == TokenKind.plus) {
+      let pieces = Array<u32>();
+      if (this.concatChain(in parser, node, inout pieces)) return this.emitConcat(in parser, inout runtime, in pieces, NO_NODE, hintReg);
+    }
     if (k == NodeKind.binary) {
       const immediateOp = immediateForm(binaryOp(n.op));
       const immediate = smallIntegerLiteral(in parser, n.right);
@@ -3591,6 +3702,13 @@ export struct Compiler {
         if (immediateOp != Op.halt && immediate != NO_IMMEDIATE) {
           this.emit(immediateInst(immediateOp, u8(into), u8(into), immediate));
           return u8(into);
+        }
+        if (n.op == TokenKind.plusEq) {
+          // `s += "a" + x + "b"`: the pieces appended to s in one join.
+          let pieces = Array<u32>();
+          if (this.concatChain(in parser, n.right, inout pieces) && isStringLiteral(in parser, pieces[0])) {
+            return this.emitConcat(in parser, inout runtime, in pieces, n.left, into);
+          }
         }
         let current = u8(into);
         if (mayAssign(in parser, n.right)) current = this.compileExpr(in parser, inout runtime, n.left);
@@ -5059,6 +5177,13 @@ function nameMayChange(in parser: Parser, node: u32, nameStart: u32, nameLength:
     i = i + 1;
   }
   return false;
+}
+
+// Whether `node` is a string for certain: a string literal or a template.
+function isStringLiteral(in parser: Parser, node: u32): boolean {
+  if (node == NO_NODE) return false;
+  const k = parser.ast.node(node).kind;
+  return k == NodeKind.stringExpr || k == NodeKind.templateExpr;
 }
 
 // Whether reading `node` runs nothing: a number, string, boolean, or null

@@ -9,6 +9,7 @@
 
 import { expect } from "std/test";
 import { thread } from "std/thread";
+import { replace } from "std/memory";
 import math from "std/math";
 import native from "./builtins/clock.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
@@ -128,6 +129,8 @@ export const REACTION_ASYNC_GEN_RESUME_RETURN: i32 = 5;
 
 // ToPrimitive hints.
 export const HINT_DEFAULT: u32 = 0;
+// The most bytes joinPieces gathers to append in one join.
+const CONCAT_GATHER: usize = 256;
 export const HINT_NUMBER: u32 = 1;
 export const HINT_STRING: u32 = 2;
 
@@ -267,6 +270,9 @@ export struct Runtime {
   symbolProto: u32;
   // Math.random's state.
   randomState: u64;
+  // Bytes a join of several pieces gathers before appending them at once
+  // (see joinPieces); kept so the gathering allocates only once.
+  concatScratch: Array<u8>;
   // The length of the last JSON.stringify result: the next one's buffer
   // starts that large, rather than growing from nothing each time.
   jsonTextHint: usize;
@@ -4965,6 +4971,75 @@ export struct Runtime {
     return this.newStringUnits(move units);
   }
 
+  // String `first` and the `count` registers from `at` joined as `+`
+  // joins them: each piece to a primitive (the default hint) and a
+  // string, in order, left in its register; then appended at once --
+  // narrow pieces that fit a small buffer in one join, any others one by
+  // one. Undefined with a throw pending.
+  function joinPieces(inout this, first: Value, at: u32, count: u32): Value {
+    let k: u32 = 0;
+    while (k < count) {
+      const piece = this.regStack[usize(at + k)];
+      if (!this.isStringValue(piece) && !isInt32(piece)) {
+        const primitive = this.toPrimitiveWithHint(piece, HINT_DEFAULT);
+        if (this.pendingThrow) return undefinedValue();
+        const text = this.toStringValue(primitive);
+        if (this.pendingThrow) return undefinedValue();
+        this.regStack[usize(at + k)] = text;
+      }
+      k = k + 1;
+    }
+    // The pieces' bytes gathered in the runtime's scratch buffer, a local
+    // while it fills.
+    let tail = replace(inout this.concatScratch, Array<u8>());
+    while (tail.length > 0) {
+      const dropped = tail.pop();
+    }
+    let fits = true;
+    k = 0;
+    while (fits && k < count) {
+      const piece = this.regStack[usize(at + k)];
+      if (isInt32(piece)) {
+        let digits: u8[11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        const n = int32DigitsInto(inout digits, asInt32(piece));
+        let d: usize = 0;
+        while (d < n) {
+          tail.push(digits[d]);
+          d = d + 1;
+        }
+      } else {
+        const handle = asCell(piece);
+        const length = this.heap.stringLength(handle);
+        if (this.heap.isWideString(handle) || tail.length + length > CONCAT_GATHER) {
+          fits = false;
+        } else {
+          let d: usize = 0;
+          while (d < length) {
+            tail.push(this.heap.storageByte(handle, d));
+            d = d + 1;
+          }
+        }
+      }
+      k = k + 1;
+    }
+    if (fits) {
+      const used = tail.length;
+      let joined = first;
+      if (used > 0) joined = cellValue(this.heap.concatAscii(asCell(first), tail, used, false));
+      this.concatScratch = move tail;
+      return joined;
+    }
+    this.concatScratch = move tail;
+    let joined = first;
+    k = 0;
+    while (k < count) {
+      const piece = this.regStack[usize(at + k)];
+      joined = this.concatStrings(joined, piece);
+      k = k + 1;
+    }
+    return joined;
+  }
+
   // --- Equality and ordering ---
 
   function strictEquals(a: Value, b: Value): boolean {
@@ -6111,6 +6186,36 @@ export struct Runtime {
         } else {
           this.storeGlobalStrictly(slot, stored);
         }
+      }
+      toStringOp => {
+        const converted = this.toStringValue(this.reg(base, inst.b));
+        if (!this.pendingThrow) this.setReg(base, inst.a, converted);
+      }
+      concatN => {
+        const first = this.reg(base, inst.b);
+        const count = u32(inst.c);
+        let joined = undefinedValue();
+        if (this.isStringValue(first)) {
+          joined = this.joinPieces(first, base + u32(inst.b) + 1, count - 1);
+        } else if (inst.d == 0) {
+          // The additions it stands for, left to right.
+          joined = first;
+          let k: u32 = 1;
+          while (k < count && !this.pendingThrow) {
+            joined = this.addValues(joined, this.reg(base, u8(u32(inst.b) + k)));
+            k = k + 1;
+          }
+        } else {
+          // `x += "a" + y`: the right side joined (its first piece a
+          // string literal), then added to x.
+          const rest = this.joinPieces(this.reg(base, u8(u32(inst.b) + 1)), base + u32(inst.b) + 2, count - 2);
+          if (!this.pendingThrow) {
+            this.pushTempRoot(rest);
+            joined = this.addValues(first, rest);
+            this.popTempRoot();
+          }
+        }
+        if (!this.pendingThrow) this.setReg(base, inst.a, joined);
       }
       loadGlobalOrUndefined => {
         const slot = usize(bcU16(inst));
@@ -8336,7 +8441,7 @@ export function createRuntime(): Runtime {
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
-    randomState: 0x9E3779B97F4A7C15, jsonTextHint: 0, execShapeClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, lastResult: undefinedValue(),
+    randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), jsonTextHint: 0, execShapeClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,

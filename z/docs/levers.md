@@ -303,6 +303,13 @@ class and prototype's class were seen with the builtin `exec` skips the
 lookup of `exec` while the prototype's slot still holds it, and reads
 and writes `lastIndex` and its flags at known slots. regexp -12% in
 cycles.
+String joins (2026-09-29): a `+` chain whose first piece is a string
+literal (or whose second is, after a quiet first), with every later piece
+a literal or a local in a register, is one instruction that converts the
+pieces in order and appends them at once -- `s += "item" + i + ","` makes
+one string where it made three; template literals join the same way, each
+substitution made a string (ToString, not `+`'s default hint, which they
+had used) as it is evaluated. strings -17.2% (its building loop -33%).
 Sort (2026-09-28): the merge sort merges each level from one buffer into
 the other, copying nothing back, and joins halves of four or more that
 are already in order after one comparison: sorted input takes 24k
