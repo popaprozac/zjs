@@ -5221,8 +5221,16 @@ export struct Runtime {
       env = this.heap.linkOf(handle);
       if (this.functions[code].isArrow) boundThis = this.heap.slot(handle, 0);
     }
-    // A sloppy function called with no receiver sees the global object.
-    if (!this.functions[code].strict && (isUndefined(boundThis) || isNull(boundThis))) boundThis = cellValue(this.globalObject);
+    // A sloppy function called with no receiver sees the global object,
+    // and one that reads `this` sees a primitive receiver wrapped in an
+    // object (one that never reads it cannot tell).
+    if (!this.functions[code].strict) {
+      if (isUndefined(boundThis) || isNull(boundThis)) {
+        boundThis = cellValue(this.globalObject);
+      } else if (this.functions[code].thisReg >= 0 && !this.isObjectLike(boundThis)) {
+        boundThis = this.toObjectValue(boundThis);
+      }
+    }
     // The frame, as openFrame makes it, with no calls on the way.
     let regCount = this.functions[code].registerCount;
     const paramCount = this.functions[code].paramCount;
@@ -5280,12 +5288,19 @@ export struct Runtime {
       env = this.heap.linkOf(handle);
       if (this.functions[usize(target)].isArrow) boundThis = this.heap.slot(handle, 0);
     }
-    // A sloppy function called with no receiver sees the global object.
-    if (!this.functions[usize(target)].strict && (isUndefined(boundThis) || isNull(boundThis))) boundThis = cellValue(this.globalObject);
+    // A sloppy function called with no receiver sees the global object,
+    // and one that reads `this` a primitive receiver wrapped.
+    if (!this.functions[usize(target)].strict) {
+      if (isUndefined(boundThis) || isNull(boundThis)) {
+        boundThis = cellValue(this.globalObject);
+      } else if (this.functions[usize(target)].thisReg >= 0 && !this.isObjectLike(boundThis)) {
+        boundThis = this.toObjectValue(boundThis);
+      }
+    }
     // A generator's parameters initialize now; GeneratorStart then
     // suspends and hands the caller the generator object.
     let generator: u32 = 0;
-    if (this.functions[usize(target)].isGenerator || this.functions[usize(target)].isAsync) generator = asCell(this.createGenerator(callee, thisValue));
+    if (this.functions[usize(target)].isGenerator || this.functions[usize(target)].isAsync) generator = asCell(this.createGenerator(callee, boundThis));
     const calleeBase = this.openFrame(target, returnDst, argsBase, argc, constructThis, env, callee, generator);
     this.hostThis = boundThis;
     const thisReg = this.functions[usize(target)].thisReg;
