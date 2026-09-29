@@ -42,7 +42,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 |---|---|---|---|---|
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | started |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
-| Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | started |
+| Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp done; arrays next |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
@@ -162,6 +162,17 @@ Then a call to an
 ordinary function (not a generator, not async, not a class constructor)
 builds its frame inline, with no call on the way: calls -5.9%, closures
 -3.6%, map/filter/reduce -4.7%, arrays -1.0%, the rest level.
+Measured before the frame redesign (2026-09-29): a fib call costs about
+73 cycles here, 54 in QuickJS, 39 in Hermes; about 40 of ours is the call
+and return. Tried and dropped: a dense per-function record of what a call
+reads (calls -1.8%, closures -1.6%, arrays +1.6%); counting the argument
+copy in u32 so clang does not set up a vector copy (level); the frame
+push written into the dispatch loop's `invoke` arm (calls -6.3%, closures
+-3.0%, but properties +5.2%, polymorphic +4.3%, helpers +3.8% on every
+placement -- a larger loop allocates registers worse for every arm).
+Frames on the register stack put more code in the loop still, so the
+redesign waits on a way to mark the loop's rare arms cold (asked of Z,
+docs/z-findings.md).
 
 The dispatch loop's shape belongs to this lever too. It is one large
 function in the generated C, and the C compiler's register allocation

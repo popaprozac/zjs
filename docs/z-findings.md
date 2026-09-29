@@ -1838,6 +1838,18 @@ pair: `inline` for the fast half and a cold or never-inline mark for the
 slow half (`__attribute__((noinline, cold))`), the standard shape of a
 barrier or any fast path with a rare exit.
 
+**And the loop itself** (2026-09-29, the call protocol). Writing an
+ordinary call's frame push into the dispatch loop's `invoke` arm by hand,
+the way an inline hint would, measured over eight placements of the
+loop's code: calls -6.3%, closures -3.0%, but properties +5.2%,
+polymorphic +4.3%, helpers +3.8%, the same on every placement. The loop
+is one function, and every arm added to it worsens clang's register
+allocation for all the others, the hot ones included. Moving frames onto
+the register stack, the engine's planned redesign of its calls, puts
+more code in the loop and meets the same wall, so it waits: an inline
+hint alone would not fix it, the cold mark is the half that would let the
+rare arms (and the rare exits of hot ones) stop costing the rest.
+
 ## G54 — A growing array leaves its old storage resident (macOS)
 
 **Status:** `proposed` · **Size:** medium · **Priority:** medium for the
