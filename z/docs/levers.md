@@ -333,7 +333,14 @@ literal assigned to a local is built in the local's register when nothing
 can see it half-built (the literal does not name the local or call eval,
 and no try in the function is open): allocation -2.6%, the rest level.
 `a[k]` with k a small integer literal carries k in the instruction:
-allocation -1.6%, the rest level.
+allocation -1.6%, the rest level. Tried and dropped: a string chain
+naming its literal pieces and locals in words after concatN, so
+`s += "item" + i + ","` runs 2 instructions where it ran 6 (0.8% fewer
+instructions: copying the pieces in the cold handler costs what the
+dispatches did, and an iteration is ~1,470 instructions, most of them
+gathering and appending bytes one at a time and collecting the string
+headers each step leaves -- work for the string representation, not
+the bytecode).
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
