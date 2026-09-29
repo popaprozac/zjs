@@ -687,9 +687,13 @@ function walkArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   let to = 0.0;
   let k = 0.0;
   let stop = false;
+  // An array's elements are read in place (a hole or an accessor takes
+  // the general path); whether it is one cannot change during the walk.
+  const array: u32 = isArrayValue(in runtime, object) && length <= 4294967295.0 ? asCell(object) : u32(0);
   while (!stop && k < length) {
-    let element = ownElement(in runtime, object, k);
+    let element = array != 0 ? runtime.heap.dataElement(array, u32(k)) : deletedValue();
     let present = !isDeleted(element);
+    const inPlace = present;
     if (!present) {
       present = hasIndex(inout runtime, object, k);
       if (runtime.pendingThrow) break;
@@ -699,12 +703,16 @@ function walkArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
       }
     }
     if (present) {
-      runtime.pushTempRoot(element);
       let produced = deletedValue();
       if (leaf >= 0) produced = runtime.callLeaf(usize(leaf), 3, element, integerValue(k), object, undefinedValue());
+      // An element read in place stays reachable through the rooted
+      // array, and a leaf allocates nothing: only a full call, or an
+      // element a getter made, needs a root of its own.
+      const rooted = isDeleted(produced) || !inPlace;
+      if (rooted) runtime.pushTempRoot(element);
       if (isDeleted(produced)) produced = callWith3(inout runtime, callback, receiver, element, integerValue(k), object);
       if (runtime.pendingThrow) {
-        runtime.popTempRoot();
+        if (rooted) runtime.popTempRoot();
         break;
       }
       if (mode == WALK_MAP) {
@@ -725,7 +733,7 @@ function walkArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
           stop = true;
         }
       }
-      runtime.popTempRoot();
+      if (rooted) runtime.popTempRoot();
     }
     k = k + 1.0;
   }

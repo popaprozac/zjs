@@ -25,3 +25,11 @@ for (var i = 0; i < 1000; i++) long.push(i === 500 ? "x" : i);
 console.log(long.map(function (x) { return x + 1; })[500], long.reduce(function (s, x) { return s + (x === "x" ? 0 : x); }, 0));
 try { [1, 2].map(function (x) { return x.y.z; }); } catch (e) { console.log(e instanceof TypeError); }
 console.log([3, 1, 2].sort(function (a, b) { return a - b; }).map(function (x) { return x * x; }).filter(function (x) { return x > 1; }).reduce(function (s, x) { return s + x; }, 0));
+
+// An element a getter makes is kept alive while it is filtered or mapped.
+var made = [1, 2, 3, 4, 5, 6];
+Object.defineProperty(made, 2, { get: function () { return { v: "made" + this.length }; } });
+var picked = made.filter(function (x) { return x !== 0; });
+console.log(picked.length, picked[2].v, made.map(function (x) { return x; })[2].v);
+var sparse = [1, , 3, , 5];
+console.log(sparse.map(function (x) { return x * 2; }).length, 1 in sparse.map(function (x) { return x * 2; }), sparse.filter(function (x) { return x > 1; }).join());
