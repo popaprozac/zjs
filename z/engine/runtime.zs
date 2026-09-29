@@ -7440,6 +7440,99 @@ export struct Runtime {
             }
             if (isInt32(left) && isInt32(right)) continue;
           }
+          incJmpIfLtImm => {
+            const counter = this.reg(base, inst.a);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            const immediate = branchImmediateOf(inst, word);
+            if (isInt32(counter) && asInt32(counter) < 2147483647) {
+              const stepped = asInt32(counter) + 1;
+              this.setReg(base, inst.a, int32Value(stepped));
+              if (stepped < immediate) {
+                ip = usize(i64(ip) + i64(bcI16(word)));
+                this.backEdge(frameIndex, ip);
+              }
+              continue;
+            }
+            // As `++` then the test: ToNumeric may throw; the comparison
+            // of a number with a literal cannot.
+            const number = this.numericOperand(counter);
+            if (!this.pendingThrow) {
+              const stepped = numericAdd(number, int32Value(1));
+              this.setReg(base, inst.a, stepped);
+              if (this.lessThan(stepped, int32Value(immediate), false)) {
+                ip = usize(i64(ip) + i64(bcI16(word)));
+                this.backEdge(frameIndex, ip);
+              }
+            }
+          }
+          incJmpIfLt => {
+            const counter = this.reg(base, inst.a);
+            const bound = this.reg(base, inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            if (isInt32(counter) && asInt32(counter) < 2147483647 && isInt32(bound)) {
+              const stepped = asInt32(counter) + 1;
+              this.setReg(base, inst.a, int32Value(stepped));
+              if (stepped < asInt32(bound)) {
+                ip = usize(i64(ip) + i64(bcI16(word)));
+                this.backEdge(frameIndex, ip);
+              }
+              continue;
+            }
+            const number = this.numericOperand(counter);
+            if (!this.pendingThrow) {
+              const stepped = numericAdd(number, int32Value(1));
+              this.setReg(base, inst.a, stepped);
+              if (this.lessThan(stepped, bound, false) && !this.pendingThrow) {
+                ip = usize(i64(ip) + i64(bcI16(word)));
+                this.backEdge(frameIndex, ip);
+              }
+            }
+          }
+          incJmpIfLtLength => {
+            const counter = this.reg(base, inst.a);
+            const object = this.reg(base, inst.b);
+            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            ip = ip.wrappingAdd(1);
+            // An array's or a string's own length, which nothing can
+            // shadow, read in place.
+            if (isInt32(counter) && asInt32(counter) < 2147483647 && isCell(object) && asCell(object) != 0) {
+              const handle = asCell(object);
+              let length: i64 = -1;
+              if (this.heap.isArray(handle)) {
+                length = i64(this.heap.arrayLength(handle));
+              } else if (this.heap.isString(handle)) {
+                length = i64(this.heap.stringLength(handle));
+              }
+              if (length >= 0) {
+                const stepped = asInt32(counter) + 1;
+                this.setReg(base, inst.a, int32Value(stepped));
+                if (i64(stepped) < length) {
+                  ip = usize(i64(ip) + i64(bcI16(word)));
+                  this.backEdge(frameIndex, ip);
+                }
+                continue;
+              }
+            }
+            // As `++`, then the `length` read, then the comparison.
+            const number = this.numericOperand(counter);
+            if (!this.pendingThrow) {
+              const stepped = numericAdd(number, int32Value(1));
+              this.setReg(base, inst.a, stepped);
+              const atomLength = this.atomLength;
+              if (isUndefined(object) || isNull(object)) {
+                const error = this.propertyOfNullish(object, atomLength, true);
+                this.raise(error);
+              } else {
+                const length = this.getProperty(object, cellValue(atomLength));
+                if (!this.pendingThrow && this.lessThan(stepped, length, false) && !this.pendingThrow) {
+                  ip = usize(i64(ip) + i64(bcI16(word)));
+                  this.backEdge(frameIndex, ip);
+                }
+              }
+            }
+          }
           jmpIfNotLtImm => {
             const left = this.reg(base, inst.a);
             const word = this.codeSegment[codeStart.wrappingAdd(ip)];

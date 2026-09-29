@@ -426,6 +426,77 @@ export struct Compiler {
     this.emitJumpBackIf(Op.jmpIfTrue, condition, target);
   }
 
+  // The register a counted loop steps: `update` is `i++` or `++i` on a
+  // register binding and `test` is `i < bound`, the bound a 24-bit
+  // literal or another register binding; -1 for any other loop.
+  function countedLoopReg(in parser: Parser, test: u32, update: u32): i32 {
+    let step = update;
+    while (step != NO_NODE && parser.ast.node(step).kind == NodeKind.paren) {
+      step = parser.ast.node(step).left;
+    }
+    if (step == NO_NODE) return -1;
+    const s = parser.ast.node(step);
+    if ((s.kind != NodeKind.postfix && s.kind != NodeKind.unary) || s.op != TokenKind.plusPlus) return -1;
+    const counter = this.storableLocalReg(in parser, s.left);
+    if (counter < 0) return -1;
+    let compare = test;
+    while (compare != NO_NODE && parser.ast.node(compare).kind == NodeKind.paren) {
+      compare = parser.ast.node(compare).left;
+    }
+    if (compare == NO_NODE) return -1;
+    const c = parser.ast.node(compare);
+    if (c.kind != NodeKind.binary || c.op != TokenKind.lt) return -1;
+    if (this.storableLocalReg(in parser, c.left) != counter) return -1;
+    if (branchImmediate(in parser, c.right) != NO_BRANCH_IMMEDIATE) return counter;
+    const lengthOf = this.lengthOperandReg(in parser, c.right);
+    if (lengthOf >= 0) return lengthOf == counter ? -1 : counter;
+    const bound = this.operandLocalReg(in parser, c.right);
+    if (bound < 0 || bound == counter) return -1;
+    return counter;
+  }
+
+  // For `x.length` with x a register binding, x's register; else -1.
+  function lengthOperandReg(in parser: Parser, node: u32): i32 {
+    let current = node;
+    while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+      current = parser.ast.node(current).left;
+    }
+    if (current == NO_NODE) return -1;
+    const n = parser.ast.node(current);
+    if (n.kind != NodeKind.member || n.nameLength != 6 || !parser.sliceEquals(n.nameStart, n.nameLength, "length")) return -1;
+    return this.operandLocalReg(in parser, n.left);
+  }
+
+  // A counted loop's bottom (see countedLoopReg): the step and the test,
+  // jumping back to `target` while the counter is below the bound.
+  function emitCountedBranch(inout this, in parser: Parser, counter: u8, test: u32, target: u32): void {
+    let compare = test;
+    while (parser.ast.node(compare).kind == NodeKind.paren) {
+      compare = parser.ast.node(compare).left;
+    }
+    const right = parser.ast.node(compare).right;
+    const immediate = branchImmediate(in parser, right);
+    if (immediate != NO_BRANCH_IMMEDIATE) {
+      const bits = u32(i64(immediate) & 0xFFFFFF);
+      const low = u16(bits & 0xFFFF);
+      this.emit(instABCD(Op.incJmpIfLtImm, counter, u8(low & 0xFF), u8(low >> 8), 1));
+      const here = i32(this.code.length);
+      this.emit(instAI16(Op.halt, u8(bits >> 16), i32(target) - (here + 1)));
+      return;
+    }
+    const lengthOf = this.lengthOperandReg(in parser, right);
+    if (lengthOf >= 0) {
+      this.emit(instABCD(Op.incJmpIfLtLength, counter, u8(lengthOf), 0, 1));
+      const at = i32(this.code.length);
+      this.emit(instAI16(Op.halt, 0, i32(target) - (at + 1)));
+      return;
+    }
+    const bound = u8(this.operandLocalReg(in parser, right));
+    this.emit(instABCD(Op.incJmpIfLt, counter, bound, 0, 1));
+    const here = i32(this.code.length);
+    this.emit(instAI16(Op.halt, 0, i32(target) - (here + 1)));
+  }
+
   function isConditional(in parser: Parser, node: u32): boolean {
     let current = node;
     while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
@@ -4833,6 +4904,25 @@ export struct Compiler {
       }
       if (this.hadError) return;
       if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
+      // A counted loop, `i++` and `i < bound` on a register binding: the
+      // test once ahead of the loop, and the step and test at the bottom
+      // one instruction.
+      const counter = captures.length > 0 ? -1 : this.countedLoopReg(in parser, n.right, n.third);
+      if (counter >= 0) {
+        this.resetCompletion();
+        this.loopPush(true);
+        const exit = this.emitBranchIfFalse(in parser, inout runtime, n.right);
+        const top = this.markTarget();
+        this.resetTemps();
+        if (n.childrenCount > 0) this.compileStmt(in parser, inout runtime, parser.ast.child(node, 0));
+        const bound6 = this.markTarget();
+        this.loopSetContinue(bound6);
+        this.emitCountedBranch(in parser, u8(counter), n.right, top);
+        this.patchJump(exit);
+        this.loopPop();
+        this.closeScope(in mark);
+        return;
+      }
       // As a while loop, the test at the bottom.
       this.resetCompletion();
       this.loopPush(true);

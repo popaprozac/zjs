@@ -303,6 +303,15 @@ just after a store to x returns the register it was stored from -- unless
 a jump may land there, which the compiler now tracks. The closures
 kernel's closure runs 2 instructions where it ran 5: closures -13.1%,
 calls -2.6%, the rest level.
+Counted loops (2026-09-29): an instruction costs about 35-50 machine
+instructions before its own work, so the pairs the kernels run most
+(counted over all eleven, weighted by each kernel's share) are the
+candidates. A `for` loop whose update is `i++` and whose test is
+`i < bound` -- a literal, another register binding, or such a binding's
+`length` -- tests once ahead of the loop and steps and tests at the
+bottom in one instruction; an array's or a string's length is read in
+place. polymorphic -20.2%, properties -11.1%, arrays -5.6%, allocation
+-2.9%, helpers and closures -1.9%, the rest within a point.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches

@@ -250,6 +250,15 @@ export enum Op {
   // additions left to right; d = 1 (`x += "a" + y`), the rest joined
   // first, then added to it.
   concatN,
+  // A counted loop's step and its test at the bottom in one: a = the
+  // counter, stepped as `++` steps it, then compared with the bound, a
+  // 24-bit literal as in jmpIfNotLtImm (incJmpIfLtImm) or register b
+  // (incJmpIfLt), or the `length` of the value in register b
+  // (incJmpIfLtLength); jumps back by the next word's offset while the
+  // counter is less.
+  incJmpIfLtImm,
+  incJmpIfLt,
+  incJmpIfLtLength,
 }
 
 export struct Inst {
@@ -501,6 +510,9 @@ export function opCode(op: Op): i32 {
     declareEvalVar => 189;
     toStringOp => 190;
     concatN => 191;
+    incJmpIfLtImm => 192;
+    incJmpIfLt => 193;
+    incJmpIfLtLength => 194;
   };
 }
 

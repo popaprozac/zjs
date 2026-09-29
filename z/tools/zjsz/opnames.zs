@@ -196,5 +196,8 @@ export function opName(op: Op): String {
     declareEvalVar => "declareEvalVar";
     toStringOp => "toStringOp";
     concatN => "concatN";
+    incJmpIfLtImm => "incJmpIfLtImm";
+    incJmpIfLt => "incJmpIfLt";
+    incJmpIfLtLength => "incJmpIfLtLength";
   };
 }
