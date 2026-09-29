@@ -315,7 +315,16 @@ place. polymorphic -20.2%, properties -11.1%, arrays -5.6%, allocation
 `(a + b) | 0` is one instruction (the kernels all accumulate this way,
 so they gain more than most code will): polymorphic -14.5%, properties
 -7.6%, helpers -6.1%, allocation -3.6%, closures -2.5%, arrays -2.4%,
-strings -2.0%, maps -1.5%, the rest level.
+strings -2.0%, maps -1.5%, the rest level. Tried and dropped: a
+method call's lone local argument passed from its own register rather
+than copied into the call's window (the copy is 30 of a builtin call's
+~600 instructions; the extra select in the call arm cost the dispatch
+loop 1% more instructions on a kernel with no calls). The builtin
+itself was the larger part: a string method on a string receiver with
+an int32 index skips its conversions (a charCodeAt loop 677 -> 514
+instructions an iteration, strings -5.9%), and a Map or Set lookup
+probes through slices (maps -1.9%; the rest of its cost is three
+random reads per probe into tables of ten thousand entries).
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
