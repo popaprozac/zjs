@@ -497,6 +497,29 @@ export struct Compiler {
     this.emit(instAI16(Op.halt, 0, i32(target) - (here + 1)));
   }
 
+  // Whether a subtree names a binding held in register `reg`, or calls
+  // eval directly (which could name it).
+  function namesRegister(in parser: Parser, node: u32, reg: u8): boolean {
+    if (node == NO_NODE) return false;
+    const n = parser.ast.node(node);
+    if (n.kind == NodeKind.identExpr) {
+      let index: usize = 0;
+      while (index < this.locals.length) {
+        if (this.locals[index].reg == reg && this.locals[index].nameLength == n.nameLength && this.nameMatches(in parser, this.locals[index].nameStart, this.locals[index].nameLength, n.nameStart, n.nameLength)) return true;
+        index = index + 1;
+      }
+      return false;
+    }
+    if (n.kind == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
+    if (this.namesRegister(in parser, n.left, reg) || this.namesRegister(in parser, n.right, reg) || this.namesRegister(in parser, n.third, reg)) return true;
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (this.namesRegister(in parser, parser.ast.child(node, i), reg)) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
   function isConditional(in parser: Parser, node: u32): boolean {
     let current = node;
     while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
@@ -3311,8 +3334,17 @@ export struct Compiler {
     }
     if (k == NodeKind.object) {
       // Built in its destination when that is a temporary (an argument's
-      // slot): a binding's register could be read by its own properties.
-      const dst = hintReg >= i32(this.fixedRegs) ? u8(hintReg) : this.allocReg();
+      // slot), or a binding's register the building cannot be seen in:
+      // the literal does not name the binding (or call eval), and no try
+      // in this function is open to read it after a throw midway.
+      let dst: u8 = 0;
+      if (hintReg >= i32(this.fixedRegs)) {
+        dst = u8(hintReg);
+      } else if (hintReg >= 0 && this.regionDepth == 0 && !this.namesRegister(in parser, node, u8(hintReg))) {
+        dst = u8(hintReg);
+      } else {
+        dst = this.allocReg();
+      }
       // What each property's temporaries go back to: above dst, and above
       // every register taken before it when dst is a hint (the other
       // argument slots of a call).
