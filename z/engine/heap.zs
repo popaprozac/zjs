@@ -2936,6 +2936,30 @@ export struct Heap {
     this.headers[usize(handle)].slotCount = hash;
   }
 
+  // Every place narrow string `needle` (not empty) occurs in narrow
+  // string `hay`, left to right and not overlapping, appended to `cuts`:
+  // one pass over the bytes where they are.
+  function findAllNarrow(hay: u32, needle: u32, inout cuts: Array<usize>): void {
+    const hayLength = usize(this.headers[usize(hay)].slotStart);
+    const needleLength = usize(this.headers[usize(needle)].slotStart);
+    if (needleLength == 0 || needleLength > hayLength) return;
+    const hayPayload = this.headers[usize(hay)].payload;
+    const needlePayload = this.headers[usize(needle)].payload;
+    const hayStart = usize(hayPayload & ~ARENA_BIT);
+    const needleStart = usize(needlePayload & ~ARENA_BIT);
+    const hayArena = (hayPayload & ARENA_BIT) != 0;
+    const needleArena = (needlePayload & ARENA_BIT) != 0;
+    if (hayArena && needleArena) {
+      findAllIn(this.smallBytes, hayStart, hayLength, this.smallBytes, needleStart, needleLength, inout cuts);
+    } else if (hayArena) {
+      findAllIn(this.smallBytes, hayStart, hayLength, this.strings[usize(needlePayload)], 0, needleLength, inout cuts);
+    } else if (needleArena) {
+      findAllIn(this.strings[usize(hayPayload)], 0, hayLength, this.smallBytes, needleStart, needleLength, inout cuts);
+    } else {
+      findAllIn(this.strings[usize(hayPayload)], 0, hayLength, this.strings[usize(needlePayload)], 0, needleLength, inout cuts);
+    }
+  }
+
   // Where the bytes of narrow string `needle` first occur in those of
   // narrow string `hay` at or after `startAt`, or -1: both read where they
   // are, nothing copied.
@@ -3423,6 +3447,36 @@ function findIn(hay: Slice<u8>, hayStart: usize, hayLength: usize, needle: Slice
     start = start + 1;
   }
   return -1;
+}
+
+// Every occurrence of `needle` in `hay`, as findAllNarrow: a byte at a
+// time for a one-byte needle, the common separator.
+function findAllIn(hay: Slice<u8>, hayStart: usize, hayLength: usize, needle: Slice<u8>, needleStart: usize, needleLength: usize, inout cuts: Array<usize>): void {
+  const first = needle[needleStart];
+  if (needleLength == 1) {
+    let index: usize = 0;
+    while (index < hayLength) {
+      if (hay[hayStart + index] == first) cuts.push(index);
+      index = index + 1;
+    }
+    return;
+  }
+  const last = hayLength - needleLength;
+  let start: usize = 0;
+  while (start <= last) {
+    if (hay[hayStart + start] == first) {
+      let k: usize = 1;
+      while (k < needleLength && hay[hayStart + start + k] == needle[needleStart + k]) { k = k + 1; }
+      if (k == needleLength) {
+        cuts.push(start);
+        start = start + needleLength;
+      } else {
+        start = start + 1;
+      }
+    } else {
+      start = start + 1;
+    }
+  }
 }
 
 function sameStorage(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, length: usize): boolean {

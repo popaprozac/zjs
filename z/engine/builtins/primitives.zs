@@ -1699,14 +1699,8 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
   }
   let cuts = Array<usize>();
   if (narrow(in runtime, handle) && narrow(in runtime, separatorHandle)) {
-    // Searched where the bytes are.
-    let searchFrom: usize = 0;
-    while (true) {
-      const found = runtime.heap.findNarrow(handle, separatorHandle, searchFrom);
-      if (found < 0) break;
-      cuts.push(usize(found));
-      searchFrom = usize(found) + separatorLength;
-    }
+    // Searched where the bytes are, in one pass.
+    runtime.heap.findAllNarrow(handle, separatorHandle, inout cuts);
   } else {
     const hay = runtime.heap.stringUnits(handle);
     const key = runtime.heap.stringUnits(separatorHandle);
@@ -1718,21 +1712,25 @@ function stringSplit(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
       searchFrom = usize(found) + separatorLength;
     }
   }
+  // The pieces, as many as the cuts make up to the limit, into an array
+  // made at that length.
+  let pieceCount = usize(cuts.length) + 1;
+  if (pieceCount > usize(limit)) pieceCount = usize(limit);
+  const pieces = runtime.heap.allocateArray(u32(pieceCount));
+  runtime.pushTempRoot(cellValue(pieces));
   let start: usize = 0;
   let cut: usize = 0;
-  while (cut < cuts.length && runtime.heap.arrayLength(result) < limit) {
-    const count = runtime.heap.arrayLength(result);
-    runtime.heap.arraySet(result, count, runtime.substringValue(handle, start, cuts[cut]));
-    start = cuts[cut] + separatorLength;
+  while (cut < pieceCount) {
+    const end = cut < cuts.length ? cuts[cut] : length;
+    const piece = runtime.substringValue(handle, start, end);
+    runtime.heap.setSlot(pieces, u32(cut), piece);
+    if (cut < cuts.length) start = cuts[cut] + separatorLength;
     cut = cut + 1;
   }
-  if (runtime.heap.arrayLength(result) < limit) {
-    const count = runtime.heap.arrayLength(result);
-    runtime.heap.arraySet(result, count, runtime.substringValue(handle, start, length));
-  }
   runtime.popTempRoot();
   runtime.popTempRoot();
-  return cellValue(result);
+  runtime.popTempRoot();
+  return cellValue(pieces);
 }
 
 // replace(pattern, replacement) with a string pattern: the first match.
