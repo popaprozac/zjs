@@ -101,6 +101,8 @@ function thisString(inout runtime: Runtime, thisValue: Value, in method: String)
 // The same, as the string cell itself (0 after a throw), for methods
 // that can read units in place instead of copying them all.
 function thisStringHandle(inout runtime: Runtime, thisValue: Value, in method: String): u32 {
+  // A string receiver, nearly every call: itself, held by the caller.
+  if (runtime.isStringValue(thisValue)) return asCell(thisValue);
   if (isUndefined(thisValue) || isNull(thisValue)) {
     const message: String = `String.prototype.${method} called on null or undefined`;
     const error = runtime.typeError(in message);
@@ -127,6 +129,7 @@ function thisStringValue(inout runtime: Runtime, thisValue: Value, in method: St
 // An integer argument: ToIntegerOrInfinity clamped to i32, `fallback`
 // when undefined.
 function integerArgument(inout runtime: Runtime, value: Value, fallback: i32): i32 {
+  if (isInt32(value)) return asInt32(value);
   if (isUndefined(value)) return fallback;
   const number = runtime.toNumberValue(value);
   if (runtime.pendingThrow) return 0;

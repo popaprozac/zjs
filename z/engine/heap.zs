@@ -2835,7 +2835,10 @@ export struct Heap {
     if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
       return u16(this.storageByte(handle, index * 2)) | (u16(this.storageByte(handle, index * 2 + 1)) << 8);
     }
-    return u16(this.storageByte(handle, index));
+    // A narrow string's byte, read where it is.
+    const payload = this.headers[usize(handle)].payload;
+    if ((payload & ARENA_BIT) != 0) return u16(this.smallBytes[usize(payload & ~ARENA_BIT) + index]);
+    return u16(this.strings[usize(payload)][index]);
   }
 
   // units[start, end) copied; the caller keeps end in range.
