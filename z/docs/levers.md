@@ -44,7 +44,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
-| Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp done; arrays next |
+| Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp, arrays done |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -172,10 +172,13 @@ Then (2026-09-29) a builtin checks once whether its callback is a leaf
 and writes each call's arguments straight into the leaf's registers,
 skipping the argument area and the per-call checks, and the runner
 copies arguments only when they are elsewhere: arrays -7.8%,
-map/filter/reduce -13.1%, sort -11.8%, the rest level. Left against V8
-without its JIT (millions of cycles, startup excluded): map/filter/reduce
-150 vs 118, sort 93 vs 76; against JavaScriptCore's interpreter an
-indexed sum 53 vs 39; filling by push is level with V8.
+map/filter/reduce -13.1%, sort -11.8%, the rest level. Then a walk roots
+only elements a full call or a getter produced (map/filter/reduce -3.0%)
+and sort reads a numeric comparator result directly (sort -6.1%). Left
+against V8 without its JIT (millions of cycles, startup excluded):
+map/filter/reduce 147 vs 122, sort 88 vs 80 (JavaScriptCore 79); an
+indexed sum 54 vs JavaScriptCore's 40, a per-dispatch cost; filling by
+push level with V8.
 Measured before the frame redesign (2026-09-29): a fib call costs about
 73 cycles here, 54 in QuickJS, 39 in Hermes; about 40 of ours is the call
 and return. Tried and dropped: a dense per-function record of what a call
@@ -302,7 +305,11 @@ local array moved out of the builder, so its length stays in a register
 bytes). What stringify spends is a call per byte: `putByte` is 60
 instructions with the array's growth inside, which clang will not inline
 at its 39 call sites, and a run of bytes cannot be appended at once (the
-inline hint and bulk append asked of Z, docs/z-findings.md).
+inline hint and bulk append asked of Z, docs/z-findings.md). Tried
+(2026-09-29): comparing a parsed key with its atom's bytes in place, not
+a call per byte (level: the samples moved into the comparison), and
+widening the parse input to units through a slice (json -1%, within
+noise); both dropped.
 Strings (2026-09-27): the byte-first builder JSON uses became a shared
 one (`builtins/builder.zs`), which `join` now builds through where it
 built units and narrowed them; `indexOf`, `includes`, and `split`
