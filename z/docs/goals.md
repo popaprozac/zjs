@@ -23,6 +23,8 @@ segment sizes; nothing is stripped):
 | Regular-expression backend (QuickJS 2026-06-04's `libregexp`, `libunicode`, and `cutils`; the adapter) | 97 KB (74 KB once dead-stripped) | under 1 KB |
 | ABI shim | under 1 KB | under 1 KB |
 | **A minimal embedder, linked and dead-stripped (macOS)** | **770 KB** | **16 KB** |
+| **The same on a core context (`zjs_new_core_context`), no installers** | **557 KB** | **16 KB** |
+| The core with JSON and Map / Set installed | 606 KB | 16 KB |
 | The same, iOS device (arm64), 2026-09-26 (688 KB on macOS then) | 705 KB | 16 KB |
 
 KB is 1000 bytes. Measured 2026-09-29 at `525afba`; on 2026-09-26
@@ -32,14 +34,15 @@ cold handlers and the frameless runner for leaf callbacks (12 KB), direct
 eval seeing and writing a function's locals (8 KB), the compiler's
 inlining, string joins, and fused instructions (6 KB), the young
 generation's collector (3 KB), and JSON's single-buffer rewrite (2 KB);
-the rest is spread thin. Two ways down, both measured: an embedder that
-leaves out RegExp, Date, Map and Set, Promise, JSON, Reflect, and
-generators links 623 KB (-147 KB, -19%) with nothing else changed, since
-dead-stripping drops what is never installed -- what it needs is
-installers an embedder calls, which the frozen ABI does not have for
-these; and optimizing for size the large functions no profile of the
-speed kernels or of compiling a large script touches gives 705 KB (-66
-KB) at no measured cost, which needs a mark Z does not have
+the rest is spread thin. The optional builtins are opt-in: a core
+context (`zjs_new_core_context`) has the language and the builtins it
+cannot do without, and `zjs_install_json`, `_regexp`, `_date`,
+`_collections`, `_promise`, and `_reflect` add the rest; an embedder
+links only the installers it calls, and without RegExp none of the
+regular-expression matcher (a literal then throws a TypeError).
+`zjs_new_context` is the core with every installer run. Not yet: size
+optimization of the large functions no profile touches, 705 KB (-66 KB)
+at no measured cost, which needs a mark Z does not have
 (docs/z-findings.md).
 
 Where the engine's code goes (share of 569 KB of functions, measured
@@ -63,11 +66,12 @@ The front end (lexer, parser, compiler) is 29% of the engine. The largest
 single optional piece is `libunicode` (60 KB, 38 KB once dead-stripped),
 which only Unicode-aware regular expressions and case mapping need.
 
-Not yet in the core, and each will add to it: Proxy, typed arrays and
-ArrayBuffer, BigInt, WeakRef, ES modules. Nothing is opt-in yet: the
-frozen ABI has the installers (`zjs_new_minimal_context`,
-`zjs_install_web_*`), but the Z engine implements only the core, so today
-the minimal context and the default one are the same engine.
+Not yet in the engine, and each will add to it: Proxy, typed arrays and
+ArrayBuffer, BigInt, WeakRef, ES modules. Opt-in: JSON, RegExp, Date,
+Map / Set / WeakMap / WeakSet, Promise, and Reflect, each with its own
+installer on a core context; the frozen ABI's other installers
+(`zjs_new_minimal_context`, `zjs_install_web_*`) are not implemented by
+the Z engine yet.
 
 ## 2. Speed
 

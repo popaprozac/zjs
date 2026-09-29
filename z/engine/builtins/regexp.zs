@@ -7,8 +7,9 @@
 import { Value, undefinedValue, nullValue, booleanValue, isTrue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isNumber, asInt32, isInt32 } from "../value.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_WRITABLE } from "../heap.zs";
 import { unitsOf, sliceUnits, copyUnits, appendUnits, appendUnitRange, isHighSurrogate, isLowSurrogate } from "../text.zs";
-import { Runtime, HostFunction, toNumber, truncateDouble, appendBytes } from "../runtime.zs";
-import { REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH } from "../regex.zs";
+import { Runtime, HostFunction, toNumber, truncateDouble, appendBytes, FEATURE_REGEXP } from "../runtime.zs";
+import { REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, createRegexBackend } from "../regex.zs";
+import { stringMatch, stringMatchAll, stringSearch } from "./primitives.zs";
 import { thread } from "std/thread";
 import { textBuilder, putUnits, putStringRange, finishText } from "./builder.zs";
 
@@ -1303,7 +1304,25 @@ function defineSymbolMethod(inout runtime: Runtime, target: u32, symbol: Value, 
   runtime.heap.objectDefine(target, key, cellValue(handle), PROP_METHOD);
 }
 
+// A regular-expression literal's object (Runtime.regexpMaker).
+function makeRegExp(inout runtime: Runtime, pattern: Value, flags: Value): Value on thread.any {
+  const proto = runtime.regexProto;
+  return runtime.regexpCreate(pattern, flags, proto);
+}
+
 export function installRegExp(inout runtime: Runtime): void {
+  if ((runtime.features & FEATURE_REGEXP) != 0) return;
+  runtime.features = runtime.features | FEATURE_REGEXP;
+  runtime.regexBackend = createRegexBackend();
+  runtime.regexpMaker = makeRegExp;
+  // The String methods that make a RegExp from their argument come with it.
+  const stringProto = runtime.stringProto;
+  const matchText: String = "match";
+  runtime.defineMethod(stringProto, in matchText, stringMatch, 1);
+  const matchAllText: String = "matchAll";
+  runtime.defineMethod(stringProto, in matchAllText, stringMatchAll, 1);
+  const searchText: String = "search";
+  runtime.defineMethod(stringProto, in searchText, stringSearch, 1);
   const objectProto = runtime.objectProto;
   const proto = runtime.heap.allocateObject(objectProto);
   runtime.regexProto = proto;

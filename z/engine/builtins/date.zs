@@ -6,7 +6,7 @@ import math from "std/math";
 import native from "clock.h";
 import { Value, undefinedValue, nullValue, int32Value, doubleValue, cellValue, asCell, isUndefined, isNull, isNumber, asInt32, isDeleted } from "../value.zs";
 import { PROP_METHOD, PROP_CONFIGURABLE, bytesOf } from "../heap.zs";
-import { Runtime, HostFunction, HINT_DEFAULT, HINT_NUMBER, nanValue, toNumber } from "../runtime.zs";
+import { Runtime, HostFunction, HINT_DEFAULT, HINT_NUMBER, nanValue, toNumber, FEATURE_DATE } from "../runtime.zs";
 
 const MS_PER_DAY: f64 = 86400000.0;
 const MS_PER_HOUR: f64 = 3600000.0;
@@ -1026,6 +1026,8 @@ function defineOp(inout runtime: Runtime, target: u32, in name: String, fn: Host
 }
 
 export function installDate(inout runtime: Runtime): void {
+  if ((runtime.features & FEATURE_DATE) != 0) return;
+  runtime.features = runtime.features | FEATURE_DATE;
   const objectProto = runtime.objectProto;
   const proto = runtime.heap.allocateObject(objectProto);
   const dateText: String = "Date";

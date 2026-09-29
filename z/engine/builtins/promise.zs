@@ -4,7 +4,7 @@
 // functions; this module is the JavaScript-facing surface over it.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isTrue } from "../value.zs";
-import { Runtime, ERROR_KIND_AGGREGATE, HOST_CAPABILITY_EXECUTOR, HOST_RETURN_BOUND, HOST_THROW_BOUND, HOST_FINALLY_FULFILLED, HOST_FINALLY_REJECTED, HOST_ELEMENT_FULFILLED, HOST_ELEMENT_REJECTED } from "../runtime.zs";
+import { Runtime, ERROR_KIND_AGGREGATE, HOST_CAPABILITY_EXECUTOR, HOST_RETURN_BOUND, HOST_THROW_BOUND, HOST_FINALLY_FULFILLED, HOST_FINALLY_REJECTED, HOST_ELEMENT_FULFILLED, HOST_ELEMENT_REJECTED, FEATURE_PROMISE } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, bytesOf } from "../heap.zs";
 import { defineSpecies } from "./collections.zs";
 
@@ -487,6 +487,8 @@ function promiseRace(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
 }
 
 export function installPromise(inout runtime: Runtime): void {
+  if ((runtime.features & FEATURE_PROMISE) != 0) return;
+  runtime.features = runtime.features | FEATURE_PROMISE;
   runtime.registerSharedHost(HOST_CAPABILITY_EXECUTOR, capabilityExecutor);
   runtime.registerSharedHost(HOST_RETURN_BOUND, returnBound);
   runtime.registerSharedHost(HOST_THROW_BOUND, throwBound);

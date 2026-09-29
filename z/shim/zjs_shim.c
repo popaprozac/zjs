@@ -65,6 +65,20 @@ ZjsContext *zjs_new_context(void) {
   return (ZjsContext *)(uintptr_t)zjs_z_new_context();
 }
 
+ZjsContext *zjs_new_core_context(void) {
+  if (!shim_ensure_runtime()) return NULL;
+  return (ZjsContext *)(uintptr_t)zjs_z_new_core_context();
+}
+
+/* Each installer is its own function, so an embedder links only those it
+   calls. */
+void zjs_install_json(ZjsContext *ctx) { if (ctx != NULL) zjs_z_install_json((uintptr_t)ctx); }
+void zjs_install_regexp(ZjsContext *ctx) { if (ctx != NULL) zjs_z_install_regexp((uintptr_t)ctx); }
+void zjs_install_date(ZjsContext *ctx) { if (ctx != NULL) zjs_z_install_date((uintptr_t)ctx); }
+void zjs_install_collections(ZjsContext *ctx) { if (ctx != NULL) zjs_z_install_collections((uintptr_t)ctx); }
+void zjs_install_promise(ZjsContext *ctx) { if (ctx != NULL) zjs_z_install_promise((uintptr_t)ctx); }
+void zjs_install_reflect(ZjsContext *ctx) { if (ctx != NULL) zjs_z_install_reflect((uintptr_t)ctx); }
+
 void zjs_free_context(ZjsContext *ctx) {
   if (ctx == NULL) return;
   zjs_z_free_context((uintptr_t)ctx);

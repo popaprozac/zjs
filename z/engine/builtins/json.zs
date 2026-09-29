@@ -3,7 +3,7 @@ import { isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { thread } from "std/thread";
 import { TextBuilder, textBuilder, putByte, putUnit, putUnits, putString, textLength, truncateTo, finishText } from "./builder.zs";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32, isDeleted } from "../value.zs";
-import { Runtime, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber } from "../runtime.zs";
+import { Runtime, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber, FEATURE_JSON } from "../runtime.zs";
 import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN } from "../heap.zs";
 
 // --- parse ---
@@ -1028,6 +1028,8 @@ function jsonStringify(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
 }
 
 export function installJson(inout runtime: Runtime): void {
+  if ((runtime.features & FEATURE_JSON) != 0) return;
+  runtime.features = runtime.features | FEATURE_JSON;
   const objectProto = runtime.objectProto;
   const json = runtime.heap.allocateObject(objectProto);
   runtime.setGlobal("JSON", cellValue(json));

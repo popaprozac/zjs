@@ -310,6 +310,13 @@ export struct RegexBackend {
   }
 }
 
+// A backend with no native context, for a runtime without RegExp: the
+// engine's core links none of the matcher (installRegExp makes the real
+// one).
+export function emptyRegexBackend(): RegexBackend {
+  return RegexBackend({ context: 0, entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>(), lastFailure: 0, loadedTag: 0, matchedEntry: -1 });
+}
+
 export function createRegexBackend(): RegexBackend {
   return RegexBackend({ context: native.zjs_re_context_new(), entries: Array<RegexEntry>(), clock: 0, generations: 0.0, lastError: Array<u8>(), lastFailure: 0, loadedTag: 0, matchedEntry: -1 });
 }

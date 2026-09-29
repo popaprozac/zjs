@@ -37,6 +37,11 @@ clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" -I "$HERE/tests/life
   "$OUT/zjs_shim.o" "$OUT/native/libregexp.o" "$OUT/native/libunicode.o" "$OUT/native/cutils.o" "$OUT/native/zjs_regexp.o"
 "$OUT/lifecycle_test"
 
+echo "[3c/6] core context and installers test"
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" \
+  -o "$OUT/core_context_test" "$HERE/tests/core_context_test.c" "$OUT/libzjs.a"
+"$OUT/core_context_test"
+
 echo "[4/6] test262 runner (unmodified)"
 clang -std=c11 -O2 -I "$ROOT/include" \
   -o "$OUT/test262_runner" "$ROOT/tests/test262_runner.c" "$OUT/libzjs.a"

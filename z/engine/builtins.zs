@@ -23,7 +23,11 @@ import { installPromise } from "./builtins/promise.zs";
 import { installDate } from "./builtins/date.zs";
 import { installRegExp } from "./builtins/regexp.zs";
 
-export function createEngine(): Runtime {
+// The core: the language and the builtins it cannot do without. An
+// embedder adds the optional ones it wants (installJson, installRegExp,
+// installDate, installCollections, installPromise, installReflect);
+// whatever it never installs is never linked.
+export function createCoreEngine(): Runtime {
   let runtime = createRuntime();
   installErrors(inout runtime);
   installFunction(inout runtime);
@@ -32,11 +36,17 @@ export function createEngine(): Runtime {
   installPrimitives(inout runtime);
   installMath(inout runtime);
   installObject(inout runtime);
-  installReflect(inout runtime);
   installSymbol(inout runtime);
-  installJson(inout runtime);
   installIteration(inout runtime);
   installGenerator(inout runtime);
+  return runtime;
+}
+
+// Every builtin.
+export function createEngine(): Runtime {
+  let runtime = createCoreEngine();
+  installReflect(inout runtime);
+  installJson(inout runtime);
   installCollections(inout runtime);
   installPromise(inout runtime);
   installDate(inout runtime);

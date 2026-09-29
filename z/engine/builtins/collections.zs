@@ -11,7 +11,7 @@
 // storage compacted as keys die.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, deletedValue, asInt32, isNumber } from "../value.zs";
-import { Runtime, toNumber, truncateDouble } from "../runtime.zs";
+import { Runtime, toNumber, truncateDouble, FEATURE_COLLECTIONS } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT } from "../heap.zs";
 
 const KIND_MAP: i32 = 0;
@@ -981,6 +981,8 @@ function defineTag(inout runtime: Runtime, target: u32, in tag: String): void {
 }
 
 export function installCollections(inout runtime: Runtime): void {
+  if ((runtime.features & FEATURE_COLLECTIONS) != 0) return;
+  runtime.features = runtime.features | FEATURE_COLLECTIONS;
   const objectProto = runtime.objectProto;
   const iteratorProto = runtime.iteratorProto;
   const atomConstructor = runtime.atomConstructor;

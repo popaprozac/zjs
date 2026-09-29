@@ -56,6 +56,23 @@ void ctx_register_stdlib_modules(ZjsContext* ctx);
 /* node:net host-fn globals (`__zjs_net_*`) the JS bootstrap uses. */
 void zjs_install_node_net_globals(ZjsContext* ctx);
 
+/* Core constructor — the language and the builtins it cannot do without
+ * (Object, Function, Array, String, Number, Boolean, Symbol, Math, the
+ * error constructors, iterators and generators, the global functions).
+ * Everything below is left out until installed, and an embedder that
+ * never calls an installer does not link its code. A regular-expression
+ * literal throws a TypeError until zjs_install_regexp; async functions run
+ * but their promises have no Promise methods until zjs_install_promise.
+ * zjs_new_context() is the core with every installer run. Installing a
+ * feature twice does nothing the second time. */
+ZjsContext* zjs_new_core_context(void);
+void zjs_install_json(ZjsContext* ctx);         /* JSON */
+void zjs_install_regexp(ZjsContext* ctx);       /* RegExp, and String's match / matchAll / search */
+void zjs_install_date(ZjsContext* ctx);         /* Date */
+void zjs_install_collections(ZjsContext* ctx);  /* Map, Set, WeakMap, WeakSet */
+void zjs_install_promise(ZjsContext* ctx);      /* Promise */
+void zjs_install_reflect(ZjsContext* ctx);      /* Reflect */
+
 void        zjs_free_context(ZjsContext* ctx);
 
 /* -----------------------------------------------------------------------

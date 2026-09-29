@@ -998,19 +998,19 @@ function stringMatchLike(inout runtime: Runtime, thisValue: Value, argsBase: u32
   return result;
 }
 
-function stringMatch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+export function stringMatch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "match";
   const symbolMatch = runtime.symbolMatch;
   return stringMatchLike(inout runtime, thisValue, argsBase, argc, symbolMatch, in method, undefinedValue());
 }
 
-function stringSearch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+export function stringSearch(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "search";
   const symbolSearch = runtime.symbolSearch;
   return stringMatchLike(inout runtime, thisValue, argsBase, argc, symbolSearch, in method, undefinedValue());
 }
 
-function stringMatchAll(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+export function stringMatchAll(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "matchAll";
   const regexp = runtime.argument(argsBase, argc, 0);
   if (!requireCoercible(inout runtime, thisValue, in method)) return undefinedValue();
@@ -1965,12 +1965,8 @@ export function installPrimitives(inout runtime: Runtime): void {
   runtime.defineMethod(stringProto, in padEndText, stringPadEnd, 1);
   const splitText: String = "split";
   runtime.defineMethod(stringProto, in splitText, stringSplit, 2);
-  const matchText: String = "match";
-  runtime.defineMethod(stringProto, in matchText, stringMatch, 1);
-  const matchAllText: String = "matchAll";
-  runtime.defineMethod(stringProto, in matchAllText, stringMatchAll, 1);
-  const searchText: String = "search";
-  runtime.defineMethod(stringProto, in searchText, stringSearch, 1);
+
+
   const replaceText: String = "replace";
   runtime.defineMethod(stringProto, in replaceText, stringReplace, 2);
   const localeCompareText: String = "localeCompare";

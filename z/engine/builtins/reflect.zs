@@ -1,7 +1,7 @@
 // Reflect: the object internal methods as functions.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull } from "../value.zs";
-import { Runtime, emptyDescriptorInput } from "../runtime.zs";
+import { Runtime, emptyDescriptorInput, FEATURE_REFLECT } from "../runtime.zs";
 import { PROP_METHOD, PROP_ENUMERABLE, PROP_WRITABLE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
 
 function requireTarget(inout runtime: Runtime, value: Value, in method: String): boolean {
@@ -157,6 +157,8 @@ function reflectPreventExtensions(inout runtime: Runtime, thisValue: Value, args
 }
 
 export function installReflect(inout runtime: Runtime): void {
+  if ((runtime.features & FEATURE_REFLECT) != 0) return;
+  runtime.features = runtime.features | FEATURE_REFLECT;
   const objectProto = runtime.objectProto;
   const reflect = runtime.heap.allocateObject(objectProto);
   runtime.setGlobal("Reflect", cellValue(reflect));

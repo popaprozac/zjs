@@ -23,7 +23,13 @@
 import { Mutex, Once, OnceLifetime } from "std/sync";
 import { thread } from "std/thread";
 import { Runtime, RunResult } from "./runtime.zs";
-import { createEngine } from "./builtins.zs";
+import { createEngine, createCoreEngine } from "./builtins.zs";
+import { installJson } from "./builtins/json.zs";
+import { installRegExp } from "./builtins/regexp.zs";
+import { installDate } from "./builtins/date.zs";
+import { installCollections } from "./builtins/collections.zs";
+import { installPromise } from "./builtins/promise.zs";
+import { installReflect } from "./builtins/reflect.zs";
 import { parseProgram } from "./parser.zs";
 import { compileProgram } from "./compiler.zs";
 import { Value, undefinedValue } from "./value.zs";
@@ -114,11 +120,60 @@ export function retain(handle: usize): Option<Context> {
 }
 
 export c function zjs_z_new_context(): usize {
+  return registerContext(createEngine());
+}
+
+// A context with only the core builtins; the embedder installs the
+// optional ones it wants (below), and the linker drops the rest.
+export c function zjs_z_new_core_context(): usize {
+  return registerContext(createCoreEngine());
+}
+
+export c function zjs_z_install_json(handle: usize): void {
+  installInto(handle, installJson);
+}
+
+export c function zjs_z_install_regexp(handle: usize): void {
+  installInto(handle, installRegExp);
+}
+
+export c function zjs_z_install_date(handle: usize): void {
+  installInto(handle, installDate);
+}
+
+export c function zjs_z_install_collections(handle: usize): void {
+  installInto(handle, installCollections);
+}
+
+export c function zjs_z_install_promise(handle: usize): void {
+  installInto(handle, installPromise);
+}
+
+export c function zjs_z_install_reflect(handle: usize): void {
+  installInto(handle, installReflect);
+}
+
+// Run an installer on a live context, under its lock; installing a
+// feature twice does nothing the second time.
+function installInto(handle: usize, install: (inout runtime: Runtime) => void): void {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        install(inout state.runtime);
+      });
+    }
+    none => {
+    }
+  }
+}
+
+function registerContext(runtime: Runtime): usize {
   const current = engine.get();
   // The runtime is built outside the registry lock; only the slot
   // assignment holds it.
   const context = new Context({
-    state: Mutex(ContextState({ hadError: false, evalCount: 0, runtime: createEngine(), lastResult: undefinedValue() })),
+    state: Mutex(ContextState({ hadError: false, evalCount: 0, runtime: move runtime, lastResult: undefinedValue() })),
   });
   return current.registry.withLock((inout registry): usize => {
     registry.live = registry.live + 1;
