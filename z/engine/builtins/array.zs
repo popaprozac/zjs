@@ -1271,8 +1271,13 @@ function sortCompare(inout runtime: Runtime, comparator: Value, leaf: i64, x: Va
     if (leaf >= 0) verdict = runtime.callLeaf(usize(leaf), 2, x, y, undefinedValue(), undefinedValue());
     if (isDeleted(verdict)) verdict = runtime.callValue2(comparator, undefinedValue(), x, y);
     if (runtime.pendingThrow) return 0.0;
-    const number = runtime.toNumberValue(verdict);
-    if (runtime.pendingThrow) return 0.0;
+    let number = 0.0;
+    if (isNumber(verdict)) {
+      number = toNumber(verdict);
+    } else {
+      number = runtime.toNumberValue(verdict);
+      if (runtime.pendingThrow) return 0.0;
+    }
     if (number != number) return 0.0;
     return number;
   }

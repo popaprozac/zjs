@@ -33,3 +33,6 @@ var picked = made.filter(function (x) { return x !== 0; });
 console.log(picked.length, picked[2].v, made.map(function (x) { return x; })[2].v);
 var sparse = [1, , 3, , 5];
 console.log(sparse.map(function (x) { return x * 2; }).length, 1 in sparse.map(function (x) { return x * 2; }), sparse.filter(function (x) { return x > 1; }).join());
+
+// A comparator's result: an int32, a fraction, and a string converted.
+console.log([30, 10, 20].sort(function (a, b) { return (a - b) / 100; }).join(), [3, 1, 2].sort(function (a, b) { return String(a - b); }).join());
