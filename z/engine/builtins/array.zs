@@ -6,10 +6,10 @@
 // same as an array. A real array's elements still read straight fromIndex
 // the heap inside the property protocol. Values held in Z locals across
 // a call into JavaScript are rooted, since a collection may run there.
-import { Value, undefinedValue, nullValue, deletedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isInt32, isNumber } from "../value.zs";
+import { Value, undefinedValue, nullValue, deletedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, asInt32, isInt32, isNumber, isBoolean } from "../value.zs";
 import { thread } from "std/thread";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_DEFAULT, PROP_ACCESSOR, bytesOf } from "../heap.zs";
-import { Runtime, HostFunction, ERROR_KIND_RANGE, DescriptorInput, emptyDescriptorInput, toNumber, isIntegralDouble, truncateDouble } from "../runtime.zs";
+import { Runtime, HostFunction, ERROR_KIND_RANGE, DescriptorInput, emptyDescriptorInput, toNumber, isIntegralDouble, truncateDouble, int32DigitsInto } from "../runtime.zs";
 import { textBuilder, putByte, putString, finishText } from "./builder.zs";
 
 const MAX_SAFE_LENGTH: f64 = 9007199254740991.0;
@@ -1109,6 +1109,14 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
     separator = asCell(text);
     runtime.pushTempRoot(text);
   }
+  if (!locale && isArrayValue(in runtime, object) && (separator == 0 || !runtime.heap.isWideString(separator))) {
+    const plain = joinPlain(inout runtime, asCell(object), length, separator);
+    if (!isDeleted(plain)) {
+      if (separator != 0) runtime.popTempRoot();
+      runtime.popTempRoot();
+      return plain;
+    }
+  }
   let joined = textBuilder(64);
   let k = 0.0;
   while (k < length) {
@@ -1119,8 +1127,13 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
         putString(in runtime, inout joined, separator);
       }
     }
-    const element = getIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) break;
+    // An array's element read in place; a hole, an accessor, or an
+    // array-like goes through Get.
+    let element = ownElement(in runtime, object, k);
+    if (isDeleted(element)) {
+      element = getIndex(inout runtime, object, k);
+      if (runtime.pendingThrow) break;
+    }
     if (!isUndefined(element) && !isNull(element)) {
       let text = undefinedValue();
       if (locale) {
@@ -1152,6 +1165,47 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
   return finishText(inout runtime, inout joined);
+}
+
+// An array's join when every element is a narrow string, a number, a
+// boolean, undefined, or null (none of which runs anything to become a
+// string) and the separator is narrow: the bytes gathered in a local
+// array, one string made from them. The deleted marker, with nothing
+// having run, when an element is anything else (then the general path).
+function joinPlain(inout runtime: Runtime, array: u32, length: f64, separator: u32): Value {
+  let bytes = Array<u8>.withCapacity(64);
+  let k: u32 = 0;
+  const count = u32(length);
+  while (k < count) {
+    if (k > 0) {
+      if (separator == 0) {
+        bytes.push(44);
+      } else {
+        bytes = runtime.heap.appendNarrowTo(separator, move bytes);
+      }
+    }
+    const element = runtime.heap.dataElement(array, k);
+    if (isDeleted(element)) return deletedValue();
+    if (isInt32(element)) {
+      let digits: u8[11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      const n = int32DigitsInto(inout digits, asInt32(element));
+      let d: usize = 0;
+      while (d < n) {
+        bytes.push(digits[d]);
+        d = d + 1;
+      }
+    } else if (runtime.isStringValue(element)) {
+      if (runtime.heap.isWideString(asCell(element))) return deletedValue();
+      bytes = runtime.heap.appendNarrowTo(asCell(element), move bytes);
+    } else if (isNumber(element) || isBoolean(element)) {
+      const text = runtime.toStringValue(element);
+      bytes = runtime.heap.appendNarrowTo(asCell(text), move bytes);
+    } else if (!isUndefined(element) && !isNull(element)) {
+      return deletedValue();
+    }
+    k = k + 1;
+  }
+  return runtime.newStringLatin1(move bytes);
 }
 
 function arrayJoin(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

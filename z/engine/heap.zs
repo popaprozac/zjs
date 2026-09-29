@@ -2512,6 +2512,17 @@ export struct Heap {
   }
 
   // A string's storage byte, wherever it lives.
+  // A narrow string's bytes appended to `bytes`, read where they are.
+  function appendNarrowTo(handle: u32, bytes: Array<u8>): Array<u8> {
+    const payload = this.headers[usize(handle)].payload;
+    const length = usize(this.headers[usize(handle)].slotStart);
+    if ((payload & ARENA_BIT) != 0) {
+      const origin = usize(payload & ~ARENA_BIT);
+      return appendRange(this.smallBytes, origin, origin + length, move bytes);
+    }
+    return appendRange(this.strings[usize(payload)], 0, length, move bytes);
+  }
+
   function storageByte(handle: u32, index: usize): u8 {
     const payload = this.headers[usize(handle)].payload;
     if ((payload & ARENA_BIT) != 0) return this.smallBytes[usize(payload & ~ARENA_BIT) + index];
@@ -3477,6 +3488,19 @@ function findAllIn(hay: Slice<u8>, hayStart: usize, hayLength: usize, needle: Sl
       start = start + 1;
     }
   }
+}
+
+// `storage`[first, last) appended to `bytes`: a local array, which keeps
+// its length and data in registers where one behind a pointer reloads
+// them after every byte.
+export function appendRange(storage: Slice<u8>, first: usize, last: usize, bytes: Array<u8>): Array<u8> {
+  let appended = move bytes;
+  let index = first;
+  while (index < last) {
+    appended.push(storage[index]);
+    index = index + 1;
+  }
+  return appended;
 }
 
 function sameStorage(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, length: usize): boolean {

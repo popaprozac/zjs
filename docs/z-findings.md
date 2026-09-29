@@ -1717,6 +1717,20 @@ fill, would cover it.
 Minimal reproduction: probe `array-append-slice` (`COMPILER-REJECTED`:
 `Array has no method "append"`).
 
+And through a pointer (2026-09-29, string builder). A loop pushing bytes
+into an array reached through an `inout` parameter or field reloads the
+array's length, capacity, and data after every push: the byte stored may
+alias them. Moving the array into a local first (`replace` from
+`std/memory`, pushing, moving it back) keeps them in registers and made
+the engine's range copy faster (regexp -1.7% over 8 placements), at the
+price of a `free` of the empty array swapped in on every call. An
+element of an array of arrays cannot be moved out that way: `replace`
+rejects `inout this.strings[buffer]` ("requires inout <mutable storage>"),
+so extending a string buffer in place, what `s += piece` does, stays a
+loop that reloads the outer and inner array per byte (20% of the time in
+a string-building loop's profile). A block append would make the
+reloads, the swap, and the workaround unnecessary.
+
 ## G51 — Build-time selection: opt-in engine features and platform code
 
 **Status:** `proposed` · **Size:** large (the planned `std/target` and

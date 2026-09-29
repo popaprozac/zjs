@@ -5,6 +5,7 @@
 import { replace } from "std/memory";
 import { Value } from "../value.zs";
 import { Runtime } from "../runtime.zs";
+import { appendRange } from "../heap.zs";
 
 export struct TextBuilder {
   bytes: Array<u8>;
@@ -76,19 +77,15 @@ export function putStringRange(in runtime: Runtime, inout text: TextBuilder, han
     }
     return;
   }
+  // The storage passed as a slice and the bytes moved into a local.
+  let bytes = replace(inout text.bytes, Array<u8>());
   if (runtime.heap.isArenaString(handle)) {
     const origin = runtime.heap.stringStorageStart(handle);
-    while (index < end) {
-      text.bytes.push(runtime.heap.smallBytes[origin + index]);
-      index = index + 1;
-    }
-    return;
+    bytes = appendRange(runtime.heap.smallBytes, origin + start, origin + end, move bytes);
+  } else {
+    bytes = appendRange(runtime.heap.strings[usize(runtime.heap.stringBuffer(handle))], start, end, move bytes);
   }
-  const buffer = usize(runtime.heap.stringBuffer(handle));
-  while (index < end) {
-    text.bytes.push(runtime.heap.strings[buffer][index]);
-    index = index + 1;
-  }
+  const emptied = replace(inout text.bytes, move bytes);
 }
 
 export function textLength(in text: TextBuilder): usize {

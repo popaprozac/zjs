@@ -310,6 +310,16 @@ pieces in order and appends them at once -- `s += "item" + i + ","` makes
 one string where it made three; template literals join the same way, each
 substitution made a string (ToString, not `+`'s default hint, which they
 had used) as it is evaluated. strings -17.2% (its building loop -33%).
+Split and join (2026-09-29): split searches a narrow receiver for every
+separator in one pass and fills an array made at the pieces' count;
+join reads an array's elements in place, and when every element is a
+narrow string, a number, a boolean, `undefined`, or `null` (none runs
+anything to become a string) gathers their bytes in one local buffer and
+makes one string; anything else takes the general path from the start.
+The builder's range copy moves its bytes to a local first, since an
+array behind an `inout` reloads its length and data after every byte
+pushed. Over 8 placements: split -19.8%, join -22.5%, strings -10.5%,
+regexp -1.7%, the rest within 0.4%.
 Sort (2026-09-28): the merge sort merges each level from one buffer into
 the other, copying nothing back, and joins halves of four or more that
 are already in order after one comparison: sorted input takes 24k
