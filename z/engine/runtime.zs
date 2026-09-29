@@ -4992,9 +4992,7 @@ export struct Runtime {
     // The pieces' bytes gathered in the runtime's scratch buffer, a local
     // while it fills.
     let tail = replace(inout this.concatScratch, Array<u8>());
-    while (tail.length > 0) {
-      const dropped = tail.pop();
-    }
+    tail.clear();
     let fits = true;
     k = 0;
     while (fits && k < count) {
@@ -5013,11 +5011,7 @@ export struct Runtime {
         if (this.heap.isWideString(handle) || tail.length + length > CONCAT_GATHER) {
           fits = false;
         } else {
-          let d: usize = 0;
-          while (d < length) {
-            tail.push(this.heap.storageByte(handle, d));
-            d = d + 1;
-          }
+          tail = this.heap.appendNarrowTo(handle, move tail);
         }
       }
       k = k + 1;
