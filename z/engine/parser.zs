@@ -1235,10 +1235,6 @@ export struct Parser {
       this.advance();
       return this.ast.newNode(NodeKind.nullExpr, t.start, t.start + t.length);
     }
-    if (k == TokenKind.kwUndefined) {
-      this.advance();
-      return this.ast.newNode(NodeKind.undefinedExpr, t.start, t.start + t.length);
-    }
     if (k == TokenKind.kwThis) {
       this.advance();
       return this.ast.newNode(NodeKind.thisExpr, t.start, t.start + t.length);
@@ -1326,7 +1322,7 @@ export struct Parser {
     if (kind == TokenKind.kwBreak || kind == TokenKind.kwContinue) return true;
     if (kind == TokenKind.kwClass || kind == TokenKind.kwExtends || kind == TokenKind.kwSuper) return true;
     if (kind == TokenKind.kwNew || kind == TokenKind.kwThis) return true;
-    if (kind == TokenKind.kwTrue || kind == TokenKind.kwFalse || kind == TokenKind.kwNull || kind == TokenKind.kwUndefined) return true;
+    if (kind == TokenKind.kwTrue || kind == TokenKind.kwFalse || kind == TokenKind.kwNull) return true;
     if (kind == TokenKind.kwTypeof || kind == TokenKind.kwDelete || kind == TokenKind.kwVoid) return true;
     if (kind == TokenKind.kwIn || kind == TokenKind.kwOf || kind == TokenKind.kwInstanceof) return true;
     if (kind == TokenKind.kwThrow || kind == TokenKind.kwTry || kind == TokenKind.kwCatch || kind == TokenKind.kwFinally) return true;

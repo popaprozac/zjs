@@ -167,7 +167,6 @@ function lookupKeyword(in source: Array<u8>, start: usize, length: usize): Token
   if (matchesKeyword(in source, start, length, "true")) return TokenKind.kwTrue;
   if (matchesKeyword(in source, start, length, "false")) return TokenKind.kwFalse;
   if (matchesKeyword(in source, start, length, "null")) return TokenKind.kwNull;
-  if (matchesKeyword(in source, start, length, "undefined")) return TokenKind.kwUndefined;
   if (matchesKeyword(in source, start, length, "typeof")) return TokenKind.kwTypeof;
   if (matchesKeyword(in source, start, length, "delete")) return TokenKind.kwDelete;
   if (matchesKeyword(in source, start, length, "void")) return TokenKind.kwVoid;

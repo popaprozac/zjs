@@ -7031,9 +7031,13 @@ export struct Runtime {
             continue;
           }
           storeGlobal => {
+            // Sloppy code's write to a read-only global (NaN, Infinity,
+            // undefined) leaves it as it was.
             const slot = usize(bcU16(inst));
-            this.globals[slot].value = this.reg(base, inst.a);
-            this.globals[slot].defined = true;
+            if (!this.globals[slot].defined || (this.globals[slot].attr & PROP_WRITABLE) != 0) {
+              this.globals[slot].value = this.reg(base, inst.a);
+              this.globals[slot].defined = true;
+            }
           }
           loadGlobal => {
             const slot = usize(bcU16(inst));

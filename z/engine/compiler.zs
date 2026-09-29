@@ -2757,6 +2757,9 @@ export struct Compiler {
           const named = this.nameConstOf(in parser, inout runtime, n.nameStart, n.nameLength);
           this.emit(instAU16(Op.throwIfHole, dst, named));
         }
+      } else if (n.nameLength == 9 && parser.sliceEquals(n.nameStart, 9, "undefined")) {
+        // The global `undefined` can be neither written nor deleted.
+        this.emit(instA(Op.loadUndefined, dst));
       } else {
         const slot = runtime.globalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
         this.emit(instAU16(Op.loadGlobal, dst, slot));
