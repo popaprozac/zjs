@@ -3537,6 +3537,21 @@ export struct Compiler {
       let pieces = Array<u32>();
       if (this.concatChain(in parser, node, inout pieces)) return this.emitConcat(in parser, inout runtime, in pieces, NO_NODE, hintReg);
     }
+    if (k == NodeKind.binary && n.op == TokenKind.pipe && smallIntegerLiteral(in parser, n.right) == 0) {
+      // `(a + b) | 0`: the sum truncated in the same instruction.
+      let inner = n.left;
+      while (inner != NO_NODE && parser.ast.node(inner).kind == NodeKind.paren) {
+        inner = parser.ast.node(inner).left;
+      }
+      const sum = parser.ast.node(inner);
+      if (sum.kind == NodeKind.binary && sum.op == TokenKind.plus && smallIntegerLiteral(in parser, sum.right) == NO_IMMEDIATE) {
+        const left = this.compileOperand(in parser, inout runtime, sum.left, sum.right);
+        const right = this.compileOperand(in parser, inout runtime, sum.right, NO_NODE);
+        const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
+        this.emit(instABC(Op.addToInt32, dst, left, right));
+        return dst;
+      }
+    }
     if (k == NodeKind.binary) {
       const immediateOp = immediateForm(binaryOp(n.op));
       const immediate = smallIntegerLiteral(in parser, n.right);

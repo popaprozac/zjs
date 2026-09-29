@@ -199,5 +199,6 @@ export function opName(op: Op): String {
     incJmpIfLtImm => "incJmpIfLtImm";
     incJmpIfLt => "incJmpIfLt";
     incJmpIfLtLength => "incJmpIfLtLength";
+    addToInt32 => "addToInt32";
   };
 }

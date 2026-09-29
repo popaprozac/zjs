@@ -311,7 +311,11 @@ candidates. A `for` loop whose update is `i++` and whose test is
 `length` -- tests once ahead of the loop and steps and tests at the
 bottom in one instruction; an array's or a string's length is read in
 place. polymorphic -20.2%, properties -11.1%, arrays -5.6%, allocation
--2.9%, helpers and closures -1.9%, the rest within a point.
+-2.9%, helpers and closures -1.9%, the rest within a point. Then
+`(a + b) | 0` is one instruction (the kernels all accumulate this way,
+so they gain more than most code will): polymorphic -14.5%, properties
+-7.6%, helpers -6.1%, allocation -3.6%, closures -2.5%, arrays -2.4%,
+strings -2.0%, maps -1.5%, the rest level.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches

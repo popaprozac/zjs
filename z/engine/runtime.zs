@@ -7833,6 +7833,20 @@ export struct Runtime {
             const operand15 = int32Value(toInt32(numberB) ^ toInt32(numberC));
             this.setReg(base, inst.a, operand15);
           }
+          addToInt32 => {
+            const rawLeft = this.reg(base, inst.b);
+            const rawRight = this.reg(base, inst.c);
+            if (isInt32(rawLeft) && isInt32(rawRight)) {
+              this.setReg(base, inst.a, int32Value(asInt32(rawLeft).wrappingAdd(asInt32(rawRight))));
+              continue;
+            }
+            // As `+`, then `| 0` on the sum.
+            const sum = this.addValues(rawLeft, rawRight);
+            if (!this.pendingThrow) {
+              const number = this.numericOperand(sum);
+              if (!this.pendingThrow) this.setReg(base, inst.a, int32Value(toInt32(number)));
+            }
+          }
           bitOrImm => {
             const rawB = this.reg(base, inst.b);
             if (isInt32(rawB)) {

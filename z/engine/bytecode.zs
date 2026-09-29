@@ -259,6 +259,9 @@ export enum Op {
   incJmpIfLtImm,
   incJmpIfLt,
   incJmpIfLtLength,
+  // a = (b + c) | 0: an addition truncated to a 32-bit integer, as `+`
+  // then `| 0`.
+  addToInt32,
 }
 
 export struct Inst {
@@ -513,6 +516,7 @@ export function opCode(op: Op): i32 {
     incJmpIfLtImm => 192;
     incJmpIfLt => 193;
     incJmpIfLtLength => 194;
+    addToInt32 => 195;
   };
 }
 
