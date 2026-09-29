@@ -3972,6 +3972,29 @@ export struct Runtime {
     return outcome;
   }
 
+  // The function index of `callee` when it is a leaf function (see
+  // runLeaf), or -1: what a builtin checks once before calling it back
+  // for every element.
+  function leafCodeOf(callee: Value): i64 {
+    if (this.isCompiledCallable(callee) && (this.heap.flagsOf(asCell(callee)) & FLAG_LEAF) != 0) return i64(this.heap.functionIndex(asCell(callee)));
+    return -1;
+  }
+
+  // Leaf function `code` called back by a builtin on `argc` (up to four)
+  // of these values, written at the stack top: where runLeaf puts the
+  // leaf's registers, so they are its parameters as they stand. Its
+  // result, or the deleted marker, and then the caller calls in full
+  // with its own values (the leaf may have overwritten these).
+  function callLeaf(inout this, code: usize, argc: u32, first: Value, second: Value, third: Value, fourth: Value): Value {
+    const base = this.regTop;
+    while (this.regStack.length < usize(base + 4)) { this.regStack.push(undefinedValue()); }
+    this.regStack[usize(base)] = first;
+    this.regStack[usize(base + 1)] = second;
+    this.regStack[usize(base + 2)] = third;
+    this.regStack[usize(base + 3)] = fourth;
+    return this.runLeaf(code, base, argc);
+  }
+
   // Run leaf function `code` (FunctionCode.leaf) on the `argc` arguments
   // at `argsBase`, in registers above the stack top and with no frame:
   // its result, or the deleted marker when an operand leaves the fast
@@ -3985,14 +4008,19 @@ export struct Runtime {
     const base = this.regTop;
     const top = usize(base) + usize(regCount);
     while (this.regStack.length < top) { this.regStack.push(undefinedValue()); }
-    let i: u32 = 0;
-    while (i < regCount) {
-      if (i < paramCount && i < argc) {
-        const passed = this.regStack[usize(argsBase + i)];
-        this.regStack[usize(base + i)] = passed;
-      } else {
-        this.regStack[usize(base + i)] = undefinedValue();
+    // The parameters passed, unless they are already there (callLeaf),
+    // then undefined for the rest.
+    let i: u32 = paramCount < argc ? paramCount : argc;
+    if (argsBase != base) {
+      let copied: u32 = 0;
+      while (copied < i) {
+        const passed = this.regStack[usize(argsBase + copied)];
+        this.regStack[usize(base + copied)] = passed;
+        copied = copied + 1;
       }
+    }
+    while (i < regCount) {
+      this.regStack[usize(base + i)] = undefinedValue();
       i = i + 1;
     }
     const fi = u32(code);

@@ -615,6 +615,7 @@ function findWalk(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
   const callback = runtime.argument(argsBase, argc, 0);
   if (!requireCallback(inout runtime, callback)) { runtime.popTempRoot(); return undefinedValue(); }
   const receiver = runtime.argument(argsBase, argc, 1);
+  const leaf = runtime.leafCodeOf(callback);
   let k = fromEnd ? length - 1.0 : 0.0;
   let outcome = want == FIND_INDEX ? int32Value(-1) : undefinedValue();
   let done = false;
@@ -625,7 +626,9 @@ function findWalk(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc:
       if (runtime.pendingThrow) break;
     }
     runtime.pushTempRoot(element);
-    const verdict = callWith3(inout runtime, callback, receiver, element, integerValue(k), object);
+    let verdict = deletedValue();
+    if (leaf >= 0) verdict = runtime.callLeaf(usize(leaf), 3, element, integerValue(k), object, undefinedValue());
+    if (isDeleted(verdict)) verdict = callWith3(inout runtime, callback, receiver, element, integerValue(k), object);
     runtime.popTempRoot();
     if (runtime.pendingThrow) break;
     if (runtime.toBooleanValue(verdict)) {
@@ -669,6 +672,7 @@ function walkArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   const callback = runtime.argument(argsBase, argc, 0);
   if (!requireCallback(inout runtime, callback)) { runtime.popTempRoot(); return undefinedValue(); }
   const receiver = runtime.argument(argsBase, argc, 1);
+  const leaf = runtime.leafCodeOf(callback);
   let result = undefinedValue();
   if (mode == WALK_MAP) {
     result = arraySpeciesCreate(inout runtime, object, length);
@@ -696,7 +700,9 @@ function walkArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
     }
     if (present) {
       runtime.pushTempRoot(element);
-      const produced = callWith3(inout runtime, callback, receiver, element, integerValue(k), object);
+      let produced = deletedValue();
+      if (leaf >= 0) produced = runtime.callLeaf(usize(leaf), 3, element, integerValue(k), object, undefinedValue());
+      if (isDeleted(produced)) produced = callWith3(inout runtime, callback, receiver, element, integerValue(k), object);
       if (runtime.pendingThrow) {
         runtime.popTempRoot();
         break;
@@ -754,6 +760,7 @@ function reduceWalk(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   if (length < 0.0) { runtime.popTempRoot(); return undefinedValue(); }
   const callback = runtime.argument(argsBase, argc, 0);
   if (!requireCallback(inout runtime, callback)) { runtime.popTempRoot(); return undefinedValue(); }
+  const leaf = runtime.leafCodeOf(callback);
   let k = fromEnd ? length - 1.0 : 0.0;
   let accumulator = undefinedValue();
   let started = false;
@@ -792,7 +799,10 @@ function reduceWalk(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
       }
     }
     if (present) {
-      accumulator = runtime.callValue4(callback, undefinedValue(), accumulator, element, integerValue(k), object);
+      let next = deletedValue();
+      if (leaf >= 0) next = runtime.callLeaf(usize(leaf), 4, accumulator, element, integerValue(k), object);
+      if (isDeleted(next)) next = runtime.callValue4(callback, undefinedValue(), accumulator, element, integerValue(k), object);
+      accumulator = next;
       if (runtime.pendingThrow) break;
       runtime.popTempRoot();
       runtime.pushTempRoot(accumulator);
@@ -1244,12 +1254,14 @@ function arrayToString(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
 
 // SortCompare: undefined last, then the comparator, then byte order of
 // the string forms. NaN fromIndex a comparator counts as 0.
-function sortCompare(inout runtime: Runtime, comparator: Value, x: Value, y: Value): f64 {
+function sortCompare(inout runtime: Runtime, comparator: Value, leaf: i64, x: Value, y: Value): f64 {
   if (isUndefined(x) && isUndefined(y)) return 0.0;
   if (isUndefined(x)) return 1.0;
   if (isUndefined(y)) return -1.0;
   if (!isUndefined(comparator)) {
-    const verdict = runtime.callValue2(comparator, undefinedValue(), x, y);
+    let verdict = deletedValue();
+    if (leaf >= 0) verdict = runtime.callLeaf(usize(leaf), 2, x, y, undefinedValue(), undefinedValue());
+    if (isDeleted(verdict)) verdict = runtime.callValue2(comparator, undefinedValue(), x, y);
     if (runtime.pendingThrow) return 0.0;
     const number = runtime.toNumberValue(verdict);
     if (runtime.pendingThrow) return 0.0;
@@ -1279,17 +1291,17 @@ function sortCompare(inout runtime: Runtime, comparator: Value, x: Value, y: Val
 // into `target`, so no level copies back. Halves of four or more that are
 // already in order are joined after one comparison, so sorted runs cost
 // little. Stops early on a throw.
-function sortInto(inout runtime: Runtime, target: u32, source: u32, low: u32, high: u32, comparator: Value): void {
+function sortInto(inout runtime: Runtime, target: u32, source: u32, low: u32, high: u32, comparator: Value, leaf: i64): void {
   if (high - low < 2) return;
   const middle = low + (high - low) / 2;
-  sortInto(inout runtime, source, target, low, middle, comparator);
+  sortInto(inout runtime, source, target, low, middle, comparator, leaf);
   if (runtime.pendingThrow) return;
-  sortInto(inout runtime, source, target, middle, high, comparator);
+  sortInto(inout runtime, source, target, middle, high, comparator, leaf);
   if (runtime.pendingThrow) return;
   if (high - low >= 8) {
     const lastLeft = runtime.heap.slot(source, middle - 1);
     const firstRight = runtime.heap.slot(source, middle);
-    const order = sortCompare(inout runtime, comparator, firstRight, lastLeft);
+    const order = sortCompare(inout runtime, comparator, leaf, firstRight, lastLeft);
     if (runtime.pendingThrow) return;
     if (order >= 0.0) {
       // Right's first is not less than left's last: left then right.
@@ -1303,7 +1315,7 @@ function sortInto(inout runtime: Runtime, target: u32, source: u32, low: u32, hi
   while (left < middle && right < high) {
     const a = runtime.heap.slot(source, left);
     const b = runtime.heap.slot(source, right);
-    const order = sortCompare(inout runtime, comparator, b, a);
+    const order = sortCompare(inout runtime, comparator, leaf, b, a);
     if (runtime.pendingThrow) return;
     if (order < 0.0) {
       runtime.heap.setSlot(target, write, b);
@@ -1369,7 +1381,7 @@ function sortedElements(inout runtime: Runtime, object: Value, length: f64, comp
   const scratch = runtime.heap.allocateArray(count);
   runtime.pushTempRoot(cellValue(scratch));
   copySlots(inout runtime, items, scratch, 0, count);
-  sortInto(inout runtime, items, scratch, 0, count, comparator);
+  sortInto(inout runtime, items, scratch, 0, count, comparator, runtime.leafCodeOf(comparator));
   runtime.popTempRoot();
   runtime.popTempRoot();
   if (runtime.pendingThrow) return 0;

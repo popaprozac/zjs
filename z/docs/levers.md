@@ -168,6 +168,14 @@ Then a call to an
 ordinary function (not a generator, not async, not a class constructor)
 builds its frame inline, with no call on the way: calls -5.9%, closures
 -3.6%, map/filter/reduce -4.7%, arrays -1.0%, the rest level.
+Then (2026-09-29) a builtin checks once whether its callback is a leaf
+and writes each call's arguments straight into the leaf's registers,
+skipping the argument area and the per-call checks, and the runner
+copies arguments only when they are elsewhere: arrays -7.8%,
+map/filter/reduce -13.1%, sort -11.8%, the rest level. Left against V8
+without its JIT (millions of cycles, startup excluded): map/filter/reduce
+150 vs 118, sort 93 vs 76; against JavaScriptCore's interpreter an
+indexed sum 53 vs 39; filling by push is level with V8.
 Measured before the frame redesign (2026-09-29): a fib call costs about
 73 cycles here, 54 in QuickJS, 39 in Hermes; about 40 of ours is the call
 and return. Tried and dropped: a dense per-function record of what a call
