@@ -3268,6 +3268,19 @@ export struct Compiler {
         this.emit(instAB(Op.loadSuper, dst, key));
         return dst;
       }
+      // `a[i].name`: the element and the name in one instruction.
+      const inner = parser.ast.node(n.left);
+      if (inner.kind == NodeKind.computed && parser.ast.node(inner.left).kind != NodeKind.superExpr && !this.isPrivateName(in parser, n.nameStart, n.nameLength)) {
+        const atom = this.propertyNameAtom(in parser, inout runtime, n.nameStart, n.nameLength);
+        const slot = this.freeNameSlot(atom);
+        if (slot >= 0) {
+          const array = this.compileOperand(in parser, inout runtime, inner.left, inner.right);
+          const index = this.compileOperand(in parser, inout runtime, inner.right, NO_NODE);
+          const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
+          this.emit(instABCD(Op.loadElemProp, dst, array, index, u8(slot)));
+          return dst;
+        }
+      }
       const object = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
       if (this.isPrivateName(in parser, n.nameStart, n.nameLength)) {
         const key = this.privateKeyReg(in parser, n.nameStart, n.nameLength);

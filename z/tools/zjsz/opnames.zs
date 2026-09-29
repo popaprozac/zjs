@@ -200,5 +200,6 @@ export function opName(op: Op): String {
     incJmpIfLt => "incJmpIfLt";
     incJmpIfLtLength => "incJmpIfLtLength";
     addToInt32 => "addToInt32";
+    loadElemProp => "loadElemProp";
   };
 }

@@ -262,6 +262,9 @@ export enum Op {
   // a = (b + c) | 0: an addition truncated to a 32-bit integer, as `+`
   // then `| 0`.
   addToInt32,
+  // a = b[c].name, d the name slot: loadElem then loadProp, the element
+  // not kept.
+  loadElemProp,
 }
 
 export struct Inst {
@@ -517,6 +520,7 @@ export function opCode(op: Op): i32 {
     incJmpIfLt => 193;
     incJmpIfLtLength => 194;
     addToInt32 => 195;
+    loadElemProp => 196;
   };
 }
 

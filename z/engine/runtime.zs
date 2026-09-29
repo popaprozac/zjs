@@ -4256,11 +4256,72 @@ export struct Runtime {
           if (isDeleted(element)) return deletedValue();
           this.setReg(base, inst.a, element);
         }
+        loadElemProp => {
+          const object = this.reg(base, inst.b);
+          const key = this.reg(base, inst.c);
+          if (!isInt32(key) || asInt32(key) < 0 || !isCell(object) || asCell(object) == 0 || !this.heap.isArray(asCell(object))) return deletedValue();
+          const element = this.heap.dataElement(asCell(object), u32(asInt32(key)));
+          if (!isCell(element) || asCell(element) == 0 || !this.heap.isObject(asCell(element))) return deletedValue();
+          const cached = this.leafLoad(fi, usize(inst.d), asCell(element));
+          if (isDeleted(cached)) return deletedValue();
+          this.setReg(base, inst.a, cached);
+        }
         returnOp => { return this.reg(base, inst.a); }
         _ => { return deletedValue(); }
       }
     }
     return deletedValue();
+  }
+
+  // loadElemProp's property read: loadCached's own-property hit, the
+  // site's first class or one of its others. A copy, so loadCached keeps
+  // its one caller in the dispatch loop and stays inlined there.
+  function elementPropLoad(fi: u32, nameSlot: usize, handle: u32): Value {
+    const cache = this.functions[usize(fi)].caches[nameSlot];
+    if (cache.kind != CACHE_OWN) return deletedValue();
+    const receiverClass = this.heap.objectClass(handle);
+    let slot = cache.slot;
+    if (receiverClass != cache.receiverClass) {
+      if (cache.extraCount > 0 && receiverClass == cache.extraClass0) {
+        slot = cache.extraSlot0;
+      } else if (cache.extraCount > 1 && receiverClass == cache.extraClass1) {
+        slot = cache.extraSlot1;
+      } else if (cache.extraCount > 2 && receiverClass == cache.extraClass2) {
+        slot = cache.extraSlot2;
+      } else {
+        return deletedValue();
+      }
+    }
+    return this.heap.slot(handle, slot);
+  }
+
+  // loadElemProp's general path: the element as loadElem reads it, then
+  // the name as loadProp does, filling the site's cache.
+  function loadElemPropSlow(inout this, fi: u32, nameSlot: usize, object: Value, key: Value): Value {
+    if (isUndefined(object) || isNull(object)) {
+      const keyAtom = this.propertyKey(key);
+      const error = this.propertyOfNullish(object, keyAtom, true);
+      this.raise(error);
+      return undefinedValue();
+    }
+    const element = this.getProperty(object, key);
+    if (this.pendingThrow) return undefinedValue();
+    const atom = this.functions[usize(fi)].propertyNames[nameSlot];
+    if (isUndefined(element) || isNull(element)) {
+      const error = this.propertyOfNullish(element, atom, true);
+      this.raise(error);
+      return undefinedValue();
+    }
+    const found = this.getProperty(element, cellValue(atom));
+    if (this.pendingThrow) return undefinedValue();
+    if (isCell(element) && asCell(element) != 0) {
+      if (this.heap.isObject(asCell(element))) {
+        this.populateLoadCache(fi, nameSlot, asCell(element), atom);
+      } else {
+        this.populateInheritedCache(fi, nameSlot, asCell(element), atom);
+      }
+    }
+    return found;
   }
 
   // A leaf's property read: loadCached's own-property hit for the site's
@@ -8261,6 +8322,25 @@ export struct Runtime {
             }
             if (returned || throwing) break;
           }
+          loadElemProp => {
+            // `a[i].name`: an array's element read in place, then the name
+            // through the site's cache; anything else takes both general
+            // paths (loadElemPropSlow).
+            const object = this.reg(base, inst.b);
+            const key = this.reg(base, inst.c);
+            if (isInt32(key) && asInt32(key) >= 0 && isCell(object) && asCell(object) != 0 && this.heap.isArray(asCell(object))) {
+              const element = this.heap.dataElement(asCell(object), u32(asInt32(key)));
+              if (isCell(element) && asCell(element) != 0 && this.heap.isObject(asCell(element))) {
+                const cached = this.elementPropLoad(fi, usize(inst.d), asCell(element));
+                if (!isDeleted(cached)) {
+                  this.setReg(base, inst.a, cached);
+                  continue;
+                }
+              }
+            }
+            const found = this.loadElemPropSlow(fi, usize(inst.d), object, key);
+            if (!this.pendingThrow) this.setReg(base, inst.a, found);
+          }
           loadElem => {
             const object = this.reg(base, inst.b);
             const key = this.reg(base, inst.c);
@@ -8838,7 +8918,7 @@ function isLeafCode(in code: FunctionCode): boolean {
       || op == Op.mov || op == Op.add || op == Op.sub || op == Op.mul || op == Op.mod || op == Op.addImm || op == Op.subImm || op == Op.mulImm || op == Op.modImm
       || op == Op.bitOrImm || op == Op.bitAndImm || op == Op.bitXorImm
       || op == Op.cmpLt || op == Op.cmpLe || op == Op.cmpGt || op == Op.cmpGe || op == Op.cmpLtImm || op == Op.cmpLeImm || op == Op.cmpGtImm || op == Op.cmpGeImm
-      || op == Op.cmpStrictEq || op == Op.cmpStrictNe || op == Op.logicalNot || op == Op.loadProp || op == Op.loadElem || op == Op.returnOp;
+      || op == Op.cmpStrictEq || op == Op.cmpStrictNe || op == Op.logicalNot || op == Op.loadProp || op == Op.loadElem || op == Op.loadElemProp || op == Op.returnOp;
     if (plain) {
       // nothing more to check
     } else if (op == Op.jmp || op == Op.jmpIfTrue || op == Op.jmpIfFalse) {

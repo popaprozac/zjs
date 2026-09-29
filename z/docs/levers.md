@@ -324,7 +324,11 @@ itself was the larger part: a string method on a string receiver with
 an int32 index skips its conversions (a charCodeAt loop 677 -> 514
 instructions an iteration, strings -5.9%), and a Map or Set lookup
 probes through slices (maps -1.9%; the rest of its cost is three
-random reads per probe into tables of ten thousand entries).
+random reads per probe into tables of ten thousand entries). Then
+`a[i].name` is one instruction: an array's element read in place and the
+name through the site's cache (its own copy of the check, so the
+dispatch loop's property read keeps its one inlined caller), anything
+else both general paths: polymorphic -10.1%, the rest level.
 
 **Built-in fast paths.** JSON was the widest gap (6x); stringify now
 walks an object's shape with no allocation per object and parse caches
