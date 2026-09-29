@@ -999,6 +999,22 @@ index]`, base and window both validated at frame push) and the code
 segment fetch are the two sites that want it. Probe `unchecked-index`
 (`COMPILER-REJECTED`: `Array has no method "atUnchecked"`).
 
+Instruction counts (2026-09-29, engine `4fec762`). The dispatch loop
+retires about 9 instructions a cycle, so its time follows its
+instruction count, and per bytecode instruction that count is: `mov`
+about 35, a cached property read 92, a cached store 104, an array
+element read 147 (loops differing by one instruction, instructions
+retired from `/usr/bin/time -l`). A register read or write is about 7
+of them: the register file's length and data are loaded, the index
+compared, and the access made, every time; the fetch is another 5 of
+the 16 dispatch takes. A cached property read passes 7 checks (the
+object's register, the cell header, the function table, the site's
+cache array, the slot offset's overflow, the slot arena, the result's
+register), about 20 of its 70 instructions past dispatch. Two ways
+around the checks within the language were tried and made it slower: a
+dispatch-loop local for the cache table's base (+2.8% and +4.5%) and a
+smaller loop body (4% fewer instructions, no fewer cycles).
+
 ---
 
 ## G32 — A borrowed view of an array field cannot be held across a loop that mutates the owner
