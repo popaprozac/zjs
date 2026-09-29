@@ -158,7 +158,7 @@ function arrayCreate(inout runtime: Runtime, length: f64): Value {
     runtime.raise(error);
     return undefinedValue();
   }
-  return cellValue(runtime.heap.allocateArray(u32(length)));
+  return cellValue(runtime.heap.allocateArrayOfLength(u32(length)));
 }
 
 // ArraySpeciesCreate.
@@ -212,7 +212,7 @@ function constructArray(inout runtime: Runtime, thisValue: Value, argsBase: u32,
         runtime.raise(error);
         return undefinedValue();
       }
-      return cellValue(runtime.heap.allocateArray(u32(number)));
+      return cellValue(runtime.heap.allocateArrayOfLength(u32(number)));
     }
   }
   const array = runtime.heap.allocateArray(argc);
@@ -1482,7 +1482,7 @@ function arrayToSorted(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     let j: u32 = 0;
     while (j < count) {
       const element = runtime.heap.slot(items, j);
-      runtime.heap.setSlot(asCell(result), j, element);
+      runtime.heap.arraySet(asCell(result), j, element);
       j = j + 1;
     }
   }

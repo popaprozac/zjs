@@ -14,7 +14,7 @@ import math from "std/math";
 import native from "./builtins/clock.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, createRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -105,6 +105,11 @@ export const HOST_ELEMENT_REJECTED: usize = 9;
 export const HOST_BOUND_TRAMPOLINE: usize = 10;
 
 // What a function's [[Prototype]] chain answered to a [[Set]].
+// How far past an array's slots a write may land and still grow them
+// (the slots between become holes); a write further out makes the array
+// sparse.
+const SPARSE_GAP: i64 = 1024;
+
 const SET_NOT_INHERITED: i32 = 0;
 const SET_DONE: i32 = 1;
 const SET_REFUSED: i32 = 2;
@@ -1448,11 +1453,11 @@ export struct Runtime {
 
   // A key that names an array element: a non-negative int32, an integral
   // double, or the canonical decimal spelling of one. Otherwise -1.
-  function arrayIndexOf(key: Value): i32 {
-    if (isInt32(key)) return asInt32(key) >= 0 ? asInt32(key) : -1;
+  function arrayIndexOf(key: Value): i64 {
+    if (isInt32(key)) return asInt32(key) >= 0 ? i64(asInt32(key)) : -1;
     if (isDouble(key)) {
       const d = asDouble(key);
-      if (d >= 0.0 && d < 2147483648.0 && isIntegralDouble(d)) return i32(d);
+      if (d >= 0.0 && d < 4294967295.0 && isIntegralDouble(d)) return i64(d);
       return -1;
     }
     if (!this.isStringValue(key)) return -1;
@@ -1468,8 +1473,55 @@ export struct Runtime {
       value = value * 10 + i64(byte - 48);
       index = index + 1;
     }
-    if (value > 2147483647) return -1;
-    return i32(value);
+    if (value > 4294967294) return -1;
+    return value;
+  }
+
+  // Whether element `index` of array `handle` lives in its bag under its
+  // name: a sparse array keeps its elements past its slots there.
+  function inBag(handle: u32, index: i64): boolean {
+    return (this.heap.flagsOf(handle) & FLAG_SPARSE) != 0 && index >= i64(this.heap.slotCountOf(handle));
+  }
+
+  // Whether a write of element `index` goes to the bag: past the slots
+  // of a sparse array, or so far past an array's slots that growing them
+  // to reach it would leave mostly holes, which makes the array sparse.
+  function storesInBag(inout this, handle: u32, index: i64): boolean {
+    const slots = i64(this.heap.slotCountOf(handle));
+    if (index < slots) return false;
+    if ((this.heap.flagsOf(handle) & FLAG_SPARSE) != 0) return true;
+    if (index - slots < SPARSE_GAP) return false;
+    this.heap.setFlags(handle, this.heap.flagsOf(handle) | FLAG_SPARSE);
+    return true;
+  }
+
+  // An element written to a sparse array's bag lengthens the array.
+  function lengthenFor(inout this, handle: u32, index: i64): void {
+    if (index >= i64(this.heap.arrayLength(handle))) this.heap.setArrayLength(handle, u32(index + 1));
+  }
+
+  // A sparse array's bag elements from `length` up deleted, highest
+  // first, as shortening the array to `length` deletes them. A
+  // non-configurable one stops it: the length that keeps it, or `length`.
+  function truncateBag(inout this, handle: u32, length: u32): u32 {
+    const bag = this.heap.linkOf(handle);
+    if ((this.heap.flagsOf(handle) & FLAG_SPARSE) == 0 || bag == 0) return length;
+    let names = Array<u32>();
+    let slots = Array<u32>();
+    this.orderedOwnNames(bag, false, inout names, inout slots);
+    let k = names.length;
+    while (k > 0) {
+      k = k - 1;
+      if ((this.heap.flagsOf(names[k]) & FLAG_INDEX_KEY) == 0) continue;
+      const index = this.indexNameValue(names[k]);
+      if (index < i64(length)) break;
+      // Looked up again: a deletion may have moved the bag's slots.
+      const slot = this.heap.objectFindSlot(bag, names[k]);
+      if (slot < 0) continue;
+      if ((this.heap.attrOf(bag, u32(slot)) & PROP_CONFIGURABLE) == 0) return u32(index + 1);
+      const removed = this.deleteFromObject(bag, names[k]);
+    }
+    return length;
   }
 
   // Own-or-inherited property of an object cell, an accessor's getter
@@ -1708,7 +1760,7 @@ export struct Runtime {
   // it holds.
   function arrayGet(inout this, handle: u32, key: Value, receiver: Value): Value {
     const index = this.arrayIndexOf(key);
-    if (index >= 0) {
+    if (index >= 0 && !this.inBag(handle, index)) {
       if (this.heap.arrayHasIndex(handle, u32(index))) return this.elementValue(handle, u32(index), receiver);
       const atom = this.propertyKey(key);
       const inherited = this.arrayProtoOf(handle);
@@ -1877,7 +1929,7 @@ export struct Runtime {
     }
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
-      if (index >= 0) {
+      if (index >= 0 && !this.storesInBag(handle, index)) {
         const present = this.heap.arrayHasIndex(handle, u32(index));
         if (present) {
           const attr = this.heap.attrOf(handle, u32(index));
@@ -1920,11 +1972,13 @@ export struct Runtime {
         if ((this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
         const length = this.arrayLengthFrom(value);
         if (this.pendingThrow) return false;
-        this.heap.setArrayLength(handle, length);
-        return true;
+        const kept = this.truncateBag(handle, length);
+        this.heap.setArrayLength(handle, kept);
+        return kept == length;
       }
-      // A named property the array does not own: what its [[Prototype]]
-      // chain holds decides, as for any object.
+      // A named property the array does not own, or an element kept in
+      // its bag: what its [[Prototype]] chain holds decides, as for any
+      // object.
       const existing = this.heap.linkOf(handle);
       let owns = false;
       if (existing != 0) {
@@ -1938,7 +1992,16 @@ export struct Runtime {
       }
       const bag = this.arrayBag(handle);
       if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0 && this.heap.objectFindSlot(bag, atom) < 0) return false;
-      return this.setOnObject(bag, atom, value, object);
+      if (index < 0) return this.setOnObject(bag, atom, value, object);
+      if (!owns && index >= i64(this.heap.arrayLength(handle)) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
+      // The bag is on no prototype chain: the heap's note that an object
+      // holds an element (which makes array writes consult prototypes)
+      // stays as it was.
+      const noted = this.heap.indexKeysDefined;
+      const done = this.setOnObject(bag, atom, value, object);
+      this.heap.indexKeysDefined = noted;
+      if (done) this.lengthenFor(handle, index);
+      return done;
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
       const atom = this.propertyKey(key);
@@ -2079,7 +2142,7 @@ export struct Runtime {
     }
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
-      if (index >= 0) {
+      if (index >= 0 && !this.inBag(handle, index)) {
         if (!this.heap.arrayHasIndex(handle, u32(index))) return absentProperty();
         const attr = this.heap.attrOf(handle, u32(index));
         const held = this.heap.arrayGet(handle, u32(index));
@@ -2218,7 +2281,9 @@ export struct Runtime {
       if (lengthLocked && desc.hasWritable && desc.writable) return false;
       if (desc.hasValue) {
         if (lengthLocked && newLength != this.heap.arrayLength(handle)) return false;
-        this.heap.setArrayLength(handle, newLength);
+        const kept = this.truncateBag(handle, newLength);
+        this.heap.setArrayLength(handle, kept);
+        if (kept != newLength) return false;
       }
       if (desc.hasWritable && !desc.writable) {
         const flags = this.heap.flagsOf(handle);
@@ -2247,7 +2312,16 @@ export struct Runtime {
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
       if (index >= 0) {
-        if (!current.present && u32(index) >= this.heap.arrayLength(handle) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
+        if (!current.present && index >= i64(this.heap.arrayLength(handle)) && (this.heap.flagsOf(handle) & FLAG_LENGTH_READONLY) != 0) return false;
+        if (this.storesInBag(handle, index)) {
+          // As in setProperty, the bag leaves the heap's note alone.
+          const bag = this.arrayBag(handle);
+          const noted = this.heap.indexKeysDefined;
+          this.heap.objectDefine(bag, atom, stored, storedAttr);
+          this.heap.indexKeysDefined = noted;
+          this.lengthenFor(handle, index);
+          return true;
+        }
         this.heap.arraySet(handle, u32(index), stored);
         this.heap.setAttr(handle, u32(index), storedAttr);
         return true;
@@ -2379,14 +2453,27 @@ export struct Runtime {
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_ARRAY) {
-      const length = this.heap.arrayLength(handle);
+      // The elements in its slots, then a sparse array's in its bag
+      // (ascending, as the bag lists index names first), then `length`.
+      let length = this.heap.arrayLength(handle);
+      if (length > this.heap.slotCountOf(handle)) length = this.heap.slotCountOf(handle);
       let index: u32 = 0;
       while (index < length) {
         if (this.heap.arrayHasIndex(handle, index)) keys.push(this.toStringValue(int32Value(i32(index))));
         index = index + 1;
       }
-      keys.push(cellValue(this.atomLength));
       const bag = this.heap.linkOf(handle);
+      if (bag != 0 && (this.heap.flagsOf(handle) & FLAG_SPARSE) != 0) {
+        let names = Array<u32>();
+        let slots = Array<u32>();
+        this.orderedOwnNames(bag, false, inout names, inout slots);
+        let k: usize = 0;
+        while (k < names.length && (this.heap.flagsOf(names[k]) & FLAG_INDEX_KEY) != 0) {
+          keys.push(cellValue(names[k]));
+          k = k + 1;
+        }
+      }
+      keys.push(cellValue(this.atomLength));
       if (bag != 0) this.pushObjectKeys(inout keys, bag, true);
       return keys;
     }
@@ -2513,7 +2600,7 @@ export struct Runtime {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
-      if (index >= 0) {
+      if (index >= 0 && !this.inBag(handle, index)) {
         if (this.heap.arrayHasIndex(handle, u32(index))) return true;
         // A hole reads through the prototype chain, where an element may
         // be an accessor without a getter: presence, not value.
@@ -2584,7 +2671,7 @@ export struct Runtime {
     }
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
-      if (index >= 0) return this.heap.arrayHasIndex(handle, u32(index));
+      if (index >= 0 && !this.inBag(handle, index)) return this.heap.arrayHasIndex(handle, u32(index));
       const atom = this.propertyKey(key);
       if (atom == this.atomLength) return true;
       const bag = this.heap.linkOf(handle);
@@ -2729,7 +2816,7 @@ export struct Runtime {
     }
     if (tag == TAG_ARRAY) {
       const index = this.arrayIndexOf(key);
-      if (index >= 0) {
+      if (index >= 0 && !this.inBag(handle, index)) {
         if (this.heap.arrayHasIndex(handle, u32(index))) {
           if ((this.heap.attrOf(handle, u32(index)) & PROP_CONFIGURABLE) == 0) return false;
           this.heap.setSlot(handle, u32(index), deletedValue());
@@ -2857,7 +2944,10 @@ export struct Runtime {
     const handle = asCell(value);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_ARRAY) {
-      const length = this.heap.arrayLength(handle);
+      // The elements in its slots, then its bag's names: a sparse array's
+      // elements past its slots (listed first, ascending) among them.
+      let length = this.heap.arrayLength(handle);
+      if (length > this.heap.slotCountOf(handle)) length = this.heap.slotCountOf(handle);
       let index: u32 = 0;
       while (index < length) {
         if (this.heap.arrayHasIndex(handle, index)) {
@@ -2868,7 +2958,7 @@ export struct Runtime {
         index = index + 1;
       }
       const bag = this.heap.linkOf(handle);
-      if (bag != 0) this.appendObjectKeys(keys, bag, true);
+      if (bag != 0) this.appendObjectKeys(keys, bag, (this.heap.flagsOf(handle) & FLAG_SPARSE) == 0);
       // An array given a [[Prototype]] of its own enumerates that chain too.
       const parent = this.arrayProtoOf(handle);
       if (parent != this.arrayProto) this.appendInheritedKeys(keys, value, parent);

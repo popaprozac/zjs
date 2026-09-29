@@ -68,6 +68,9 @@ export const PROP_DEFAULT: u8 = 7;
 export const PROP_METHOD: u8 = 5;
 export const PROP_NONE: u8 = 0;
 
+// The most slots `new Array(length)` makes before any element is written.
+const ARRAY_PRESIZE: u32 = 65536;
+
 // Per-cell flags.
 export const FLAG_NON_EXTENSIBLE: u8 = 1;
 export const FLAG_LENGTH_READONLY: u8 = 2;
@@ -79,6 +82,10 @@ export const FLAG_PRIVATE_NAME: u8 = 4;
 export const FLAG_ELEMENT_ATTRS: u8 = 4;
 // A string cell that is the runtime's atom for its bytes.
 export const FLAG_INTERNED: u8 = 8;
+// On an array (the same bit, which only strings otherwise use): its
+// elements past its slots live in its bag under their index names,
+// written there because they landed too far past the slots to fill.
+export const FLAG_SPARSE: u8 = 8;
 // A string cell whose units are stored two bytes each (some unit is above
 // 0xFF); otherwise one byte per unit.
 export const FLAG_WIDE: u8 = 16;
@@ -1866,6 +1873,15 @@ export struct Heap {
       this.setSlot(handle, hole, deletedValue());
       hole = hole + 1;
     }
+    return handle;
+  }
+
+  // An array of `length` holes, as a program's `new Array(length)` makes
+  // it: slots for at most ARRAY_PRESIZE of them up front, the rest added
+  // as elements are written.
+  function allocateArrayOfLength(inout this, length: u32): u32 {
+    const handle = this.allocateArray(length < ARRAY_PRESIZE ? length : ARRAY_PRESIZE);
+    this.headers[usize(handle)].payload = length;
     return handle;
   }
 

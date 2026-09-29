@@ -1,0 +1,21 @@
+32 4294967295 true false undefined
+4294967295 last 4294967294
+4294967295 4294967294,4294967295
+4294967295 4294967295 100000000
+5001 far mid undefined true false true
+0,1,2,3000,5000,name {"value":"far","writable":true,"enumerable":true,"configurable":true}
+0,1,2,3000,5000,name
+again true false 5001
+5002 pushed 5001 -1 true
+5 again|pushed 14
+5002 5
+4000 undefined false 0,1,2,name
+2 [1,2] named
+10000 fixed
+fixed false
+10000 fixed
+1 undefined 20001 true
+3000 0 2999 4498500
+inherited true false
+set via setter 1 pushed false
+0,1,2,3,4,5,6,7,8,9 10
