@@ -107,6 +107,12 @@ table grow four times at a step. On macOS the allocator keeps a freed
 large block resident, so each copy or move had cost the old block's size
 for good: 117 -> about 100 MB on the large heap (67 with the allocator's
 cache disabled, what Hermes uses; at 1.2 million records 339 -> 249).
+Growth in place (2026-09-29): a cell whose slots are the arena's last
+range, allocated or grown since the last collection, grows where it is
+instead of copying to a fresh range and abandoning the old; an array's
+new capacity is filled with holes as it is pushed. A push loop now
+copies nothing: arrays -5.7% over 8 placements, the rest within 1%;
+arrays' peak memory 56 -> 36 MB.
 Left: every allocation pushes its slots one call at a time (Z has no
 bulk append); growth that does not move (Z upstream: reserved address
 space or remapping); cell headers are 20 bytes.

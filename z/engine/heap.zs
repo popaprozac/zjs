@@ -1119,11 +1119,27 @@ export struct Heap {
     this.slots.reserveCapacity(grownCapacity(this.slots.capacity, this.slots.length + extra));
   }
 
-  // Move a cell's slots to a fresh, larger range. The old range is
-  // abandoned until the collector compacts.
   function growSlots(inout this, handle: u32, newCount: u32): void {
+    this.growSlotsWith(handle, newCount, undefinedValue());
+  }
+
+  // Give a cell `newCount` slots, the new ones holding `fill`. A range at
+  // the arena's top, allocated or grown since the last collection, grows
+  // where it is; any other moves to a fresh range at the top, the old one
+  // abandoned until the collector compacts.
+  function growSlotsWith(inout this, handle: u32, newCount: u32, fill: Value): void {
     const oldStart = this.headers[usize(handle)].slotStart;
     const oldCount = this.headers[usize(handle)].slotCount;
+    if (usize(oldStart) >= this.tailBase && usize(oldStart + oldCount) == this.slots.length) {
+      if (this.slots.length + usize(newCount - oldCount) > this.slots.capacity) this.growArena(usize(newCount - oldCount));
+      let added = oldCount;
+      while (added < newCount) {
+        this.slots.push(fill);
+        added = added + 1;
+      }
+      this.headers[usize(handle)].slotCount = newCount;
+      return;
+    }
     const start = u32(this.slots.length);
     if (this.slots.length + usize(newCount) > this.slots.capacity) this.growArena(usize(newCount));
     let index: u32 = 0;
@@ -1133,7 +1149,7 @@ export struct Heap {
       index = index + 1;
     }
     while (index < newCount) {
-      this.slots.push(undefinedValue());
+      this.slots.push(fill);
       index = index + 1;
     }
     this.headers[usize(handle)].slotStart = start;
@@ -1899,14 +1915,8 @@ export struct Heap {
     if (index >= this.headers[usize(handle)].slotCount) {
       let capacity = this.headers[usize(handle)].slotCount;
       while (capacity <= index) { capacity = capacity * 2; }
-      const oldCount = this.headers[usize(handle)].slotCount;
-      this.growSlots(handle, capacity);
       // Fresh capacity is holes, not undefined.
-      let hole = oldCount;
-      while (hole < capacity) {
-        this.setSlot(handle, hole, deletedValue());
-        hole = hole + 1;
-      }
+      this.growSlotsWith(handle, capacity, deletedValue());
     }
     this.setSlot(handle, index, value);
     if (index >= this.headers[usize(handle)].payload) this.headers[usize(handle)].payload = index + 1;
