@@ -8,31 +8,32 @@ lever's status in the same commit that moves it.
 
 ## The gap
 
-`z/bench/speed`, `results/2026-09-28-captured.json` (engine `322e164`,
-load 4.2), milliseconds per kernel, against the fastest engine without
+`z/bench/speed`, `results/2026-09-29-arrays.json` (engine `b6cbba7`,
+load 4.0), milliseconds per kernel, against the fastest engine without
 a JIT on each, and the first measurement of this plan
 (`results/2026-09-26-hermes.json`; `helpers` joined on 2026-09-28, its
 first figure from that day):
 
 | Kernel | zjsz | then | Fastest jit-less | Engine | Gap |
 |---|---|---|---|---|---|
-| allocation | 20 | 39 | 19 | V8 | 1.1x |
-| arrays | 109 | 167 | 80 | V8 | 1.4x |
-| calls | 12 | 17 | 8 | Hermes, precompiled | 1.5x |
-| closures | 20 | 35 | 13 | Hermes, from source and precompiled | 1.5x |
-| helpers | 23 | 40 | 24 | Hermes, from source and precompiled | ahead |
-| json | 19 | 49 | 8 | JavaScriptCore | 2.4x |
-| maps | 42 | 52 | 50 | V8 | ahead |
-| polymorphic | 17 | 20 | 16 | V8 | 1.1x |
-| properties | 36 | 46 | 25 | JavaScriptCore | 1.4x |
+| allocation | 20 | 39 | 19 | V8 | level |
+| arrays | 93 | 167 | 82 | V8 | 1.1x |
+| calls | 11 | 17 | 7 | V8 | 1.7x |
+| closures | 19 | 35 | 13 | Hermes, from source and precompiled | 1.5x |
+| helpers | 23 | 40 | 23 | Hermes, from source and precompiled | level |
+| json | 18 | 49 | 7 | JavaScriptCore | 2.6x |
+| maps | 41 | 52 | 47 | V8 | ahead |
+| polymorphic | 16 | 20 | 15 | V8 | 1.1x |
+| properties | 36 | 46 | 24 | JavaScriptCore | 1.5x |
 | regexp | 21 | 27 | 15 | V8 | 1.4x |
-| strings | 15 | 23 | 7 | V8 | 2.1x |
+| strings | 10 | 23 | 7 | V8 | 1.4x |
 
-Over all eleven the engine is 1.39 times faster than QuickJS (QuickJS
-was 1.19 times faster when this plan began) and 1.22 times faster than
-Hermes run from source, 1.21 precompiled (1.25 and 1.28 faster then);
-JavaScriptCore's interpreter is level, 1.01 times faster (1.7), and V8's
-1.14 times faster (1.9), V8's figures moving the most from run to run.
+Over all eleven the engine is 1.47 times faster than QuickJS (QuickJS
+was 1.19 times faster when this plan began) and 1.29 times faster than
+Hermes run from source, 1.27 precompiled (1.25 and 1.28 faster then);
+1.03 times faster than JavaScriptCore's interpreter (1.7 faster then),
+and V8's is 1.14 times faster (1.9), V8's figures moving the most from
+run to run: its calls figure was 9 on 2026-09-28 and 7 here.
 For size, the engine's minimal embedder is about 0.70 MB of code; the
 Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 
