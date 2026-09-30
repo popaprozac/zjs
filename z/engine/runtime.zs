@@ -3506,7 +3506,7 @@ export struct Runtime {
     let index: u32 = 0;
     while (index < argc) {
       const element = this.heap.arrayGet(array, index);
-      this.regStack[usize(argsBase + index)] = element;
+      this.setStackAt(usize(argsBase + index), element);
       index = index + 1;
     }
     this.regTop = argsBase + argc;
@@ -3934,7 +3934,7 @@ export struct Runtime {
   // An argument by position, undefined past the end.
   function argument(argsBase: u32, argc: u32, index: u32): Value {
     if (index >= argc) return undefinedValue();
-    return this.regStack[usize(argsBase + index)];
+    return this.stackAt(usize(argsBase + index));
   }
 
   function pushTempRoot(inout this, value: Value): void {
@@ -3990,7 +3990,7 @@ export struct Runtime {
     let index: u32 = 0;
     while (index < argc) {
       const passed = args[usize(index)];
-      this.regStack[usize(argsBase + index)] = passed;
+      this.setStackAt(usize(argsBase + index), passed);
       index = index + 1;
     }
     this.regTop = argsBase + argc;
@@ -4007,7 +4007,7 @@ export struct Runtime {
   function callValue1(inout this, callee: Value, thisValue: Value, first: Value): Value {
     const argsBase = this.regTop;
     while (this.regStack.length < usize(argsBase + 1)) { this.regStack.push(undefinedValue()); }
-    this.regStack[usize(argsBase)] = first;
+    this.setStackAt(usize(argsBase), first);
     this.regTop = argsBase + 1;
     return this.callPlaced(callee, thisValue, argsBase, 1);
   }
@@ -4015,8 +4015,8 @@ export struct Runtime {
   function callValue2(inout this, callee: Value, thisValue: Value, first: Value, second: Value): Value {
     const argsBase = this.regTop;
     while (this.regStack.length < usize(argsBase + 2)) { this.regStack.push(undefinedValue()); }
-    this.regStack[usize(argsBase)] = first;
-    this.regStack[usize(argsBase + 1)] = second;
+    this.setStackAt(usize(argsBase), first);
+    this.setStackAt(usize(argsBase + 1), second);
     this.regTop = argsBase + 2;
     return this.callPlaced(callee, thisValue, argsBase, 2);
   }
@@ -4024,9 +4024,9 @@ export struct Runtime {
   function callValue3(inout this, callee: Value, thisValue: Value, first: Value, second: Value, third: Value): Value {
     const argsBase = this.regTop;
     while (this.regStack.length < usize(argsBase + 3)) { this.regStack.push(undefinedValue()); }
-    this.regStack[usize(argsBase)] = first;
-    this.regStack[usize(argsBase + 1)] = second;
-    this.regStack[usize(argsBase + 2)] = third;
+    this.setStackAt(usize(argsBase), first);
+    this.setStackAt(usize(argsBase + 1), second);
+    this.setStackAt(usize(argsBase + 2), third);
     this.regTop = argsBase + 3;
     return this.callPlaced(callee, thisValue, argsBase, 3);
   }
@@ -4034,10 +4034,10 @@ export struct Runtime {
   function callValue4(inout this, callee: Value, thisValue: Value, first: Value, second: Value, third: Value, fourth: Value): Value {
     const argsBase = this.regTop;
     while (this.regStack.length < usize(argsBase + 4)) { this.regStack.push(undefinedValue()); }
-    this.regStack[usize(argsBase)] = first;
-    this.regStack[usize(argsBase + 1)] = second;
-    this.regStack[usize(argsBase + 2)] = third;
-    this.regStack[usize(argsBase + 3)] = fourth;
+    this.setStackAt(usize(argsBase), first);
+    this.setStackAt(usize(argsBase + 1), second);
+    this.setStackAt(usize(argsBase + 2), third);
+    this.setStackAt(usize(argsBase + 3), fourth);
     this.regTop = argsBase + 4;
     return this.callPlaced(callee, thisValue, argsBase, 4);
   }
@@ -4050,8 +4050,8 @@ export struct Runtime {
     while (this.regStack.length < usize(argsBase + count)) { this.regStack.push(undefinedValue()); }
     let index: u32 = 0;
     while (index < count) {
-      const passed = this.regStack[usize(source + index)];
-      this.regStack[usize(argsBase + index)] = passed;
+      const passed = this.stackAt(usize(source + index));
+      this.setStackAt(usize(argsBase + index), passed);
       index = index + 1;
     }
     this.regTop = argsBase + count;
@@ -4107,10 +4107,10 @@ export struct Runtime {
   function callLeaf(inout this, code: usize, argc: u32, first: Value, second: Value, third: Value, fourth: Value): Value {
     const base = this.regTop;
     while (this.regStack.length < usize(base + 4)) { this.regStack.push(undefinedValue()); }
-    this.regStack[usize(base)] = first;
-    this.regStack[usize(base + 1)] = second;
-    this.regStack[usize(base + 2)] = third;
-    this.regStack[usize(base + 3)] = fourth;
+    this.setStackAt(usize(base), first);
+    this.setStackAt(usize(base + 1), second);
+    this.setStackAt(usize(base + 2), third);
+    this.setStackAt(usize(base + 3), fourth);
     return this.runLeaf(code, base, argc);
   }
 
@@ -4133,19 +4133,21 @@ export struct Runtime {
     if (argsBase != base) {
       let copied: u32 = 0;
       while (copied < i) {
-        const passed = this.regStack[usize(argsBase + copied)];
-        this.regStack[usize(base + copied)] = passed;
+        const passed = this.stackAt(usize(argsBase + copied));
+        this.setStackAt(usize(base + copied), passed);
         copied = copied + 1;
       }
     }
     while (i < regCount) {
-      this.regStack[usize(base + i)] = undefinedValue();
+      this.setStackAt(usize(base + i), undefinedValue());
       i = i + 1;
     }
     const fi = u32(code);
     let ip = usize(this.functions[code].codeStart);
+    // A fetch at ip is in bounds as runFrames' is: every jump and operand
+    // word the compiler lays down stays inside the function's code.
     while (true) {
-      const inst = this.codeSegment[ip];
+      const inst = unsafe { select this.codeSegment.uncheckedAt(ip); };
       ip = ip + 1;
       match (inst.op) {
         loadInt => { this.setReg(base, inst.a, int32Value(bcI16(inst))); }
@@ -4252,13 +4254,13 @@ export struct Runtime {
         jmpIfNotGtImm => { ip = this.leafBranchImm(base, inst, ip, 2); if (ip == 0) return deletedValue(); }
         jmpIfNotGeImm => { ip = this.leafBranchImm(base, inst, ip, 3); if (ip == 0) return deletedValue(); }
         jmpIfNotStrictEq => {
-          const word = this.codeSegment[ip];
+          const word = unsafe { select this.codeSegment.uncheckedAt(ip); };
           ip = ip + 1;
           const same = this.strictEquals(this.reg(base, inst.a), this.reg(base, inst.b));
           if (same == (inst.d != 0)) ip = usize(i64(ip) + i64(bcI16(word)));
         }
         jmpIfNotStrictEqImm => {
-          const word = this.codeSegment[ip];
+          const word = unsafe { select this.codeSegment.uncheckedAt(ip); };
           ip = ip + 1;
           const left = this.reg(base, inst.a);
           const immediate = branchImmediateOf(inst, word);
@@ -4396,7 +4398,7 @@ export struct Runtime {
   // A leaf's fused compare-and-branch of two numbers: the next ip, or 0
   // for anything but numbers.
   function leafBranch(base: u32, inst: Inst, ip: usize, relation: u32): usize {
-    const word = this.codeSegment[ip];
+    const word = unsafe { select this.codeSegment.uncheckedAt(ip); };
     const left = this.reg(base, inst.a);
     const right = this.reg(base, inst.b);
     if (!isNumber(left) || !isNumber(right)) return 0;
@@ -4406,7 +4408,7 @@ export struct Runtime {
   }
 
   function leafBranchImm(base: u32, inst: Inst, ip: usize, relation: u32): usize {
-    const word = this.codeSegment[ip];
+    const word = unsafe { select this.codeSegment.uncheckedAt(ip); };
     const left = this.reg(base, inst.a);
     if (!isNumber(left)) return 0;
     const holds = orderedNumbers(toNumber(left), f64(branchImmediateOf(inst, word)), relation);
@@ -4452,7 +4454,7 @@ export struct Runtime {
     let index: u32 = 0;
     while (index < argc) {
       const passed = args[usize(index)];
-      this.regStack[usize(argsBase + index)] = passed;
+      this.setStackAt(usize(argsBase + index), passed);
       index = index + 1;
     }
     this.regTop = argsBase + argc;
@@ -5359,8 +5361,8 @@ export struct Runtime {
     let target = usize(base);
     const copiedEnd = target + usize(copied);
     while (target < copiedEnd) {
-      const passed = this.regStack[source];
-      this.regStack[target] = passed;
+      const passed = this.stackAt(source);
+      this.setStackAt(target, passed);
       source = source + 1;
       target = target + 1;
     }
@@ -5368,7 +5370,7 @@ export struct Runtime {
     // library call, slower for the few registers a frame has.
     let i = copied;
     while (i < regCount) {
-      this.regStack[usize(base + i)] = undefinedValue();
+      this.setStackAt(usize(base + i), undefinedValue());
       i = i + 1;
     }
     this.regTop = base + regCount;
@@ -5435,14 +5437,14 @@ export struct Runtime {
     let slot = usize(base);
     const copiedEnd = slot + usize(copied);
     while (slot < copiedEnd) {
-      const passed = this.regStack[source];
-      this.regStack[slot] = passed;
+      const passed = this.stackAt(source);
+      this.setStackAt(slot, passed);
       source = source + 1;
       slot = slot + 1;
     }
     let i = copied;
     while (i < regCount) {
-      this.regStack[usize(base + i)] = undefinedValue();
+      this.setStackAt(usize(base + i), undefinedValue());
       i = i + 1;
     }
     this.regTop = base + regCount;
@@ -5617,6 +5619,23 @@ export struct Runtime {
   function setReg(inout this, base: u32, index: u8, value: Value): void {
     unsafe {
       this.regStack.uncheckedSet(usize(base.wrappingAdd(u32(index))), value);
+    }
+  }
+
+  // Stack access by absolute index, for the code that places a call's
+  // arguments and opens its registers. A write follows the growth of the
+  // stack past the index, in the same function. A read takes a register
+  // of a frame -- the compiler allocates a call's argument registers, and
+  // an array literal's, below the frame's count -- or a value placed
+  // above the stack top after such a growth. The stack only grows, so the
+  // index is in bounds; a release build does not check it again.
+  function stackAt(index: usize): Value {
+    return unsafe { select this.regStack.uncheckedAt(index); };
+  }
+
+  function setStackAt(inout this, index: usize, value: Value): void {
+    unsafe {
+      this.regStack.uncheckedSet(index, value);
     }
   }
 
@@ -6836,7 +6855,7 @@ export struct Runtime {
         const array = this.heap.allocateArray(argc);
         let index: u32 = 0;
         while (index < argc) {
-          const passed = this.regStack[usize(argsBase + index)];
+          const passed = this.stackAt(usize(argsBase + index));
           this.heap.setSlot(array, index, passed);
           index = index + 1;
         }
@@ -6854,7 +6873,7 @@ export struct Runtime {
         const array = this.heap.allocateArray(count);
         let index: u32 = 0;
         while (index < count) {
-          const passed = this.regStack[usize(argsBase + skip + index)];
+          const passed = this.stackAt(usize(argsBase + skip + index));
           this.heap.setSlot(array, index, passed);
           index = index + 1;
         }
@@ -8261,7 +8280,7 @@ export struct Runtime {
             const array = this.heap.allocateArray(count);
             let index: u32 = 0;
             while (index < count) {
-              const element = this.regStack[usize(base + u32(inst.b) + index)];
+              const element = this.stackAt(usize(base + u32(inst.b) + index));
               this.heap.setSlot(array, index, element);
               index = index + 1;
             }
