@@ -443,8 +443,10 @@ and a loader that validates what it is given. After bytecode quality, so
 the format is not fixed too early.
 
 **Z upstream** (docs/z-findings.md). Appending one repeated value in a
-single call, for every allocation the heap fills (a run of elements
-landed 2026-09-30, above); locale-independent conversion between numbers and text,
+single call landed 2026-09-30 with the run of elements (above): the heap's
+fills use it (arrays -5.8%, allocation -3.7%, calls -1.9%, closures -1.8%,
+maps -1.4% in cycles, `bench/speed/results/2026-09-30-fill.json`). Still open: locale-independent
+conversion between numbers and text,
 which would also replace the formatting passes above; build-time
 selection, for opt-in features and platform code. Two now measured as
 worth several percent everywhere (2026-09-26): an inlining hint, since

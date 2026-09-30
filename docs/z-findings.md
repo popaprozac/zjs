@@ -24,8 +24,8 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-09-30 the pin is `c2b6805c` (Stage 0; before it, `a642cafe`
-the same day and `bdc237d2` from 2026-09-21, at which the engine also
+Since 2026-09-30 the pin is `4adacfea` (Stage 0; before it, `c2b6805c`
+and `a642cafe` the same day and `bdc237d2` from 2026-09-21, at which the engine also
 builds with the native compiler and passes every gate, see the checkpoints
 under G49 -- that native build is not yet repeated at the current pin); the Stage 0 build at the pin remains
 the baseline the gates and measurements are stated against.
@@ -409,7 +409,13 @@ Ask: a reviewable spelling for a `u8` naming an ASCII character. Probe
 
 ## G19 — `in` borrow conflicts with a field read of the same value in one call
 
-**Status:** `proposed` · **Size:** small · **Priority:** low
+**Status:** `implemented` · **Size:** small · **Priority:** low
+**Implemented:** z-lang `4adacfea` -- a by-value argument of a cleanup-free
+type takes no call loan, in both compilers and for built-in collection
+methods as for declared calls (Zach's ruling, 2026-09-30: copies never
+conflict; a value that moves, shares ARC identity, or carries a view keeps
+its loan). Probe `in-borrow-with-field-read` lands; the engine's
+bind-first locals remain until it drops them.
 **Confirmed:** z-lang `00864194` · **Blocks:** no
 **Found:** Phase 3, keyword lookup.
 
@@ -534,7 +540,11 @@ would serve the stack case directly.
 
 ## G24 — A field read of `this` inside a call that borrows `this` mutably is rejected
 
-**Status:** `proposed` · **Size:** small · **Priority:** low
+**Status:** `implemented` · **Size:** small · **Priority:** low
+**Implemented:** z-lang `4adacfea`, with G19: a copied operand such as
+`this.regs[b]` no longer overlaps the receiver's `inout` loan. Probe
+`inout-receiver-operand` lands; the engine's bind-first locals remain until
+it drops them.
 **Confirmed:** z-lang `4bef7756` · **Blocks:** no (worked around)
 **Found:** Phase 4, every register write in the interpreter.
 
@@ -1734,19 +1744,30 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
 
 ## G50 — No way to append a run of elements to an array in one call
 
-**Status:** `consumer-verified` for a run of elements; a run of one
-repeated value (below) remains `proposed` · **Size:** small · **Priority:**
-medium · **Confirmed:** z-lang `bdc237d2`, Stage 0 · **Blocks:** no
+**Status:** `consumer-verified`, both a run of elements and a run of one
+repeated value · **Size:** small · **Priority:** medium · **Confirmed:**
+z-lang `bdc237d2`, Stage 0 · **Blocks:** no
 **Implemented:** z-lang `58920354` -- `Array<T>.append(items: Slice<T>)`
 for cleanup-free `T`, one capacity check and one copy, both compilers;
 `a1a73eef` -- call-scoped `values.slice(start, end)` ranges passed as a
 Slice argument; `5517f3f7` -- call loans keep the field path before an
 element index, so `this.strings[i].append(this.smallBytes.slice(a, b))`
-checks; `a642cafe` -- runs of 16 or fewer copied inline.
+checks; `a642cafe` -- runs of 16 or fewer copied inline. `f3f104f2` --
+`values.appendRepeated(value, count)` for cleanup-free elements, both
+compilers, a run of 16 or fewer stored by a switch of plain stores (a fill
+loop becomes a memset_pattern16 call, which made closures +4% in the
+engine); `1d726234` -- the helper always inlined (out of line with three
+callers it cost closures +4% again). Shape ruled by Zach 2026-09-30 after
+measuring: additive only, no truncating resize, not a constructor.
 **Verified:** ZJS `1d9110b` -- string storage copied as blocks (buffer
 extension in place, arena and buffer copies, the join gather, digits,
 UTF-16 unit and byte-range copies); kilobyte concatenations -69.9% in
 cycles, the other kernels within noise. Probe `array-append-slice` lands.
+ZJS `0b76e06` -- cell slots, slot growth, hash and table indexes,
+grow-to-index attribute arrays, and zero fills through appendRepeated, the
+register stack's growth through one out-of-line method: arrays -5.8%,
+allocation -3.7%, calls -1.9%, closures -1.8%, maps -1.4% in cycles, test262
+unchanged, libzjs.a +1 KiB. Probe `array-append-repeated` lands.
 Copies of one buffer of the string table onto another, and of the arena
 onto itself, stay loops: Z rejects them as overlapping, correctly, since
 growth could free the source.
