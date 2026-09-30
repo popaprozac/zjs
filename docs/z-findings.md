@@ -912,6 +912,18 @@ The case is now the narrow one: an unchecked element access the engine
 uses where an invariant it checks once (a frame's register window lies
 inside the register stack; a function's code inside the code segment)
 makes the per-access check redundant, not unchecked indexing everywhere.
+**Re-measured 2026-09-30 at `a642cafe`** (engine `1d9110b`; cycles over 8
+placements, `z/bench/speed/results/2026-09-30-bounds.json`):
+- every bounds check a no-op (1527 sites): eleven of twelve kernels -5%
+  to -14% (properties -14.4%, polymorphic -11.4%, arrays -11.1%,
+  allocation -10.4%, json -9.3%, calls -8.3%), long-strings within noise;
+- only the register file's 42 accesses and the instruction fetch's 26
+  unchecked: calls -7.8%, properties -6.9%, arrays -6.8%, closures -5.5%,
+  polymorphic -4.5%, helpers -3.3%, allocation -3.1%, maps -2.7%; json,
+  strings, regexp within noise.
+The two invariant sites give most of the call and closure cost and about
+half of the property and array cost; the rest is spread over heap slots,
+headers, and string storage.
 **Confirmed:** z-lang `93611fe5`, measured · **Blocks:** no
 **Found:** the performance spike after classes.
 

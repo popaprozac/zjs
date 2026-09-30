@@ -1,0 +1,234 @@
+{
+  "what": "Cycles of the Z engine with bounds checks removed from its generated C, against the same C checked; median over eight placements of the dispatch loop (placements.py compare), change the geometric mean over placements. A control for what checked indexing costs, not a shippable build.",
+  "date": "2026-09-30",
+  "engine": "1d9110b, Stage 0 z-lang a642cafe, -O2 -DNDEBUG",
+  "load_average": 3.6,
+  "variants": {
+    "all": {
+      "what": "z_bounds_index made `return index` at all 1527 checked index sites",
+      "kernels": {
+        "allocation": {
+          "checked_cycles": 76864390,
+          "unchecked_cycles": 68923152,
+          "change_percent": -10.4,
+          "placement_range_percent": [
+            -13.5,
+            -5.2
+          ]
+        },
+        "arrays": {
+          "checked_cycles": 347550366,
+          "unchecked_cycles": 310429243,
+          "change_percent": -11.1,
+          "placement_range_percent": [
+            -13.2,
+            -7.7
+          ]
+        },
+        "calls": {
+          "checked_cycles": 51695782,
+          "unchecked_cycles": 47258972,
+          "change_percent": -8.3,
+          "placement_range_percent": [
+            -10.8,
+            -5.3
+          ]
+        },
+        "closures": {
+          "checked_cycles": 77314643,
+          "unchecked_cycles": 71525314,
+          "change_percent": -6.8,
+          "placement_range_percent": [
+            -8.7,
+            -4.8
+          ]
+        },
+        "helpers": {
+          "checked_cycles": 87457718,
+          "unchecked_cycles": 81306834,
+          "change_percent": -7.0,
+          "placement_range_percent": [
+            -8.1,
+            -5.7
+          ]
+        },
+        "json": {
+          "checked_cycles": 78231712,
+          "unchecked_cycles": 71192143,
+          "change_percent": -9.3,
+          "placement_range_percent": [
+            -10.6,
+            -8.4
+          ]
+        },
+        "long-strings": {
+          "checked_cycles": 17413806,
+          "unchecked_cycles": 17142364,
+          "change_percent": -1.7,
+          "placement_range_percent": [
+            -4.6,
+            1.7
+          ]
+        },
+        "maps": {
+          "checked_cycles": 158934480,
+          "unchecked_cycles": 150649620,
+          "change_percent": -5.3,
+          "placement_range_percent": [
+            -5.7,
+            -4.9
+          ]
+        },
+        "polymorphic": {
+          "checked_cycles": 42971080,
+          "unchecked_cycles": 38231126,
+          "change_percent": -11.4,
+          "placement_range_percent": [
+            -14.0,
+            -10.2
+          ]
+        },
+        "properties": {
+          "checked_cycles": 121867463,
+          "unchecked_cycles": 104537616,
+          "change_percent": -14.4,
+          "placement_range_percent": [
+            -15.4,
+            -13.5
+          ]
+        },
+        "regexp": {
+          "checked_cycles": 88150318,
+          "unchecked_cycles": 83785190,
+          "change_percent": -5.0,
+          "placement_range_percent": [
+            -6.9,
+            -2.9
+          ]
+        },
+        "strings": {
+          "checked_cycles": 41759160,
+          "unchecked_cycles": 39187020,
+          "change_percent": -6.2,
+          "placement_range_percent": [
+            -8.2,
+            -2.9
+          ]
+        }
+      }
+    },
+    "register_file_and_fetch": {
+      "what": "only the 42 register-file accesses (regStack) and 26 instruction fetches (codeSegment) unchecked, where a frame's entry already establishes the bounds",
+      "kernels": {
+        "allocation": {
+          "checked_cycles": 76331814,
+          "unchecked_cycles": 74141536,
+          "change_percent": -3.1,
+          "placement_range_percent": [
+            -5.0,
+            -1.2
+          ]
+        },
+        "arrays": {
+          "checked_cycles": 348411136,
+          "unchecked_cycles": 324876864,
+          "change_percent": -6.8,
+          "placement_range_percent": [
+            -7.7,
+            -6.2
+          ]
+        },
+        "calls": {
+          "checked_cycles": 51679067,
+          "unchecked_cycles": 47514817,
+          "change_percent": -7.8,
+          "placement_range_percent": [
+            -8.8,
+            -6.7
+          ]
+        },
+        "closures": {
+          "checked_cycles": 77615282,
+          "unchecked_cycles": 73483202,
+          "change_percent": -5.5,
+          "placement_range_percent": [
+            -6.1,
+            -3.6
+          ]
+        },
+        "helpers": {
+          "checked_cycles": 87932310,
+          "unchecked_cycles": 84900644,
+          "change_percent": -3.3,
+          "placement_range_percent": [
+            -4.9,
+            -1.3
+          ]
+        },
+        "json": {
+          "checked_cycles": 78594062,
+          "unchecked_cycles": 79049162,
+          "change_percent": 0.6,
+          "placement_range_percent": [
+            -1.3,
+            2.3
+          ]
+        },
+        "long-strings": {
+          "checked_cycles": 17349034,
+          "unchecked_cycles": 17460590,
+          "change_percent": 0.6,
+          "placement_range_percent": [
+            -1.2,
+            4.1
+          ]
+        },
+        "maps": {
+          "checked_cycles": 159512482,
+          "unchecked_cycles": 155230525,
+          "change_percent": -2.7,
+          "placement_range_percent": [
+            -3.2,
+            -2.3
+          ]
+        },
+        "polymorphic": {
+          "checked_cycles": 42887870,
+          "unchecked_cycles": 40917045,
+          "change_percent": -4.5,
+          "placement_range_percent": [
+            -4.9,
+            -3.3
+          ]
+        },
+        "properties": {
+          "checked_cycles": 122159220,
+          "unchecked_cycles": 113789543,
+          "change_percent": -6.9,
+          "placement_range_percent": [
+            -8.4,
+            -5.2
+          ]
+        },
+        "regexp": {
+          "checked_cycles": 88244000,
+          "unchecked_cycles": 87591386,
+          "change_percent": -0.6,
+          "placement_range_percent": [
+            -1.5,
+            0.3
+          ]
+        },
+        "strings": {
+          "checked_cycles": 41937572,
+          "unchecked_cycles": 41700544,
+          "change_percent": -0.3,
+          "placement_range_percent": [
+            -2.7,
+            2.5
+          ]
+        }
+      }
+    }
+  }
+}
