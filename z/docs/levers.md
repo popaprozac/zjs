@@ -34,6 +34,13 @@ Hermes run from source, 1.42 precompiled (1.25 and 1.28 faster then);
 1.13 times faster than JavaScriptCore's interpreter (1.7 faster then),
 and V8's is 1.06 times faster (1.9), V8's figures moving the most from
 run to run (its strings figure was 7 earlier the same day and 5 here).
+A run on 2026-09-30 (`results/2026-09-30.json`, engine `1d9110b`, load
+3.4, no QuickJS on the machine) left the table as it is: two runs that
+day agreed within 2%, but on the same binaries V8 was 20% slower than
+here (up to 1.8x on one kernel) and JavaScriptCore 7%, so its gaps would
+flatter the engine. Its engine figures match these within 2% on the
+geometric mean, and it gives `long-strings` its first figures: zjsz 3 ms,
+JavaScriptCore 3, V8 6, Hermes 2, too short to rank.
 For size, the engine's minimal embedder is 0.77 MB of code (0.56 MB on a
 core context); the
 Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
