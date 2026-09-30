@@ -900,9 +900,12 @@ does not.
 loop's instruction and operand fetches (16 sites): properties -6.8%, calls
 -5.9%, polymorphic -4.7%, closures -4.2%, arrays -3.5% in cycles; test262
 0 regressions both released and with every such access still checked.
-Probe `unchecked-index` lands. The call paths' argument copies into a new
-frame still index checked (calls -7.8% and arrays -6.8% were the control's
-figures with them unchecked too).
+Probe `unchecked-index` lands. ZJS `a3a0960` -- the call paths' argument
+copies, frame register setup, and the leaf interpreter's fetches (37 more
+sites): arrays -2.6%, calls -2.4%, closures -1.9% on top; all 53 against
+the same C with their checks kept, calls -8.4%, properties -7.2%, arrays
+-5.7%, closures -5.4%, polymorphic -4.6% (the control's figures were
+calls -7.8%, arrays -6.8%); test262 unchanged both ways again.
 **Earlier status:** `proposed` -- Codex (2026-09-21): unchecked indexing remains a separate design deliberation, not an approved API; the measured cost stands as the case for it
 **Re-measured 2026-09-25 at `bdc237d2`:** compiling the engine's emitted C
 with every bounds check, and then also every checked add/sub/mul, turned

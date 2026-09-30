@@ -457,8 +457,14 @@ closures -6%, calls -5%). The second landed 2026-09-30 as `uncheckedAt`
 and `uncheckedSet` inside `unsafe`, checked in debug builds: the register
 accessors and the dispatch loop's fetches use it (properties -6.8%, calls
 -5.9%, polymorphic -4.7%, closures -4.2%, arrays -3.5% in cycles,
-`bench/speed/results/2026-09-30-unchecked.json`); the argument copies of
-the call paths are next.
+`bench/speed/results/2026-09-30-unchecked.json`), and so do the call
+paths' argument copies, frame register setup, and the leaf interpreter's
+fetches (all of it against the same C with those checks kept: calls
+-8.4%, properties -7.2%, arrays -5.7%, closures -5.4%, polymorphic -4.6%,
+`bench/speed/results/2026-09-30-call-paths.json`). The fourteen register
+and code accesses left checked -- generator save and restore, the
+collector's roots, string joins, eval-var operands -- moved nothing in
+the control with every check off.
 
 **Profile-guided optimization** (measured 2026-09-26, not yet a lever
 with a place in the build). The generated C built with clang's
