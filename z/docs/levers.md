@@ -453,7 +453,12 @@ clang will not inline even two-line helpers into the dispatch loop
 and unchecked element access where an invariant checked once makes the
 per-access check redundant (every bounds check off: -6% to -13% on every
 kernel; the register file and instruction fetch alone: properties -8%,
-closures -6%, calls -5%).
+closures -6%, calls -5%). The second landed 2026-09-30 as `uncheckedAt`
+and `uncheckedSet` inside `unsafe`, checked in debug builds: the register
+accessors and the dispatch loop's fetches use it (properties -6.8%, calls
+-5.9%, polymorphic -4.7%, closures -4.2%, arrays -3.5% in cycles,
+`bench/speed/results/2026-09-30-unchecked.json`); the argument copies of
+the call paths are next.
 
 **Profile-guided optimization** (measured 2026-09-26, not yet a lever
 with a place in the build). The generated C built with clang's

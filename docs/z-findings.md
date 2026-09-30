@@ -24,10 +24,10 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-09-30 the pin is `a642cafe` (Stage 0; before it, `bdc237d2`
-from 2026-09-21, at which the engine also builds with the native compiler
-and passes every gate, see the checkpoints under G49 -- that native build
-is not yet repeated at `a642cafe`); the Stage 0 build at the pin remains
+Since 2026-09-30 the pin is `c2b6805c` (Stage 0; before it, `a642cafe`
+the same day and `bdc237d2` from 2026-09-21, at which the engine also
+builds with the native compiler and passes every gate, see the checkpoints
+under G49 -- that native build is not yet repeated at the current pin); the Stage 0 build at the pin remains
 the baseline the gates and measurements are stated against.
 
 Two operating rules, per the agreed handoff model:
@@ -890,7 +890,20 @@ G21 (bytes out to native) and G26 (bytes to String, now landed).
 
 ## G31 — Checked indexing and arithmetic cost the interpreter loop about a tenth
 
-**Status:** `proposed` — Codex (2026-09-21): unchecked indexing remains a separate design deliberation, not an approved API; the measured cost stands as the case for it
+**Status:** `consumer-verified` -- decided 2026-09-30 after re-measuring:
+methods inside `unsafe`, checked in debug builds
+**Implemented:** z-lang `0a8cd641` -- `values.uncheckedAt(index)` and
+`values.uncheckedSet(index, value)` inside `unsafe`, cleanup-free elements,
+both compilers; a debug build checks and traps, a release build (NDEBUG)
+does not.
+**Verified:** ZJS `84d2a9f` -- the register accessors and the dispatch
+loop's instruction and operand fetches (16 sites): properties -6.8%, calls
+-5.9%, polymorphic -4.7%, closures -4.2%, arrays -3.5% in cycles; test262
+0 regressions both released and with every such access still checked.
+Probe `unchecked-index` lands. The call paths' argument copies into a new
+frame still index checked (calls -7.8% and arrays -6.8% were the control's
+figures with them unchecked too).
+**Earlier status:** `proposed` -- Codex (2026-09-21): unchecked indexing remains a separate design deliberation, not an approved API; the measured cost stands as the case for it
 **Re-measured 2026-09-25 at `bdc237d2`:** compiling the engine's emitted C
 with every bounds check, and then also every checked add/sub/mul, turned
 into a no-op moved the ten speed kernels by -13% to +16% each, in both
