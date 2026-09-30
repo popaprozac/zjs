@@ -5228,11 +5228,7 @@ export struct Runtime {
       if (isInt32(piece)) {
         let digits: u8[11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         const n = int32DigitsInto(inout digits, asInt32(piece));
-        let d: usize = 0;
-        while (d < n) {
-          tail.push(digits[d]);
-          d = d + 1;
-        }
+        tail.append(digits.slice(0, n));
       } else {
         const handle = asCell(piece);
         const length = this.heap.stringLength(handle);
@@ -8803,11 +8799,7 @@ export struct Runtime {
 }
 
 export function appendBytes(inout target: Array<u8>, source: Array<u8>): void {
-  let index: usize = 0;
-  while (index < source.length) {
-    target.push(source[index]);
-    index = index + 1;
-  }
+  target.append(source);
 }
 
 export function createRuntime(): Runtime {

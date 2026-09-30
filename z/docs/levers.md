@@ -403,8 +403,17 @@ into the gather buffer as blocks, and indexOf tries a start only when
 the needle's first and last bytes both match there: strings -2.3%,
 indexOf -5.1%. Left against JavaScriptCore's interpreter (millions of
 cycles, startup excluded): building 16.2 vs 11.8, split 7.2 vs 5.0,
-join 4.4 vs 3.2, indexOf 2.9 vs 2.1. Extending a string's buffer in
-place stays a loop that reloads per byte until Z has a block append.
+join 4.4 vs 3.2, indexOf 2.9 vs 2.1.
+Block copies (2026-09-30): Z now appends a run of elements in one call
+(`Array.append`, with `values.slice(start, end)` for part of an array),
+so every copy of string storage -- extending a concatenation's buffer in
+place, arena and buffer copies, the join gather, number digits, UTF-16
+unit copies -- is one capacity check and one copy. Kilobyte
+concatenations and joins (the new `long-strings` kernel) -69.9% in
+cycles over 8 placements; the other eleven kernels within noise
+(-1.4..+0.8%), after the compiler copies runs of 16 or fewer inline (a
+`memcpy` call for a few bytes had made `strings` +3.7%). `libzjs.a`
++4 KiB (1094 KiB). Results in `bench/speed/results/2026-09-30-append.json`.
 Sort (2026-09-28): the merge sort merges each level from one buffer into
 the other, copying nothing back, and joins halves of four or more that
 are already in order after one comparison: sorted input takes 24k
@@ -426,9 +435,9 @@ compiler spend more time on the bytecode above. Needs a versioned format
 and a loader that validates what it is given. After bytecode quality, so
 the format is not fixed too early.
 
-**Z upstream** (docs/z-findings.md). Appending a run of elements or of
-one repeated value in a single call, for every allocation and copy the
-heap makes; locale-independent conversion between numbers and text,
+**Z upstream** (docs/z-findings.md). Appending one repeated value in a
+single call, for every allocation the heap fills (a run of elements
+landed 2026-09-30, above); locale-independent conversion between numbers and text,
 which would also replace the formatting passes above; build-time
 selection, for opt-in features and platform code. Two now measured as
 worth several percent everywhere (2026-09-26): an inlining hint, since

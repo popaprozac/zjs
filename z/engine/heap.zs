@@ -2442,22 +2442,14 @@ export struct Heap {
     const byteCount = u32(bytes.length);
     if (byteCount <= SMALL_STRING_BYTES) {
       const offset = u32(this.smallBytes.length);
-      let k: usize = 0;
-      while (k < bytes.length) {
-        this.smallBytes.push(bytes[k]);
-        k = k + 1;
-      }
+      this.smallBytes.append(bytes);
       return this.allocateArenaString(offset, byteCount, wide);
     }
     // A buffer holding far more than its bytes (one sized for a larger
     // text) is not kept at that size for the string's life.
     if (bytes.capacity > bytes.length * 2 + 64) {
       let fitted = Array<u8>.withCapacity(bytes.length);
-      let k: usize = 0;
-      while (k < bytes.length) {
-        fitted.push(bytes[k]);
-        k = k + 1;
-      }
+      fitted.append(bytes);
       const stringIndex = this.adoptBuffer(move fitted);
       return this.allocateStringOver(stringIndex, byteCount, wide);
     }
@@ -2561,32 +2553,19 @@ export struct Heap {
       }
       return;
     }
-    const buffer = usize(payload);
-    while (k < length) {
-      const byte = this.strings[buffer][k];
-      this.smallBytes.push(byte);
-      k = k + 1;
-    }
+    this.smallBytes.append(this.strings[usize(payload)].slice(0, length));
   }
 
   // A string's storage bytes appended to `target`.
   function copyStorage(handle: u32, inout target: Array<u8>): void {
     const payload = this.headers[usize(handle)].payload;
     const length = usize(this.headers[usize(handle)].slotStart);
-    let k: usize = 0;
     if ((payload & ARENA_BIT) != 0) {
       const origin = usize(payload & ~ARENA_BIT);
-      while (k < length) {
-        target.push(this.smallBytes[origin + k]);
-        k = k + 1;
-      }
+      target.append(this.smallBytes.slice(origin, origin + length));
       return;
     }
-    const buffer = usize(payload);
-    while (k < length) {
-      target.push(this.strings[buffer][k]);
-      k = k + 1;
-    }
+    target.append(this.strings[usize(payload)].slice(0, length));
   }
 
   // Whether a string's bytes end at the arena's top, so what follows can
@@ -2629,13 +2608,9 @@ export struct Heap {
         let index: usize = 0;
         if ((rightPayload & ARENA_BIT) != 0) {
           // A small right side, the usual piece appended: its arena bytes
-          // read directly.
+          // copied in one step.
           const origin = usize(rightPayload & ~ARENA_BIT);
-          while (index < usize(rightBytes)) {
-            const byte = this.smallBytes[origin + index];
-            this.strings[leftBuffer].push(byte);
-            index = index + 1;
-          }
+          this.strings[leftBuffer].append(this.smallBytes.slice(origin, origin + usize(rightBytes)));
         } else {
           while (index < usize(rightBytes)) {
             const byte = this.storageByte(right, index);
@@ -2667,13 +2642,8 @@ export struct Heap {
     const joinedBytes = length + u32(count * width);
     if (joinedBytes <= SMALL_STRING_BYTES) {
       let offset = u32(this.smallBytes.length);
-      let k: usize = 0;
       if (before) {
-        while (k < count) {
-          this.smallBytes.push(bytes[k]);
-          if (wide) this.smallBytes.push(0);
-          k = k + 1;
-        }
+        appendAsciiUnits(inout this.smallBytes, bytes, count, wide);
         this.copyToArena(handle);
         return this.allocateArenaString(offset, joinedBytes, wide);
       }
@@ -2682,44 +2652,31 @@ export struct Heap {
       } else {
         this.copyToArena(handle);
       }
-      while (k < count) {
-        this.smallBytes.push(bytes[k]);
-        if (wide) this.smallBytes.push(0);
-        k = k + 1;
-      }
+      appendAsciiUnits(inout this.smallBytes, bytes, count, wide);
       return this.allocateArenaString(offset, joinedBytes, wide);
     }
     if (!before && (payload & ARENA_BIT) == 0) {
       const buffer = usize(payload);
       const appendable = (this.bufferRefs[buffer] & BUFFER_APPENDABLE) != 0;
       if (appendable && u32(this.strings[buffer].length) == length) {
-        let k: usize = 0;
-        while (k < count) {
-          this.strings[buffer].push(bytes[k]);
-          if (wide) this.strings[buffer].push(0);
-          k = k + 1;
+        if (!wide) {
+          this.strings[buffer].append(bytes.slice(0, count));
+        } else {
+          let k: usize = 0;
+          while (k < count) {
+            this.strings[buffer].push(bytes[k]);
+            this.strings[buffer].push(0);
+            k = k + 1;
+          }
         }
         this.bufferRefs[buffer] = this.bufferRefs[buffer] + 1;
         return this.allocateStringOver(u32(buffer), joinedBytes, wide);
       }
     }
     let joined = Array<u8>.withCapacity(usize(joinedBytes));
-    let k: usize = 0;
-    if (before) {
-      while (k < count) {
-        joined.push(bytes[k]);
-        if (wide) joined.push(0);
-        k = k + 1;
-      }
-    }
+    if (before) appendAsciiUnits(inout joined, bytes, count, wide);
     this.copyStorage(handle, inout joined);
-    if (!before) {
-      while (k < count) {
-        joined.push(bytes[k]);
-        if (wide) joined.push(0);
-        k = k + 1;
-      }
-    }
+    if (!before) appendAsciiUnits(inout joined, bytes, count, wide);
     const stringIndex = this.adoptBuffer(move joined);
     this.bufferRefs[usize(stringIndex)] = BUFFER_APPENDABLE | 1;
     return this.allocateStringOver(stringIndex, joinedBytes, wide);
@@ -2732,19 +2689,11 @@ export struct Heap {
     const count = bytes.length;
     if (count <= usize(SMALL_STRING_BYTES)) {
       const offset = u32(this.smallBytes.length);
-      let k: usize = 0;
-      while (k < count) {
-        this.smallBytes.push(bytes[k]);
-        k = k + 1;
-      }
+      this.smallBytes.append(bytes);
       return this.allocateArenaString(offset, u32(count), false);
     }
     let copied = Array<u8>.withCapacity(count);
-    let k: usize = 0;
-    while (k < count) {
-      copied.push(bytes[k]);
-      k = k + 1;
-    }
+    copied.append(bytes);
     return this.allocateStorage(move copied, false);
   }
 
@@ -3515,16 +3464,25 @@ function findAllIn(hay: Slice<u8>, hayStart: usize, hayLength: usize, needle: Sl
   }
 }
 
-// `storage`[first, last) appended to `bytes`: a local array, which keeps
-// its length and data in registers where one behind a pointer reloads
-// them after every byte.
+// `count` ASCII bytes appended to `target` as string units: in one copy
+// for a narrow string, each followed by a zero byte for a wide one.
+function appendAsciiUnits(inout target: Array<u8>, bytes: Slice<u8>, count: usize, wide: boolean): void {
+  if (!wide) {
+    target.append(bytes.slice(0, count));
+    return;
+  }
+  let k: usize = 0;
+  while (k < count) {
+    target.push(bytes[k]);
+    target.push(0);
+    k = k + 1;
+  }
+}
+
+// `storage`[first, last) appended to `bytes` in one copy.
 export function appendRange(storage: Slice<u8>, first: usize, last: usize, bytes: Array<u8>): Array<u8> {
   let appended = move bytes;
-  let index = first;
-  while (index < last) {
-    appended.push(storage[index]);
-    index = index + 1;
-  }
+  appended.append(storage.slice(first, last));
   return appended;
 }
 
@@ -3615,11 +3573,7 @@ export function sliceBytes(in bytes: Array<u8>, start: usize, end: usize): Array
   let count: usize = 0;
   if (end > start) count = end - start;
   let copied = Array<u8>.withCapacity(count);
-  let index = start;
-  while (index < end) {
-    copied.push(bytes[index]);
-    index = index + 1;
-  }
+  if (count > 0) copied.append(bytes.slice(start, end));
   return copied;
 }
 

@@ -1,0 +1,118 @@
+{
+  "what": "Cycles of the Z engine before and after copying string storage as blocks (Array.append and call-scoped slice ranges), median over eight placements of the dispatch loop's code (placements.py compare); change is the geometric mean over placements.",
+  "date": "2026-09-30",
+  "before": "engine at fdb2baf, Stage 0 z-lang 5517f3f7 (the engine uses no append, so a642cafe compiles it the same)",
+  "after": "engine with block copies, Stage 0 z-lang a642cafe",
+  "placements": 8,
+  "load_average": 6.23,
+  "kernels": {
+    "allocation": {
+      "before_cycles": 78825593,
+      "after_cycles": 78152719,
+      "change_percent": -0.8,
+      "placement_range_percent": [
+        -2.6,
+        1.0
+      ]
+    },
+    "arrays": {
+      "before_cycles": 353077581,
+      "after_cycles": 351107146,
+      "change_percent": -0.3,
+      "placement_range_percent": [
+        -1.8,
+        0.8
+      ]
+    },
+    "calls": {
+      "before_cycles": 54112110,
+      "after_cycles": 53423105,
+      "change_percent": -0.5,
+      "placement_range_percent": [
+        -2.0,
+        1.6
+      ]
+    },
+    "closures": {
+      "before_cycles": 80238924,
+      "after_cycles": 80388498,
+      "change_percent": -0.1,
+      "placement_range_percent": [
+        -1.6,
+        1.5
+      ]
+    },
+    "helpers": {
+      "before_cycles": 90315539,
+      "after_cycles": 90228390,
+      "change_percent": -0.0,
+      "placement_range_percent": [
+        -1.1,
+        1.4
+      ]
+    },
+    "json": {
+      "before_cycles": 82481651,
+      "after_cycles": 81975872,
+      "change_percent": -0.5,
+      "placement_range_percent": [
+        -1.9,
+        1.2
+      ]
+    },
+    "maps": {
+      "before_cycles": 166626018,
+      "after_cycles": 165666099,
+      "change_percent": -0.6,
+      "placement_range_percent": [
+        -2.2,
+        0.4
+      ]
+    },
+    "polymorphic": {
+      "before_cycles": 44702328,
+      "after_cycles": 45279270,
+      "change_percent": 0.8,
+      "placement_range_percent": [
+        -0.8,
+        2.2
+      ]
+    },
+    "properties": {
+      "before_cycles": 125553634,
+      "after_cycles": 125291226,
+      "change_percent": -0.1,
+      "placement_range_percent": [
+        -1.5,
+        1.4
+      ]
+    },
+    "regexp": {
+      "before_cycles": 92624998,
+      "after_cycles": 91811244,
+      "change_percent": -1.4,
+      "placement_range_percent": [
+        -3.8,
+        1.4
+      ]
+    },
+    "strings": {
+      "before_cycles": 43875810,
+      "after_cycles": 44418366,
+      "change_percent": 0.1,
+      "placement_range_percent": [
+        -3.4,
+        2.3
+      ]
+    },
+    "long-strings": {
+      "before_cycles": 63991934,
+      "after_cycles": 19063340,
+      "change_percent": -69.9,
+      "placement_range_percent": [
+        -71.5,
+        -68.3
+      ]
+    }
+  }
+}

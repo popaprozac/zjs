@@ -1,7 +1,7 @@
 # Jitless speed
 
 The Z engine against the jit-less engines an embedder would otherwise
-choose, on eleven small kernels. The engine's goal is to be the fastest
+choose, on twelve small kernels. The engine's goal is to be the fastest
 engine that runs without a JIT, which is what every iOS app gets; these
 kernels are how that is tracked.
 
@@ -33,6 +33,9 @@ on purpose: each
 isolates one cost (calls, property access, closures, arrays, strings,
 allocation, JSON, regular expressions, Map and Set), so a regression or a
 win points at a subsystem. They are not a substitute for real programs.
+`long-strings` (added 2026-09-30) concatenates and joins kilobyte strings,
+where `strings` builds from pieces of a few bytes: it tracks copying a
+string's bytes as blocks.
 `helpers` (added 2026-09-28) calls small non-recursive functions from a
 loop -- arithmetic helpers, a predicate, a property accessor -- which
 `calls`, a recursion, does not.

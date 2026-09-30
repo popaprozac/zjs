@@ -227,11 +227,7 @@ export function sliceUnits(in units: Array<u16>, start: usize, end: usize): Arra
   let count: usize = 0;
   if (end > start) count = end - start;
   let copy = Array<u16>.withCapacity(count);
-  let i = start;
-  while (i < end) {
-    copy.push(units[i]);
-    i = i + 1;
-  }
+  if (count > 0) copy.append(units.slice(start, end));
   return copy;
 }
 
@@ -241,23 +237,13 @@ export function copyUnits(in units: Array<u16>): Array<u16> {
 }
 
 export function appendUnits(inout target: Array<u16>, source: Array<u16>): void {
-  target.reserveCapacity(target.length + source.length);
-  let i: usize = 0;
-  while (i < source.length) {
-    target.push(source[i]);
-    i = i + 1;
-  }
+  target.append(source);
 }
 
-// source[start, end) onto target, with no slice in between.
+// source[start, end) onto target in one copy.
 export function appendUnitRange(inout target: Array<u16>, in source: Array<u16>, start: usize, end: usize): void {
   if (end <= start) return;
-  target.reserveCapacity(target.length + (end - start));
-  let i = start;
-  while (i < end) {
-    target.push(source[i]);
-    i = i + 1;
-  }
+  target.append(source.slice(start, end));
 }
 
 export function appendText(inout target: Array<u16>, in text: String): void {
