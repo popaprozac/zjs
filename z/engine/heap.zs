@@ -394,11 +394,7 @@ export struct Heap {
   function allocate(inout this, tag: u8, slotCount: u32): u32 {
     const start = u32(this.slots.length);
     if (this.slots.length + usize(slotCount) > this.slots.capacity) this.growArena(usize(slotCount));
-    let index: u32 = 0;
-    while (index < slotCount) {
-      this.slots.push(undefinedValue());
-      index = index + 1;
-    }
+    this.slots.appendRepeated(undefinedValue(), usize(slotCount));
     this.allocatedSinceCollect = this.allocatedSinceCollect + 1;
     const header = CellHeader({
       tag: tag,
@@ -1139,11 +1135,7 @@ export struct Heap {
     const oldCount = this.headers[usize(handle)].slotCount;
     if (usize(oldStart) >= this.tailBase && usize(oldStart + oldCount) == this.slots.length) {
       if (this.slots.length + usize(newCount - oldCount) > this.slots.capacity) this.growArena(usize(newCount - oldCount));
-      let added = oldCount;
-      while (added < newCount) {
-        this.slots.push(fill);
-        added = added + 1;
-      }
+      this.slots.appendRepeated(fill, usize(newCount - oldCount));
       this.headers[usize(handle)].slotCount = newCount;
       return;
     }
@@ -1155,10 +1147,7 @@ export struct Heap {
       this.slots.push(kept);
       index = index + 1;
     }
-    while (index < newCount) {
-      this.slots.push(fill);
-      index = index + 1;
-    }
+    if (newCount > oldCount) this.slots.appendRepeated(fill, usize(newCount - oldCount));
     this.headers[usize(handle)].slotStart = start;
     this.headers[usize(handle)].slotCount = newCount;
     this.growLog.push((u64(start) << 32) | u64(handle));
@@ -1453,11 +1442,7 @@ export struct Heap {
       return names;
     }
     const propCount = this.classes[usize(payload)].propCount;
-    let fill: u32 = 0;
-    while (fill < propCount) {
-      names.push(0);
-      fill = fill + 1;
-    }
+    names.appendRepeated(0, usize(propCount));
     let classId = payload;
     while (classId != 0) {
       names[usize(this.classes[usize(classId)].transitionSlot)] = this.classes[usize(classId)].transitionName;
@@ -1534,12 +1519,8 @@ export struct Heap {
     while (size < capacity * 2) {
       size = size * 2;
     }
-    let index = Array<u32>();
-    let fill: u32 = 0;
-    while (fill < size) {
-      index.push(0);
-      fill = fill + 1;
-    }
+    let index = Array<u32>.withCapacity(usize(size));
+    index.appendRepeated(0, usize(size));
     this.dictionaries[usize(dictionary)].index = move index;
     this.dictionaries[usize(dictionary)].mask = size - 1;
     const used = this.dictionaries[usize(dictionary)].used;
@@ -1641,9 +1622,8 @@ export struct Heap {
   }
 
   function setPairAttr(inout this, dictionary: u32, pair: u32, attr: u8): void {
-    while (this.dictionaries[usize(dictionary)].attrs.length <= usize(pair)) {
-      this.dictionaries[usize(dictionary)].attrs.push(PROP_DEFAULT);
-    }
+    const held = this.dictionaries[usize(dictionary)].attrs.length;
+    if (held <= usize(pair)) this.dictionaries[usize(dictionary)].attrs.appendRepeated(PROP_DEFAULT, usize(pair) + 1 - held);
     this.dictionaries[usize(dictionary)].attrs[usize(pair)] = attr;
   }
 
@@ -1676,11 +1656,7 @@ export struct Heap {
   // through the cell and takes the table back with it.
   function allocateTable(inout this, kind: i32): u32 {
     let index = Array<i32>.withCapacity(8);
-    let k: usize = 0;
-    while (k < 8) {
-      index.push(TABLE_EMPTY);
-      k = k + 1;
-    }
+    index.appendRepeated(TABLE_EMPTY, 8);
     const fresh = Table({ keys: Array<Value>(), values: Array<Value>(), hashes: Array<u32>(), index: move index, live: 0, kind: kind });
     let table: u32 = 0;
     if (this.freeTableCount > 0) {
@@ -1789,11 +1765,7 @@ export struct Heap {
   function growTableIndex(inout this, table: usize): void {
     const capacity = this.tables[table].index.length * 2;
     let index = Array<i32>.withCapacity(capacity);
-    let k: usize = 0;
-    while (k < capacity) {
-      index.push(TABLE_EMPTY);
-      k = k + 1;
-    }
+    index.appendRepeated(TABLE_EMPTY, capacity);
     const mask = u32(capacity) - 1;
     let position: usize = 0;
     while (position < this.tables[table].keys.length) {
@@ -2191,12 +2163,8 @@ export struct Heap {
 
   function addPending(inout this, key: u32, value: Value): void {
     if (this.pendingBuckets.length == 0) {
-      let buckets = Array<u32>();
-      let i: u32 = 0;
-      while (i < 16) {
-        buckets.push(0);
-        i = i + 1;
-      }
+      let buckets = Array<u32>.withCapacity(16);
+      buckets.appendRepeated(0, 16);
       this.pendingBuckets = move buckets;
       this.pendingMask = 15;
     }
@@ -2214,11 +2182,7 @@ export struct Heap {
   function growPending(inout this): void {
     const size = u32(this.pendingBuckets.length) * 2;
     let buckets = Array<u32>.withCapacity(usize(size));
-    let i: u32 = 0;
-    while (i < size) {
-      buckets.push(0);
-      i = i + 1;
-    }
+    buckets.appendRepeated(0, usize(size));
     this.pendingBuckets = move buckets;
     this.pendingMask = size - 1;
     let entry: u32 = 0;
@@ -3143,9 +3107,8 @@ export struct Heap {
         if (attr == PROP_DEFAULT) return;
         entry = this.addElementAttrs(handle);
       }
-      while (this.elementAttrs[usize(entry)].attrs.length <= usize(index)) {
-        this.elementAttrs[usize(entry)].attrs.push(PROP_DEFAULT);
-      }
+      const held = this.elementAttrs[usize(entry)].attrs.length;
+      if (held <= usize(index)) this.elementAttrs[usize(entry)].attrs.appendRepeated(PROP_DEFAULT, usize(index) + 1 - held);
       this.elementAttrs[usize(entry)].attrs[usize(index)] = attr;
     }
   }
@@ -3206,11 +3169,7 @@ export struct Heap {
       size = size * 2;
     }
     let index = Array<u32>.withCapacity(size);
-    let k: usize = 0;
-    while (k < size) {
-      index.push(0);
-      k = k + 1;
-    }
+    index.appendRepeated(0, size);
     let entry: usize = 0;
     while (entry < this.elementAttrs.length) {
       const owner = this.elementAttrs[entry].owner;
@@ -3392,12 +3351,7 @@ function grownCapacity(capacity: usize, needed: usize): usize {
 // `count` zeros, whatever `values` held.
 function fillZeros(inout values: Array<u32>, count: usize): void {
   values.clear();
-  values.reserveCapacity(count);
-  let i: usize = 0;
-  while (i < count) {
-    values.push(0);
-    i = i + 1;
-  }
+  values.appendRepeated(0, count);
 }
 
 // Each count replaced by the sum of those before it.

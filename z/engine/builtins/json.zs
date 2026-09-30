@@ -48,11 +48,7 @@ function defineParsed(inout runtime: Runtime, inout parser: JsonParser, object: 
 
 function zeros(count: usize): Array<u32> {
   let list = Array<u32>.withCapacity(count);
-  let k: usize = 0;
-  while (k < count) {
-    list.push(0);
-    k = k + 1;
-  }
+  list.appendRepeated(0, count);
   return list;
 }
 

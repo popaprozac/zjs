@@ -887,12 +887,8 @@ export struct Runtime {
     const oldSize = this.atoms.length;
     const initial: usize = 64;
     const newSize = oldSize == 0 ? initial : oldSize * 2;
-    let rebuilt = Array<u32>();
-    let fill: usize = 0;
-    while (fill < newSize) {
-      rebuilt.push(0);
-      fill = fill + 1;
-    }
+    let rebuilt = Array<u32>.withCapacity(newSize);
+    rebuilt.appendRepeated(0, newSize);
     let index: usize = 0;
     while (index < oldSize) {
       const handle = this.atoms[index];
@@ -3502,7 +3498,7 @@ export struct Runtime {
     const argsBase = this.regTop;
     const argc = this.heap.arrayLength(array);
     const needed = usize(argsBase + argc);
-    while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < needed) this.growRegisters(needed);
     let index: u32 = 0;
     while (index < argc) {
       const element = this.heap.arrayGet(array, index);
@@ -3986,7 +3982,7 @@ export struct Runtime {
     const argsBase = this.regTop;
     const argc = u32(args.length);
     const needed = usize(argsBase + argc);
-    while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < needed) this.growRegisters(needed);
     let index: u32 = 0;
     while (index < argc) {
       const passed = args[usize(index)];
@@ -4006,7 +4002,7 @@ export struct Runtime {
 
   function callValue1(inout this, callee: Value, thisValue: Value, first: Value): Value {
     const argsBase = this.regTop;
-    while (this.regStack.length < usize(argsBase + 1)) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < usize(argsBase + 1)) this.growRegisters(usize(argsBase + 1));
     this.setStackAt(usize(argsBase), first);
     this.regTop = argsBase + 1;
     return this.callPlaced(callee, thisValue, argsBase, 1);
@@ -4014,7 +4010,7 @@ export struct Runtime {
 
   function callValue2(inout this, callee: Value, thisValue: Value, first: Value, second: Value): Value {
     const argsBase = this.regTop;
-    while (this.regStack.length < usize(argsBase + 2)) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < usize(argsBase + 2)) this.growRegisters(usize(argsBase + 2));
     this.setStackAt(usize(argsBase), first);
     this.setStackAt(usize(argsBase + 1), second);
     this.regTop = argsBase + 2;
@@ -4023,7 +4019,7 @@ export struct Runtime {
 
   function callValue3(inout this, callee: Value, thisValue: Value, first: Value, second: Value, third: Value): Value {
     const argsBase = this.regTop;
-    while (this.regStack.length < usize(argsBase + 3)) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < usize(argsBase + 3)) this.growRegisters(usize(argsBase + 3));
     this.setStackAt(usize(argsBase), first);
     this.setStackAt(usize(argsBase + 1), second);
     this.setStackAt(usize(argsBase + 2), third);
@@ -4033,7 +4029,7 @@ export struct Runtime {
 
   function callValue4(inout this, callee: Value, thisValue: Value, first: Value, second: Value, third: Value, fourth: Value): Value {
     const argsBase = this.regTop;
-    while (this.regStack.length < usize(argsBase + 4)) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < usize(argsBase + 4)) this.growRegisters(usize(argsBase + 4));
     this.setStackAt(usize(argsBase), first);
     this.setStackAt(usize(argsBase + 1), second);
     this.setStackAt(usize(argsBase + 2), third);
@@ -4047,7 +4043,7 @@ export struct Runtime {
   // vector.
   function callForwarding(inout this, callee: Value, thisValue: Value, source: u32, count: u32): Value {
     const argsBase = this.regTop;
-    while (this.regStack.length < usize(argsBase + count)) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < usize(argsBase + count)) this.growRegisters(usize(argsBase + count));
     let index: u32 = 0;
     while (index < count) {
       const passed = this.stackAt(usize(source + index));
@@ -4106,7 +4102,7 @@ export struct Runtime {
   // with its own values (the leaf may have overwritten these).
   function callLeaf(inout this, code: usize, argc: u32, first: Value, second: Value, third: Value, fourth: Value): Value {
     const base = this.regTop;
-    while (this.regStack.length < usize(base + 4)) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < usize(base + 4)) this.growRegisters(usize(base + 4));
     this.setStackAt(usize(base), first);
     this.setStackAt(usize(base + 1), second);
     this.setStackAt(usize(base + 2), third);
@@ -4126,7 +4122,7 @@ export struct Runtime {
     if (regCount < paramCount) regCount = paramCount;
     const base = this.regTop;
     const top = usize(base) + usize(regCount);
-    while (this.regStack.length < top) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < top) this.growRegisters(top);
     // The parameters passed, unless they are already there (callLeaf),
     // then undefined for the rest.
     let i: u32 = paramCount < argc ? paramCount : argc;
@@ -4450,7 +4446,7 @@ export struct Runtime {
     const argsBase = this.regTop;
     const argc = u32(args.length);
     const needed = usize(argsBase + argc);
-    while (this.regStack.length < needed) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < needed) this.growRegisters(needed);
     let index: u32 = 0;
     while (index < argc) {
       const passed = args[usize(index)];
@@ -5354,7 +5350,7 @@ export struct Runtime {
     const base = this.regTop;
     // Indices in usize, where a sum of two u32s cannot overflow.
     const top = usize(base) + usize(regCount);
-    while (this.regStack.length < top) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < top) this.growRegisters(top);
     // The arguments lie below the stack top, so below `base`.
     const copied = argc < paramCount ? argc : paramCount;
     let source = usize(argsBase);
@@ -5431,7 +5427,7 @@ export struct Runtime {
     const thisReg = this.functions[code].thisReg;
     const base = this.regTop;
     const top = usize(base) + usize(regCount);
-    while (this.regStack.length < top) { this.regStack.push(undefinedValue()); }
+    if (this.regStack.length < top) this.growRegisters(top);
     const copied = argc < paramCount ? argc : paramCount;
     let source = usize(argsBase);
     let slot = usize(base);
@@ -5620,6 +5616,13 @@ export struct Runtime {
     unsafe {
       this.regStack.uncheckedSet(usize(base.wrappingAdd(u32(index))), value);
     }
+  }
+
+  // The register stack grown to `top` registers, the new ones undefined.
+  // A function of its own: every call asks whether the stack is long
+  // enough, and almost none has to grow it.
+  function growRegisters(inout this, top: usize): void {
+    this.regStack.appendRepeated(undefinedValue(), top - this.regStack.length);
   }
 
   // Stack access by absolute index, for the code that places a call's

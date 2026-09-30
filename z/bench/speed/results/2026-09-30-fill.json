@@ -1,0 +1,163 @@
+{
+  "what": "Cycles of the Z engine with its repeated-value fills using Array.appendRepeated (cell slots, slot growth, hash-index and table initialization, grow-to-index attribute arrays, atom and JSON zero fills) and its register-stack growth moved into one out-of-line method, against the engine before it (ZJS a3a0960). Median over eight placements of each one's faster run, change the geometric mean over placements; repeat is the same comparison run again.",
+  "date": "2026-09-30",
+  "engine": "appendRepeated fills, Stage 0 z-lang 4adacfea, -O2 -DNDEBUG",
+  "load_average": 4.5,
+  "size": {
+    "libzjs_a_bytes_before": 1112184,
+    "libzjs_a_bytes_after": 1113776,
+    "zjsz_bytes_before": 933096,
+    "zjsz_bytes_after": 933176
+  },
+  "lowering_notes": [
+    "With the helper left to the C compiler's judgement it stayed out of line once it had three callers, and cell allocation through the call made closures +3.7%/+4.5%.",
+    "A fill loop for short runs becomes a memset_pattern16 call: closures +4.3% in a hand-edited control.",
+    "An inline limit of eight stores instead of sixteen kept arrays but lost most of the allocation gain (-0.4%/-1.6%)."
+  ],
+  "kernels": {
+    "allocation": {
+      "before_cycles": 74540856,
+      "after_cycles": 72087074,
+      "change_percent": -3.7,
+      "placement_range_percent": [
+        -5.9,
+        -2.6
+      ],
+      "repeat_change_percent": [
+        -4.3
+      ]
+    },
+    "arrays": {
+      "before_cycles": 328812244,
+      "after_cycles": 310155812,
+      "change_percent": -5.8,
+      "placement_range_percent": [
+        -7.1,
+        -5.0
+      ],
+      "repeat_change_percent": [
+        -5.9
+      ]
+    },
+    "calls": {
+      "before_cycles": 48283714,
+      "after_cycles": 47821964,
+      "change_percent": -1.9,
+      "placement_range_percent": [
+        -4.5,
+        -0.3
+      ],
+      "repeat_change_percent": [
+        -1.5
+      ]
+    },
+    "closures": {
+      "before_cycles": 73931433,
+      "after_cycles": 72783188,
+      "change_percent": -1.8,
+      "placement_range_percent": [
+        -2.8,
+        -0.5
+      ],
+      "repeat_change_percent": [
+        -2.8
+      ]
+    },
+    "helpers": {
+      "before_cycles": 85708459,
+      "after_cycles": 85402759,
+      "change_percent": 0.1,
+      "placement_range_percent": [
+        -2.3,
+        4.0
+      ],
+      "repeat_change_percent": [
+        0.3
+      ]
+    },
+    "json": {
+      "before_cycles": 80120050,
+      "after_cycles": 79740712,
+      "change_percent": -0.9,
+      "placement_range_percent": [
+        -2.6,
+        0.6
+      ],
+      "repeat_change_percent": [
+        -0.6
+      ]
+    },
+    "long-strings": {
+      "before_cycles": 17017960,
+      "after_cycles": 17532937,
+      "change_percent": 3.3,
+      "placement_range_percent": [
+        -2.9,
+        11.8
+      ],
+      "repeat_change_percent": [
+        -1.0
+      ]
+    },
+    "maps": {
+      "before_cycles": 158582548,
+      "after_cycles": 156221444,
+      "change_percent": -1.4,
+      "placement_range_percent": [
+        -1.8,
+        -0.9
+      ],
+      "repeat_change_percent": [
+        -1.5
+      ]
+    },
+    "polymorphic": {
+      "before_cycles": 41463880,
+      "after_cycles": 41333681,
+      "change_percent": -0.4,
+      "placement_range_percent": [
+        -1.5,
+        0.6
+      ],
+      "repeat_change_percent": [
+        -0.1
+      ]
+    },
+    "properties": {
+      "before_cycles": 114972996,
+      "after_cycles": 115144316,
+      "change_percent": -0.0,
+      "placement_range_percent": [
+        -1.6,
+        1.6
+      ],
+      "repeat_change_percent": [
+        -0.2
+      ]
+    },
+    "regexp": {
+      "before_cycles": 89255520,
+      "after_cycles": 88713872,
+      "change_percent": -0.2,
+      "placement_range_percent": [
+        -1.2,
+        0.9
+      ],
+      "repeat_change_percent": [
+        -0.4
+      ]
+    },
+    "strings": {
+      "before_cycles": 42580867,
+      "after_cycles": 42602859,
+      "change_percent": -0.5,
+      "placement_range_percent": [
+        -3.7,
+        1.4
+      ],
+      "repeat_change_percent": [
+        0.6
+      ]
+    }
+  }
+}
