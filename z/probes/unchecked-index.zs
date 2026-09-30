@@ -11,9 +11,9 @@
 // the code segment are validated once per frame push; re-checking each
 // access buys nothing there.
 //
-// The spelling below is a proposal only: `atUnchecked(i)` on Array,
-// paired with a debug-build check. An `unsafe` index expression or a
-// per-function attribute that elides checks in release would serve too.
+// Landed in z-lang 0a8cd641 as `values.uncheckedAt(index)` and
+// `values.uncheckedSet(index, value)` inside `unsafe`, for cleanup-free
+// elements: a debug build still checks, a release build does not.
 import console from "std/console";
 
 function sum(in values: Array<i32>, count: usize): i32 {
@@ -22,7 +22,8 @@ function sum(in values: Array<i32>, count: usize): i32 {
   let total: i32 = 0;
   let index: usize = 0;
   while (index < count) {
-    total = total + values.atUnchecked(index);
+    const value = unsafe { select values.uncheckedAt(index); };
+    total = total + value;
     index = index + 1;
   }
   return total;

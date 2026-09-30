@@ -1,4 +1,4 @@
-# probe status at z-lang a642cafe (clean). Written by run.sh --record.
+# probe status at z-lang c2b6805c (clean). Written by run.sh --record.
 array-append-slice LANDED
 array-capacity-read LANDED
 array-capacity LANDED
@@ -28,6 +28,6 @@ string-from-bytes LANDED
 string-to-native COMPILER-REJECTED
 ternary-in-arithmetic LANDED
 truncating-conversion LANDED
-unchecked-index COMPILER-REJECTED
+unchecked-index LANDED
 while-true-diverges COMPILER-REJECTED
 wrapping-shift LANDED

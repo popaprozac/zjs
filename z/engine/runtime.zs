@@ -5606,13 +5606,18 @@ export struct Runtime {
   }
 
   // Register access: a window lies within the stack and is at most 256
-  // wide, so the sum cannot overflow and wraps rather than checks.
+  // wide, so the sum cannot overflow and wraps rather than checks. The
+  // frame's push grew the stack to its base plus its register count, and
+  // the compiler numbers every operand register below that count, so the
+  // index is in bounds; a release build does not check it again.
   function reg(base: u32, index: u8): Value {
-    return this.regStack[usize(base.wrappingAdd(u32(index)))];
+    return unsafe { select this.regStack.uncheckedAt(usize(base.wrappingAdd(u32(index)))); };
   }
 
   function setReg(inout this, base: u32, index: u8, value: Value): void {
-    this.regStack[usize(base.wrappingAdd(u32(index)))] = value;
+    unsafe {
+      this.regStack.uncheckedSet(usize(base.wrappingAdd(u32(index))), value);
+    }
   }
 
   // --- Template objects ---
@@ -7331,9 +7336,13 @@ export struct Runtime {
       let codeStart = usize(this.functions[usize(fi)].codeStart);
       let returned = false;
       // Every function's code ends in a return, so the loop is left only
-      // by a return or a throw, from the instruction that does it.
+      // by a return or a throw, from the instruction that does it; and the
+      // compiler lays every instruction's operand words inside its
+      // function's code, which setFunction appended to the segment whole,
+      // so a fetch at codeStart + ip is in bounds and a release build does
+      // not check it again.
       while (true) {
-        const inst = this.codeSegment[codeStart.wrappingAdd(ip)];
+        const inst = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
         ip = ip.wrappingAdd(1);
         const op = inst.op;
 
@@ -7492,7 +7501,7 @@ export struct Runtime {
           jmpIfNotLt => {
             const left = this.reg(base, inst.a);
             const right = this.reg(base, inst.b);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) < asInt32(right) : this.lessThan(left, right, false);
             if (holds == (inst.d != 0)) {
@@ -7505,7 +7514,7 @@ export struct Runtime {
           jmpIfNotLe => {
             const left = this.reg(base, inst.a);
             const right = this.reg(base, inst.b);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) <= asInt32(right) : this.lessThan(left, right, true);
             if (holds == (inst.d != 0)) {
@@ -7518,7 +7527,7 @@ export struct Runtime {
           jmpIfNotGt => {
             const left = this.reg(base, inst.a);
             const right = this.reg(base, inst.b);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) > asInt32(right) : this.greaterThan(left, right, false);
             if (holds == (inst.d != 0)) {
@@ -7531,7 +7540,7 @@ export struct Runtime {
           jmpIfNotGe => {
             const left = this.reg(base, inst.a);
             const right = this.reg(base, inst.b);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) >= asInt32(right) : this.greaterThan(left, right, true);
             if (holds == (inst.d != 0)) {
@@ -7543,7 +7552,7 @@ export struct Runtime {
           }
           incJmpIfLtImm => {
             const counter = this.reg(base, inst.a);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             if (isInt32(counter) && asInt32(counter) < 2147483647) {
@@ -7570,7 +7579,7 @@ export struct Runtime {
           incJmpIfLt => {
             const counter = this.reg(base, inst.a);
             const bound = this.reg(base, inst.b);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             if (isInt32(counter) && asInt32(counter) < 2147483647 && isInt32(bound)) {
               const stepped = asInt32(counter) + 1;
@@ -7594,7 +7603,7 @@ export struct Runtime {
           incJmpIfLtLength => {
             const counter = this.reg(base, inst.a);
             const object = this.reg(base, inst.b);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             // An array's or a string's own length, which nothing can
             // shadow, read in place.
@@ -7636,7 +7645,7 @@ export struct Runtime {
           }
           jmpIfNotLtImm => {
             const left = this.reg(base, inst.a);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) < immediate : this.lessThan(left, int32Value(immediate), false);
@@ -7649,7 +7658,7 @@ export struct Runtime {
           }
           jmpIfNotLeImm => {
             const left = this.reg(base, inst.a);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) <= immediate : this.lessThan(left, int32Value(immediate), true);
@@ -7662,7 +7671,7 @@ export struct Runtime {
           }
           jmpIfNotGtImm => {
             const left = this.reg(base, inst.a);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) > immediate : this.lessThan(int32Value(immediate), left, false);
@@ -7675,7 +7684,7 @@ export struct Runtime {
           }
           jmpIfNotGeImm => {
             const left = this.reg(base, inst.a);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) >= immediate : this.lessThan(int32Value(immediate), left, true);
@@ -7689,7 +7698,7 @@ export struct Runtime {
           jmpIfNotStrictEq => {
             const left = this.reg(base, inst.a);
             const right = this.reg(base, inst.b);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             if (this.strictEquals(left, right) == (inst.d != 0)) {
               const offset = bcI16(word);
@@ -7700,7 +7709,7 @@ export struct Runtime {
           }
           jmpIfNotStrictEqImm => {
             const left = this.reg(base, inst.a);
-            const word = this.codeSegment[codeStart.wrappingAdd(ip)];
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             const immediate = branchImmediateOf(inst, word);
             const same = isInt32(left) ? asInt32(left) == immediate : isDouble(left) && asDouble(left) == f64(immediate);
