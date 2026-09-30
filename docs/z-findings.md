@@ -24,11 +24,11 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-09-21 the pin is `bdc237d2` (before it, `9755f564` from
-2026-09-20), at which the engine also builds with the native compiler and
-passes every gate (see the checkpoints under G49); the Stage 0 build at
-the pin remains the baseline the gates and measurements are stated
-against.
+Since 2026-09-30 the pin is `a642cafe` (Stage 0; before it, `bdc237d2`
+from 2026-09-21, at which the engine also builds with the native compiler
+and passes every gate, see the checkpoints under G49 -- that native build
+is not yet repeated at `a642cafe`); the Stage 0 build at the pin remains
+the baseline the gates and measurements are stated against.
 
 Two operating rules, per the agreed handoff model:
 
@@ -1706,8 +1706,22 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
 
 ## G50 — No way to append a run of elements to an array in one call
 
-**Status:** `proposed` · **Size:** small · **Priority:** medium ·
-**Confirmed:** z-lang `bdc237d2`, Stage 0 · **Blocks:** no
+**Status:** `consumer-verified` for a run of elements; a run of one
+repeated value (below) remains `proposed` · **Size:** small · **Priority:**
+medium · **Confirmed:** z-lang `bdc237d2`, Stage 0 · **Blocks:** no
+**Implemented:** z-lang `58920354` -- `Array<T>.append(items: Slice<T>)`
+for cleanup-free `T`, one capacity check and one copy, both compilers;
+`a1a73eef` -- call-scoped `values.slice(start, end)` ranges passed as a
+Slice argument; `5517f3f7` -- call loans keep the field path before an
+element index, so `this.strings[i].append(this.smallBytes.slice(a, b))`
+checks; `a642cafe` -- runs of 16 or fewer copied inline.
+**Verified:** ZJS `1d9110b` -- string storage copied as blocks (buffer
+extension in place, arena and buffer copies, the join gather, digits,
+UTF-16 unit and byte-range copies); kilobyte concatenations -69.9% in
+cycles, the other kernels within noise. Probe `array-append-slice` lands.
+Copies of one buffer of the string table onto another, and of the arena
+onto itself, stay loops: Z rejects them as overlapping, correctly, since
+growth could free the source.
 
 `Array<T>` has `push`, `withCapacity`, `reserveCapacity`, `clear`, and
 `pop`, and nothing that moves a run of elements at once. The engine

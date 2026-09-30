@@ -5,9 +5,9 @@
 // strings, extending a string buffer another concatenation made, building
 // JSON and array-join output, growing an object's slots.
 //
-// The spelling below is a proposal only: `append(from: Slice<T>)` on
-// Array<T> for copyable T. A `copy(into:)` on Slice, or anything else that
-// moves a run of copyable elements without a per-element loop, would serve.
+// Landed in z-lang 58920354 as `Array<T>.append(items: Slice<T>)` for
+// cleanup-free T: any argument that converts to a Slice, including a
+// call-scoped `values.slice(start, end)` range.
 import console from "std/console";
 
 function main(): i32 {
