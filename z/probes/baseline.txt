@@ -1,4 +1,4 @@
-# probe status at z-lang 4adacfea (clean). Written by run.sh --record.
+# probe status at z-lang 46fa78ca (clean). Written by run.sh --record.
 array-append-repeated LANDED
 array-append-slice LANDED
 array-capacity-read LANDED
@@ -11,7 +11,7 @@ f64-decimal-text COMPILER-REJECTED
 field-view-borrow LANDED
 float-bits LANDED
 in-borrow-with-field-read LANDED
-inline-function COMPILER-REJECTED
+inline-function LANDED
 inout-indexed-storage COMPILER-REJECTED
 inout-receiver-operand LANDED
 integer-bits LANDED

@@ -5343,7 +5343,7 @@ export struct Runtime {
   // arguments at `argsBase` and every other register undefined, each
   // written once, and the frame itself stored in one piece. The frame's
   // register base.
-  function openFrame(inout this, functionIndex: u32, returnDst: u8, argsBase: u32, argc: u32, constructThis: Value, env: u32, callee: Value, generator: u32): u32 {
+  inline function openFrame(inout this, functionIndex: u32, returnDst: u8, argsBase: u32, argc: u32, constructThis: Value, env: u32, callee: Value, generator: u32): u32 {
     let regCount = this.functions[usize(functionIndex)].registerCount;
     const paramCount = this.functions[usize(functionIndex)].paramCount;
     if (regCount < paramCount) regCount = paramCount;
@@ -5397,7 +5397,7 @@ export struct Runtime {
   // caller's registers, `this` bound (an arrow's is the one it captured),
   // the closure's environment installed, the constructed object (if any)
   // recorded.
-  function enterCallable(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): boolean {
+  inline function enterCallable(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): boolean {
     const handle = asCell(callee);
     const target = this.heap.functionIndex(handle);
     const code = usize(target);
@@ -8952,7 +8952,7 @@ function uint32ToValue(value: u32): Value {
   return doubleValue(f64(value));
 }
 
-function int32OrDouble(wide: i64): Value {
+inline function int32OrDouble(wide: i64): Value {
   const lowest: i64 = -2147483648;
   const highest: i64 = 2147483647;
   if (wide >= lowest && wide <= highest) return int32Value(i32(wide));
@@ -9033,12 +9033,12 @@ export function wideImmediateOf(inst: Inst): i32 {
 }
 
 
-export function numericAdd(a: Value, b: Value): Value {
+export inline function numericAdd(a: Value, b: Value): Value {
   if (isInt32(a) && isInt32(b)) return int32OrDouble(i64(asInt32(a)) + i64(asInt32(b)));
   return doubleValue(toNumber(a) + toNumber(b));
 }
 
-export function numericSub(a: Value, b: Value): Value {
+export inline function numericSub(a: Value, b: Value): Value {
   if (isInt32(a) && isInt32(b)) return int32OrDouble(i64(asInt32(a)) - i64(asInt32(b)));
   return doubleValue(toNumber(a) - toNumber(b));
 }

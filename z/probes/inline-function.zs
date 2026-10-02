@@ -5,8 +5,9 @@
 // and closures -5%. Copying their bodies into the loop by hand would
 // duplicate the logic.
 //
-// The spelling below is a proposal only: an `inline` modifier on a
-// function, lowered to `static inline __attribute__((always_inline))`.
+// Landed in z-lang 46fa78ca as `inline function`, with `cold function`
+// beside it: contextual keywords lowered to `always_inline` and to `cold`,
+// `noinline`, `minsize`.
 import console from "std/console";
 
 inline function add(a: i32, b: i32): i32 {
