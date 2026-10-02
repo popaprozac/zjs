@@ -451,8 +451,11 @@ which would also replace the formatting passes above; build-time
 selection, for opt-in features and platform code. Two now measured as
 worth several percent everywhere (2026-09-26): an inlining hint, since
 clang will not inline even two-line helpers into the dispatch loop
-(forcing five inline: calls -9%, properties, closures, and arrays -5%);
-and unchecked element access where an invariant checked once makes the
+(forcing five inline: calls -9%, properties, closures, and arrays -5%),
+landed 2026-10-02 as `inline function` (calls -3.2%, helpers -3.6%,
+properties -3.4% on top of the unchecked access below, text +3.8 KB,
+`bench/speed/results/2026-10-02-inline.json`; `cold function` beside it,
+with no use yet that measured a win); and unchecked element access where an invariant checked once makes the
 per-access check redundant (every bounds check off: -6% to -13% on every
 kernel; the register file and instruction fetch alone: properties -8%,
 closures -6%, calls -5%). The second landed 2026-09-30 as `uncheckedAt`

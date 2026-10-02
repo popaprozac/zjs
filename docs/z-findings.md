@@ -24,7 +24,7 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-09-30 the pin is `4adacfea` (Stage 0; before it, `c2b6805c`
+Since 2026-10-02 the pin is `46fa78ca` (Stage 0; before it, `4adacfea` and `c2b6805c`
 and `a642cafe` the same day and `bdc237d2` from 2026-09-21, at which the engine also
 builds with the native compiler and passes every gate, see the checkpoints
 under G49 -- that native build is not yet repeated at the current pin); the Stage 0 build at the pin remains
@@ -1887,9 +1887,23 @@ unknown standard module; the module and names are a proposal).
 
 ## G53 — No way to ask for a function to be inlined
 
-**Status:** `proposed` · **Size:** small · **Priority:** high for the
+**Status:** `consumer-verified` · **Size:** small · **Priority:** high for the
 engine's speed goal · **Confirmed:** z-lang `bdc237d2`, Stage 0 ·
 **Blocks:** no
+**Implemented:** z-lang `46fa78ca` -- `inline function` (contextual keyword
+before `function`, C `always_inline`, rejected on a function that calls
+itself) and `cold function` (C `cold`, `noinline`, `minsize`), both
+compilers. Decided with Zach 2026-10-02 after inference fell short:
+routing every compiler trap through one cold function changed nothing,
+since clang already treats a call that never returns as unlikely.
+**Verified:** ZJS `7ef13c3` -- numericAdd, numericSub, int32OrDouble,
+enterCallable, and openFrame marked inline: calls -3.2%, helpers -3.6%,
+properties -3.4%, polymorphic -1.4% in cycles, text +3.8 KB (0.5%), test262
+unchanged. Smaller than the 2026-09-26 figure (calls -9%): unchecked
+register access and the call-path changes had taken part of it. Probe
+`inline-function` lands. The barrier's slow half was not marked cold: in
+this engine it runs on every store into an old cell before returning early,
+and cold made allocation 7% slower.
 
 Every Z function lowers to a plain `static` C function and clang decides
 what to inline. Small functions are inlined into ordinary callers, but
@@ -1978,9 +1992,15 @@ in the environment.
 
 ## G55 — No way to optimize a function for size, or mark it cold
 
-**Status:** `proposed` · **Size:** small · **Priority:** high for the
+**Status:** `implemented` · **Size:** small · **Priority:** high for the
 engine's size goal · **Confirmed:** z-lang `bdc237d2`, Stage 0 ·
 **Blocks:** no
+**Implemented:** z-lang `46fa78ca`, with G53: `cold function` keeps a
+function out of line, places it apart, and optimizes it for size (C `cold`,
+`noinline`, `minsize`). The engine does not use it yet: the two candidates
+tried (the write barrier's slow half, register-stack growth) were not rare
+enough or not worth it, and the size measurement below needs a chosen set
+of cold functions -- marking wholesale cost the front end 60%.
 
 Z compiles every release build at `-O2` (`compiler/src/cli.ts`), one
 translation unit, and gives a program no say in how a function is
