@@ -24,10 +24,11 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-10-02 the pin is `46fa78ca` (Stage 0; before it, `4adacfea` and `c2b6805c`
-and `a642cafe` the same day and `bdc237d2` from 2026-09-21, at which the engine also
-builds with the native compiler and passes every gate, see the checkpoints
-under G49 -- that native build is not yet repeated at the current pin); the Stage 0 build at the pin remains
+Since 2026-10-10 the pin is `9fbd9aad` (Stage 0; before it, `46fa78ca`,
+`4adacfea`, `c2b6805c`, and `a642cafe` from 2026-10-02, and `bdc237d2` from
+2026-09-21, at which the engine also builds with the native compiler and passes
+every gate, see the checkpoints under G49). The native build stops at the
+current pin, and at `46fa78ca`, on G56; the Stage 0 build at the pin remains
 the baseline the gates and measurements are stated against.
 
 Two operating rules, per the agreed handoff model:
@@ -2035,6 +2036,29 @@ direction.
 
 No probe: every Z function lowers to a plain `static` C function with no
 attributes; the measurement edits the generated C.
+
+## G56 — Native compiler: a function value called under a lock
+
+**Status:** `proposed` · **Size:** small · **Confirmed:** native compiler
+bootstrapped from z-lang `9fbd9aad` and from `46fa78ca`; Stage 0 accepts ·
+**Blocks:** the native build of the engine
+
+```
+internal compiler error: C emission: native C emission cannot resolve intrinsic type identity Function_696e6f75743a52756e74696d653b3d3e766f6964207468726f777320
+```
+
+`installInto` in `z/engine/lib.zs` takes the installer as a function value,
+`(inout runtime: Runtime) => void`, and calls it inside the context lock's
+`withLock` callback with the runtime the lock guards. The identity decodes
+to `inout:Runtime;=>void throws ` (no error type, as native spells every
+function type), so the name is well formed: C emission finds no
+declaration of that function type when the function value is called inside
+the lock callback. The same call outside a lock compiles and runs.
+`installInto` arrived with the core context and its installers
+(`2c21974`), after `bdc237d2`, the last pin at which the native build
+passed.
+
+Minimal reproduction: probe `native/function-value-called-under-lock`.
 
 ## G10 — Z is macOS-only
 
