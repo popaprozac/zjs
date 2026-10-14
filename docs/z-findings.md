@@ -24,12 +24,12 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-10-10 the pin is `9fbd9aad` (Stage 0; before it, `46fa78ca`,
-`4adacfea`, `c2b6805c`, and `a642cafe` from 2026-10-02, and `bdc237d2` from
-2026-09-21, at which the engine also builds with the native compiler and passes
-every gate, see the checkpoints under G49). The native build stops at the
-current pin, and at `46fa78ca`, on G56; the Stage 0 build at the pin remains
-the baseline the gates and measurements are stated against.
+Since 2026-10-14 the pin is `d48e790b` (Stage 0; before it, `9fbd9aad` from
+2026-10-10, `46fa78ca`, `4adacfea`, `c2b6805c`, and `a642cafe` from 2026-10-02,
+and `bdc237d2` from 2026-09-21). At the pin the engine builds with the native
+compiler again and passes every gate (G56 and G57 had stopped it since
+`2c21974`); the Stage 0 build at the pin remains the baseline the gates and
+measurements are stated against.
 
 Two operating rules, per the agreed handoff model:
 
@@ -2039,9 +2039,12 @@ attributes; the measurement edits the generated C.
 
 ## G56 — Native compiler: a function value called under a lock
 
-**Status:** `proposed` · **Size:** small · **Confirmed:** native compiler
-bootstrapped from z-lang `9fbd9aad` and from `46fa78ca`; Stage 0 accepts ·
-**Blocks:** the native build of the engine
+**Status:** `consumer-verified` — z-lang `d972dfd0` (in pin `d48e790b`): the
+native build of the engine passes every gate · **Size:** small ·
+**Confirmed:** native compiler bootstrapped from z-lang `9fbd9aad` and from
+`46fa78ca`; Stage 0 accepts · **Blocked:** the native build of the engine
+**Implemented:** native C emission now resolves a function type by its
+identity, as it does arrays, maps, sets, aggregates, and enums.
 
 ```
 internal compiler error: C emission: native C emission cannot resolve intrinsic type identity Function_696e6f75743a52756e74696d653b3d3e766f6964207468726f777320
@@ -2051,14 +2054,35 @@ internal compiler error: C emission: native C emission cannot resolve intrinsic 
 `(inout runtime: Runtime) => void`, and calls it inside the context lock's
 `withLock` callback with the runtime the lock guards. The identity decodes
 to `inout:Runtime;=>void throws ` (no error type, as native spells every
-function type), so the name is well formed: C emission finds no
-declaration of that function type when the function value is called inside
-the lock callback. The same call outside a lock compiles and runs.
+function type), so the name is well formed: C emission typed the lock
+callback's captures through a lookup by identity that knew no function
+types. The same call outside a lock compiles and runs.
 `installInto` arrived with the core context and its installers
 (`2c21974`), after `bdc237d2`, the last pin at which the native build
 passed.
 
 Minimal reproduction: probe `native/function-value-called-under-lock`.
+
+## G57 — Native compiler: `Array<T>.withCapacity` as a struct literal's field
+
+**Status:** `consumer-verified` — z-lang `30fb2d7d` (in pin `d48e790b`) ·
+**Size:** small · **Confirmed:** native compiler with G56 fixed, from the
+tree that became `d972dfd0`; Stage 0 accepts · **Blocked:** the native build
+of the engine, the stop after G56
+**Implemented:** native lowering takes the factory's result type from the
+Array type its receiver names when the call has no recorded type.
+
+```
+<z-generated>:2772:35: error: use of undeclared identifier 'Array'
+ 2772 |   return (Z_TextBuilder){.bytes = Array<u8>.withCapacity(capacity), ...
+```
+
+`textBuilder` in `z/engine/builtins/builder.zs` reserves its byte buffer in
+the struct literal it returns. Native lowering recognized the factory only
+through the call's recorded type, and a struct literal's field records
+none, so the call reached C as its source text.
+
+Minimal reproduction: probe `native/array-capacity-in-struct-literal`.
 
 ## G10 — Z is macOS-only
 
