@@ -1,0 +1,401 @@
+{
+ "what": "Cycles of the Z engine with heap header reads, slot reads and writes, array element reads, and property-site cache reads using uncheckedAt/uncheckedSet, against the same generated C with those checks kept; median over eight placements, change the geometric mean over placements; three runs back to back.",
+ "date": "2026-10-14",
+ "engine": "heap headers, slots, and site caches unchecked, Stage 0 z-lang d48e790b, -O2 -DNDEBUG",
+ "load_average": [
+  14.7,
+  18.2,
+  16.8
+ ],
+ "load_note": "an encode job held six of the twelve cores; the machine was not quiet, so each figure is repeated three times and four kernels also count instructions retired",
+ "kernels": {
+  "allocation": {
+   "runs": [
+    {
+     "checked_cycles": 78966462,
+     "unchecked_cycles": 72412596,
+     "change_percent": -7.5,
+     "placement_range_percent": [
+      -14.3,
+      0.1
+     ]
+    },
+    {
+     "checked_cycles": 77759878,
+     "unchecked_cycles": 74767227,
+     "change_percent": -5.4,
+     "placement_range_percent": [
+      -10.4,
+      -2.8
+     ]
+    },
+    {
+     "checked_cycles": 75792964,
+     "unchecked_cycles": 71557245,
+     "change_percent": -6.7,
+     "placement_range_percent": [
+      -12.2,
+      -3.3
+     ]
+    }
+   ]
+  },
+  "arrays": {
+   "runs": [
+    {
+     "checked_cycles": 327337148,
+     "unchecked_cycles": 317036989,
+     "change_percent": -5.1,
+     "placement_range_percent": [
+      -11.5,
+      -1.9
+     ]
+    },
+    {
+     "checked_cycles": 331016308,
+     "unchecked_cycles": 307800858,
+     "change_percent": -7.1,
+     "placement_range_percent": [
+      -10.4,
+      -4.1
+     ]
+    },
+    {
+     "checked_cycles": 333731731,
+     "unchecked_cycles": 311558351,
+     "change_percent": -7.2,
+     "placement_range_percent": [
+      -9.1,
+      -3.7
+     ]
+    }
+   ]
+  },
+  "calls": {
+   "runs": [
+    {
+     "checked_cycles": 51591635,
+     "unchecked_cycles": 50895100,
+     "change_percent": 1.1,
+     "placement_range_percent": [
+      -7.7,
+      13.3
+     ]
+    },
+    {
+     "checked_cycles": 50505270,
+     "unchecked_cycles": 50217998,
+     "change_percent": -1.1,
+     "placement_range_percent": [
+      -9.8,
+      7.2
+     ]
+    },
+    {
+     "checked_cycles": 51804686,
+     "unchecked_cycles": 50857964,
+     "change_percent": -3.9,
+     "placement_range_percent": [
+      -15.7,
+      4.5
+     ]
+    }
+   ],
+   "instructions_checked_unchecked_placement0": [
+    310426226,
+    304543784
+   ]
+  },
+  "closures": {
+   "runs": [
+    {
+     "checked_cycles": 79139222,
+     "unchecked_cycles": 74587856,
+     "change_percent": -4.7,
+     "placement_range_percent": [
+      -9.0,
+      0.2
+     ]
+    },
+    {
+     "checked_cycles": 77967756,
+     "unchecked_cycles": 72648950,
+     "change_percent": -7.1,
+     "placement_range_percent": [
+      -10.9,
+      -2.0
+     ]
+    },
+    {
+     "checked_cycles": 82469938,
+     "unchecked_cycles": 76135260,
+     "change_percent": -7.0,
+     "placement_range_percent": [
+      -11.6,
+      -2.5
+     ]
+    }
+   ]
+  },
+  "helpers": {
+   "runs": [
+    {
+     "checked_cycles": 90593978,
+     "unchecked_cycles": 88634630,
+     "change_percent": -3.3,
+     "placement_range_percent": [
+      -12.0,
+      4.7
+     ]
+    },
+    {
+     "checked_cycles": 93049656,
+     "unchecked_cycles": 86278449,
+     "change_percent": -6.5,
+     "placement_range_percent": [
+      -11.0,
+      -2.2
+     ]
+    },
+    {
+     "checked_cycles": 90290893,
+     "unchecked_cycles": 84775968,
+     "change_percent": -6.1,
+     "placement_range_percent": [
+      -8.5,
+      -2.0
+     ]
+    }
+   ]
+  },
+  "json": {
+   "runs": [
+    {
+     "checked_cycles": 88885586,
+     "unchecked_cycles": 86626976,
+     "change_percent": -2.9,
+     "placement_range_percent": [
+      -14.9,
+      3.0
+     ]
+    },
+    {
+     "checked_cycles": 87047474,
+     "unchecked_cycles": 84304722,
+     "change_percent": -3.6,
+     "placement_range_percent": [
+      -9.1,
+      4.2
+     ]
+    },
+    {
+     "checked_cycles": 87917771,
+     "unchecked_cycles": 85816094,
+     "change_percent": -3.3,
+     "placement_range_percent": [
+      -8.6,
+      2.1
+     ]
+    }
+   ]
+  },
+  "long-strings": {
+   "runs": [
+    {
+     "checked_cycles": 30555456,
+     "unchecked_cycles": 31434449,
+     "change_percent": 2.7,
+     "placement_range_percent": [
+      -4.9,
+      25.6
+     ]
+    },
+    {
+     "checked_cycles": 30834642,
+     "unchecked_cycles": 31316274,
+     "change_percent": 4.7,
+     "placement_range_percent": [
+      -4.7,
+      22.1
+     ]
+    },
+    {
+     "checked_cycles": 30064774,
+     "unchecked_cycles": 32230170,
+     "change_percent": 5.6,
+     "placement_range_percent": [
+      -5.8,
+      26.7
+     ]
+    }
+   ],
+   "instructions_checked_unchecked_placement0": [
+    67303159,
+    66195372
+   ]
+  },
+  "maps": {
+   "runs": [
+    {
+     "checked_cycles": 174577983,
+     "unchecked_cycles": 170453702,
+     "change_percent": -2.5,
+     "placement_range_percent": [
+      -7.1,
+      5.6
+     ]
+    },
+    {
+     "checked_cycles": 171319158,
+     "unchecked_cycles": 174920000,
+     "change_percent": 0.5,
+     "placement_range_percent": [
+      -9.8,
+      11.7
+     ]
+    },
+    {
+     "checked_cycles": 174630376,
+     "unchecked_cycles": 170905126,
+     "change_percent": -4.0,
+     "placement_range_percent": [
+      -14.2,
+      4.3
+     ]
+    }
+   ]
+  },
+  "polymorphic": {
+   "runs": [
+    {
+     "checked_cycles": 45118690,
+     "unchecked_cycles": 42366967,
+     "change_percent": -5.7,
+     "placement_range_percent": [
+      -9.9,
+      -0.4
+     ]
+    },
+    {
+     "checked_cycles": 46254041,
+     "unchecked_cycles": 41448564,
+     "change_percent": -11.1,
+     "placement_range_percent": [
+      -16.8,
+      -3.0
+     ]
+    },
+    {
+     "checked_cycles": 44848350,
+     "unchecked_cycles": 41297966,
+     "change_percent": -8.0,
+     "placement_range_percent": [
+      -15.0,
+      3.9
+     ]
+    }
+   ]
+  },
+  "properties": {
+   "runs": [
+    {
+     "checked_cycles": 124540536,
+     "unchecked_cycles": 111823710,
+     "change_percent": -10.1,
+     "placement_range_percent": [
+      -12.9,
+      -8.0
+     ]
+    },
+    {
+     "checked_cycles": 128632754,
+     "unchecked_cycles": 112057901,
+     "change_percent": -12.6,
+     "placement_range_percent": [
+      -14.7,
+      -8.7
+     ]
+    },
+    {
+     "checked_cycles": 127543150,
+     "unchecked_cycles": 110740725,
+     "change_percent": -11.5,
+     "placement_range_percent": [
+      -18.9,
+      -5.8
+     ]
+    }
+   ],
+   "instructions_checked_unchecked_placement0": [
+    999808849,
+    900432727
+   ]
+  },
+  "regexp": {
+   "runs": [
+    {
+     "checked_cycles": 97105890,
+     "unchecked_cycles": 98958315,
+     "change_percent": 0.1,
+     "placement_range_percent": [
+      -7.4,
+      4.9
+     ]
+    },
+    {
+     "checked_cycles": 95599811,
+     "unchecked_cycles": 95766486,
+     "change_percent": 0.4,
+     "placement_range_percent": [
+      -9.9,
+      7.0
+     ]
+    },
+    {
+     "checked_cycles": 96883766,
+     "unchecked_cycles": 94994941,
+     "change_percent": -1.5,
+     "placement_range_percent": [
+      -4.9,
+      2.8
+     ]
+    }
+   ]
+  },
+  "strings": {
+   "runs": [
+    {
+     "checked_cycles": 48236768,
+     "unchecked_cycles": 46072240,
+     "change_percent": -5.0,
+     "placement_range_percent": [
+      -13.8,
+      3.5
+     ]
+    },
+    {
+     "checked_cycles": 47207018,
+     "unchecked_cycles": 43767172,
+     "change_percent": -6.4,
+     "placement_range_percent": [
+      -11.0,
+      1.5
+     ]
+    },
+    {
+     "checked_cycles": 48443630,
+     "unchecked_cycles": 45296526,
+     "change_percent": -5.0,
+     "placement_range_percent": [
+      -10.1,
+      4.7
+     ]
+    }
+   ],
+   "instructions_checked_unchecked_placement0": [
+    281306651,
+    261626674
+   ]
+  }
+ }
+}

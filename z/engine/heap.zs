@@ -472,7 +472,7 @@ export struct Heap {
   // given a reference to `target`; when that is young and the holder not
   // yet listed, it is listed. Stores into young cells never get here.
   function remember(inout this, holder: u32, target: u32): void {
-    if (this.headers[usize(holder)].remembered || this.headers[usize(target)].marked) return;
+    if (this.cellHeader(holder).remembered || this.cellHeader(target).marked) return;
     this.headers[usize(holder)].remembered = true;
     this.rememberedCells.push(holder);
   }
@@ -485,9 +485,9 @@ export struct Heap {
   function rememberStore(inout this, holder: u32, index: u32, value: Value): void {
     if (!isCell(value)) return;
     const target = asCell(value);
-    if (this.headers[usize(holder)].remembered || this.headers[usize(target)].marked) return;
-    let size = usize(this.headers[usize(holder)].slotCount);
-    if (this.headers[usize(holder)].tag == TAG_TABLE) size = this.tables[usize(this.headers[usize(holder)].payload)].keys.length;
+    if (this.cellHeader(holder).remembered || this.cellHeader(target).marked) return;
+    let size = usize(this.cellHeader(holder).slotCount);
+    if (this.cellHeader(holder).tag == TAG_TABLE) size = this.tables[usize(this.cellHeader(holder).payload)].keys.length;
     if (size >= LARGE_CELL_SLOTS && this.rememberedSlots.length < REMEMBERED_SLOTS_LIMIT) {
       this.rememberedSlots.push((u64(index) << 32) | u64(holder));
       return;
@@ -511,15 +511,15 @@ export struct Heap {
       const entry = this.rememberedSlots[at];
       const holder = u32(entry & 0xFFFF_FFFF);
       const index = u32(entry >> 32);
-      if (this.headers[usize(holder)].tag == TAG_TABLE) {
-        const table = usize(this.headers[usize(holder)].payload);
+      if (this.cellHeader(holder).tag == TAG_TABLE) {
+        const table = usize(this.cellHeader(holder).payload);
         if (usize(index) < this.tables[table].keys.length) {
           const key = this.tables[table].keys[usize(index)];
           this.markValue(key);
           const value = this.tables[table].values[usize(index)];
           this.markValue(value);
         }
-      } else if (index < this.headers[usize(holder)].slotCount) {
+      } else if (index < this.cellHeader(holder).slotCount) {
         const value = this.slot(holder, index);
         this.markValue(value);
       }
@@ -534,7 +534,7 @@ export struct Heap {
 
   function markHandle(inout this, handle: u32): void {
     if (handle == 0) return;
-    if (this.headers[usize(handle)].marked) return;
+    if (this.cellHeader(handle).marked) return;
     this.headers[usize(handle)].marked = true;
     if (this.markCount < this.markStack.length) {
       this.markStack[this.markCount] = handle;
@@ -551,7 +551,7 @@ export struct Heap {
       this.markCount = this.markCount - 1;
       const handle = this.markStack[this.markCount];
       this.markedCells = this.markedCells + 1;
-      if (this.headers[usize(handle)].tag != TAG_STRING) this.markedSlots = this.markedSlots + usize(this.headers[usize(handle)].slotCount);
+      if (this.cellHeader(handle).tag != TAG_STRING) this.markedSlots = this.markedSlots + usize(this.cellHeader(handle).slotCount);
       // A key some weak record was waiting on: its values go live now.
       if (this.pendingCount > 0) this.activatePending(handle);
       this.traceCell(handle);
@@ -560,15 +560,15 @@ export struct Heap {
 
   // Mark and queue what one cell refers to.
   function traceCell(inout this, handle: u32): void {
-    const tag = this.headers[usize(handle)].tag;
-    const link = this.headers[usize(handle)].link;
-    if (link != 0 && !this.headers[usize(link)].marked) {
+    const tag = this.cellHeader(handle).tag;
+    const link = this.cellHeader(handle).link;
+    if (link != 0 && !this.cellHeader(link).marked) {
       this.headers[usize(link)].marked = true;
       this.pushMark(link);
     }
     // A table's keys and values are traced through its cell.
     if (tag == TAG_TABLE) {
-      const table = usize(this.headers[usize(handle)].payload);
+      const table = usize(this.cellHeader(handle).payload);
       this.markTable(table);
     }
     // In a full collection a weak record is traced like any cell (its
@@ -583,12 +583,12 @@ export struct Heap {
     }
     // Slots hold values for every tag but strings.
     if (tag == TAG_STRING || (tag == TAG_WEAK_ARRAY && !this.minorCollection)) return;
-    const start = this.headers[usize(handle)].slotStart;
-    const count = this.headers[usize(handle)].slotCount;
+    const start = this.cellHeader(handle).slotStart;
+    const count = this.cellHeader(handle).slotCount;
     let index: u32 = 0;
     while (index < count) {
       const value = this.slots[usize(start + index)];
-      if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+      if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
         this.headers[usize(asCell(value))].marked = true;
         this.pushMark(asCell(value));
       }
@@ -640,7 +640,7 @@ export struct Heap {
     // table is cheap to walk whole.
     let top: u32 = count - 1;
     if (usize(count) >= HANDLE_TABLE_CUT_AT) {
-      while (top >= 1 && !this.headers[usize(top)].marked) { top = top - 1; }
+      while (top >= 1 && !this.cellHeader(top).marked) { top = top - 1; }
       if ((usize(top) + 1) * 4 >= usize(count)) top = count - 1;
     }
     const cutting = top != count - 1;
@@ -652,7 +652,7 @@ export struct Heap {
     const listBelow: u32 = cutting ? top : count;
     let handle: u32 = count - 1;
     while (handle >= 1) {
-      const header = this.headers[usize(handle)];
+      const header = this.cellHeader(handle);
       const tag = header.tag;
       if (tag == TAG_FREE) {
         handle = handle - 1;
@@ -723,7 +723,7 @@ export struct Heap {
     let i: usize = 1;
     while (i < order.length) {
       const moving = order[i];
-      const key = this.headers[usize(moving)].slotStart;
+      const key = this.cellHeader(moving).slotStart;
       let j = i;
       while (j > 0 && this.headers[usize(order[j - 1])].slotStart > key) {
         order[j] = order[j - 1];
@@ -736,8 +736,8 @@ export struct Heap {
     i = 0;
     while (i < order.length) {
       const moving = order[i];
-      const start = this.headers[usize(moving)].slotStart;
-      const slotCount = this.headers[usize(moving)].slotCount;
+      const start = this.cellHeader(moving).slotStart;
+      const slotCount = this.cellHeader(moving).slotCount;
       cursor = this.slideRange(moving, start, slotCount, cursor);
       i = i + 1;
     }
@@ -785,7 +785,7 @@ export struct Heap {
     let i: usize = 1;
     while (i < order.length) {
       const moving = order[i];
-      const key = this.headers[usize(moving)].payload;
+      const key = this.cellHeader(moving).payload;
       let j = i;
       while (j > 0 && this.headers[usize(order[j - 1])].payload > key) {
         order[j] = order[j - 1];
@@ -801,8 +801,8 @@ export struct Heap {
     i = 0;
     while (i < order.length) {
       const moving = order[i];
-      const origin = usize(this.headers[usize(moving)].payload & ~ARENA_BIT);
-      const length = usize(this.headers[usize(moving)].slotStart);
+      const origin = usize(this.cellHeader(moving).payload & ~ARENA_BIT);
+      const length = usize(this.cellHeader(moving).slotStart);
       let copied: usize = 0;
       if (i > 0 && origin == runOrigin) {
         copied = runLength;
@@ -867,18 +867,18 @@ export struct Heap {
   // Give back what a dead cell owns outside its slots, and free its
   // header. A dead arena string's bytes are simply not copied.
   function releaseCell(inout this, handle: u32, tag: u8): void {
-    if (tag == TAG_OBJECT && (this.headers[usize(handle)].payload & DICT_BIT) != 0) {
-      this.releaseDictionary(this.headers[usize(handle)].payload & (DICT_BIT - 1));
+    if (tag == TAG_OBJECT && (this.cellHeader(handle).payload & DICT_BIT) != 0) {
+      this.releaseDictionary(this.cellHeader(handle).payload & (DICT_BIT - 1));
     }
-    if (tag == TAG_STRING && (this.headers[usize(handle)].payload & ARENA_BIT) == 0) {
-      const stringIndex = this.headers[usize(handle)].payload;
+    if (tag == TAG_STRING && (this.cellHeader(handle).payload & ARENA_BIT) == 0) {
+      const stringIndex = this.cellHeader(handle).payload;
       this.releaseStringBuffer(stringIndex);
     }
     if (tag == TAG_TABLE) {
-      const table = this.headers[usize(handle)].payload;
+      const table = this.cellHeader(handle).payload;
       this.releaseTable(table);
     }
-    if (tag == TAG_ARRAY && (this.headers[usize(handle)].flags & FLAG_ELEMENT_ATTRS) != 0) this.releaseElementAttrs(handle);
+    if (tag == TAG_ARRAY && (this.cellHeader(handle).flags & FLAG_ELEMENT_ATTRS) != 0) this.releaseElementAttrs(handle);
     this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, remembered: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
   }
 
@@ -903,9 +903,9 @@ export struct Heap {
     const logged = this.growLog[entry];
     const handle = u32(logged & 0xFFFF_FFFF);
     const start = u32(logged >> 32);
-    if (this.headers[usize(handle)].tag == TAG_FREE || !this.headers[usize(handle)].marked) return cursor;
-    if (this.headers[usize(handle)].slotStart != start) return cursor;
-    const count = this.headers[usize(handle)].slotCount;
+    if (this.cellHeader(handle).tag == TAG_FREE || !this.cellHeader(handle).marked) return cursor;
+    if (this.cellHeader(handle).slotStart != start) return cursor;
+    const count = this.cellHeader(handle).slotCount;
     return this.slideRange(handle, start, count, cursor);
   }
 
@@ -958,7 +958,7 @@ export struct Heap {
         handle = u32(this.cycleExtent + at - fromList);
       }
       at = at + 1;
-      const header = this.headers[usize(handle)];
+      const header = this.cellHeader(handle);
       const tag = header.tag;
       if (!header.marked) {
         // An atom stays until the runtime has taken it out of its table
@@ -1131,8 +1131,8 @@ export struct Heap {
   // where it is; any other moves to a fresh range at the top, the old one
   // abandoned until the collector compacts.
   function growSlotsWith(inout this, handle: u32, newCount: u32, fill: Value): void {
-    const oldStart = this.headers[usize(handle)].slotStart;
-    const oldCount = this.headers[usize(handle)].slotCount;
+    const oldStart = this.cellHeader(handle).slotStart;
+    const oldCount = this.cellHeader(handle).slotCount;
     if (usize(oldStart) >= this.tailBase && usize(oldStart + oldCount) == this.slots.length) {
       if (this.slots.length + usize(newCount - oldCount) > this.slots.capacity) this.growArena(usize(newCount - oldCount));
       this.slots.appendRepeated(fill, usize(newCount - oldCount));
@@ -1151,16 +1151,16 @@ export struct Heap {
     this.headers[usize(handle)].slotStart = start;
     this.headers[usize(handle)].slotCount = newCount;
     this.growLog.push((u64(start) << 32) | u64(handle));
-    if (!this.headers[usize(handle)].marked) this.headers[usize(handle)].remembered = true;
+    if (!this.cellHeader(handle).marked) this.headers[usize(handle)].remembered = true;
   }
 
   function linkOf(handle: u32): u32 {
-    return this.headers[usize(handle)].link;
+    return this.cellHeader(handle).link;
   }
 
   function setLink(inout this, handle: u32, link: u32): void {
     this.headers[usize(handle)].link = link;
-    if (link != 0 && this.headers[usize(handle)].marked) this.remember(handle, link);
+    if (link != 0 && this.cellHeader(handle).marked) this.remember(handle, link);
   }
 
   // --- Hidden classes ---
@@ -1251,8 +1251,8 @@ export struct Heap {
   // Move an object to `classId` by writing its new property, the slot
   // and class known from a previous transition.
   function transitionTo(inout this, handle: u32, classId: u32, slotIndex: u32, value: Value): void {
-    if (slotIndex >= this.headers[usize(handle)].slotCount) {
-      const grown: u32 = this.headers[usize(handle)].slotCount * 2;
+    if (slotIndex >= this.cellHeader(handle).slotCount) {
+      const grown: u32 = this.cellHeader(handle).slotCount * 2;
       const needed: u32 = slotIndex + 1;
       this.growSlots(handle, grown > needed ? grown : needed);
     }
@@ -1271,32 +1271,32 @@ export struct Heap {
   }
 
   function isObject(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_OBJECT;
+    return this.cellHeader(handle).tag == TAG_OBJECT;
   }
 
   function objectClass(handle: u32): u32 {
-    return this.headers[usize(handle)].payload;
+    return this.cellHeader(handle).payload;
   }
 
   function objectProto(handle: u32): u32 {
-    return this.headers[usize(handle)].link;
+    return this.cellHeader(handle).link;
   }
 
   function setObjectProto(inout this, handle: u32, proto: u32): void {
     this.headers[usize(handle)].link = proto;
-    if (proto != 0 && this.headers[usize(handle)].marked) this.remember(handle, proto);
+    if (proto != 0 && this.cellHeader(handle).marked) this.remember(handle, proto);
   }
 
   // The object's own slot for `atom`, or -1: the value slot, in either
   // representation.
   function objectFindSlot(handle: u32, atom: u32): i32 {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & DICT_BIT) != 0) return this.dictionaryFind(handle, payload & (DICT_BIT - 1), atom);
     return this.classFindSlot(payload, atom);
   }
 
   function isDictionary(handle: u32): boolean {
-    return (this.headers[usize(handle)].payload & DICT_BIT) != 0;
+    return (this.cellHeader(handle).payload & DICT_BIT) != 0;
   }
 
   // Write an own property, adding it (and transitioning the class) when
@@ -1319,8 +1319,8 @@ export struct Heap {
 
   // Add a property the object does not have yet, with `attr`.
   function objectAddWith(inout this, handle: u32, atom: u32, value: Value, attr: u8): void {
-    if ((this.headers[usize(atom)].flags & FLAG_INDEX_KEY) != 0) this.indexKeysDefined = true;
-    const parentClass = this.headers[usize(handle)].payload;
+    if ((this.cellHeader(atom).flags & FLAG_INDEX_KEY) != 0) this.indexKeysDefined = true;
+    const parentClass = this.cellHeader(handle).payload;
     if ((parentClass & DICT_BIT) != 0) {
       this.dictionaryInsert(handle, parentClass & (DICT_BIT - 1), atom, value, attr);
       return;
@@ -1332,8 +1332,8 @@ export struct Heap {
     }
     const child = this.classTransitionWith(parentClass, atom, attr);
     const slotIndex = this.classes[usize(child)].transitionSlot;
-    if (slotIndex >= this.headers[usize(handle)].slotCount) {
-      const grown: u32 = this.headers[usize(handle)].slotCount * 2;
+    if (slotIndex >= this.cellHeader(handle).slotCount) {
+      const grown: u32 = this.cellHeader(handle).slotCount * 2;
       const needed: u32 = slotIndex + 1;
       this.growSlots(handle, grown > needed ? grown : needed);
     }
@@ -1347,7 +1347,7 @@ export struct Heap {
   // simply retired. Either way the name is gone from lookup and a later
   // addition takes the last place in enumeration order.
   function objectDelete(inout this, handle: u32, atom: u32, slot: u32): void {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & DICT_BIT) != 0) {
       this.dictionaryRemove(payload & (DICT_BIT - 1), handle, slot);
       return;
@@ -1368,7 +1368,7 @@ export struct Heap {
   // order, deleted ones left out: what enumerating its keys needs without
   // finding each name's slot again.
   function objectNamedSlots(handle: u32, inout names: Array<u32>, inout slots: Array<u32>): void {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & DICT_BIT) != 0) {
       const used = this.dictionaries[usize(payload & (DICT_BIT - 1))].used;
       let pair: u32 = 0;
@@ -1399,7 +1399,7 @@ export struct Heap {
   // class-mode object's come from its class chain, newest first, and are
   // turned around in place.
   function appendOwnNamedSlots(handle: u32, inout names: Array<u32>, inout slots: Array<u32>): void {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & DICT_BIT) != 0) {
       this.objectNamedSlots(handle, inout names, inout slots);
       return;
@@ -1430,7 +1430,7 @@ export struct Heap {
 
   function objectNames(handle: u32): Array<u32> {
     let names = Array<u32>();
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & DICT_BIT) != 0) {
       const used = this.dictionaries[usize(payload & (DICT_BIT - 1))].used;
       let pair: u32 = 0;
@@ -1463,7 +1463,7 @@ export struct Heap {
   function dictionaryFind(handle: u32, dictionary: u32, atom: u32): i32 {
     const mask = this.dictionaries[usize(dictionary)].mask;
     let probe = this.dictionaryHash(atom, mask);
-    const start = this.headers[usize(handle)].slotStart;
+    const start = this.cellHeader(handle).slotStart;
     while (true) {
       const entry = this.dictionaries[usize(dictionary)].index[usize(probe)];
       if (entry == 0) return -1;
@@ -1476,7 +1476,7 @@ export struct Heap {
 
   // Add a pair for a name the object does not have.
   function dictionaryInsert(inout this, handle: u32, dictionary: u32, atom: u32, value: Value, attr: u8): void {
-    const capacity = this.headers[usize(handle)].slotCount / 2;
+    const capacity = this.cellHeader(handle).slotCount / 2;
     if (this.dictionaries[usize(dictionary)].used >= capacity) {
       // Full: drop the retired pairs when they are the larger part,
       // otherwise double the pairs; either way rebuild the index.
@@ -1514,7 +1514,7 @@ export struct Heap {
 
   // Rebuild the index over the pairs in use, at twice the pair capacity.
   function dictionaryRehash(inout this, handle: u32, dictionary: u32): void {
-    const capacity = this.headers[usize(handle)].slotCount / 2;
+    const capacity = this.cellHeader(handle).slotCount / 2;
     let size: u32 = 8;
     while (size < capacity * 2) {
       size = size * 2;
@@ -1573,7 +1573,7 @@ export struct Heap {
     while (i < names.length) {
       const name = names[i];
       if (name != 0) {
-        const slot = this.classFindSlot(this.headers[usize(handle)].payload, name);
+        const slot = this.classFindSlot(this.cellHeader(handle).payload, name);
         values.push(this.slot(handle, u32(slot)));
         attrs.push(this.attrOf(handle, u32(slot)));
         kept.push(name);
@@ -1585,7 +1585,7 @@ export struct Heap {
     while (capacity < count + count / 2 + 1) {
       capacity = capacity * 2;
     }
-    if (this.headers[usize(handle)].slotCount < capacity * 2) this.growSlots(handle, capacity * 2);
+    if (this.cellHeader(handle).slotCount < capacity * 2) this.growSlots(handle, capacity * 2);
     let dictionary: u32 = 0;
     if (this.freeDictionaryCount > 0) {
       this.freeDictionaryCount = this.freeDictionaryCount - 1;
@@ -1606,7 +1606,7 @@ export struct Heap {
       pair = pair + 1;
     }
     let clear = count * 2;
-    const total = this.headers[usize(handle)].slotCount;
+    const total = this.cellHeader(handle).slotCount;
     while (clear < total) {
       this.setSlot(handle, clear, undefinedValue());
       clear = clear + 1;
@@ -1673,46 +1673,46 @@ export struct Heap {
   }
 
   function isTable(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_TABLE;
+    return this.cellHeader(handle).tag == TAG_TABLE;
   }
 
   function tableKind(handle: u32): i32 {
-    return this.tables[usize(this.headers[usize(handle)].payload)].kind;
+    return this.tables[usize(this.cellHeader(handle).payload)].kind;
   }
 
   // Entries present.
   function tableLive(handle: u32): u32 {
-    return this.tables[usize(this.headers[usize(handle)].payload)].live;
+    return this.tables[usize(this.cellHeader(handle).payload)].live;
   }
 
   // Positions taken, removed entries included: an iteration's bound.
   function tableExtent(handle: u32): u32 {
-    return u32(this.tables[usize(this.headers[usize(handle)].payload)].keys.length);
+    return u32(this.tables[usize(this.cellHeader(handle).payload)].keys.length);
   }
 
   // The key at a position, the deleted marker once removed.
   function tableKey(handle: u32, position: u32): Value {
-    return this.tables[usize(this.headers[usize(handle)].payload)].keys[usize(position)];
+    return this.tables[usize(this.cellHeader(handle).payload)].keys[usize(position)];
   }
 
   function tableValue(handle: u32, position: u32): Value {
-    return this.tables[usize(this.headers[usize(handle)].payload)].values[usize(position)];
+    return this.tables[usize(this.cellHeader(handle).payload)].values[usize(position)];
   }
 
   function setTableValue(inout this, handle: u32, position: u32, value: Value): void {
-    this.tables[usize(this.headers[usize(handle)].payload)].values[usize(position)] = value;
-    if (this.headers[usize(handle)].marked) this.rememberStore(handle, position, value);
+    this.tables[usize(this.cellHeader(handle).payload)].values[usize(position)] = value;
+    if (this.cellHeader(handle).marked) this.rememberStore(handle, position, value);
   }
 
   // The position of `key`, whose hash is `hash`, or -1.
   function tableFind(handle: u32, key: Value, hash: u32): i32 {
-    const table = usize(this.headers[usize(handle)].payload);
+    const table = usize(this.cellHeader(handle).payload);
     return probeTable(in this, this.tables[table].index, this.tables[table].hashes, this.tables[table].keys, key, hash);
   }
 
   // Append an entry the table does not hold.
   function tableAdd(inout this, handle: u32, key: Value, value: Value, hash: u32): void {
-    const table = usize(this.headers[usize(handle)].payload);
+    const table = usize(this.cellHeader(handle).payload);
     const position = this.tables[table].keys.length;
     // The index counts every position taken, removed ones included, and
     // stays at most three quarters full.
@@ -1725,7 +1725,7 @@ export struct Heap {
     while (this.tables[table].index[usize(slot)] >= 0) { slot = (slot + 1) & mask; }
     this.tables[table].index[usize(slot)] = i32(position);
     this.tables[table].live = this.tables[table].live + 1;
-    if (this.headers[usize(handle)].marked) {
+    if (this.cellHeader(handle).marked) {
       this.rememberStore(handle, u32(position), key);
       this.rememberStore(handle, u32(position), value);
     }
@@ -1733,7 +1733,7 @@ export struct Heap {
 
   // Remove the entry at a position.
   function tableRemove(inout this, handle: u32, position: u32): void {
-    const table = usize(this.headers[usize(handle)].payload);
+    const table = usize(this.cellHeader(handle).payload);
     const mask = u32(this.tables[table].index.length) - 1;
     let slot = this.tables[table].hashes[usize(position)] & mask;
     while (this.tables[table].index[usize(slot)] != i32(position)) { slot = (slot + 1) & mask; }
@@ -1746,7 +1746,7 @@ export struct Heap {
   // Remove every entry; positions stay taken, so an iterator walking the
   // table finds nothing live and then whatever is added after.
   function tableClear(inout this, handle: u32): void {
-    const table = usize(this.headers[usize(handle)].payload);
+    const table = usize(this.cellHeader(handle).payload);
     let k: usize = 0;
     while (k < this.tables[table].keys.length) {
       this.tables[table].keys[k] = deletedValue();
@@ -1783,12 +1783,12 @@ export struct Heap {
     let k: usize = 0;
     while (k < this.tables[table].keys.length) {
       const key = this.tables[table].keys[k];
-      if (isCell(key) && asCell(key) != 0 && !this.headers[usize(asCell(key))].marked) {
+      if (isCell(key) && asCell(key) != 0 && !this.cellHeader(asCell(key)).marked) {
         this.headers[usize(asCell(key))].marked = true;
         this.pushMark(asCell(key));
       }
       const value = this.tables[table].values[k];
-      if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+      if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
         this.headers[usize(asCell(value))].marked = true;
         this.pushMark(asCell(value));
       }
@@ -1815,7 +1815,7 @@ export struct Heap {
       const y = isInt32(b) ? f64(asInt32(b)) : asDouble(b);
       return x == y || (x != x && y != y);
     }
-    if (isCell(a) && isCell(b) && asCell(a) != 0 && asCell(b) != 0 && this.headers[usize(asCell(a))].tag == TAG_STRING && this.headers[usize(asCell(b))].tag == TAG_STRING) {
+    if (isCell(a) && isCell(b) && asCell(a) != 0 && asCell(b) != 0 && this.cellHeader(asCell(a)).tag == TAG_STRING && this.cellHeader(asCell(b)).tag == TAG_STRING) {
       return this.stringsEqual(asCell(a), asCell(b));
     }
     return false;
@@ -1850,16 +1850,16 @@ export struct Heap {
   }
 
   function isArray(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_ARRAY;
+    return this.cellHeader(handle).tag == TAG_ARRAY;
   }
 
   function arrayLength(handle: u32): u32 {
-    return this.headers[usize(handle)].payload;
+    return this.cellHeader(handle).payload;
   }
 
   function arrayHasIndex(handle: u32, index: u32): boolean {
-    if (index >= this.headers[usize(handle)].payload) return false;
-    if (index >= this.headers[usize(handle)].slotCount) return false;
+    if (index >= this.cellHeader(handle).payload) return false;
+    if (index >= this.cellHeader(handle).slotCount) return false;
     return !isDeleted(this.slot(handle, index));
   }
 
@@ -1868,9 +1868,9 @@ export struct Heap {
   // index past the length -- one pass over the header, for the paths that
   // read elements in place.
   function dataElement(handle: u32, index: u32): Value {
-    const header = this.headers[usize(handle)];
+    const header = this.cellHeader(handle);
     if (index >= header.payload || index >= header.slotCount) return deletedValue();
-    const value = this.slots[usize(header.slotStart + index)];
+    const value = unsafe { select this.slots.uncheckedAt(usize(header.slotStart.wrappingAdd(index))); };
     if ((header.flags & FLAG_ELEMENT_ATTRS) != 0 && !isDeleted(value) && (this.elementAttrOf(handle, index) & PROP_ACCESSOR) != 0) return deletedValue();
     return value;
   }
@@ -1878,9 +1878,10 @@ export struct Heap {
   // Whether an array's element is present, writable data: a write in
   // place is what assignment would do.
   function writableElement(handle: u32, index: u32): boolean {
-    const header = this.headers[usize(handle)];
+    const header = this.cellHeader(handle);
     if (index >= header.payload || index >= header.slotCount) return false;
-    if (isDeleted(this.slots[usize(header.slotStart + index)])) return false;
+    const value = unsafe { select this.slots.uncheckedAt(usize(header.slotStart.wrappingAdd(index))); };
+    if (isDeleted(value)) return false;
     if ((header.flags & FLAG_ELEMENT_ATTRS) == 0) return true;
     const attr = this.elementAttrOf(handle, index);
     return (attr & PROP_ACCESSOR) == 0 && (attr & PROP_WRITABLE) != 0;
@@ -1892,22 +1893,22 @@ export struct Heap {
   }
 
   function arraySet(inout this, handle: u32, index: u32, value: Value): void {
-    if (index >= this.headers[usize(handle)].slotCount) {
-      let capacity = this.headers[usize(handle)].slotCount;
+    if (index >= this.cellHeader(handle).slotCount) {
+      let capacity = this.cellHeader(handle).slotCount;
       while (capacity <= index) { capacity = capacity * 2; }
       // Fresh capacity is holes, not undefined.
       this.growSlotsWith(handle, capacity, deletedValue());
     }
     this.setSlot(handle, index, value);
-    if (index >= this.headers[usize(handle)].payload) this.headers[usize(handle)].payload = index + 1;
+    if (index >= this.cellHeader(handle).payload) this.headers[usize(handle)].payload = index + 1;
   }
 
   // Shrinking drops elements, and their attributes with them; growing
   // exposes holes.
   function setArrayLength(inout this, handle: u32, length: u32): void {
-    const old = this.headers[usize(handle)].payload;
+    const old = this.cellHeader(handle).payload;
     let index = length;
-    while (index < old && index < this.headers[usize(handle)].slotCount) {
+    while (index < old && index < this.cellHeader(handle).slotCount) {
       this.setSlot(handle, index, deletedValue());
       index = index + 1;
     }
@@ -1974,7 +1975,7 @@ export struct Heap {
   }
 
   function isWeakRecord(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_WEAK_RECORD;
+    return this.cellHeader(handle).tag == TAG_WEAK_RECORD;
   }
 
   function weakKind(record: u32): i32 {
@@ -2148,8 +2149,8 @@ export struct Heap {
       if (!isDeleted(key)) {
         this.weakVisits = this.weakVisits + 1;
         const value = this.slot(values, position);
-        if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
-          if (this.headers[usize(asCell(key))].marked) {
+        if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
+          if (this.cellHeader(asCell(key)).marked) {
             this.headers[usize(asCell(value))].marked = true;
             this.pushMark(asCell(value));
           } else {
@@ -2209,7 +2210,7 @@ export struct Heap {
         const value = this.pendingValues[entry];
         this.pendingKeys[entry] = 0;
         this.pendingCount = this.pendingCount - 1;
-        if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+        if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
           this.headers[usize(asCell(value))].marked = true;
           this.pushMark(asCell(value));
         }
@@ -2266,10 +2267,10 @@ export struct Heap {
         let position: u32 = 0;
         while (position < count) {
           const key = this.slot(keys, position);
-          if (!isDeleted(key) && this.headers[usize(asCell(key))].marked) {
+          if (!isDeleted(key) && this.cellHeader(asCell(key)).marked) {
             this.weakVisits = this.weakVisits + 1;
             const value = this.slot(values, position);
-            if (isCell(value) && asCell(value) != 0 && !this.headers[usize(asCell(value))].marked) {
+            if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
               this.markHandle(asCell(value));
               progressed = true;
             }
@@ -2295,7 +2296,7 @@ export struct Heap {
       let position: u32 = 0;
       while (position < count) {
         const key = this.slot(keys, position);
-        if (!isDeleted(key) && !this.headers[usize(asCell(key))].marked) {
+        if (!isDeleted(key) && !this.cellHeader(asCell(key)).marked) {
           this.weakRetire(record, position, asCell(key));
           dropped = dropped + 1;
         }
@@ -2323,7 +2324,7 @@ export struct Heap {
   }
 
   function isEnv(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_ENV;
+    return this.cellHeader(handle).tag == TAG_ENV;
   }
 
   // A closure: a function index (`payload`, as for a plain function cell)
@@ -2339,7 +2340,7 @@ export struct Heap {
   }
 
   function isClosure(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_CLOSURE;
+    return this.cellHeader(handle).tag == TAG_CLOSURE;
   }
 
   // --- Symbols ---
@@ -2355,7 +2356,7 @@ export struct Heap {
   }
 
   function isSymbol(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_SYMBOL;
+    return this.cellHeader(handle).tag == TAG_SYMBOL;
   }
 
   function symbolKeyAtom(handle: u32): u32 {
@@ -2380,11 +2381,11 @@ export struct Heap {
   }
 
   function isHostFunction(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_HOST_FUNCTION;
+    return this.cellHeader(handle).tag == TAG_HOST_FUNCTION;
   }
 
   function hostFunctionId(handle: u32): u32 {
-    return this.headers[usize(handle)].payload;
+    return this.cellHeader(handle).payload;
   }
 
   // --- Strings ---
@@ -2456,12 +2457,12 @@ export struct Heap {
   }
 
   function isArenaString(handle: u32): boolean {
-    return (this.headers[usize(handle)].payload & ARENA_BIT) != 0;
+    return (this.cellHeader(handle).payload & ARENA_BIT) != 0;
   }
 
   // Where a string's bytes start: its arena offset, or 0 in its buffer.
   function stringStorageStart(handle: u32): usize {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & ARENA_BIT) != 0) return usize(payload & ~ARENA_BIT);
     return 0;
   }
@@ -2488,8 +2489,8 @@ export struct Heap {
   // A string's storage byte, wherever it lives.
   // A narrow string's bytes appended to `bytes`, read where they are.
   function appendNarrowTo(handle: u32, bytes: Array<u8>): Array<u8> {
-    const payload = this.headers[usize(handle)].payload;
-    const length = usize(this.headers[usize(handle)].slotStart);
+    const payload = this.cellHeader(handle).payload;
+    const length = usize(this.cellHeader(handle).slotStart);
     if ((payload & ARENA_BIT) != 0) {
       const origin = usize(payload & ~ARENA_BIT);
       return appendRange(this.smallBytes, origin, origin + length, move bytes);
@@ -2498,15 +2499,15 @@ export struct Heap {
   }
 
   function storageByte(handle: u32, index: usize): u8 {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & ARENA_BIT) != 0) return this.smallBytes[usize(payload & ~ARENA_BIT) + index];
     return this.strings[usize(payload)][index];
   }
 
   // A string's storage bytes appended to the arena's top.
   function copyToArena(inout this, handle: u32): void {
-    const payload = this.headers[usize(handle)].payload;
-    const length = usize(this.headers[usize(handle)].slotStart);
+    const payload = this.cellHeader(handle).payload;
+    const length = usize(this.cellHeader(handle).slotStart);
     let k: usize = 0;
     if ((payload & ARENA_BIT) != 0) {
       const origin = usize(payload & ~ARENA_BIT);
@@ -2522,8 +2523,8 @@ export struct Heap {
 
   // A string's storage bytes appended to `target`.
   function copyStorage(handle: u32, inout target: Array<u8>): void {
-    const payload = this.headers[usize(handle)].payload;
-    const length = usize(this.headers[usize(handle)].slotStart);
+    const payload = this.cellHeader(handle).payload;
+    const length = usize(this.cellHeader(handle).slotStart);
     if ((payload & ARENA_BIT) != 0) {
       const origin = usize(payload & ~ARENA_BIT);
       target.append(this.smallBytes.slice(origin, origin + length));
@@ -2535,9 +2536,9 @@ export struct Heap {
   // Whether a string's bytes end at the arena's top, so what follows can
   // be appended there and shared.
   function endsArena(handle: u32): boolean {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & ARENA_BIT) == 0) return false;
-    return usize(payload & ~ARENA_BIT) + usize(this.headers[usize(handle)].slotStart) == this.smallBytes.length;
+    return usize(payload & ~ARENA_BIT) + usize(this.cellHeader(handle).slotStart) == this.smallBytes.length;
   }
 
   // `left` followed by `right`, two strings of the same width. A small
@@ -2549,11 +2550,11 @@ export struct Heap {
   // iteration -- or else copies both into a fresh buffer that later
   // concatenations may extend the same way.
   function concatStorage(inout this, left: u32, right: u32): u32 {
-    const leftPayload = this.headers[usize(left)].payload;
-    const leftBytes = this.headers[usize(left)].slotStart;
-    const rightPayload = this.headers[usize(right)].payload;
-    const rightBytes = this.headers[usize(right)].slotStart;
-    const wide = (this.headers[usize(left)].flags & FLAG_WIDE) != 0;
+    const leftPayload = this.cellHeader(left).payload;
+    const leftBytes = this.cellHeader(left).slotStart;
+    const rightPayload = this.cellHeader(right).payload;
+    const rightBytes = this.cellHeader(right).slotStart;
+    const wide = (this.cellHeader(left).flags & FLAG_WIDE) != 0;
     const joinedBytes = leftBytes + rightBytes;
     if (joinedBytes <= SMALL_STRING_BYTES) {
       let offset = u32(this.smallBytes.length);
@@ -2599,9 +2600,9 @@ export struct Heap {
   // makes, with no string made for the number. The result goes where
   // concatStorage would put it, extending in place where it could.
   function concatAscii(inout this, handle: u32, bytes: Slice<u8>, count: usize, before: boolean): u32 {
-    const payload = this.headers[usize(handle)].payload;
-    const length = this.headers[usize(handle)].slotStart;
-    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
+    const payload = this.cellHeader(handle).payload;
+    const length = this.cellHeader(handle).slotStart;
+    const wide = (this.cellHeader(handle).flags & FLAG_WIDE) != 0;
     const width: usize = wide ? 2 : 1;
     const joinedBytes = length + u32(count * width);
     if (joinedBytes <= SMALL_STRING_BYTES) {
@@ -2704,11 +2705,11 @@ export struct Heap {
   }
 
   function isWideString(handle: u32): boolean {
-    return (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
+    return (this.cellHeader(handle).flags & FLAG_WIDE) != 0;
   }
 
   function isString(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_STRING;
+    return this.cellHeader(handle).tag == TAG_STRING;
   }
 
   // A function cell referring to compiled code by index.
@@ -2722,26 +2723,26 @@ export struct Heap {
   }
 
   function isFunction(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_FUNCTION;
+    return this.cellHeader(handle).tag == TAG_FUNCTION;
   }
 
   function functionIndex(handle: u32): u32 {
-    return this.headers[usize(handle)].payload;
+    return this.cellHeader(handle).payload;
   }
 
   // The length in code units.
   function stringLength(handle: u32): usize {
-    const bytes = usize(this.headers[usize(handle)].slotStart);
-    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) return bytes / 2;
+    const bytes = usize(this.cellHeader(handle).slotStart);
+    if ((this.cellHeader(handle).flags & FLAG_WIDE) != 0) return bytes / 2;
     return bytes;
   }
 
   function stringUnit(handle: u32, index: usize): u16 {
-    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
+    if ((this.cellHeader(handle).flags & FLAG_WIDE) != 0) {
       return u16(this.storageByte(handle, index * 2)) | (u16(this.storageByte(handle, index * 2 + 1)) << 8);
     }
     // A narrow string's byte, read where it is.
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & ARENA_BIT) != 0) return u16(this.smallBytes[usize(payload & ~ARENA_BIT) + index]);
     return u16(this.strings[usize(payload)][index]);
   }
@@ -2751,8 +2752,8 @@ export struct Heap {
     let count: usize = 0;
     if (end > start) count = end - start;
     let copied = Array<u16>.withCapacity(count);
-    const payload = this.headers[usize(handle)].payload;
-    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
+    const payload = this.cellHeader(handle).payload;
+    const wide = (this.cellHeader(handle).flags & FLAG_WIDE) != 0;
     let index = start;
     if ((payload & ARENA_BIT) != 0) {
       const origin = usize(payload & ~ARENA_BIT);
@@ -2788,14 +2789,14 @@ export struct Heap {
   // storage form (no unit round trip); a small one straight into the
   // arena.
   function allocateSubstring(inout this, handle: u32, start: usize, end: usize): u32 {
-    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
+    const wide = (this.cellHeader(handle).flags & FLAG_WIDE) != 0;
     if (wide) {
       // A wide slice may fit narrow; allocateUnits decides.
       return this.allocateUnits(this.stringUnitsSlice(handle, start, end));
     }
     let count: usize = 0;
     if (end > start) count = end - start;
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if (count <= usize(SMALL_STRING_BYTES)) {
       const offset = u32(this.smallBytes.length);
       let index = start;
@@ -2835,11 +2836,11 @@ export struct Heap {
   // once: a string has no slots, so its header's slot count keeps it,
   // zero until then.
   function stringHash(inout this, handle: u32): u32 {
-    const known = this.headers[usize(handle)].slotCount;
+    const known = this.cellHeader(handle).slotCount;
     if (known != 0) return known;
-    const payload = this.headers[usize(handle)].payload;
-    const length = usize(this.headers[usize(handle)].slotStart);
-    const wide = (this.headers[usize(handle)].flags & FLAG_WIDE) != 0;
+    const payload = this.cellHeader(handle).payload;
+    const length = usize(this.cellHeader(handle).slotStart);
+    const wide = (this.cellHeader(handle).flags & FLAG_WIDE) != 0;
     let hash: u32 = 2166136261;
     let index: usize = 0;
     if ((payload & ARENA_BIT) != 0) {
@@ -2885,11 +2886,11 @@ export struct Heap {
   // string `hay`, left to right and not overlapping, appended to `cuts`:
   // one pass over the bytes where they are.
   function findAllNarrow(hay: u32, needle: u32, inout cuts: Array<usize>): void {
-    const hayLength = usize(this.headers[usize(hay)].slotStart);
-    const needleLength = usize(this.headers[usize(needle)].slotStart);
+    const hayLength = usize(this.cellHeader(hay).slotStart);
+    const needleLength = usize(this.cellHeader(needle).slotStart);
     if (needleLength == 0 || needleLength > hayLength) return;
-    const hayPayload = this.headers[usize(hay)].payload;
-    const needlePayload = this.headers[usize(needle)].payload;
+    const hayPayload = this.cellHeader(hay).payload;
+    const needlePayload = this.cellHeader(needle).payload;
     const hayStart = usize(hayPayload & ~ARENA_BIT);
     const needleStart = usize(needlePayload & ~ARENA_BIT);
     const hayArena = (hayPayload & ARENA_BIT) != 0;
@@ -2909,12 +2910,12 @@ export struct Heap {
   // narrow string `hay` at or after `startAt`, or -1: both read where they
   // are, nothing copied.
   function findNarrow(hay: u32, needle: u32, startAt: usize): i32 {
-    const hayLength = usize(this.headers[usize(hay)].slotStart);
-    const needleLength = usize(this.headers[usize(needle)].slotStart);
+    const hayLength = usize(this.cellHeader(hay).slotStart);
+    const needleLength = usize(this.cellHeader(needle).slotStart);
     if (needleLength == 0) return i32(startAt <= hayLength ? startAt : hayLength);
     if (needleLength > hayLength || startAt > hayLength - needleLength) return -1;
-    const hayPayload = this.headers[usize(hay)].payload;
-    const needlePayload = this.headers[usize(needle)].payload;
+    const hayPayload = this.cellHeader(hay).payload;
+    const needlePayload = this.cellHeader(needle).payload;
     const hayStart = usize(hayPayload & ~ARENA_BIT);
     const needleStart = usize(needlePayload & ~ARENA_BIT);
     const hayArena = (hayPayload & ARENA_BIT) != 0;
@@ -2928,12 +2929,12 @@ export struct Heap {
   // The buffer in `strings` a string's storage is in, for a string that
   // is not in the arena.
   function stringBuffer(handle: u32): u32 {
-    return this.headers[usize(handle)].payload;
+    return this.cellHeader(handle).payload;
   }
 
   // The raw storage: Latin-1 bytes, or two bytes per unit when wide.
   function stringStorageLength(handle: u32): usize {
-    return usize(this.headers[usize(handle)].slotStart);
+    return usize(this.cellHeader(handle).slotStart);
   }
 
   function stringStorageByte(handle: u32, index: usize): u8 {
@@ -2943,18 +2944,18 @@ export struct Heap {
   // A copy of the storage: the Latin-1 bytes of a narrow string (the
   // fast paths' working form), or the wide string's byte pairs.
   function stringStorageBytes(handle: u32): Array<u8> {
-    let copied = Array<u8>.withCapacity(usize(this.headers[usize(handle)].slotStart));
+    let copied = Array<u8>.withCapacity(usize(this.cellHeader(handle).slotStart));
     this.copyStorage(handle, inout copied);
     return copied;
   }
 
   // The content as UTF-8 for the host (a lone surrogate becomes U+FFFD).
   function stringUtf8(handle: u32): Array<u8> {
-    if ((this.headers[usize(handle)].flags & FLAG_WIDE) != 0) {
+    if ((this.cellHeader(handle).flags & FLAG_WIDE) != 0) {
       const units = this.stringUnits(handle);
       return unitsToUtf8(in units);
     }
-    const length = usize(this.headers[usize(handle)].slotStart);
+    const length = usize(this.cellHeader(handle).slotStart);
     let bytes = Array<u8>.withCapacity(length);
     let index: usize = 0;
     while (index < length) {
@@ -2973,7 +2974,7 @@ export struct Heap {
   // The content as generalized UTF-8, a lone surrogate in its three-byte
   // form: for the parser, so a string handed back as source keeps it.
   function stringWtf8(handle: u32): Array<u8> {
-    if ((this.headers[usize(handle)].flags & FLAG_WIDE) == 0) return this.stringUtf8(handle);
+    if ((this.cellHeader(handle).flags & FLAG_WIDE) == 0) return this.stringUtf8(handle);
     const units = this.stringUnits(handle);
     return unitsToWtf8(in units);
   }
@@ -2983,13 +2984,13 @@ export struct Heap {
   function stringsEqual(a: u32, b: u32): boolean {
     if (a == b) return true;
     if (this.isWideString(a) != this.isWideString(b)) return false;
-    const aPayload = this.headers[usize(a)].payload;
-    const bPayload = this.headers[usize(b)].payload;
-    const length = usize(this.headers[usize(a)].slotStart);
-    if (length != usize(this.headers[usize(b)].slotStart)) return false;
+    const aPayload = this.cellHeader(a).payload;
+    const bPayload = this.cellHeader(b).payload;
+    const length = usize(this.cellHeader(a).slotStart);
+    if (length != usize(this.cellHeader(b).slotStart)) return false;
     // Two hashes already known and different: different content.
-    const aHash = this.headers[usize(a)].slotCount;
-    const bHash = this.headers[usize(b)].slotCount;
+    const aHash = this.cellHeader(a).slotCount;
+    const bHash = this.cellHeader(b).slotCount;
     if (aHash != 0 && bHash != 0 && aHash != bHash) return false;
     // Two strings over the same bytes with one length are one content.
     if (aPayload == bPayload) return true;
@@ -3037,24 +3038,36 @@ export struct Heap {
     return cellValue(this.allocate(tag, slotCount));
   }
 
+  // A cell's header. Every handle the engine holds was allocated from this
+  // table, which only grows, so a handle indexes it: no value crosses the
+  // embedding ABI into a heap, and an entry point that took one would have
+  // to check it first. Checked in a debug build.
+  function cellHeader(handle: u32): CellHeader {
+    return unsafe { select this.headers.uncheckedAt(usize(handle)); };
+  }
+
   function tagOf(handle: u32): u8 {
-    return this.headers[usize(handle)].tag;
+    return this.cellHeader(handle).tag;
   }
 
   function slotCountOf(handle: u32): u32 {
-    return this.headers[usize(handle)].slotCount;
+    return this.cellHeader(handle).slotCount;
   }
 
+  // A slot of a live cell, which lies inside the slot arena; callers pass
+  // an index below the cell's slot count. Checked in a debug build.
   function slot(handle: u32, index: u32): Value {
-    const header = this.headers[usize(handle)];
-    return this.slots[usize(header.slotStart + index)];
+    const header = this.cellHeader(handle);
+    return unsafe { select this.slots.uncheckedAt(usize(header.slotStart.wrappingAdd(index))); };
   }
 
   // Every store of a value into a cell's slots comes through here, and
   // so through the write barrier (see Generations).
   function setSlot(inout this, handle: u32, index: u32, value: Value): void {
-    const header = this.headers[usize(handle)];
-    this.slots[usize(header.slotStart + index)] = value;
+    const header = this.cellHeader(handle);
+    unsafe {
+      this.slots.uncheckedSet(usize(header.slotStart.wrappingAdd(index)), value);
+    }
     if (header.marked) this.rememberStore(handle, index, value);
   }
 
@@ -3064,9 +3077,9 @@ export struct Heap {
   // Kept small, so it inlines where array elements are read: an array
   // without element attributes answers at once.
   function attrOf(handle: u32, index: u32): u8 {
-    const tag = this.headers[usize(handle)].tag;
+    const tag = this.cellHeader(handle).tag;
     if (tag == TAG_ARRAY) {
-      if ((this.headers[usize(handle)].flags & FLAG_ELEMENT_ATTRS) == 0) return PROP_DEFAULT;
+      if ((this.cellHeader(handle).flags & FLAG_ELEMENT_ATTRS) == 0) return PROP_DEFAULT;
       return this.elementAttrOf(handle, index);
     }
     if (tag == TAG_OBJECT) return this.objectAttrOf(handle, index);
@@ -3074,7 +3087,7 @@ export struct Heap {
   }
 
   function objectAttrOf(handle: u32, index: u32): u8 {
-    const payload = this.headers[usize(handle)].payload;
+    const payload = this.cellHeader(handle).payload;
     if ((payload & DICT_BIT) != 0) return this.pairAttr(payload & (DICT_BIT - 1), (index - 1) / 2);
     if (usize(index) >= this.classes[usize(payload)].slotAttrs.length) return PROP_DEFAULT;
     return this.classes[usize(payload)].slotAttrs[usize(index)];
@@ -3089,9 +3102,9 @@ export struct Heap {
   // Give the property in a slot `attr`. A class-mode object moves to the
   // class with that property's attributes changed (see classWithAttr).
   function setAttr(inout this, handle: u32, index: u32, attr: u8): void {
-    const tag = this.headers[usize(handle)].tag;
+    const tag = this.cellHeader(handle).tag;
     if (tag == TAG_OBJECT) {
-      const payload = this.headers[usize(handle)].payload;
+      const payload = this.cellHeader(handle).payload;
       if ((payload & DICT_BIT) != 0) {
         this.setPairAttr(payload & (DICT_BIT - 1), (index - 1) / 2, attr);
         return;
@@ -3121,7 +3134,7 @@ export struct Heap {
 
   // The entry holding an array's element attributes, or -1.
   function elementAttrEntry(handle: u32): i32 {
-    if ((this.headers[usize(handle)].flags & FLAG_ELEMENT_ATTRS) == 0) return -1;
+    if ((this.cellHeader(handle).flags & FLAG_ELEMENT_ATTRS) == 0) return -1;
     const size = this.elementAttrIndex.length;
     if (size == 0) return -1;
     let probe = this.elementAttrHash(handle, size - 1);
@@ -3150,7 +3163,7 @@ export struct Heap {
       this.elementAttrs.push(ElementAttrs({ owner: handle, attrs: Array<u8>() }));
       entry = this.elementAttrs.length - 1;
     }
-    this.headers[usize(handle)].flags = this.headers[usize(handle)].flags | FLAG_ELEMENT_ATTRS;
+    this.headers[usize(handle)].flags = this.cellHeader(handle).flags | FLAG_ELEMENT_ATTRS;
     this.rebuildElementAttrIndex();
     return i32(entry);
   }
@@ -3184,7 +3197,7 @@ export struct Heap {
   }
 
   function flagsOf(handle: u32): u8 {
-    return this.headers[usize(handle)].flags;
+    return this.cellHeader(handle).flags;
   }
 
   function setFlags(inout this, handle: u32, flags: u8): void {
@@ -3212,11 +3225,11 @@ export struct Heap {
   }
 
   function isAccessor(handle: u32): boolean {
-    return this.headers[usize(handle)].tag == TAG_ACCESSOR;
+    return this.cellHeader(handle).tag == TAG_ACCESSOR;
   }
 
   function marked(handle: u32): boolean {
-    return this.headers[usize(handle)].marked;
+    return this.cellHeader(handle).marked;
   }
 
   function setMarked(inout this, handle: u32, value: boolean): void {
@@ -3228,7 +3241,7 @@ export struct Heap {
   // from the table with everything above the highest survivor.
   function isReleased(handle: u32): boolean {
     if (usize(handle) >= this.headerCount) return true;
-    return this.headers[usize(handle)].tag == TAG_FREE;
+    return this.cellHeader(handle).tag == TAG_FREE;
   }
 
   // One past the highest handle the table holds.

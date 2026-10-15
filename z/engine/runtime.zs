@@ -516,8 +516,16 @@ export struct Runtime {
   // cached the object before it changed representation misses.
 
   // A cached load, or the deleted marker for a miss.
+  // A property site's inline cache. The compiler numbers a function's
+  // sites as it records their names, and installing the function gives
+  // every name a cache, so a site's slot indexes its function's caches.
+  // Checked in a debug build.
+  function siteCache(fi: u32, nameSlot: usize): PropertyCache {
+    return unsafe { select this.functions[usize(fi)].caches.uncheckedAt(nameSlot); };
+  }
+
   function loadCached(fi: u32, nameSlot: usize, handle: u32): Value {
-    const cache = this.functions[usize(fi)].caches[nameSlot];
+    const cache = this.siteCache(fi, nameSlot);
     if (cache.kind == CACHE_OWN) {
       const receiverClass = this.heap.objectClass(handle);
       let slot = cache.slot;
@@ -558,7 +566,7 @@ export struct Runtime {
   // A cached read of an inherited name on an array or a string (see
   // inheritingProto); deleted for a miss.
   function loadCachedInherited(fi: u32, nameSlot: usize, handle: u32): Value {
-    const cache = this.functions[usize(fi)].caches[nameSlot];
+    const cache = this.siteCache(fi, nameSlot);
     if (cache.kind != CACHE_INHERITED) return deletedValue();
     const proto = this.inheritingProto(handle);
     if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return deletedValue();
@@ -619,7 +627,7 @@ export struct Runtime {
 
   // A cached store; false for a miss.
   function storeCached(inout this, fi: u32, nameSlot: usize, handle: u32, value: Value): boolean {
-    const cache = this.functions[usize(fi)].caches[nameSlot];
+    const cache = this.siteCache(fi, nameSlot);
     if (cache.kind == CACHE_OWN) {
       if (this.heap.objectClass(handle) != cache.receiverClass) return false;
       if ((cache.attr & PROP_ACCESSOR) != 0 || (cache.attr & PROP_WRITABLE) == 0) return false;
@@ -648,7 +656,7 @@ export struct Runtime {
 
   // An object literal's cached definition; false for a miss.
   function defineCached(inout this, fi: u32, nameSlot: usize, handle: u32, value: Value): boolean {
-    const cache = this.functions[usize(fi)].caches[nameSlot];
+    const cache = this.siteCache(fi, nameSlot);
     if (cache.kind != CACHE_DEFINE || this.heap.objectClass(handle) != cache.receiverClass) return false;
     this.heap.transitionTo(handle, cache.targetClass, cache.slot, value);
     return true;
@@ -4306,7 +4314,7 @@ export struct Runtime {
   // site's first class or one of its others. A copy, so loadCached keeps
   // its one caller in the dispatch loop and stays inlined there.
   function elementPropLoad(fi: u32, nameSlot: usize, handle: u32): Value {
-    const cache = this.functions[usize(fi)].caches[nameSlot];
+    const cache = this.siteCache(fi, nameSlot);
     if (cache.kind != CACHE_OWN) return deletedValue();
     const receiverClass = this.heap.objectClass(handle);
     let slot = cache.slot;
@@ -4370,7 +4378,7 @@ export struct Runtime {
   // first class only, deleted for anything else. (loadCached itself stays
   // with its one caller in the dispatch loop, where it is inlined.)
   function leafLoad(fi: u32, nameSlot: usize, handle: u32): Value {
-    const cache = this.functions[usize(fi)].caches[nameSlot];
+    const cache = this.siteCache(fi, nameSlot);
     if (cache.kind != CACHE_OWN || this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
     return this.heap.slot(handle, cache.slot);
   }

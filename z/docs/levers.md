@@ -49,7 +49,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
-| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; the rest measured, waits on checked indexing |
+| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -11%) |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
@@ -99,7 +99,19 @@ dropped: all caches in one runtime table indexed from a dispatch-loop
 local beside `codeStart` (properties +2.8%, polymorphic +4.5%: the local
 costs more than the indirection it saves); moving 33 arms no kernel uses
 (loose equality, `**`, iterator steps, TDZ checks, ...) out of the loop
-to relieve its registers (4% fewer instructions, cycles level).
+to relieve its registers (4% fewer instructions, cycles level). Done
+(2026-10-14): the heap's header reads, slot reads and writes, and a
+property site's cache read skip their bounds checks (`uncheckedAt`,
+still checked in a debug build): every handle the engine holds was
+allocated from a header table that only grows, a live cell's slots lie
+in the arena, and installing a function gives each of its sites a cache.
+In cycles over eight placements, three runs on a loaded machine:
+properties -10 to -13%, polymorphic -6 to -11%, arrays and closures -5
+to -7%, allocation -5 to -8%, strings -5 to -6%, helpers -3 to -7%, json
+-3%; long-strings +3 to +6% in cycles while it retires 1.7% fewer
+instructions, to be timed again on a quiet machine. libzjs.a -7 KiB.
+The function table keeps its check: its element owns arrays, and
+unchecked access is for elements without cleanup.
 
 **Allocator and collector.** A cell is a header pushed into a table and
 slots pushed into an arena one at a time; every string is its own
