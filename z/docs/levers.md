@@ -527,6 +527,11 @@ profile through `z build` (or a build step compiling the emitted C).
   polymorphic, helpers, and allocation; the push and pop alone, level.
   The checks are predicted branches; what a call costs is elsewhere
   (`bench/speed/results/2026-10-14-unchecked-frames.json`).
+- The call entry's argument copy counted in u32 with wrapping indices,
+  so clang sets up no vector loop and checks no overflow per step
+  (2026-10-14): calls and closures +2% in cycles and +2.3 to 2.5% in
+  instructions, properties +8 to +18%, helpers +9%
+  (`bench/speed/results/2026-10-14-call-entry-u32.json`).
 - Direct-threaded dispatch (computed goto), measured 2026-09-26 by
   rewriting the generated C by hand: slower on Apple silicon (polymorphic
   +39%, properties +24%, calls +6%). The cost is in what each
