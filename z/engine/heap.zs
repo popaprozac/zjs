@@ -3038,10 +3038,11 @@ export struct Heap {
     return cellValue(this.allocate(tag, slotCount));
   }
 
-  // A cell's header. Every handle the engine holds was allocated from this
-  // table, which only grows, so a handle indexes it: no value crosses the
-  // embedding ABI into a heap, and an entry point that took one would have
-  // to check it first. Checked in a debug build.
+  // A cell's header. The engine reads the header only of a cell it can
+  // reach, which is live, and every live handle indexes the table: a full
+  // collection's trim cuts the table only above the highest survivor. No
+  // value crosses the embedding ABI into a heap; an entry point that took
+  // one would have to check it first. Checked in a debug build.
   function cellHeader(handle: u32): CellHeader {
     return unsafe { select this.headers.uncheckedAt(usize(handle)); };
   }

@@ -102,9 +102,13 @@ costs more than the indirection it saves); moving 33 arms no kernel uses
 to relieve its registers (4% fewer instructions, cycles level). Done
 (2026-10-14): the heap's header reads, slot reads and writes, and a
 property site's cache read skip their bounds checks (`uncheckedAt`,
-still checked in a debug build): every handle the engine holds was
-allocated from a header table that only grows, a live cell's slots lie
-in the arena, and installing a function gives each of its sites a cache.
+still checked in a debug build): the engine reads only a reachable,
+so live, cell's header, a full collection trims the header table only
+above its highest survivor, a live cell's slots lie in the arena, and
+installing a function gives each of its sites a cache. (The first
+statement of this said the table only grows; it can shrink. A suspended
+generator held its environment where tracing could not see it, the one
+read of a dead cell found, fixed on 2026-10-15.)
 In cycles over eight placements, three runs with no encode job running
 (2026-10-15, load 6): properties -9 to -10%, allocation -7 to -9%,
 polymorphic -6 to -8%, closures -7%, arrays -6 to -7%, strings -6 to
