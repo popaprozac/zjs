@@ -512,6 +512,14 @@ profile through `z build` (or a build step compiling the emitted C).
   per call (fib 771 -> 694), no fewer cycles once the dispatch loop's
   layout changes were taken out; reordering the frame's fields alone had
   moved single kernels by 2-4% either way.
+- Frames read and stored without per-access checks (`uncheckedAt`, the
+  same invariant as the heap's: the frame array only grows and a frame
+  is pushed only once it is full), 2026-10-14: every frame access in the
+  runtime made calls retire 3.2% fewer instructions and closures 3.7%,
+  but cycles moved -1% for them and +1 to +4% for properties,
+  polymorphic, helpers, and allocation; the push and pop alone, level.
+  The checks are predicted branches; what a call costs is elsewhere
+  (`bench/speed/results/2026-10-14-unchecked-frames.json`).
 - Direct-threaded dispatch (computed goto), measured 2026-09-26 by
   rewriting the generated C by hand: slower on Apple silicon (polymorphic
   +39%, properties +24%, calls +6%). The cost is in what each
