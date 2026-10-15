@@ -679,8 +679,11 @@ recorded in each item's verdict.
 
 ## G4 / G5 — Interpreter dispatch: no `goto`, and `match` is enum-only
 
-**Status:** `proposed` · **Size:** large · **Priority:** high for calls and
+**Status:** `approved` · **Size:** large · **Priority:** high for calls and
 closures (measured 2026-10-15, below)
+**Approved:** 2026-10-15, as `dispatch while` -- a marked loop the C emitter
+lowers into handlers chained by tail calls, the switch kept under a guard
+for C compilers without them (z-lang `docs/dispatch-loop-design.md`).
 
 ### Why
 A bytecode interpreter's dispatch loop is the hottest code in the program. The
@@ -804,9 +807,11 @@ it can check that a tail call leaves nothing to clean up and reject it
 otherwise. Both C constructs it would emit are clang's
 (`__attribute__((musttail))`, `__attribute__((preserve_none))`); where
 the C compiler lacks them, a tail call can fall back to a trampoline
-loop, slower but correct. The shape and spelling are for Zach: a
-general checked tail call, or a narrower construct that lowers a `while`
-over a `match` into handlers the way the prototype does.
+loop, slower but correct. Zach chose the narrower
+construct over a general checked tail call (2026-10-15): `dispatch while`
+lowers a `while` over a `match` into handlers the way the prototype does,
+so the engine's source keeps its shape and other C compilers keep the
+switch.
 
 ---
 
