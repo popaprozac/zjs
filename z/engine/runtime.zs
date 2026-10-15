@@ -3554,7 +3554,7 @@ export struct Runtime {
     this.heap.setSlot(record, 3, undefinedValue());
     this.heap.setSlot(record, 5, int32Value(0));
     this.heap.setSlot(record, 6, int32Value(0));
-    this.heap.setSlot(record, 8, int32Value(0));
+    this.heap.setSlot(record, 8, undefinedValue());
     this.heap.setSlot(record, 9, int32Value(0));
     this.heap.setSlot(record, 10, undefinedValue());
     this.heap.setSlot(record, 11, int32Value(0));
@@ -3625,7 +3625,8 @@ export struct Runtime {
         index = index + 1;
       }
       this.frames[top].ip = usize(asInt32(this.heap.slot(record, 5)));
-      this.frames[top].env = u32(asInt32(this.heap.slot(record, 8)));
+      const savedEnv = this.heap.slot(record, 8);
+      this.frames[top].env = isCell(savedEnv) ? asCell(savedEnv) : 0;
       this.frames[top].callee = callee;
       this.hostThis = thisValue;
       const heldTries = this.heap.slot(record, 7);
@@ -3635,7 +3636,8 @@ export struct Runtime {
       while (t + 2 < pairs) {
         const catchIp = usize(asInt32(this.heap.slot(tries, t)));
         const catchReg = u8(asInt32(this.heap.slot(tries, t + 1)));
-        const tryEnv = u32(asInt32(this.heap.slot(tries, t + 2)));
+        const heldEnv = this.heap.slot(tries, t + 2);
+        const tryEnv: u32 = isCell(heldEnv) ? asCell(heldEnv) : 0;
         this.pushTryEnv(catchIp, catchReg, tryEnv);
         t = t + 3;
       }
@@ -3685,8 +3687,10 @@ export struct Runtime {
     this.heap.setSlot(record, 4, cellValue(saved));
     this.heap.setSlot(record, 5, int32Value(i32(ip)));
     this.heap.setSlot(record, 6, int32Value(i32(resumeDst)));
+    // The environment as a cell, so a collection while the generator is
+    // suspended keeps it: nothing else may hold it.
     const env = this.frames[frameIndex].env;
-    this.heap.setSlot(record, 8, int32Value(i32(env)));
+    this.heap.setSlot(record, 8, env == 0 ? undefinedValue() : cellValue(env));
     // The frame's handlers, bottom-up, then popped; most suspensions
     // have none, and then nothing is made to hold them.
     let first = this.tryDepth;
@@ -3700,7 +3704,8 @@ export struct Runtime {
         const length = this.heap.arrayLength(tries);
         this.heap.arraySet(tries, length, int32Value(i32(this.tryStack[usize(t)].catchIp)));
         this.heap.arraySet(tries, length + 1, int32Value(i32(this.tryStack[usize(t)].catchReg)));
-        this.heap.arraySet(tries, length + 2, int32Value(i32(this.tryStack[usize(t)].env)));
+        const tryEnv = this.tryStack[usize(t)].env;
+        this.heap.arraySet(tries, length + 2, tryEnv == 0 ? undefinedValue() : cellValue(tryEnv));
         t = t + 1;
       }
       this.tryDepth = first;
