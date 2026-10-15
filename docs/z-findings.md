@@ -679,7 +679,8 @@ recorded in each item's verdict.
 
 ## G4 / G5 — Interpreter dispatch: no `goto`, and `match` is enum-only
 
-**Status:** `proposed` · **Size:** large · **Priority:** decide after the ZJS spike
+**Status:** `proposed` · **Size:** large · **Priority:** high for calls and
+closures (measured 2026-10-15, below)
 
 ### Why
 A bytecode interpreter's dispatch loop is the hottest code in the program. The
@@ -751,6 +752,61 @@ the ~25% ISA-size cost, and it is now evidence-backed rather than speculative.
 **Leave G4 and the tail-call effect in Wave 2**, and gate them on one more
 measurement: the same comparison at ~200 opcodes and on x86-64. If the if-chain
 still lands near 1.05× there, neither is needed.
+
+### Measured on the engine — 2026-10-15
+
+The engine's loop now has 105 arms (forty rare instructions run in a
+function of their own), each ending by fetching the next instruction.
+Both remaining shapes were written into a copy of the generated C by
+[`z/bench/speed/thread-dispatch.py`](../z/bench/speed/thread-dispatch.py)
+and timed against the same engine over eight placements of the code,
+three runs:
+
+- **(b) computed goto, the arms kept in one function: 6 to 56% slower**
+  on ten of twelve kernels (properties +55%, helpers +46%, calls +19%),
+  json and regexp within 1%. The loop's stack spills and reloads went
+  from 363 to 860: clang allocates registers worse over one function
+  with 105 jump targets than over the switch. Second measurement to say
+  so (the first, 2026-09-26, by hand). **(b) is dead for this engine.**
+- **(c) tail-called handlers: faster or level on every kernel.** Calls
+  -9%, helpers -9%, closures -8%, strings -4%, allocation -4%,
+  properties -4%, arrays -3%, maps -2%, polymorphic -0.0 to +1.8%; text
+  +16 KiB of 784; test262 unchanged
+  ([`results`](../z/bench/speed/results/2026-10-15-tail-call-dispatch.json)).
+  Each instruction gets its own register allocation, which ends the
+  fragility recorded under G53 (an arm the kernel never runs moving the
+  hot ones' code).
+
+The prototype shows what (c) needs beyond "this call is a tail call":
+
+1. **A calling convention for the handlers** that passes the loop's
+   state (here five scalars and the runtime) in registers the functions
+   they call preserve. Clang's `preserve_none` does this. With the
+   platform's own convention the state sits in argument registers that
+   every helper call clobbers, so each handler saves and reloads it:
+   sixteen threaded instructions made calls 4% slower, where
+   `preserve_none` made them 10% faster.
+2. **Indirect tail calls through a table of plain function addresses**:
+   no environment and no retain, one load and a branch.
+3. **One signature for every handler**, which `musttail` requires.
+4. **The arms gone from anywhere else.** Left in the switch beside the
+   handlers, they kept a second caller of each helper, and clang stopped
+   inlining the property cache's lookup (properties +4%, text +48 KiB).
+
+Leaving the loop (a return, an uncaught throw, a rare instruction) goes
+through a small record the caller reads back; that path is cold.
+
+### Recommendation — changed again
+
+**Take (c), with the handler convention, and drop (b).** The spike's
+argument for (c) holds: Z knows the cleanup pending at every point, so
+it can check that a tail call leaves nothing to clean up and reject it
+otherwise. Both C constructs it would emit are clang's
+(`__attribute__((musttail))`, `__attribute__((preserve_none))`); where
+the C compiler lacks them, a tail call can fall back to a trampoline
+loop, slower but correct. The shape and spelling are for Zach: a
+general checked tail call, or a narrower construct that lowers a `while`
+over a `match` into handlers the way the prototype does.
 
 ---
 

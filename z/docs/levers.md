@@ -51,7 +51,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 |---|---|---|---|---|
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`) |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
-| Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark |
+| Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; instruction handlers chained by tail calls measured calls -9%, closures -8%, wait on Z |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp, arrays done |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
@@ -250,6 +250,29 @@ instructions (generators, await, super, private names, spreads, rest,
 arguments, delete, throw, regular-expression literals) run in a
 function of their own; adding an unused instruction now costs 7% where
 it cost 20%, not nothing.
+
+Splitting the rest measured 2026-10-15, in a copy of the generated C
+(`bench/speed/thread-dispatch.py`): each of the loop's 105 instruction
+arms a function of its own, ending in a tail call to the next
+instruction's handler through a table, the loop's state in arguments.
+In cycles over eight placements, three runs: calls -8.7 to -9.5%,
+helpers -8.7 to -9.4%, closures -8%, strings -3.5 to -5%, allocation
+-3.5 to -4%, properties -3.2 to -4%, arrays -2 to -3%, maps -2.2 to
+-2.4%, json and regexp level to -1.8%, long-strings -4.6 to +0.5%,
+polymorphic -0.0 to +1.8%; text +16 KiB; test262 unchanged
+(`bench/speed/results/2026-10-15-tail-call-dispatch.json`). Two
+conditions. The handlers need a calling convention that keeps the
+loop's state in registers the helpers they call preserve (clang's
+`preserve_none`): with the platform's own, sixteen threaded
+instructions made calls 4% slower where `preserve_none` made them 10%
+faster. And nothing else may call the arms' helpers: with the switch's
+arms left in beside the handlers, the property cache's lookup lost
+clang's single-caller inlining (properties +4%, text +48 KiB). The same
+arms in one function, each ending in a computed goto, were 6 to 56%
+slower on ten kernels (Tried and not kept, below), so the gain is each
+instruction getting a register allocation of its own, not the dispatch
+branch. Z can write neither form; asked of Z (docs/z-findings.md,
+interpreter dispatch).
 
 **Bytecode quality.** The compiler emits one instruction per construct
 and copies more than it needs to: the closures loop runs 14 instructions
@@ -477,7 +500,9 @@ fills use it (arrays -5.8%, allocation -3.7%, calls -1.9%, closures -1.8%,
 maps -1.4% in cycles, `bench/speed/results/2026-09-30-fill.json`). Still open: locale-independent
 conversion between numbers and text,
 which would also replace the formatting passes above; build-time
-selection, for opt-in features and platform code. Two now measured as
+selection, for opt-in features and platform code; guaranteed tail calls
+between instruction handlers (calls -9%, closures -8%, Call protocol
+above). Two now measured as
 worth several percent everywhere (2026-09-26): an inlining hint, since
 clang will not inline even two-line helpers into the dispatch loop
 (forcing five inline: calls -9%, properties, closures, and arrays -5%),
@@ -552,4 +577,9 @@ profile through `z build` (or a build step compiling the emitted C).
 - Direct-threaded dispatch (computed goto), measured 2026-09-26 by
   rewriting the generated C by hand: slower on Apple silicon (polymorphic
   +39%, properties +24%, calls +6%). The cost is in what each
-  instruction does, not in the dispatch branch.
+  instruction does, not in the dispatch branch. Again 2026-10-15, all 105
+  arms over eight placements: properties +55 to +56%, helpers +45 to +46%,
+  polymorphic +23%, closures +21 to +22%, allocation and calls +19 to
+  +21%, arrays +11%, maps +10%, strings +6 to +7%, json and regexp
+  within 1%; the loop's stack spills and reloads went from 363 to 860
+  (`bench/speed/results/2026-10-15-computed-goto-dispatch.json`).

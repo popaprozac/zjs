@@ -96,3 +96,6 @@ change to its call and return arms moved its register allocation more
 than the work it removed. Splitting the loop so each instruction's body
 stands alone, chained by guaranteed tail calls, would end that, and needs
 a language feature Z does not have.
+Measured since, in a copy of the generated C: calls -9%, closures -8%,
+helpers -9%, properties -4%, for 16 KiB of text (`levers.md`, Call
+protocol).
