@@ -24,12 +24,12 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-10-14 the pin is `d48e790b` (Stage 0; before it, `9fbd9aad` from
-2026-10-10, `46fa78ca`, `4adacfea`, `c2b6805c`, and `a642cafe` from 2026-10-02,
-and `bdc237d2` from 2026-09-21). At the pin the engine builds with the native
-compiler again and passes every gate (G56 and G57 had stopped it since
-`2c21974`); the Stage 0 build at the pin remains the baseline the gates and
-measurements are stated against.
+Since 2026-10-15 the pin is `e75c8b0d` (Stage 0; before it, `d48e790b` from
+2026-10-14, `9fbd9aad` from 2026-10-10, `46fa78ca`, `4adacfea`, `c2b6805c`, and
+`a642cafe` from 2026-10-02, and `bdc237d2` from 2026-09-21). At the pin the
+engine builds with the native compiler and passes every gate (G56 and G57 had
+stopped it from `2c21974` to `d48e790b`); the Stage 0 build at the pin remains
+the baseline the gates and measurements are stated against.
 
 Two operating rules, per the agreed handoff model:
 
