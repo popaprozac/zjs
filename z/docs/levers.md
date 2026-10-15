@@ -8,39 +8,39 @@ lever's status in the same commit that moves it.
 
 ## The gap
 
-`z/bench/speed`, `results/2026-09-29-core.json` (engine `2c21974`,
-load 3.8), milliseconds per kernel, against the fastest engine without
-a JIT on each, and the first measurement of this plan
-(`results/2026-09-26-hermes.json`; `helpers` joined on 2026-09-28, its
-first figure from that day):
+`z/bench/speed`, `results/2026-10-15.json` (engine `705415a`, load 7,
+no encode job), milliseconds per kernel, startup subtracted, against the
+fastest engine without a JIT on each, and the engine's figure on
+2026-09-29 (`results/2026-09-29-core.json`). JavaScriptCore's
+interpreter and V8 jitless are measured the same day; QuickJS and Hermes,
+not on the machine this time, are their 2026-09-29 figures:
 
-| Kernel | zjsz | then | Fastest jit-less | Engine | Gap |
+| Kernel | zjsz | 2026-09-29 | Fastest jit-less | Engine | Gap |
 |---|---|---|---|---|---|
-| allocation | 18 | 39 | 21 | V8 | ahead |
-| arrays | 83 | 167 | 78 | V8 | 1.1x |
-| calls | 11 | 17 | 7 | V8 | 1.5x |
-| closures | 18 | 35 | 12 | Hermes, from source and precompiled | 1.5x |
-| helpers | 20 | 40 | 22 | Hermes, from source and precompiled | ahead |
-| json | 18 | 49 | 6 | JavaScriptCore | 2.8x |
-| maps | 37 | 52 | 43 | V8 | ahead |
-| polymorphic | 9 | 20 | 13 | V8 | ahead |
-| properties | 29 | 46 | 23 | JavaScriptCore | 1.2x |
-| regexp | 20 | 27 | 12 | V8 | 1.6x |
-| strings | 8 | 23 | 5 | V8 | 1.8x |
+| allocation | 15 | 18 | 26 | V8 | ahead |
+| arrays | 76 | 83 | 101 | V8 | ahead |
+| calls | 10 | 11 | 8 | Hermes precompiled | 1.3x |
+| closures | 17 | 18 | 12 | Hermes precompiled | 1.4x |
+| helpers | 20 | 20 | 22 | Hermes precompiled | ahead |
+| json | 17 | 18 | 8 | JavaScriptCore | 2.1x |
+| long-strings | 4 | - | 3 | JavaScriptCore | 1.2x |
+| maps | 38 | 37 | 51 | Hermes precompiled | ahead |
+| polymorphic | 8 | 9 | 16 | V8 | ahead |
+| properties | 24 | 29 | 25 | JavaScriptCore | ahead |
+| regexp | 20 | 20 | 16 | V8 | 1.3x |
+| strings | 8 | 8 | 8 | V8 | 1.1x |
 
-Over all eleven the engine is 1.65 times faster than QuickJS (QuickJS
-was 1.19 times faster when this plan began) and 1.45 times faster than
-Hermes run from source, 1.42 precompiled (1.25 and 1.28 faster then);
-1.13 times faster than JavaScriptCore's interpreter (1.7 faster then),
-and V8's is 1.06 times faster (1.9), V8's figures moving the most from
-run to run (its strings figure was 7 earlier the same day and 5 here).
-A run on 2026-09-30 (`results/2026-09-30.json`, engine `1d9110b`, load
-3.4, no QuickJS on the machine) left the table as it is: two runs that
-day agreed within 2%, but on the same binaries V8 was 20% slower than
-here (up to 1.8x on one kernel) and JavaScriptCore 7%, so its gaps would
-flatter the engine. Its engine figures match these within 2% on the
-geometric mean, and it gives `long-strings` its first figures: zjsz 3 ms,
-JavaScriptCore 3, V8 6, Hermes 2, too short to rank.
+Over the twelve kernels (geometric mean of engine time over zjsz time)
+the engine is 1.37 times faster than JavaScriptCore's interpreter and
+1.31 times faster than V8 jitless, both measured with it; against the
+2026-09-29 figures of the others, 1.75 times faster than QuickJS and 1.54
+than Hermes from source, 1.51 precompiled. On that day the margins were
+1.13 over JavaScriptCore and 0.94 against V8 (V8 1.06 times faster);
+both engines' own figures move from day to day (JavaScriptCore's json
+6.4 ms then, 8.3 now). Startup: zjsz 3.1 ms, JavaScriptCore 5.7, V8 29.8.
+Behind on five: json 2.1x (JavaScriptCore), closures 1.4x and calls 1.3x
+(Hermes precompiled), regexp 1.3x (V8), long-strings 1.2x and strings
+1.1x.
 For size, the engine's minimal embedder is 0.77 MB of code (0.56 MB on a
 core context); the
 Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
@@ -105,11 +105,12 @@ property site's cache read skip their bounds checks (`uncheckedAt`,
 still checked in a debug build): every handle the engine holds was
 allocated from a header table that only grows, a live cell's slots lie
 in the arena, and installing a function gives each of its sites a cache.
-In cycles over eight placements, three runs on a loaded machine:
-properties -10 to -13%, polymorphic -6 to -11%, arrays and closures -5
-to -7%, allocation -5 to -8%, strings -5 to -6%, helpers -3 to -7%, json
--3%; long-strings +3 to +6% in cycles while it retires 1.7% fewer
-instructions, to be timed again on a quiet machine. libzjs.a -7 KiB.
+In cycles over eight placements, three runs with no encode job running
+(2026-10-15, load 6): properties -9 to -10%, allocation -7 to -9%,
+polymorphic -6 to -8%, closures -7%, arrays -6 to -7%, strings -6 to
+-7%, long-strings -4 to -6%, helpers -4 to -5%, json -3 to -4%, maps
+-2%, calls and regexp level (the first runs, under an encode job, had
+put long-strings +3 to +6%). libzjs.a -7 KiB.
 The function table keeps its check: its element owns arrays, and
 unchecked access is for elements without cleanup.
 
@@ -389,7 +390,8 @@ widening the parse input to units through a slice (json -1%, within
 noise); both dropped. Then (2026-10-14): parse reads a narrow text as
 its bytes and appends a string body's plain run whole, which bulk append
 in Z now allows (the bytes alone had cost more than they saved, above):
-json -1.1 to -1.7% in cycles over three runs, 6.4% fewer instructions,
+json -0.4 to -0.8% in cycles over three runs with no encode job (-1.1 to
+-1.7% under one), 6.4% fewer instructions,
 libzjs.a +2 KiB (`bench/speed/results/2026-10-14-json-narrow-parse.json`).
 The engine retires about six instructions a cycle on json and on calls,
 so fewer instructions buy little now unless they shorten a chain of

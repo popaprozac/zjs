@@ -44,5 +44,44 @@
    ]
   }
  },
- "note": "the engine retires about 5.8 instructions a cycle on json (6.0 on calls): removed instructions mostly filled idle slots"
+ "note": "the engine retires about 5.8 instructions a cycle on json (6.0 on calls): removed instructions mostly filled idle slots",
+ "quiet_rerun": {
+  "date": "2026-10-15",
+  "load_average": [
+   5.9,
+   6.6
+  ],
+  "note": "the encode job paused; same binaries",
+  "kernels": {
+   "json": [
+    {
+     "checked_cycles": 79952884,
+     "unchecked_cycles": 79277967,
+     "change_percent": -0.7,
+     "placement_range_percent": [
+      -2.0,
+      0.7
+     ]
+    },
+    {
+     "checked_cycles": 78915874,
+     "unchecked_cycles": 78126642,
+     "change_percent": -0.8,
+     "placement_range_percent": [
+      -2.1,
+      2.1
+     ]
+    },
+    {
+     "checked_cycles": 77393396,
+     "unchecked_cycles": 76872846,
+     "change_percent": -0.4,
+     "placement_range_percent": [
+      -2.2,
+      1.1
+     ]
+    }
+   ]
+  }
+ }
 }
