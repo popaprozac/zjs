@@ -532,6 +532,13 @@ profile through `z build` (or a build step compiling the emitted C).
   (2026-10-14): calls and closures +2% in cycles and +2.3 to 2.5% in
   instructions, properties +8 to +18%, helpers +9%
   (`bench/speed/results/2026-10-14-call-entry-u32.json`).
+- Each frame keeping its function's code start, so a call and a return
+  resume without looking the function up, one dependent load fewer
+  (2026-10-15): instructions down 1 to 3%, but in cycles on a quiet
+  machine calls +1 to +3%, polymorphic and properties +3%, helpers +5%
+  (`bench/speed/results/2026-10-15-frame-code-start.json`). Any change to
+  the call and return arms moves the dispatch loop's register allocation
+  more than the work it removes.
 - Direct-threaded dispatch (computed goto), measured 2026-09-26 by
   rewriting the generated C by hand: slower on Apple silicon (polymorphic
   +39%, properties +24%, calls +6%). The cost is in what each
