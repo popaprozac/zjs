@@ -679,11 +679,20 @@ recorded in each item's verdict.
 
 ## G4 / G5 — Interpreter dispatch: no `goto`, and `match` is enum-only
 
-**Status:** `approved` · **Size:** large · **Priority:** high for calls and
-closures (measured 2026-10-15, below)
+**Status:** `consumer-verified` · **Size:** large · **Priority:** high for
+calls and closures (measured 2026-10-15, below)
 **Approved:** 2026-10-15, as `dispatch while` -- a marked loop the C emitter
 lowers into handlers chained by tail calls, the switch kept under a guard
 for C compilers without them (z-lang `docs/dispatch-loop-design.md`).
+**Implemented:** z-lang `e75c8b0d` -- `dispatch while` in both frontends,
+the same shape rules and messages in each; Stage 0 lowers it, the native
+frontend emits the ordinary loop for now (the mark permits that).
+**Verified:** ZJS at pin `e75c8b0d` -- `runFrames` marks its loop, and its
+arms leave as soon as they raise, so the handlers carry what the prototype
+did: calls -8.6 to -9.4%, helpers -8.1 to -8.8%, closures -6.3 to -7.3%,
+allocation and properties -4%, within noise of the prototype; test262
+53,330 unchanged; the native build passes every gate with the switch.
+Probe `dispatch-loop` lands.
 
 ### Why
 A bytecode interpreter's dispatch loop is the hottest code in the program. The

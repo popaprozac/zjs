@@ -51,7 +51,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 |---|---|---|---|---|
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`) |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
-| Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; instruction handlers chained by tail calls measured calls -9%, closures -8%, wait on Z |
+| Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp, arrays done |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | open |
@@ -273,6 +273,25 @@ slower on ten kernels (Tried and not kept, below), so the gain is each
 instruction getting a register allocation of its own, not the dispatch
 branch. Z can write neither form; asked of Z (docs/z-findings.md,
 interpreter dispatch).
+
+Done 2026-10-15 with Z's `dispatch while` (z-lang e75c8b0d), which lowers
+a marked loop into those handlers itself and keeps the switch for C
+compilers without `musttail` and `preserve_none`. Which locals a handler
+takes in its arguments decides the speed. The engine's arms now set the
+thrown value and `throwing`, or the result, and break right there. So no
+instruction hands those on, and they stay out of the arguments: the
+handlers take the runtime, the instruction, ip, codeStart, base,
+frameIndex, fi, and the loop's record, as the prototype did. The
+twenty `if (returned || throwing) break` checks they made dead are gone,
+and so is `returned`. In cycles over eight placements, three runs, against
+the unmarked engine: calls -8.6 to -9.4%, helpers -8.1 to -8.8%, closures
+-6.3 to -7.3%, allocation -3.8 to -4.8%, properties -3.7 to -3.9%,
+strings -3.2 to -4.6%, arrays -1.6 to -2.1%, maps -2.0 to -2.3%,
+regexp -0.9 to -1.5%, json and polymorphic level; within noise of the
+prototype; text +16 KiB; test262 unchanged
+(`bench/speed/results/2026-10-15-dispatch-loop.json`). Built with the
+switch instead, the same engine is level against the old one. The native
+compiler checks the loop and emits the switch for now.
 
 **Bytecode quality.** The compiler emits one instruction per construct
 and copies more than it needs to: the closures loop runs 14 instructions
@@ -500,9 +519,9 @@ fills use it (arrays -5.8%, allocation -3.7%, calls -1.9%, closures -1.8%,
 maps -1.4% in cycles, `bench/speed/results/2026-09-30-fill.json`). Still open: locale-independent
 conversion between numbers and text,
 which would also replace the formatting passes above; build-time
-selection, for opt-in features and platform code; guaranteed tail calls
-between instruction handlers (calls -9%, closures -8%, Call protocol
-above). Two now measured as
+selection, for opt-in features and platform code. The dispatch loop as
+tail-called handlers landed 2026-10-15 as `dispatch while` (calls -9%,
+Call protocol above). Two now measured as
 worth several percent everywhere (2026-09-26): an inlining hint, since
 clang will not inline even two-line helpers into the dispatch loop
 (forcing five inline: calls -9%, properties, closures, and arrays -5%),

@@ -7369,14 +7369,17 @@ export struct Runtime {
       let base = this.frames[frameIndex].regsBase;
       let ip = this.frames[frameIndex].ip;
       let codeStart = usize(this.functions[usize(fi)].codeStart);
-      let returned = false;
       // Every function's code ends in a return, so the loop is left only
       // by a return or a throw, from the instruction that does it; and the
       // compiler lays every instruction's operand words inside its
       // function's code, which setFunction appended to the segment whole,
       // so a fetch at codeStart + ip is in bounds and a release build does
-      // not check it again.
-      while (true) {
+      // not check it again. A dispatch loop: each arm can compile to a
+      // function of its own, chained to the next instruction's by a tail
+      // call. An arm that raises or finishes sets `thrown` and `throwing`,
+      // or `result`, and breaks right there, so no instruction hands them
+      // on to the next and they never take a register.
+      dispatch while (true) {
         const inst = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
         ip = ip.wrappingAdd(1);
         const op = inst.op;
@@ -7437,12 +7440,12 @@ export struct Runtime {
                 appendBytes(inout message, bytesOf(in notDefined));
                 thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
                 throwing = true;
+                break;
               }
             } else {
               const operand3 = this.globals[slot].value;
               this.setReg(base, inst.a, operand3);
             }
-            if (returned || throwing) break;
             continue;
           }
           add => {
@@ -7457,11 +7460,11 @@ export struct Runtime {
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, sum);
               }
             }
-            if (returned || throwing) break;
           }
           // An operand and a small integer in the instruction (c, as i8).
           addImm => {
@@ -7475,11 +7478,11 @@ export struct Runtime {
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, sum);
               }
             }
-            if (returned || throwing) break;
           }
           subImm => {
             const rawLeft = this.reg(base, inst.b);
@@ -7488,10 +7491,10 @@ export struct Runtime {
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
+              break;
             } else {
               this.setReg(base, inst.a, numericSub(left, immediate));
             }
-            if (returned || throwing) break;
             continue;
           }
           cmpLtImm => {
@@ -7766,11 +7769,11 @@ export struct Runtime {
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, numericAdd(number, int32Value(1)));
               }
             }
-            if (returned || throwing) break;
           }
           dec => {
             const operandB = this.reg(base, inst.b);
@@ -7781,11 +7784,11 @@ export struct Runtime {
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, numericSub(number, int32Value(1)));
               }
             }
-            if (returned || throwing) break;
             continue;
           }
           toNumeric => {
@@ -7794,10 +7797,10 @@ export struct Runtime {
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
+              break;
             } else {
               this.setReg(base, inst.a, number);
             }
-            if (returned || throwing) break;
             continue;
           }
           // Two int32s, the loop-counter case, compare without a call.
@@ -8097,6 +8100,7 @@ export struct Runtime {
               } else {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               }
             } else if (this.isHostFunctionValue(callee)) {
               const builtin = this.heap.hostFunctionId(asCell(callee));
@@ -8104,6 +8108,7 @@ export struct Runtime {
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, outcome);
               }
@@ -8111,8 +8116,8 @@ export struct Runtime {
               const message: String = "value is not a function";
               thrown = this.typeError(in message);
               throwing = true;
+              break;
             }
-            if (returned || throwing) break;
             continue;
           }
           methodInvoke => {
@@ -8141,6 +8146,7 @@ export struct Runtime {
               } else {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               }
             } else if (this.isHostFunctionValue(callee)) {
               const builtin = this.heap.hostFunctionId(asCell(callee));
@@ -8148,6 +8154,7 @@ export struct Runtime {
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, outcome);
               }
@@ -8155,8 +8162,8 @@ export struct Runtime {
               const message: String = "property is not a function";
               thrown = this.typeError(in message);
               throwing = true;
+              break;
             }
-            if (returned || throwing) break;
             continue;
           }
           newInvoke => {
@@ -8169,6 +8176,7 @@ export struct Runtime {
             if (!this.isConstructorValue(callee)) {
               thrown = this.notConstructorError(callee);
               throwing = true;
+              break;
             } else if (this.isCompiledCallable(callee)) {
               this.frames[frameIndex].ip = ip;
               if (this.enterConstruct(callee, inst.a, argsBase, argc, callee)) {
@@ -8181,12 +8189,14 @@ export struct Runtime {
               } else {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               }
             } else if (this.isHostFunctionValue(callee)) {
               const produced = this.constructHostDirect(asCell(callee), argsBase, argc);
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, produced);
               }
@@ -8194,8 +8204,8 @@ export struct Runtime {
               const message: String = "value is not a constructor";
               thrown = this.typeError(in message);
               throwing = true;
+              break;
             }
-            if (returned || throwing) break;
           }
           returnOp => {
             let value = this.reg(base, inst.a);
@@ -8216,7 +8226,6 @@ export struct Runtime {
               }
               if (this.frameCount <= entryDepth) {
                 result = value;
-                returned = true;
                 break;
               }
               frameIndex = usize(this.frameCount - 1);
@@ -8236,20 +8245,24 @@ export struct Runtime {
             // A constructor call yields its object unless it returned one; a
             // derived constructor must have called super() by now, and may
             // return only an object or undefined.
+            // The error a constructor's return raises, kept here until the
+            // loop is left with it.
+            let raised = false;
+            let error = undefinedValue();
             if (isDeleted(frame.constructThis) && !this.isObjectLike(value)) {
               if (isUndefined(value)) {
                 const message: String = "Must call super constructor in derived class before accessing 'this' or returning from derived constructor";
-                thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
+                error = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
               } else {
                 const message: String = "Derived constructors may only return object or undefined";
-                thrown = this.typeError(in message);
+                error = this.typeError(in message);
               }
-              throwing = true;
+              raised = true;
             } else if (this.isObjectLike(frame.constructThis) && !this.isObjectLike(value)) {
               if (!isUndefined(value) && this.functions[usize(frame.functionIndex)].isDerived) {
                 const message: String = "Derived constructors may only return object or undefined";
-                thrown = this.typeError(in message);
-                throwing = true;
+                error = this.typeError(in message);
+                raised = true;
               }
               value = frame.constructThis;
             }
@@ -8259,30 +8272,35 @@ export struct Runtime {
             if (this.heap.shouldCollect()) {
               this.regTop = frame.regsBase + 1;
               this.setReg(frame.regsBase, 0, value);
-              if (throwing) this.pushTempRoot(thrown);
+              if (raised) this.pushTempRoot(error);
               this.collectGarbage();
-              if (throwing) this.popTempRoot();
+              if (raised) this.popTempRoot();
               this.regTop = frame.regsBase;
             }
             if (this.frameCount <= entryDepth) {
-              result = value;
-              returned = true;
-            } else {
-              const callerIndex = usize(this.frameCount - 1);
-              const callerBase = this.frames[callerIndex].regsBase;
-              this.setReg(callerBase, frame.returnDst, value);
-              if (throwing) {
-                returned = true;
-              } else {
-                // Back in the caller without leaving the loop.
-                frameIndex = callerIndex;
-                fi = this.frames[callerIndex].functionIndex;
-                base = callerBase;
-                ip = this.frames[callerIndex].ip;
-                codeStart = usize(this.functions[usize(fi)].codeStart);
+              if (raised) {
+                thrown = error;
+                throwing = true;
+                result = value;
+                break;
               }
+              result = value;
+              break;
             }
-            if (returned || throwing) break;
+            const callerIndex = usize(this.frameCount - 1);
+            const callerBase = this.frames[callerIndex].regsBase;
+            this.setReg(callerBase, frame.returnDst, value);
+            if (raised) {
+              thrown = error;
+              throwing = true;
+              break;
+            }
+            // Back in the caller without leaving the loop.
+            frameIndex = callerIndex;
+            fi = this.frames[callerIndex].functionIndex;
+            base = callerBase;
+            ip = this.frames[callerIndex].ip;
+            codeStart = usize(this.functions[usize(fi)].codeStart);
           }
           newObject => {
             const objectProto = this.objectProto;
@@ -8360,11 +8378,13 @@ export struct Runtime {
               if (isUndefined(object) || isNull(object)) {
                 thrown = this.propertyOfNullish(object, atom, true);
                 throwing = true;
+                break;
               } else {
                 const found = this.getProperty(object, cellValue(atom));
                 if (this.pendingThrow) {
                   thrown = this.takePending();
                   throwing = true;
+                  break;
                 } else {
                   this.setReg(base, inst.a, found);
                   if (isPlainObject) {
@@ -8375,7 +8395,6 @@ export struct Runtime {
                 }
               }
             }
-            if (returned || throwing) break;
           }
           storeProp => {
             const object = this.reg(base, inst.a);
@@ -8390,21 +8409,23 @@ export struct Runtime {
               if (isUndefined(object) || isNull(object)) {
                 thrown = this.propertyOfNullish(object, atom, false);
                 throwing = true;
+                break;
               } else {
                 const classBefore: u32 = isPlainObject ? this.heap.objectClass(asCell(object)) : 0;
                 const accepted = this.setProperty(object, cellValue(atom), value);
                 if (this.pendingThrow) {
                   thrown = this.takePending();
                   throwing = true;
+                  break;
                 } else if (!accepted && this.functions[usize(fi)].strict) {
                   thrown = this.readOnlyError(atom);
                   throwing = true;
+                  break;
                 } else if (accepted && isPlainObject) {
                   this.populateStoreCache(fi, nameSlot, asCell(object), atom, classBefore);
                 }
               }
             }
-            if (returned || throwing) break;
           }
           loadElemImm => {
             // `a[k]`, k an integer literal: an array's present element read
@@ -8458,20 +8479,22 @@ export struct Runtime {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, true);
               throwing = true;
+              break;
             } else if (this.privateNameMissing(object, key)) {
               const message: String = "Cannot read private member from an object whose class did not declare it";
               thrown = this.typeError(in message);
               throwing = true;
+              break;
             } else {
               const found = this.getProperty(object, key);
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else {
                 this.setReg(base, inst.a, found);
               }
             }
-            if (returned || throwing) break;
           }
           storeElem => {
             const object = this.reg(base, inst.a);
@@ -8493,21 +8516,24 @@ export struct Runtime {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, false);
               throwing = true;
+              break;
             } else if (this.privateNameMissing(object, key)) {
               const message: String = "Cannot write private member to an object whose class did not declare it";
               thrown = this.typeError(in message);
               throwing = true;
+              break;
             } else {
               const accepted = this.setProperty(object, key, value);
               if (this.pendingThrow) {
                 thrown = this.takePending();
                 throwing = true;
+                break;
               } else if (!accepted && this.functions[usize(fi)].strict) {
                 thrown = this.readOnlyError(this.propertyKey(key));
                 throwing = true;
+                break;
               }
             }
-            if (returned || throwing) break;
             continue;
           }
           defineNamed => {
@@ -8547,10 +8573,10 @@ export struct Runtime {
               const message: String = "Must call super constructor before accessing 'this'";
               thrown = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
               throwing = true;
+              break;
             } else {
               this.setReg(base, inst.a, current);
             }
-            if (returned || throwing) break;
           }
           typeofOp => {
             const operand = this.reg(base, inst.b);
@@ -8573,11 +8599,11 @@ export struct Runtime {
               const message: String = "Cannot use 'in' on a non-object";
               thrown = this.typeError(in message);
               throwing = true;
+              break;
             } else {
               const present = this.hasProperty(object, key);
               this.setReg(base, inst.a, booleanValue(present));
             }
-            if (returned || throwing) break;
           }
           instanceofOp => {
             const value = this.reg(base, inst.b);
@@ -8586,10 +8612,10 @@ export struct Runtime {
             if (this.pendingThrow) {
               thrown = this.takePending();
               throwing = true;
+              break;
             } else {
               this.setReg(base, inst.a, booleanValue(found));
             }
-            if (returned || throwing) break;
           }
           iterPrepare => {
             const source = this.reg(base, inst.b);
@@ -8726,8 +8752,8 @@ export struct Runtime {
               appendBytes(inout message, bytesOf(in after));
               thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
               throwing = true;
+              break;
             }
-            if (returned || throwing) break;
           }
           envToReg => {
             const env = this.frames[frameIndex].env;
@@ -8758,10 +8784,9 @@ export struct Runtime {
             const step = this.runColdOp(inst, fi, frameIndex, base, ip, entryDepth);
             ip = step.ip;
             if (step.returned) {
-              returned = true;
               result = step.result;
+              break;
             }
-            if (returned || throwing) break;
           }
         }
         // A coercion inside any handler may have raised (a Symbol in
