@@ -24,8 +24,8 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-10-15 the pin is `e75c8b0d` (Stage 0; before it, `d48e790b` from
-2026-10-14, `9fbd9aad` from 2026-10-10, `46fa78ca`, `4adacfea`, `c2b6805c`, and
+Since 2026-10-15 the pin is `027dc49b` (Stage 0; before it, `e75c8b0d` earlier
+that day, `d48e790b` from 2026-10-14, `9fbd9aad` from 2026-10-10, `46fa78ca`, `4adacfea`, `c2b6805c`, and
 `a642cafe` from 2026-10-02, and `bdc237d2` from 2026-09-21). At the pin the
 engine builds with the native compiler and passes every gate (G56 and G57 had
 stopped it from `2c21974` to `d48e790b`); the Stage 0 build at the pin remains
@@ -685,14 +685,17 @@ calls and closures (measured 2026-10-15, below)
 lowers into handlers chained by tail calls, the switch kept under a guard
 for C compilers without them (z-lang `docs/dispatch-loop-design.md`).
 **Implemented:** z-lang `e75c8b0d` -- `dispatch while` in both frontends,
-the same shape rules and messages in each; Stage 0 lowers it, the native
-frontend emits the ordinary loop for now (the mark permits that).
+the same shape rules and messages in each, Stage 0 lowering it; `027dc49b`
+-- the native compiler lowers it too, choosing the same handler arguments.
 **Verified:** ZJS at pin `e75c8b0d` -- `runFrames` marks its loop, and its
 arms leave as soon as they raise, so the handlers carry what the prototype
 did: calls -8.6 to -9.4%, helpers -8.1 to -8.8%, closures -6.3 to -7.3%,
 allocation and properties -4%, within noise of the prototype; test262
-53,330 unchanged; the native build passes every gate with the switch.
-Probe `dispatch-loop` lands.
+53,330 unchanged; probe `dispatch-loop` lands. At `027dc49b` the native
+build of the engine runs threaded too and passes every gate, test262
+unchanged: against its own switch build closures -14.7%, helpers -10.6%,
+calls -10%, polymorphic -7.7%, properties -7%
+(`z/bench/speed/results/2026-10-15-dispatch-loop-native.json`).
 
 ### Why
 A bytecode interpreter's dispatch loop is the hottest code in the program. The

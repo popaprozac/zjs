@@ -295,7 +295,10 @@ regexp -0.9 to -1.5%, json and polymorphic level; within noise of the
 prototype; text +16 KiB; test262 unchanged
 (`bench/speed/results/2026-10-15-dispatch-loop.json`). Built with the
 switch instead, the same engine is level against the old one. The native
-compiler checks the loop and emits the switch for now.
+compiler lowers the loop the same way since z-lang 027dc49b: built
+natively, threaded against its own switch build, closures -14.7%, helpers
+-10.6%, calls -10%, polymorphic -7.7%, properties -7%, allocation and
+strings -4% (`bench/speed/results/2026-10-15-dispatch-loop-native.json`).
 
 **Bytecode quality.** The compiler emits one instruction per construct
 and copies more than it needs to: the closures loop runs 14 instructions
