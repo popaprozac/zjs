@@ -386,7 +386,14 @@ inline hint and bulk append asked of Z, docs/z-findings.md). Tried
 (2026-09-29): comparing a parsed key with its atom's bytes in place, not
 a call per byte (level: the samples moved into the comparison), and
 widening the parse input to units through a slice (json -1%, within
-noise); both dropped.
+noise); both dropped. Then (2026-10-14): parse reads a narrow text as
+its bytes and appends a string body's plain run whole, which bulk append
+in Z now allows (the bytes alone had cost more than they saved, above):
+json -1.1 to -1.7% in cycles over three runs, 6.4% fewer instructions,
+libzjs.a +2 KiB (`bench/speed/results/2026-10-14-json-narrow-parse.json`).
+The engine retires about six instructions a cycle on json and on calls,
+so fewer instructions buy little now unless they shorten a chain of
+dependent loads.
 Strings (2026-09-27): the byte-first builder JSON uses became a shared
 one (`builtins/builder.zs`), which `join` now builds through where it
 built units and narrowed them; `indexOf`, `includes`, and `split`

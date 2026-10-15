@@ -9,7 +9,12 @@ import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_
 // --- parse ---
 
 struct JsonParser {
-  bytes: Array<u16>;
+  // The text: its Latin-1 bytes when it is narrow, as nearly every text
+  // is, and its units when it is wide; `length` units either way.
+  bytes: Array<u8>;
+  textUnits: Array<u16>;
+  textWide: boolean;
+  length: usize;
   position: usize;
   failed: boolean;
   // A string being read: its Latin-1 bytes while every unit fits in one,
@@ -53,29 +58,47 @@ function zeros(count: usize): Array<u32> {
 }
 
 function skipSpace(inout parser: JsonParser): void {
-  while (parser.position < parser.bytes.length) {
-    const byte = parser.bytes[parser.position];
+  while (parser.position < parser.length) {
+    const byte = unitAt(in parser, parser.position);
     if (byte != 32 && byte != 9 && byte != 10 && byte != 13) return;
     parser.position = parser.position + 1;
   }
 }
 
+// The text's unit at `index`, below its length.
+function unitAt(in parser: JsonParser, index: usize): u16 {
+  if (parser.textWide) return parser.textUnits[index];
+  return u16(parser.bytes[index]);
+}
+
 function peekByte(in parser: JsonParser): i32 {
-  if (parser.position >= parser.bytes.length) return -1;
-  return i32(parser.bytes[parser.position]);
+  if (parser.position >= parser.length) return -1;
+  return i32(unitAt(in parser, parser.position));
+}
+
+// The end of the run from `start` of bytes that stand for themselves in a
+// string: no quote, no backslash, no control character.
+function plainRunEnd(bytes: Slice<u8>, start: usize): usize {
+  let index = start;
+  while (index < bytes.length) {
+    const byte = bytes[index];
+    if (byte < 32 || byte == 34 || byte == 92) return index;
+    index = index + 1;
+  }
+  return index;
 }
 
 // The literal `word` (true, false, null) at the position, stepped over;
 // compared in place, with nothing copied.
 function expectWord(inout parser: JsonParser, in word: String): boolean {
   const length = usize(word.byteLength);
-  if (parser.position + length > parser.bytes.length) {
+  if (parser.position + length > parser.length) {
     parser.failed = true;
     return false;
   }
   let index: usize = 0;
   while (index < length) {
-    if (parser.bytes[parser.position + index] != u16(word.byteAt(index))) {
+    if (unitAt(in parser, parser.position + index) != u16(word.byteAt(index))) {
       parser.failed = true;
       return false;
     }
@@ -118,6 +141,14 @@ function parseStringBody(inout parser: JsonParser): void {
   parser.units.clear();
   parser.wide = false;
   while (true) {
+    // A run that stands for itself, taken whole from a narrow text.
+    if (!parser.textWide && !parser.wide) {
+      const end = plainRunEnd(parser.bytes, parser.position);
+      if (end > parser.position) {
+        parser.narrow.append(parser.bytes.slice(parser.position, end));
+        parser.position = end;
+      }
+    }
     const byte = peekByte(in parser);
     if (byte < 0) {
       parser.failed = true;
@@ -248,13 +279,13 @@ function parseNumber(inout parser: JsonParser): Value {
   }
   // An integer of up to 15 digits is exact as it is read.
   let index = start;
-  const negative = parser.bytes[index] == 45;
+  const negative = unitAt(in parser, index) == 45;
   if (negative) index = index + 1;
   if (parser.position - index <= 15) {
     let magnitude: i64 = 0;
     let integral = true;
     while (index < parser.position) {
-      const unit = parser.bytes[index];
+      const unit = unitAt(in parser, index);
       if (unit < 48 || unit > 57) {
         integral = false;
         break;
@@ -267,7 +298,7 @@ function parseNumber(inout parser: JsonParser): Value {
   let digits = Array<u8>();
   index = start;
   while (index < parser.position) {
-    digits.push(u8(parser.bytes[index]));
+    digits.push(u8(unitAt(in parser, index)));
     index = index + 1;
   }
   return numberValue(stringToNumber(in digits));
@@ -453,10 +484,19 @@ function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Valu
 function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text = runtime.toStringValue(runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
-  let parser = JsonParser({ bytes: runtime.heap.stringUnits(asCell(text)), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeFrom: zeros(SHAPE_CACHE), shapeName: zeros(SHAPE_CACHE), shapeTo: zeros(SHAPE_CACHE), shapeSlot: zeros(SHAPE_CACHE) });
+  const textHandle = asCell(text);
+  const textWide = runtime.heap.isWideString(textHandle);
+  let bytes = Array<u8>();
+  let textUnits = Array<u16>();
+  if (textWide) {
+    textUnits = runtime.heap.stringUnits(textHandle);
+  } else {
+    bytes = runtime.heap.stringStorageBytes(textHandle);
+  }
+  let parser = JsonParser({ bytes: move bytes, textUnits: move textUnits, textWide, length: runtime.heap.stringLength(textHandle), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeFrom: zeros(SHAPE_CACHE), shapeName: zeros(SHAPE_CACHE), shapeTo: zeros(SHAPE_CACHE), shapeSlot: zeros(SHAPE_CACHE) });
   const value = parseValue(inout runtime, inout parser, 0);
   skipSpace(inout parser);
-  if (parser.failed || parser.position != parser.bytes.length) {
+  if (parser.failed || parser.position != parser.length) {
     const message: String = "Unexpected token in JSON";
     const error = runtime.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
     runtime.raise(error);

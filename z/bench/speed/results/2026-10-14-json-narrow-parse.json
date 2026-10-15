@@ -1,0 +1,48 @@
+{
+ "what": "JSON.parse reading a narrow text as its Latin-1 bytes (a wide text as units), with a string body's plain run appended whole; against the engine before; json kernel, median over eight placements, change the geometric mean over placements, three runs back to back.",
+ "date": "2026-10-14",
+ "engine": "Stage 0 z-lang d48e790b, -O2 -DNDEBUG, on ZJS 6f98953",
+ "load_average": [
+  10.9,
+  8.4,
+  7.5
+ ],
+ "kernels": {
+  "json": {
+   "runs": [
+    {
+     "before_cycles": 82702937,
+     "after_cycles": 82137722,
+     "change_percent": -1.2,
+     "placement_range_percent": [
+      -12.5,
+      3.3
+     ]
+    },
+    {
+     "before_cycles": 80554830,
+     "after_cycles": 80103986,
+     "change_percent": -1.7,
+     "placement_range_percent": [
+      -6.5,
+      0.9
+     ]
+    },
+    {
+     "before_cycles": 80478506,
+     "after_cycles": 79162600,
+     "change_percent": -1.1,
+     "placement_range_percent": [
+      -4.1,
+      4.6
+     ]
+    }
+   ],
+   "instructions_before_after_placement0": [
+    496024063,
+    464190648
+   ]
+  }
+ },
+ "note": "the engine retires about 5.8 instructions a cycle on json (6.0 on calls): removed instructions mostly filled idle slots"
+}
