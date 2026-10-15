@@ -49,7 +49,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
-| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -11%) |
+| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`) |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
@@ -116,7 +116,11 @@ polymorphic -6 to -8%, closures -7%, arrays -6 to -7%, strings -6 to
 -2%, calls and regexp level (the first runs, under an encode job, had
 put long-strings +3 to +6%). libzjs.a -7 KiB.
 The function table keeps its check: its element owns arrays, and
-unchecked access is for elements without cleanup.
+unchecked access is for elements without cleanup. Slots beside the header, one dependent load
+instead of two, measured from the other side on 2026-10-15: one more
+level in every slot access cost properties 2.5 to 3.3%, helpers 3.5 to
+4%, closures 2%, polymorphic 1 to 1.6%, so the redesign it needs is not
+worth it for speed alone (`docs/heap-layout.md`).
 
 **Allocator and collector.** A cell is a header pushed into a table and
 slots pushed into an arena one at a time; every string is its own

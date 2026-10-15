@@ -1,0 +1,359 @@
+{
+ "what": "An experiment, not an engine change: one more dependent header load in every slot read and write (the slot's address computed from a second header read that depends on the first), against the same engine; it estimates what removing one level of the header-then-slot chain would save. Median over eight placements, change the geometric mean over placements, three runs.",
+ "date": "2026-10-15",
+ "engine": "Stage 0 z-lang d48e790b, -O2 -DNDEBUG, on ZJS 255cf9d",
+ "load_average": [
+  5.5,
+  6.6
+ ],
+ "kernels": {
+  "allocation": [
+   {
+    "before_cycles": 69128067,
+    "after_cycles": 68943260,
+    "change_percent": -0.3,
+    "placement_range_percent": [
+     -5.2,
+     6.2
+    ]
+   },
+   {
+    "before_cycles": 67166396,
+    "after_cycles": 68526380,
+    "change_percent": 1.7,
+    "placement_range_percent": [
+     -0.7,
+     3.4
+    ]
+   },
+   {
+    "before_cycles": 65997860,
+    "after_cycles": 67012966,
+    "change_percent": 1.7,
+    "placement_range_percent": [
+     -0.3,
+     3.3
+    ]
+   }
+  ],
+  "arrays": [
+   {
+    "before_cycles": 289629589,
+    "after_cycles": 295315984,
+    "change_percent": 1.9,
+    "placement_range_percent": [
+     0.1,
+     3.5
+    ]
+   },
+   {
+    "before_cycles": 287825818,
+    "after_cycles": 293077088,
+    "change_percent": 1.6,
+    "placement_range_percent": [
+     -1.8,
+     5.3
+    ]
+   },
+   {
+    "before_cycles": 289360520,
+    "after_cycles": 293156845,
+    "change_percent": 1.1,
+    "placement_range_percent": [
+     -0.9,
+     4.0
+    ]
+   }
+  ],
+  "calls": [
+   {
+    "before_cycles": 47535873,
+    "after_cycles": 47648669,
+    "change_percent": 1.4,
+    "placement_range_percent": [
+     -1.2,
+     4.2
+    ]
+   },
+   {
+    "before_cycles": 45354420,
+    "after_cycles": 45750643,
+    "change_percent": 0.7,
+    "placement_range_percent": [
+     -1.4,
+     1.8
+    ]
+   },
+   {
+    "before_cycles": 44991906,
+    "after_cycles": 45368848,
+    "change_percent": 0.8,
+    "placement_range_percent": [
+     -1.1,
+     2.3
+    ]
+   }
+  ],
+  "closures": [
+   {
+    "before_cycles": 66974178,
+    "after_cycles": 68589062,
+    "change_percent": 2.0,
+    "placement_range_percent": [
+     0.2,
+     3.8
+    ]
+   },
+   {
+    "before_cycles": 66385227,
+    "after_cycles": 67682744,
+    "change_percent": 2.1,
+    "placement_range_percent": [
+     1.5,
+     2.9
+    ]
+   },
+   {
+    "before_cycles": 66453592,
+    "after_cycles": 67786260,
+    "change_percent": 2.1,
+    "placement_range_percent": [
+     1.4,
+     2.8
+    ]
+   }
+  ],
+  "helpers": [
+   {
+    "before_cycles": 78916540,
+    "after_cycles": 81741988,
+    "change_percent": 3.7,
+    "placement_range_percent": [
+     2.4,
+     5.0
+    ]
+   },
+   {
+    "before_cycles": 79652134,
+    "after_cycles": 82149336,
+    "change_percent": 3.5,
+    "placement_range_percent": [
+     1.9,
+     5.9
+    ]
+   },
+   {
+    "before_cycles": 78565124,
+    "after_cycles": 81862906,
+    "change_percent": 4.0,
+    "placement_range_percent": [
+     1.6,
+     4.8
+    ]
+   }
+  ],
+  "json": [
+   {
+    "before_cycles": 76333088,
+    "after_cycles": 77245355,
+    "change_percent": 1.1,
+    "placement_range_percent": [
+     -0.6,
+     2.7
+    ]
+   },
+   {
+    "before_cycles": 76484641,
+    "after_cycles": 76909341,
+    "change_percent": 0.3,
+    "placement_range_percent": [
+     -6.8,
+     3.2
+    ]
+   },
+   {
+    "before_cycles": 76899596,
+    "after_cycles": 76835624,
+    "change_percent": -0.1,
+    "placement_range_percent": [
+     -1.6,
+     1.1
+    ]
+   }
+  ],
+  "long-strings": [
+   {
+    "before_cycles": 18971336,
+    "after_cycles": 19754404,
+    "change_percent": 1.7,
+    "placement_range_percent": [
+     -3.7,
+     12.2
+    ]
+   },
+   {
+    "before_cycles": 18628074,
+    "after_cycles": 18394988,
+    "change_percent": -1.8,
+    "placement_range_percent": [
+     -6.7,
+     7.3
+    ]
+   },
+   {
+    "before_cycles": 18916906,
+    "after_cycles": 19030335,
+    "change_percent": 0.5,
+    "placement_range_percent": [
+     -5.8,
+     6.7
+    ]
+   }
+  ],
+  "maps": [
+   {
+    "before_cycles": 155426644,
+    "after_cycles": 155229308,
+    "change_percent": 0.1,
+    "placement_range_percent": [
+     -1.5,
+     1.8
+    ]
+   },
+   {
+    "before_cycles": 154083500,
+    "after_cycles": 153777449,
+    "change_percent": -0.1,
+    "placement_range_percent": [
+     -1.1,
+     0.7
+    ]
+   },
+   {
+    "before_cycles": 154146024,
+    "after_cycles": 154153066,
+    "change_percent": 0.0,
+    "placement_range_percent": [
+     -1.0,
+     1.0
+    ]
+   }
+  ],
+  "polymorphic": [
+   {
+    "before_cycles": 38192062,
+    "after_cycles": 38547818,
+    "change_percent": 1.0,
+    "placement_range_percent": [
+     -1.1,
+     5.3
+    ]
+   },
+   {
+    "before_cycles": 37783612,
+    "after_cycles": 38545975,
+    "change_percent": 1.6,
+    "placement_range_percent": [
+     -1.5,
+     5.0
+    ]
+   },
+   {
+    "before_cycles": 38079452,
+    "after_cycles": 38699339,
+    "change_percent": 1.4,
+    "placement_range_percent": [
+     -0.2,
+     4.1
+    ]
+   }
+  ],
+  "properties": [
+   {
+    "before_cycles": 99947780,
+    "after_cycles": 102841388,
+    "change_percent": 3.0,
+    "placement_range_percent": [
+     2.7,
+     3.8
+    ]
+   },
+   {
+    "before_cycles": 100808699,
+    "after_cycles": 103383904,
+    "change_percent": 2.5,
+    "placement_range_percent": [
+     0.1,
+     5.5
+    ]
+   },
+   {
+    "before_cycles": 100220419,
+    "after_cycles": 104208464,
+    "change_percent": 3.3,
+    "placement_range_percent": [
+     2.0,
+     4.7
+    ]
+   }
+  ],
+  "regexp": [
+   {
+    "before_cycles": 86158007,
+    "after_cycles": 86602080,
+    "change_percent": 0.4,
+    "placement_range_percent": [
+     -2.0,
+     3.0
+    ]
+   },
+   {
+    "before_cycles": 86780922,
+    "after_cycles": 86090800,
+    "change_percent": -0.7,
+    "placement_range_percent": [
+     -1.8,
+     0.0
+    ]
+   },
+   {
+    "before_cycles": 87818598,
+    "after_cycles": 88696516,
+    "change_percent": 1.0,
+    "placement_range_percent": [
+     -0.5,
+     2.3
+    ]
+   }
+  ],
+  "strings": [
+   {
+    "before_cycles": 40729921,
+    "after_cycles": 40880638,
+    "change_percent": 0.6,
+    "placement_range_percent": [
+     -2.0,
+     2.8
+    ]
+   },
+   {
+    "before_cycles": 39381390,
+    "after_cycles": 39906790,
+    "change_percent": 1.9,
+    "placement_range_percent": [
+     -0.1,
+     5.5
+    ]
+   },
+   {
+    "before_cycles": 40142440,
+    "after_cycles": 41377629,
+    "change_percent": 2.3,
+    "placement_range_percent": [
+     -1.1,
+     5.8
+    ]
+   }
+  ]
+ }
+}
