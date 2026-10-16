@@ -224,6 +224,23 @@ fn zjs_get_this(ctx: ZjsContext*) -> ZjsValue {
     return ctx.host_this;
 }
 
+// --- Interrupts ------------------------------------------------------
+
+// The embedder's interrupt handler (zjs.h); NULL removes it. It is
+// called on the thread running this context's JavaScript.
+fn zjs_set_interrupt_handler(ctx: ZjsContext*, handler: void*, data: void*) -> void {
+    if ctx == NULL { return; }
+    ctx.interrupt_handler = handler;
+    ctx.interrupt_opaque = data;
+    ctx.interrupt_countdown = INTERRUPT_POLL_INTERVAL;
+}
+
+fn zjs_is_interrupted(ctx: ZjsContext*) -> int {
+    if ctx == NULL { return 0; }
+    if ctx.interrupted { return 1; }
+    return 0;
+}
+
 fn zjs_throw(ctx: ZjsContext*, value: ZjsValue) -> void {
     if ctx == NULL { return; }
     ctx.pending_throw_active = true;
@@ -247,6 +264,7 @@ fn zjs_call(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsValue, argv: ZjsVal
     ctx_push_temp_root(ctx, r);
     drain_microtasks(ctx);
     ctx_pop_temp_root(ctx);
+    if ctx_end_termination(ctx) { return zjs_undefined(); }
     if ctx.pending_throw_active {
         ctx.had_error = true;
         ctx.last_error = consume_pending_throw(ctx);
