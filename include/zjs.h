@@ -72,6 +72,13 @@ void zjs_install_date(ZjsContext* ctx);         /* Date */
 void zjs_install_collections(ZjsContext* ctx);  /* Map, Set, WeakMap, WeakSet */
 void zjs_install_promise(ZjsContext* ctx);      /* Promise */
 void zjs_install_reflect(ZjsContext* ctx);      /* Reflect */
+/* The source compiler, for eval and the Function constructor in a context
+ * that has compiled no source of its own: zjs_new_context has it, and
+ * zjs_eval and zjs_compile_to_bytecode bring it to any context they run
+ * on. A core context that only runs bytecode (zjs_eval_bytecode) never
+ * has it, so an embedder that calls none of these links no lexer, parser,
+ * or compiler; in such a context eval and Function throw an EvalError. */
+void zjs_install_compiler(ZjsContext* ctx);
 
 void        zjs_free_context(ZjsContext* ctx);
 

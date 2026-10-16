@@ -215,6 +215,26 @@ export function emptyDescriptorInput(): DescriptorInput {
 // function's target) and its `length` and `name`.
 export type HostFunction = (inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32) => Value on thread.any;
 
+// Source compiled against a runtime: a script (an indirect eval's, the
+// Function constructor's) or direct eval code at a call, against the
+// scopes its caller's eval site `site` records. The script's function
+// index, or a COMPILE_ reason it has none.
+export type ScriptCompiler = (inout runtime: Runtime, source: Array<u8>) => i32 on thread.any;
+export type EvalCompiler = (inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32) => i32 on thread.any;
+export const COMPILE_PARSE_ERROR: i32 = -1;
+export const COMPILE_ERROR: i32 = -2;
+export const COMPILE_NO_COMPILER: i32 = -3;
+
+// The compilers a runtime has until installCompiler gives it the front
+// end: none.
+function noScriptCompiler(inout runtime: Runtime, source: Array<u8>): i32 on thread.any {
+  return COMPILE_NO_COMPILER;
+}
+
+function noEvalCompiler(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32): i32 on thread.any {
+  return COMPILE_NO_COMPILER;
+}
+
 // What a regular-expression literal calls to make its object: installRegExp
 // sets it; until then a literal throws, and the core links no matcher.
 export type RegExpMaker = (inout runtime: Runtime, pattern: Value, flags: Value) => Value on thread.any;
@@ -447,6 +467,11 @@ export struct Runtime {
   // an index key or a key that is not narrow), n + 2 jsonPlans[n].
   jsonPlans: Array<JsonPlan> = Array<JsonPlan>();
   jsonPlanOfClass: Array<u32> = Array<u32>();
+  // The compiler eval and the Function constructor reach, set by
+  // installCompiler (compile.zs). Without one the runtime runs only code
+  // compiled elsewhere -- a bytecode file's -- and links no front end.
+  scriptCompiler: ScriptCompiler = noScriptCompiler;
+  evalCompiler: EvalCompiler = noEvalCompiler;
   interruptHandler: usize = 0;
   interruptOpaque: usize = 0;
   interruptCountdown: u32 = INTERRUPT_POLL_INTERVAL;
@@ -1509,6 +1534,35 @@ export struct Runtime {
 
   function syntaxError(inout this, in message: String): Value {
     return this.makeError(ERROR_KIND_SYNTAX, bytesOf(in message));
+  }
+
+  // Source compiled through the runtime's compiler (scriptCompiler): its
+  // function index, or a COMPILE_ reason.
+  function compileScript(inout this, source: Array<u8>): i32 {
+    const compile = this.scriptCompiler;
+    return compile(inout this, move source);
+  }
+
+  // Direct eval code compiled at `caller`'s eval site `site`.
+  function compileEvalCode(inout this, source: Array<u8>, caller: u32, site: u32): i32 {
+    const compile = this.evalCompiler;
+    return compile(inout this, move source, caller, site);
+  }
+
+  // What a compile that gave no function throws: a SyntaxError naming
+  // the phase that failed, as the reference reports both; an EvalError
+  // where there is no compiler.
+  function compileFailure(inout this, reason: i32): Value {
+    if (reason == COMPILE_NO_COMPILER) {
+      const message: String = "no compiler: this context runs bytecode only";
+      return this.makeError(ERROR_KIND_EVAL, bytesOf(in message));
+    }
+    if (reason == COMPILE_PARSE_ERROR) {
+      const message: String = "parse error";
+      return this.syntaxError(in message);
+    }
+    const message: String = "compile error";
+    return this.syntaxError(in message);
   }
 
   // A property key as an atom handle: strings intern their bytes; anything

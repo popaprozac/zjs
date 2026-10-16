@@ -2181,6 +2181,33 @@ thread-main callable fixture caught it).
 
 Minimal reproduction: probe `native/constant-in-field-default`.
 
+## G59 — An `Option` of a function value cannot be read out of a field
+
+**Status:** `open` · **Size:** small · **Confirmed:** Stage 0 and native at
+z-lang `1b105418`, which agree · **Blocked:** nothing; the engine keeps its
+compiler hooks in plain function-typed fields with stub defaults instead (ZJS,
+the runtime without a compiler)
+
+A function value is retained when it is copied: a field of a function type reads
+by value, and the call it is then given may take `inout` the struct that held it,
+which is how the runtime calls its host functions and compiler hooks. The same
+value inside an `Option` is not: reading the field is a move out of its owner,
+refused with Z0204, and `copy` refuses it as not in the first explicit-copy tier
+(Z0217). So a hook that may be absent cannot be an `Option<F>` field called as
+`match (this.hook) { some(call) => call(inout this) }` -- the match borrows the
+field across the call -- nor copied out first.
+
+```
+main.zs:20:23: error[Z0204]: cannot move an ownership-bearing field or element out of its owner
+20 |   const step = holder.maybe;
+```
+
+Ask: an `Option<T>` reads by value wherever a `T` does (a retain for a function
+value), or `copy` admits it. A rule for value reads of `Option`, not new syntax;
+for deliberation. Reproduction: a struct with `plain: Step = twice` and
+`maybe: Option<Step>`; `const step = holder.plain` is accepted and
+`const step = holder.maybe` is not.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

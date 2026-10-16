@@ -3,8 +3,6 @@ import { Value, undefinedValue, booleanValue, doubleValue, int32Value, cellValue
 import { thread } from "std/thread";
 import { Runtime, DirectEval, ERROR_KIND_SYNTAX, stringToNumber, toNumber, toInt32, isIntegralDouble } from "../runtime.zs";
 import { isJsSpace, codePointAt, isHighSurrogate, isLowSurrogate, pushCodePoint, utf8Length } from "../text.zs";
-import { parseProgram, parseScript } from "../parser.zs";
-import { compileProgram, compileEval } from "../compiler.zs";
 
 // eval(source): evaluation of a string; anything else returns as-is. A
 // direct call (`eval(...)` in code) runs it as a function nested at the
@@ -18,17 +16,9 @@ function evalSource(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   // travels in its generalized three-byte form and comes back as itself.
   const source = runtime.heap.stringWtf8(asCell(first));
   if (direct.active) return evalDirect(inout runtime, move source, direct);
-  const parsed = parseProgram(move source, false);
-  if (parsed.hadError) {
-    const message: String = "parse error";
-    const error = runtime.syntaxError(in message);
-    runtime.raise(error);
-    return undefinedValue();
-  }
-  const functionIndex = compileProgram(in parsed.parser, parsed.root, inout runtime);
+  const functionIndex = runtime.compileScript(move source);
   if (functionIndex < 0) {
-    const message: String = "compile error";
-    const error = runtime.syntaxError(in message);
+    const error = runtime.compileFailure(functionIndex);
     runtime.raise(error);
     return undefinedValue();
   }
@@ -43,18 +33,9 @@ function evalSource(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
 // The caller's environment and `this` stay reachable from its frame
 // while the code compiles; the closure is made last and called at once.
 function evalDirect(inout runtime: Runtime, source: Array<u8>, direct: DirectEval): Value {
-  const strict = runtime.functions[usize(direct.caller)].evalSites[usize(direct.site)].strict;
-  let parsed = parseScript(move source, false, strict);
-  if (parsed.hadError) {
-    const message: String = "parse error";
-    const error = runtime.syntaxError(in message);
-    runtime.raise(error);
-    return undefinedValue();
-  }
-  const functionIndex = compileEval(inout parsed.parser, parsed.root, inout runtime, direct.caller, direct.site);
+  const functionIndex = runtime.compileEvalCode(move source, direct.caller, direct.site);
   if (functionIndex < 0) {
-    const message: String = "compile error";
-    const error = runtime.syntaxError(in message);
+    const error = runtime.compileFailure(functionIndex);
     runtime.raise(error);
     return undefinedValue();
   }

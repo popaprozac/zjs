@@ -5,8 +5,6 @@ import { Value, undefinedValue, nullValue, cellValue, int32Value, doubleValue, b
 import { thread } from "std/thread";
 import { Runtime, HostFunction, HOST_BOUND_TRAMPOLINE, truncateDouble } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
-import { parseProgram } from "../parser.zs";
-import { compileProgram } from "../compiler.zs";
 
 function functionCall(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   if (!runtime.isCallable(thisValue)) {
@@ -157,7 +155,8 @@ function boundTrampoline(inout runtime: Runtime, thisValue: Value, argsBase: u32
   return runtime.callValue(target, boundThis, move args);
 }
 
-// Function(p1, ..., body): compiled from source through the parser.
+// Function(p1, ..., body): compiled from source through the runtime's
+// compiler.
 function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const head: String = "(function anonymous(";
   let source = bytesOf(in head);
@@ -198,17 +197,9 @@ function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u
     source.push(tailBytes[t]);
     t = t + 1;
   }
-  const parsed = parseProgram(move source, false);
-  if (parsed.hadError) {
-    const message: String = "parse error";
-    const error = runtime.syntaxError(in message);
-    runtime.raise(error);
-    return undefinedValue();
-  }
-  const functionIndex = compileProgram(in parsed.parser, parsed.root, inout runtime);
+  const functionIndex = runtime.compileScript(move source);
   if (functionIndex < 0) {
-    const message: String = "compile error";
-    const error = runtime.syntaxError(in message);
+    const error = runtime.compileFailure(functionIndex);
     runtime.raise(error);
     return undefinedValue();
   }

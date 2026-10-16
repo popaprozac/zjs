@@ -1,7 +1,9 @@
 /* Bytecode through the public ABI (zjs.h): source compiled to a buffer in
    one context runs in another, compiling runs nothing, a program that
-   throws reports it, and a buffer the engine refuses runs nothing. Each
-   check evaluates a script that throws when its expectation fails. */
+   throws reports it, a buffer the engine refuses runs nothing, and a
+   context without a compiler throws an EvalError from eval until one is
+   installed. Each check evaluates a script that throws when its
+   expectation fails. */
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -52,9 +54,29 @@ int main(void) {
   if (bad != NULL || badLength != 0) fail("a parse error compiled");
   if (!zjs_had_error(compiling)) fail("a parse error was not an error");
 
+  /* A core context that only runs bytecode has no compiler: eval and
+     Function throw an EvalError, until the embedder installs one. */
+  ZjsContext *bare = zjs_new_core_context();
+  size_t probeLength = 0;
+  unsigned char *probe = zjs_compile_to_bytecode(compiling,
+    "var kinds = [];"
+    "try { eval('1'); kinds.push('ran'); } catch (e) { kinds.push(e instanceof EvalError ? 'eval' : 'other'); }"
+    "try { Function('return 1'); kinds.push('ran'); } catch (e) { kinds.push(e instanceof EvalError ? 'eval' : 'other'); }"
+    "if (kinds.join() !== 'eval,eval') throw new Error(kinds.join());", &probeLength);
+  zjs_eval_bytecode(bare, probe, probeLength);
+  if (zjs_had_error(bare)) fail("eval without a compiler did not throw an EvalError");
+  size_t compiledLength = 0;
+  unsigned char *compiled = zjs_compile_to_bytecode(compiling, "if (eval('1 + 1') !== 2 || Function('return 3')() !== 3) throw new Error('eval');", &compiledLength);
+  zjs_install_compiler(bare);
+  zjs_eval_bytecode(bare, compiled, compiledLength);
+  if (zjs_had_error(bare)) fail("eval after zjs_install_compiler");
+  zjs_free_context(bare);
+
   free(program);
   free(throws);
   free(marker);
+  free(probe);
+  free(compiled);
   zjs_free_context(compiling);
   zjs_free_context(running);
   if (failures > 0) return 1;

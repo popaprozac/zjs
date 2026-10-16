@@ -13,6 +13,7 @@ import { thread } from "std/thread";
 import { Runtime, RunResult, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate } from "../../engine/lib.zs";
+import { installCompiler } from "../../engine/compile.zs";
 import { parseProgram } from "../../engine/parser.zs";
 import { compileProgram } from "../../engine/compiler.zs";
 import { bcU16, bcI16 } from "../../engine/bytecode.zs";
@@ -188,7 +189,7 @@ function runViaBytecode(inout runtime: Runtime, source: Array<u8>): RunResult {
   return runBytecode(inout runtime, bytes);
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, viaBytecode: boolean): i32 throws String {
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, viaBytecode: boolean, noCompiler: boolean): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
@@ -205,6 +206,10 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
     const gcText: String = "gc";
     runtime.setGlobal("gc", cellValue(runtime.defineHostFunction(gcHost, undefinedValue(), 0, in gcText)));
   }
+  // Source compiled here brings the compiler (evaluate installs it); a
+  // bytecode file runs with one too unless --no-compiler asks for the
+  // runtime an embedder that only loads bytecode has.
+  if (!noCompiler) installCompiler(inout runtime);
   let outcome = RunResult({ isThrow: false, value: undefinedValue() });
   if (isBytecodeFile(source)) {
     outcome = runBytecode(inout runtime, source);
@@ -478,7 +483,9 @@ function main(): i32 {
   //   dump <file>        the bytecode the file compiles to
   // A file that starts as a bytecode file does is loaded, not compiled;
   // --via-bytecode compiles source in an engine of its own, writes it as
-  // a bytecode file, and loads that (docs/bytecode-files.md).
+  // a bytecode file, and loads that (docs/bytecode-files.md); with
+  // --no-compiler, into a runtime without the compiler, where eval and
+  // Function throw an EvalError.
   // --dict-threshold sets the property count at which an object leaves
   // its hidden class (for measurement); --stats prints heap figures
   // after the run; --gc-stats times every collection and prints the
@@ -520,6 +527,7 @@ function main(): i32 {
   let gcGrowth: i32 = -1;
   let gcNursery: i32 = -1;
   let viaBytecode = false;
+  let noCompiler = false;
   while (index + 1 < arguments.length) {
     const optionLength = arguments[index].byteLength;
     const option = arguments[index].copyBytes(0, optionLength);
@@ -561,6 +569,9 @@ function main(): i32 {
     } else if (option == "--via-bytecode") {
       viaBytecode = true;
       index = index + 1;
+    } else if (option == "--no-compiler") {
+      noCompiler = true;
+      index = index + 1;
     } else if (option == "--dict-threshold" && index + 2 < arguments.length) {
       const valueLength = arguments[index + 1].byteLength;
       const value = arguments[index + 1].copyBytes(0, valueLength);
@@ -576,7 +587,7 @@ function main(): i32 {
   }
   const pathLength = arguments[index].byteLength;
   const path = arguments[index].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery, viaBytecode);
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery, viaBytecode, noCompiler);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

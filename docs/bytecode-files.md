@@ -143,19 +143,32 @@ build. Untrusted bytecode is out of scope until a verifier is asked for.
 ## The runtime without a compiler
 
 What the lever saves comes from linking without the front end. Outside
-the compiler itself, three places reach it: `lib.zs`'s `evaluate`,
+the compiler itself, three places reached it: `lib.zs`'s `evaluate`,
 `eval` (`builtins/global.zs`), and the `Function` constructor
-(`builtins/function.zs`). The plan, after the format works:
+(`builtins/function.zs`). Now the runtime reaches it through two
+function-typed fields, `scriptCompiler` and `evalCompiler`, whose
+defaults answer that there is none; `installCompiler` (`compile.zs`)
+sets them. `eval` and `Function` compile through them and, without a
+compiler, throw an EvalError saying the context runs bytecode only.
 
-1. The runtime reaches the compiler through one entry it holds, set by
-   the context that has a compiler. `eval` and `Function` call through
-   it, and without it throw an EvalError saying the build has no
-   compiler.
-2. A second library entry, beside `lib.zs`, that loads bytecode and
-   never imports the lexer, parser, or compiler, so they are not in the
-   program at all.
-3. The minimal embedder linked against it, measured against the one with
-   a compiler.
+`zjs_new_context` installs the compiler, and `zjs_eval` and
+`zjs_compile_to_bytecode` install it in the context they run on, since
+they compile source themselves; `zjs_install_compiler` gives one to a
+context that has done neither. A core context that only runs bytecode
+never references the front end, so the linker drops it from the same
+`libzjs.a`: no separate library is built.
+
+Linked and dead-stripped (`bench/size/embedders.sh`, macOS arm64, z-lang
+`1b105418`):
+
+| Embedder | `__text` | `__TEXT` |
+|---|---|---|
+| `zjs_new_context`, `zjs_eval` | 736,276 | 786,432 |
+| `zjs_new_core_context`, `zjs_eval` | 548,148 | 573,440 |
+| `zjs_new_core_context`, `zjs_eval_bytecode` | 365,904 | 393,216 |
+
+Bytecode only, the core is 182 KB (33%) smaller: the lexer, parser,
+compiler, and the bytecode writer are gone, and only the loader remains.
 
 ## Evidence
 
@@ -164,6 +177,5 @@ the compiler itself, three places reach it: `lib.zs`'s `evaluate`,
   as from source.
 - The loader's refusals: truncated files, each byte flipped, wrong
   magic and versions, out-of-range indices.
-- Size of the minimal embedder with and without the front end.
 - Load time against parse and compile time for the speed kernels and a
   large script.

@@ -30,8 +30,7 @@ import { installDate } from "./builtins/date.zs";
 import { installCollections } from "./builtins/collections.zs";
 import { installPromise } from "./builtins/promise.zs";
 import { installReflect } from "./builtins/reflect.zs";
-import { parseProgram } from "./parser.zs";
-import { compileProgram } from "./compiler.zs";
+import { installCompiler } from "./compile.zs";
 import { writeProgram, loadProgram } from "./bytecode_file.zs";
 import { Value, undefinedValue } from "./value.zs";
 import { sliceBytes } from "./heap.zs";
@@ -146,13 +145,22 @@ export function retain(handle: usize): Option<Context> {
 }
 
 export c function zjs_z_new_context(): usize {
-  return registerContext(createEngine());
+  let runtime = createEngine();
+  installCompiler(inout runtime);
+  return registerContext(move runtime);
 }
 
 // A context with only the core builtins; the embedder installs the
 // optional ones it wants (below), and the linker drops the rest.
 export c function zjs_z_new_core_context(): usize {
   return registerContext(createCoreEngine());
+}
+
+// The compiler, for eval and the Function constructor in a context that
+// has evaluated no source: zjs_eval and zjs_compile_to_bytecode bring it
+// themselves, and a context that only loads bytecode links none.
+export c function zjs_z_install_compiler(handle: usize): void {
+  installInto(handle, installCompiler);
 }
 
 export c function zjs_z_install_json(handle: usize): void {
@@ -439,10 +447,9 @@ export c function zjs_z_detached_contexts(): u64 {
 // bytecode file (docs/bytecode-files.md); empty when it does not parse
 // or compile, or has a part no file can hold. Nothing runs.
 export function compileToBytecode(inout runtime: Runtime, source: Array<u8>): Array<u8> {
-  const parsed = parseProgram(move source, false);
-  if (parsed.hadError) return Array<u8>();
+  installCompiler(inout runtime);
   const first = runtime.functions.length;
-  const functionIndex = compileProgram(in parsed.parser, parsed.root, inout runtime);
+  const functionIndex = runtime.compileScript(move source);
   if (functionIndex < 0) return Array<u8>();
   return writeProgram(inout runtime, u32(first), u32(functionIndex));
 }
@@ -458,20 +465,13 @@ export function evaluateBytecode(inout runtime: Runtime, bytes: Slice<u8>): RunR
   return outcome;
 }
 
-// Parse, compile, and run one program against a runtime.
+// Parse, compile, and run one program against a runtime. Source the
+// embedder evaluates brings the compiler with it, so its eval and
+// Function constructor have one too.
 export function evaluate(inout runtime: Runtime, source: Array<u8>): RunResult {
-  const parsed = parseProgram(move source, false);
-  if (parsed.hadError) {
-    // The reference reports both phases as a SyntaxError whose message
-    // names the phase; test262 tooling reads the phase from it.
-    const message: String = "parse error";
-    return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
-  }
-  const functionIndex = compileProgram(in parsed.parser, parsed.root, inout runtime);
-  if (functionIndex < 0) {
-    const message: String = "compile error";
-    return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
-  }
+  installCompiler(inout runtime);
+  const functionIndex = runtime.compileScript(move source);
+  if (functionIndex < 0) return RunResult({ isThrow: true, value: runtime.compileFailure(functionIndex) });
   const outcome = runtime.run(u32(functionIndex));
   // The script's jobs (promise reactions, async continuations) run once
   // it completes, before control returns to the host: a context never

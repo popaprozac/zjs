@@ -56,7 +56,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp, arrays done |
-| Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's two calls done (`docs/bytecode-files.md`); the runtime without a compiler next |
+| Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's calls done; a core context running bytecode links no front end, 393 KB of `__TEXT` against 573 KB (`docs/bytecode-files.md`); load time and the compiler's spare time next |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
 **Object model.** A property read goes from the handle to its header in
@@ -561,7 +561,13 @@ test262 through the round trip: 53,330 tests, no outcome changed;
 expectation cases 71 of 71. libzjs.a +32 KiB (the loader 14 KB, the
 writer 7 KB). Bytecode is trusted input, as for QuickJS and Hermes:
 proving an untrusted file's environment operands would put a verifier
-in the runtime this lever shrinks.
+in the runtime this lever shrinks. Then eval and the Function
+constructor reach the compiler through the runtime, which a context
+gets only when it compiles source or asks for one
+(`zjs_install_compiler`), so a core context that only loads bytecode
+links no lexer, parser, or compiler: `__text` 365,904 bytes against
+548,148 for the same context running source (-33%), dead-stripped from
+the same libzjs.a.
 
 **Z upstream** (docs/z-findings.md). Appending one repeated value in a
 single call landed 2026-09-30 with the run of elements (above): the heap's
