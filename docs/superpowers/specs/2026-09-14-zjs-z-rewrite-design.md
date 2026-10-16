@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-14
 **Status:** Approved direction, pre-implementation
-**Supersedes:** [`2026-06-20-zjs-nim-migration-design.md`](2026-06-20-zjs-nim-migration-design.md)
+**Supersedes:** [`2026-06-20-zjs-nim-migration-design.md`](../../../prior-art/nim/docs/superpowers/specs/2026-06-20-zjs-nim-migration-design.md)
 (Nim is no longer the target: Zapp has since migrated itself to **Z**, not Nim.)
 
 ---

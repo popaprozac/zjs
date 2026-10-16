@@ -36,7 +36,7 @@ Two operating rules, per the agreed handoff model:
 - **One writer per checkout.** ZJS never writes to z-lang. Probe runs keep
   their build cache inside the ZJS tree, not z-lang's.
 - **Pin the compiler.** ZJS builds and probes against a recorded revision
-  ([`z/Z_LANG_REVISION`](../z/Z_LANG_REVISION)), not whatever is checked out,
+  ([`Z_LANG_REVISION`](../Z_LANG_REVISION)), not whatever is checked out,
   so results are reproducible and a mid-edit tree cannot produce a misleading
   probe result.
 
@@ -234,7 +234,7 @@ through them and the manual sign folding is gone. Probe `integer-bits` LANDED.
 which is right for ordinary code — but NaN boxing needs the opposite: C's
 `(uint32_t)i` reinterpretation of the sign bit. There is no way to express that
 in Z today, so the engine folds the sign with arithmetic standing in for a
-representation change (`int32Value`/`asInt32` in `z/engine/value.zs`).
+representation change (`int32Value`/`asInt32` in `engine/value.zs`).
 
 ### Codex's recommendation from review — not an approved extension
 
@@ -387,7 +387,7 @@ construction is deliberately **not** requested here — that is G5's territory.
 
 ZJS use: serializing token kinds and cell tags, and any table indexed by an
 enum. The engine generates a 110-arm `match` (`kindCode` in
-`z/engine/token.zs`) to reproduce the reference numbering instead.
+`engine/token.zs`) to reproduce the reference numbering instead.
 Probe `enum-integer-code` (spelling is a proposal).
 
 ---
@@ -399,7 +399,7 @@ Probe `enum-integer-code` (spelling is a proposal).
 **Found:** Phase 3, writing the lexer.
 
 Z has no `char` type and no way to spell a byte as a character, so a scanner
-tests named numeric constants: `z/engine/lexer.zs` opens with ~70 lines of
+tests named numeric constants: `engine/lexer.zs` opens with ~70 lines of
 `const B_SLASH: u8 = 47;` before any logic. A lexer review *is* a review of
 those comparisons, and `47` is not reviewable where `'/'` is.
 
@@ -695,7 +695,7 @@ allocation and properties -4%, within noise of the prototype; test262
 build of the engine runs threaded too and passes every gate, test262
 unchanged: against its own switch build closures -14.7%, helpers -10.6%,
 calls -10%, polymorphic -7.7%, properties -7%
-(`z/bench/speed/results/2026-10-15-dispatch-loop-native.json`).
+(`bench/speed/results/2026-10-15-dispatch-loop-native.json`).
 
 ### Why
 A bytecode interpreter's dispatch loop is the hottest code in the program. The
@@ -740,7 +740,7 @@ the three.
 ### Spike verdict — measured 2026-09-14
 
 The Phase-0 spike built and measured all of this. Full data in
-[`z/spike/RESULTS.md`](../z/spike/RESULTS.md).
+[`spike/RESULTS.md`](../spike/RESULTS.md).
 
 - **Option (a) is dead.** A whole-function `raw c` computed-goto loop ran at
   **0.99×** the C baseline while an `if`-chain written in **ordinary Z ran at
@@ -773,7 +773,7 @@ still lands near 1.05× there, neither is needed.
 The engine's loop now has 105 arms (forty rare instructions run in a
 function of their own), each ending by fetching the next instruction.
 Both remaining shapes were written into a copy of the generated C by
-[`z/bench/speed/thread-dispatch.py`](../z/bench/speed/thread-dispatch.py)
+[`bench/speed/thread-dispatch.py`](../bench/speed/thread-dispatch.py)
 and timed against the same engine over eight placements of the code,
 three runs:
 
@@ -787,7 +787,7 @@ three runs:
   -9%, helpers -9%, closures -8%, strings -4%, allocation -4%,
   properties -4%, arrays -3%, maps -2%, polymorphic -0.0 to +1.8%; text
   +16 KiB of 784; test262 unchanged
-  ([`results`](../z/bench/speed/results/2026-10-15-tail-call-dispatch.json)).
+  ([`results`](../bench/speed/results/2026-10-15-tail-call-dispatch.json)).
   Each instruction gets its own register allocation, which ends the
   fragility recorded under G53 (an arm the kernel never runs moving the
   hot ones' code).
@@ -1013,7 +1013,7 @@ uses where an invariant it checks once (a frame's register window lies
 inside the register stack; a function's code inside the code segment)
 makes the per-access check redundant, not unchecked indexing everywhere.
 **Re-measured 2026-09-30 at `a642cafe`** (engine `1d9110b`; cycles over 8
-placements, `z/bench/speed/results/2026-09-30-bounds.json`):
+placements, `bench/speed/results/2026-09-30-bounds.json`):
 - every bounds check a no-op (1527 sites): eleven of twelve kernels -5%
   to -14% (properties -14.4%, polymorphic -11.4%, arrays -11.1%,
   allocation -10.4%, json -9.3%, calls -8.3%), long-strings within noise;
@@ -1324,10 +1324,10 @@ generic contexts where they apply; the empty type name in the diagnostic
 is corrected too; `withCapacity` is not special-cased.
 
 **Found:** the native-compiler validation checkpoint (2026-09-17): the
-first diagnostic of `z build z/engine` under the bootstrapped native `z`.
+first diagnostic of `z build engine` under the bootstrapped native `z`.
 
 ```
-z/engine/lib.zs:196:45: error: Array.withCapacity requires usize, found
+engine/lib.zs:196:45: error: Array.withCapacity requires usize, found
   let bytes = Array<u8>.withCapacity(source.length);
 ```
 
@@ -1351,7 +1351,7 @@ per value; ordinary immutable-receiver and executor restrictions stay.
 The probe counts the releases from C and checks two values twice.
 
 ```
-z/engine/runtime.zs:1218:10: error: mutable method "release" cannot be called through immutable binding "this"
+engine/runtime.zs:1218:10: error: mutable method "release" cannot be called through immutable binding "this"
     this.regexBackend.release();
 ```
 
@@ -1381,7 +1381,7 @@ reads a scalar sibling field, or that calls an immutable method of
 (`this.buckets[bucket]`) is what widens to `this`.
 
 ```
-z/engine/heap.zs:1231:46: error: overlapping inout and value uses of "this.pendingNext" and "this" in one call are not allowed
+engine/heap.zs:1231:46: error: overlapping inout and value uses of "this.pendingNext" and "this" in one call are not allowed
     this.pendingNext.push(this.pendingBuckets[usize(bucket)]);
 ```
 
@@ -1408,7 +1408,7 @@ probe compares distinct arrays for both outcomes with `==` and `!=` at
 `u8` and `u16`, and runs the engine's search shape over both.
 
 ```
-z/engine/builtins/primitives.zs:487:31: error: operator != requires matching comparable operands
+engine/builtins/primitives.zs:487:31: error: operator != requires matching comparable operands
       if (haystack[start + k] != needle[k]) matched = false;
 ```
 
@@ -1435,13 +1435,13 @@ Minimal reproduction: probe `native/generic-element-comparison`.
   `sha256(z.c)` = `c25ccf5fd39d435030717feb1398518d93ab96bc5b244eae819b3a0054513823`.
 - Engine: a detached worktree at ZJS `bab46de` (the engine sources are the
   same at the commits since, which touched measurements and build scripts
-  only); `Z_BIN=<out>/z ./z/build.sh`, which fails at step 1, `z build
-  z/engine`, with G39. G40–G42 were found by binding G39's length to a
+  only); `Z_BIN=<out>/z ./build.sh`, which fails at step 1, `z build
+  engine`, with G39. G40–G42 were found by binding G39's length to a
   local, giving the backend a teardown that does not reset its fields, and
   binding G41's read to a local, in the worktree only; none of that is in
   the tree, and no engine semantics were changed.
 - Each probe: rejected by `<out>/z check`, accepted by `bun run z check`
-  in the clean clone (`Z_BIN=<out>/z Z_LANG=<clone> z/probes/native/run.sh`,
+  in the clean clone (`Z_BIN=<out>/z Z_LANG=<clone> probes/native/run.sh`,
   which reports both and tells compiler rejection, backend rejection,
   a failed assertion, a crash, and a timeout apart).
 - Exploratory, not the pin: a bootstrap from the shared checkout's
@@ -1466,12 +1466,12 @@ workarounds in the engine. The pinned Stage 0 build remains the baseline.
 - Probes: G39, G40, G41, G42 all `LANDED` (compiled, ran clean), Stage 0
   at `31ac3e1a` accepts each.
 - Engine: worktree at ZJS `480e3a9` (engine sources unchanged since
-  `bab46de`); `Z_BIN=<out>/z ./z/build.sh` stops at `z build z/engine`
+  `bab46de`); `Z_BIN=<out>/z ./build.sh` stops at `z build engine`
   with G43. Exploring one step further in the worktree only (the literal
   replaced by an element read, then the private struct exported) met G44
   twice, at `heap.zs`'s `HiddenClass` and `runtime.zs`'s `Global`; both
   edits reverted, nothing in the tree.
-- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`, and every engine
+- Not the pin: `Z_LANG_REVISION` stays `ad43b117`, and every engine
   gate result remains Stage 0 evidence at the pin.
 
 ## G43 — Native compiler: an integer literal is not an element inside a generic over `Array<T>`
@@ -1481,7 +1481,7 @@ bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a` accepts ·
 **Blocked:** the native build of the engine, in `builtins/primitives.zs`.
 
 ```
-z/engine/builtins/primitives.zs:943:21: error: expected T, found i32
+engine/builtins/primitives.zs:943:21: error: expected T, found i32
         joined.push(36);
 ```
 
@@ -1501,7 +1501,7 @@ bootstrapped from z-lang `31ac3e1a`; Stage 0 at `31ac3e1a` accepts ·
 `runtime.zs`, `runtime.zs` → `builtins/primitives.zs`).
 
 ```
-internal compiler error: native lowering: z/engine/runtime.zs: native module lowering could not resolve type __z_module_4_HiddenClass against 7 local aggregate(s), 0 local enum(s), and 349 imported type(s)
+internal compiler error: native lowering: engine/runtime.zs: native module lowering could not resolve type __z_module_4_HiddenClass against 7 local aggregate(s), 0 local enum(s), and 349 imported type(s)
 ```
 
 `heap.zs` keeps `struct HiddenClass` private and exports `Heap`, whose
@@ -1528,10 +1528,10 @@ Minimal reproduction: probe `native/private-aggregate-through-export`
   `d7a34c78415a663ff26d5eda1539dd9939b65458c47c63639ee90f9a8edee2d7`,
   the digest Codex published.
 - Probes: G39–G44, all six `LANDED`; Stage 0 at `b7ccb839` accepts each.
-- Engine: worktree at ZJS `32d2b67`; `Z_BIN=<out>/z ./z/build.sh` gets
+- Engine: worktree at ZJS `32d2b67`; `Z_BIN=<out>/z ./build.sh` gets
   through native checking and lowering of the whole engine and stops in
   the C it emitted, on G45. Nothing in the tree changed.
-- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`.
+- Not the pin: `Z_LANG_REVISION` stays `ad43b117`.
 
 ## G45 — Native compiler: a native header is not found from the module that imports it
 
@@ -1541,7 +1541,7 @@ Minimal reproduction: probe `native/private-aggregate-through-export`
 the C compile of its one translation unit.
 
 ```
-z/engine/.z-cache/build/zjsz.c:15:10: fatal error: 'clock.h' file not found
+engine/.z-cache/build/zjsz.c:15:10: fatal error: 'clock.h' file not found
    15 | #include "clock.h"
 ```
 
@@ -1571,11 +1571,11 @@ find the header.
   `cd94c8f56ae973106ff6928148a0feaedbe2808a629a109fbf7bccf96242719e`,
   the digest Codex published.
 - Probes: G39–G45, all eight `LANDED`; Stage 0 at `ef1ae30d` accepts each.
-- Engine: worktree at ZJS `3878b3b`; `Z_BIN=<out>/z ./z/build.sh` emits
+- Engine: worktree at ZJS `3878b3b`; `Z_BIN=<out>/z ./build.sh` emits
   the engine's C and clang rejects it. Compiling that C again without
   its `#line` directives and with no error limit gives every error:
   95 of G47, 2 of G48, 1 of G46. Nothing in the tree changed.
-- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`.
+- Not the pin: `Z_LANG_REVISION` stays `ad43b117`.
 
 ## G46 — Native compiler: a method calling a function value with `inout this` passes the receiver's address twice
 
@@ -1650,7 +1650,7 @@ Minimal reproduction: probe `native/unused-binding-rebound-later`.
   `e414eb910d7249756a5222ba8b3c2cb51f8e0b9d006c75622aae99a2055c8790`,
   the digest Codex published.
 - Probes: G39–G48, all eleven `LANDED`; Stage 0 at `0d05140d` accepts each.
-- Engine, worktree at ZJS `7cb1443`, `Z_BIN=<out>/z ./z/build.sh`:
+- Engine, worktree at ZJS `7cb1443`, `Z_BIN=<out>/z ./build.sh`:
   `libzjsz.a`, the shim, `libzjs.a`, and the lifecycle test all build.
   The first gate, the lifecycle test, dies with `SIGTRAP` inside
   `free` on its first worker thread (G49 below). Run by hand past it:
@@ -1665,7 +1665,7 @@ Minimal reproduction: probe `native/unused-binding-rebound-later`.
   `deinit` body, which Stage 0 rejects (`deinit cannot contain
   "return"`). The parity gap is in the other direction and is noted
   here only.
-- Not the pin: `z/Z_LANG_REVISION` stays `ad43b117`.
+- Not the pin: `Z_LANG_REVISION` stays `ad43b117`.
 
 ## G49 — Native compiler: a reference handed out of a lock callback is not retained
 
@@ -1681,9 +1681,9 @@ faults at:
 ```
 Z_Context_retain(borrowed=<freed>) at zjsz.c:4957        __atomic_add_fetch(&value->_z_refcount, 1, ...)
   z_stage1_mutex_with_lock_retain_14_body                (the `withLock` callback in `retain`)
-  retain(handle=1)                                       z/engine/lib.zs:96
-  zjs_z_had_error(handle=1)                              z/engine/lib.zs:207
-  first_context                                          z/tests/lifecycle_test.c:238
+  retain(handle=1)                                       engine/lib.zs:96
+  zjs_z_had_error(handle=1)                              engine/lib.zs:207
+  first_context                                          tests/lifecycle_test.c:238
 ```
 
 The registry keeps `slots: Array<Option<Context>>` behind a `Mutex`.
@@ -1713,7 +1713,7 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   `a4d483d290116b42bc680cf144699d1dc2be8e96d9e27672aa42648a538c018c`,
   the digest Codex published.
 - Probes: G39–G49, all twelve `LANDED`; Stage 0 at `9755f564` accepts each.
-- Engine, worktree at ZJS `c7f624c`, `Z_BIN=<out>/z ./z/build.sh`: the
+- Engine, worktree at ZJS `c7f624c`, `Z_BIN=<out>/z ./build.sh`: the
   whole script passes — the lifecycle test (1,000 cycles, free after
   admission, shutdown on a worker), the 20 node-recorded expectations,
   the five collector checks. By hand: the 61 unit tests under the native
@@ -1731,7 +1731,7 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   the same clang at `-O2`; the differences are run-to-run.
 - test262, the Stage 0 `zjsz` against the native one, both at
   `9755f564`: 53,330 tests, no test changes outcome in either direction.
-- The pin, since 2026-09-20: `z/Z_LANG_REVISION` is `9755f564`
+- The pin, since 2026-09-20: `Z_LANG_REVISION` is `9755f564`
   (`9755f5646ac22748bab69e9c63a86e806419d748`, on
   `codex/native-compiler-parity` at the time; superseded by `bdc237d2`
   the next day). At the new pin the Stage 0 build
@@ -1741,7 +1741,7 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   test262, the Stage 0 `zjsz` built at `ad43b117` against the one built
   at `9755f564`, the same engine source: 53,330 tests, no test changes
   outcome in either direction.
-  The allocation figures in `z/docs/allocation.md` stay at `ad43b117`,
+  The allocation figures in `docs/allocation.md` stay at `ad43b117`,
   the revision their results were measured with, which `stages.json`
   names on its own.
 
@@ -1756,7 +1756,7 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   `82e73739134fb055d9df09a2dca1e5c30ff6d9db53423c10a95ed6aa002086db`,
   the digest Codex published.
 - Probes: G39–G49, all twelve `LANDED`; Stage 0 at `bdc237d2` accepts each.
-- Engine, worktree at ZJS `1c79596`, `Z_BIN=<out>/z ./z/build.sh`: passes
+- Engine, worktree at ZJS `1c79596`, `Z_BIN=<out>/z ./build.sh`: passes
   end to end (lifecycle, 20 expectations, collector); by hand the 61 unit
   tests under the native `z test` and the oracles 54/54, 24/24, 24/24.
   The Stage 0 build at `bdc237d2` passes the same gates; the Stage 0
@@ -1775,7 +1775,7 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
   `9755f564`, and native stays within ±4% of Stage 0. An earlier attempt
   under a load average near 75 from an unrelated encode drifted by a
   third between rounds and was discarded.
-- The pin, since 2026-09-21: `z/Z_LANG_REVISION` is `bdc237d2`
+- The pin, since 2026-09-21: `Z_LANG_REVISION` is `bdc237d2`
   (`bdc237d2bc2ef34a6a183141ac9306d5b7759921`, on
   `codex/native-compiler-parity`, which landed on z-lang `main` by
   fast-forward on 2026-09-21, so the pinned commit is exactly the one on
@@ -1801,7 +1801,7 @@ Minimal reproduction: probe `native/retained-reference-from-lock-callback`.
 - Probes: G39–G49, all twelve `LANDED`; Stage 0 at `2b70aea4` accepts each.
   Stage 0 probes unchanged (19 landed, 10 not, no regression; an
   unverified run, since the pin is `bdc237d2`).
-- Engine, worktree at ZJS `c78f2a2`, `Z_BIN=<out>/z ./z/build.sh`: passes
+- Engine, worktree at ZJS `c78f2a2`, `Z_BIN=<out>/z ./build.sh`: passes
   end to end (lifecycle, 20 expectations, collector); the 61 unit tests
   under the native `z test`; oracles 54/54, 24/24, 24/24. The Stage 0
   build at `2b70aea4` passes the same gates.
@@ -2045,7 +2045,7 @@ makes. `malloc_zone_pressure_relief` releases none of it; only the
 process-wide `MallocLargeCache=0` does, which a library cannot set.
 
 Measured 2026-09-26 on the engine's large-heap benchmark
-(`z/bench/memory`, 400,000 records kept): the handle table grew 0.6 ->
+(`bench/memory`, 400,000 records kept): the handle table grew 0.6 ->
 40 MB and the slot arena 0.5 -> 32 MB by doubling, every step a move, and
 peak resident memory was 113 MB against 67 MB with the cache disabled.
 Growing those two arrays four times at a step instead leaves fewer and
@@ -2060,8 +2060,8 @@ to reserve address space for an array to grow into in place, committed
 as it is touched. Either is how collectors keep large heaps; the engine
 cannot build them on `Array<T>` from Z code.
 
-Reproduction: `/usr/bin/time -l z/build/zjsz run
-z/bench/memory/large-heap.js`, then the same with `MallocLargeCache=0`
+Reproduction: `/usr/bin/time -l build/zjsz run
+bench/memory/large-heap.js`, then the same with `MallocLargeCache=0`
 in the environment.
 
 ## G55 — No way to optimize a function for size, or mark it cold
@@ -2123,7 +2123,7 @@ identity, as it does arrays, maps, sets, aggregates, and enums.
 internal compiler error: C emission: native C emission cannot resolve intrinsic type identity Function_696e6f75743a52756e74696d653b3d3e766f6964207468726f777320
 ```
 
-`installInto` in `z/engine/lib.zs` takes the installer as a function value,
+`installInto` in `engine/lib.zs` takes the installer as a function value,
 `(inout runtime: Runtime) => void`, and calls it inside the context lock's
 `withLock` callback with the runtime the lock guards. The identity decodes
 to `inout:Runtime;=>void throws ` (no error type, as native spells every
@@ -2150,7 +2150,7 @@ Array type its receiver names when the call has no recorded type.
  2772 |   return (Z_TextBuilder){.bytes = Array<u8>.withCapacity(capacity), ...
 ```
 
-`textBuilder` in `z/engine/builtins/builder.zs` reserves its byte buffer in
+`textBuilder` in `engine/builtins/builder.zs` reserves its byte buffer in
 the struct literal it returns. Native lowering recognized the factory only
 through the call's recorded type, and a struct literal's field records
 none, so the call reached C as its source text.
