@@ -47,6 +47,11 @@ clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" \
   -o "$OUT/interrupt_test" "$ROOT/tests/interrupt_test.c" "$OUT/libzjs.a" -lpthread
 "$OUT/interrupt_test"
 
+echo "[3e/6] bytecode through the public ABI"
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" \
+  -o "$OUT/bytecode_test" "$ROOT/tests/bytecode_test.c" "$OUT/libzjs.a"
+"$OUT/bytecode_test"
+
 echo "[4/6] test262 runner (unmodified)"
 clang -std=c11 -O2 -I "$ROOT/include" \
   -o "$OUT/test262_runner" "$ROOT/tests/test262_runner.c" "$OUT/libzjs.a"

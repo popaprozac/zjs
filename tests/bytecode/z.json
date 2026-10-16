@@ -1,0 +1,10 @@
+{
+  "target": {
+    "name": "bytecode_file_test",
+    "entry": "file_test.zs",
+    "link": {
+      "directories": ["../../build/native"],
+      "libraries": ["zjsregexp"]
+    }
+  }
+}

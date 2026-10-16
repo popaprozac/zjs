@@ -94,6 +94,25 @@ ZjsValue zjs_eval(ZjsContext *ctx, const char *source) {
   return undefined;
 }
 
+/* As zjs_eval: the program's value is not mapped onto ZjsValue yet. A
+   buffer the engine refuses (another engine's, damaged) runs nothing and
+   is not an error. */
+ZjsValue zjs_eval_bytecode(ZjsContext *ctx, const unsigned char *data, size_t len) {
+  if (ctx != NULL && data != NULL) zjs_z_eval_bytecode((uintptr_t)ctx, (const uint8_t *)data, len);
+  ZjsValue undefined;
+  undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
+  return undefined;
+}
+
+unsigned char *zjs_compile_to_bytecode(ZjsContext *ctx, const char *source, size_t *out_len) {
+  if (out_len != NULL) *out_len = 0;
+  if (ctx == NULL || source == NULL) return NULL;
+  size_t length = 0;
+  uintptr_t buffer = zjs_z_compile_to_bytecode((uintptr_t)ctx, (const uint8_t *)source, strlen(source), (uintptr_t)&length);
+  if (out_len != NULL) *out_len = length;
+  return (unsigned char *)buffer;
+}
+
 /* The handler runs on the thread evaluating ctx, so it sees no engine
    state from another thread; it is handed to the Z side as two words. */
 void zjs_set_interrupt_handler(ZjsContext *ctx, ZjsInterruptHandler handler, void *opaque) {

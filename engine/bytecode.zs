@@ -532,6 +532,218 @@ export function opCode(op: Op): i32 {
   };
 }
 
+// Every opcode by its number, opCode's inverse: what a bytecode file
+// names by number is read back through it.
+export function opsByCode(): Array<Op> {
+  let ops = Array<Op>.withCapacity(199);
+  ops.push(Op.halt);
+  ops.push(Op.loadConst);
+  ops.push(Op.loadInt);
+  ops.push(Op.loadUndefined);
+  ops.push(Op.loadHole);
+  ops.push(Op.throwIfHole);
+  ops.push(Op.loadNull);
+  ops.push(Op.loadTrue);
+  ops.push(Op.loadFalse);
+  ops.push(Op.mov);
+  ops.push(Op.defineGlobal);
+  ops.push(Op.loadGlobal);
+  ops.push(Op.storeGlobal);
+  ops.push(Op.loadGlobalOrUndefined);
+  ops.push(Op.withEnter);
+  ops.push(Op.withLeave);
+  ops.push(Op.withLookup);
+  ops.push(Op.add);
+  ops.push(Op.sub);
+  ops.push(Op.mul);
+  ops.push(Op.div);
+  ops.push(Op.mod);
+  ops.push(Op.pow);
+  ops.push(Op.addImm);
+  ops.push(Op.subImm);
+  ops.push(Op.cmpLtImm);
+  ops.push(Op.cmpLeImm);
+  ops.push(Op.cmpGtImm);
+  ops.push(Op.cmpGeImm);
+  ops.push(Op.bitAnd);
+  ops.push(Op.bitOr);
+  ops.push(Op.bitXor);
+  ops.push(Op.shl);
+  ops.push(Op.shr);
+  ops.push(Op.uShr);
+  ops.push(Op.cmpEq);
+  ops.push(Op.cmpNe);
+  ops.push(Op.cmpStrictEq);
+  ops.push(Op.cmpStrictNe);
+  ops.push(Op.cmpLt);
+  ops.push(Op.cmpLe);
+  ops.push(Op.cmpGt);
+  ops.push(Op.cmpGe);
+  ops.push(Op.neg);
+  ops.push(Op.bitNot);
+  ops.push(Op.logicalNot);
+  ops.push(Op.jmp);
+  ops.push(Op.jmpIfTrue);
+  ops.push(Op.jmpIfFalse);
+  ops.push(Op.jmpIfNotNullish);
+  ops.push(Op.jmpIfNullish);
+  ops.push(Op.jmpIfNotLt);
+  ops.push(Op.jmpIfNotLe);
+  ops.push(Op.jmpIfNotGt);
+  ops.push(Op.jmpIfNotGe);
+  ops.push(Op.jmpIfNotLtImm);
+  ops.push(Op.jmpIfNotLeImm);
+  ops.push(Op.jmpIfNotGtImm);
+  ops.push(Op.jmpIfNotGeImm);
+  ops.push(Op.jmpIfNotEq);
+  ops.push(Op.jmpIfNotNe);
+  ops.push(Op.jmpIfNotStrictEq);
+  ops.push(Op.jmpIfNotStrictNe);
+  ops.push(Op.returnOp);
+  ops.push(Op.invoke);
+  ops.push(Op.tailInvoke);
+  ops.push(Op.loadProp);
+  ops.push(Op.storeProp);
+  ops.push(Op.mathSqrt);
+  ops.push(Op.mathAbs);
+  ops.push(Op.mathFloor);
+  ops.push(Op.mathCeil);
+  ops.push(Op.iterPrepare);
+  ops.push(Op.arrayLength);
+  ops.push(Op.deleteElem);
+  ops.push(Op.buildArguments);
+  ops.push(Op.buildRestArgs);
+  ops.push(Op.importBind);
+  ops.push(Op.exportBind);
+  ops.push(Op.dynamicImport);
+  ops.push(Op.importMeta);
+  ops.push(Op.awaitOp);
+  ops.push(Op.yieldOp);
+  ops.push(Op.generatorStart);
+  ops.push(Op.templateObject);
+  ops.push(Op.arrayPush);
+  ops.push(Op.arraySpread);
+  ops.push(Op.objectSpread);
+  ops.push(Op.arrayRestFrom);
+  ops.push(Op.assertCoercible);
+  ops.push(Op.iterGet);
+  ops.push(Op.iterGetAsync);
+  ops.push(Op.iterStep);
+  ops.push(Op.iterRestCollect);
+  ops.push(Op.iterClose);
+  ops.push(Op.iterNextRaw);
+  ops.push(Op.spreadInvoke);
+  ops.push(Op.spreadMethodInvoke);
+  ops.push(Op.spreadNewInvoke);
+  ops.push(Op.methodInvoke);
+  ops.push(Op.tailMethodInvoke);
+  ops.push(Op.defineGetter);
+  ops.push(Op.defineSetter);
+  ops.push(Op.defineMethodGetter);
+  ops.push(Op.defineMethodSetter);
+  ops.push(Op.makeClosure);
+  ops.push(Op.loadEnv);
+  ops.push(Op.loadCallee);
+  ops.push(Op.newRegex);
+  ops.push(Op.newRegexR);
+  ops.push(Op.newObject);
+  ops.push(Op.newArray);
+  ops.push(Op.loadElem);
+  ops.push(Op.storeElem);
+  ops.push(Op.throwOp);
+  ops.push(Op.enterTry);
+  ops.push(Op.leaveTry);
+  ops.push(Op.inOp);
+  ops.push(Op.instanceofOp);
+  ops.push(Op.loadThis);
+  ops.push(Op.loadNewTarget);
+  ops.push(Op.newInvoke);
+  ops.push(Op.typeofOp);
+  ops.push(Op.setProto);
+  ops.push(Op.superCall);
+  ops.push(Op.defineMethod);
+  ops.push(Op.defineMethodComputed);
+  ops.push(Op.setParentCtor);
+  ops.push(Op.setFunctionName);
+  ops.push(Op.initObjData);
+  ops.push(Op.spreadSuperCall);
+  ops.push(Op.jmpIfLt);
+  ops.push(Op.jmpIfLe);
+  ops.push(Op.jmpIfGt);
+  ops.push(Op.jmpIfGe);
+  ops.push(Op.jmpIfLtImm);
+  ops.push(Op.jmpIfLeImm);
+  ops.push(Op.jmpIfGtImm);
+  ops.push(Op.jmpIfGeImm);
+  ops.push(Op.invokeGlobal);
+  ops.push(Op.privateCheck);
+  ops.push(Op.throwTypeError);
+  ops.push(Op.storeGlobalStrict);
+  ops.push(Op.iterCloseQuiet);
+  ops.push(Op.jmpIfNotGenReturn);
+  ops.push(Op.newEnv);
+  ops.push(Op.loadEnvSlot);
+  ops.push(Op.storeEnvSlot);
+  ops.push(Op.objectRest);
+  ops.push(Op.newPrivateName);
+  ops.push(Op.defineField);
+  ops.push(Op.loadSuper);
+  ops.push(Op.storeSuper);
+  ops.push(Op.initClass);
+  ops.push(Op.initClassBase);
+  ops.push(Op.yieldRaw);
+  ops.push(Op.envToReg);
+  ops.push(Op.renewEnv);
+  ops.push(Op.exitEnv);
+  ops.push(Op.throwConstAssign);
+  ops.push(Op.checkThis);
+  ops.push(Op.yieldDelegate);
+  ops.push(Op.resumeMode);
+  ops.push(Op.iterNextWith);
+  ops.push(Op.iterThrowWith);
+  ops.push(Op.iterReturnWith);
+  ops.push(Op.jmpIfNotReturn);
+  ops.push(Op.iterCallNext);
+  ops.push(Op.iterCallThrow);
+  ops.push(Op.iterCallReturn);
+  ops.push(Op.isAbsent);
+  ops.push(Op.requireIterResult);
+  ops.push(Op.inc);
+  ops.push(Op.dec);
+  ops.push(Op.toNumeric);
+  ops.push(Op.bitOrImm);
+  ops.push(Op.bitAndImm);
+  ops.push(Op.bitXorImm);
+  ops.push(Op.shlImm);
+  ops.push(Op.shrImm);
+  ops.push(Op.uShrImm);
+  ops.push(Op.defineNamed);
+  ops.push(Op.mulImm);
+  ops.push(Op.modImm);
+  ops.push(Op.jmpIfNotStrictEqImm);
+  ops.push(Op.envAdd);
+  ops.push(Op.directEval);
+  ops.push(Op.loadEvalVar);
+  ops.push(Op.storeEvalVar);
+  ops.push(Op.declareEvalVar);
+  ops.push(Op.toStringOp);
+  ops.push(Op.concatN);
+  ops.push(Op.incJmpIfLtImm);
+  ops.push(Op.incJmpIfLt);
+  ops.push(Op.incJmpIfLtLength);
+  ops.push(Op.addToInt32);
+  ops.push(Op.loadElemProp);
+  ops.push(Op.loadElemImm);
+  ops.push(Op.declareGlobals);
+  return ops;
+}
+
+// The instruction set a bytecode file was written for: its opcodes, their
+// operands, and what each does. Moves whenever any of them changes, so a
+// file from another engine is refused rather than misread; the test
+// below pins it beside the opcode count, which a new opcode changes.
+export const INSTRUCTION_SET_VERSION: u32 = 1;
+
 // One property access site's inline cache, kept per property name of a
 // function: the receiver's hidden class and where the property was
 // last found, so the next access with the same shape skips the lookup.
@@ -681,6 +893,18 @@ test "u16 and i16 operands round-trip through b and c" {
   expect(bcI16(instAI16(Op.jmp, 0, -2))).toEqual(-2);
   expect(bcI16(instAI16(Op.jmp, 0, 32767))).toEqual(32767);
   expect(bcI16(instAI16(Op.jmp, 0, -32768))).toEqual(-32768);
+}
+
+test "the instruction set version moves with the opcodes" {
+  // A new opcode lands here first: move INSTRUCTION_SET_VERSION with it.
+  const ops = opsByCode();
+  expect(ops.length).toEqual(199);
+  expect(INSTRUCTION_SET_VERSION).toEqual(1);
+  let code: usize = 0;
+  while (code < ops.length) {
+    expect(opCode(ops[code])).toEqual(i32(code));
+    code = code + 1;
+  }
 }
 
 test "opcode numbering mirrors the reference" {

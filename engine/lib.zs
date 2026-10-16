@@ -32,6 +32,7 @@ import { installPromise } from "./builtins/promise.zs";
 import { installReflect } from "./builtins/reflect.zs";
 import { parseProgram } from "./parser.zs";
 import { compileProgram } from "./compiler.zs";
+import { writeProgram, loadProgram } from "./bytecode_file.zs";
 import { Value, undefinedValue } from "./value.zs";
 import { sliceBytes } from "./heap.zs";
 
@@ -51,6 +52,26 @@ export struct ContextState {
     // the script's jobs ran, after the script itself had completed.
     this.hadError = outcome.isThrow || this.interrupted;
     this.lastResult = outcome.value;
+  }
+
+  // A bytecode file's script, run as evaluate runs source. A file the
+  // loader refuses runs nothing and is not an error (zjs.h).
+  function evaluateBytecode(inout this, bytes: Slice<u8>): void {
+    this.evalCount = this.evalCount + 1;
+    const outcome = evaluateBytecode(inout this.runtime, bytes);
+    this.interrupted = this.runtime.endTermination();
+    this.hadError = outcome.isThrow || this.interrupted;
+    this.lastResult = outcome.value;
+  }
+
+  // Source compiled here and written as a bytecode file; empty, and an
+  // error, when it does not parse or compile.
+  function compileToBytecode(inout this, source: Array<u8>): Array<u8> {
+    const compiled = compileToBytecode(inout this.runtime, move source);
+    this.interrupted = false;
+    this.hadError = compiled.length == 0;
+    this.lastResult = undefinedValue();
+    return compiled;
   }
 }
 
@@ -233,6 +254,59 @@ export c function zjs_z_free_context(handle: usize): void {
   const dropped = detached;
 }
 
+function nativeAlloc(count: usize): usize = raw c {
+  return (uintptr_t)malloc(count == 0 ? 1 : count);
+}
+
+function nativeStoreByte(buffer: usize, index: usize, value: u8): void = raw c {
+  ((uint8_t *)buffer)[index] = value;
+}
+
+function nativeStoreLength(address: usize, length: usize): void = raw c {
+  if (address != 0) *(size_t *)address = (size_t)length;
+}
+
+// A bytecode file arrives as a borrowed byte slice and is copied, as
+// source is (below).
+export c function zjs_z_eval_bytecode(handle: usize, data: Slice<u8>): void {
+  const bytes = sliceToBytes(data);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        state.evaluateBytecode(bytes);
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// The bytecode file goes back in memory the host frees with free(), its
+// length through `lengthOut` (a size_t address); 0 and a length of 0 when
+// the source does not parse or compile.
+export c function zjs_z_compile_to_bytecode(handle: usize, source: Slice<u8>, lengthOut: usize): usize {
+  nativeStoreLength(lengthOut, 0);
+  const bytes = sliceToBytes(source);
+  const found = retain(handle);
+  return match (found) {
+    some(context) => context.state.withLock((inout state): usize => {
+      const byteCount = bytes.length;
+      const compiled = state.compileToBytecode(sliceBytes(in bytes, 0, byteCount));
+      if (compiled.length == 0) return 0;
+      const buffer = nativeAlloc(compiled.length);
+      let index: usize = 0;
+      while (index < compiled.length) {
+        nativeStoreByte(buffer, index, compiled[index]);
+        index = index + 1;
+      }
+      nativeStoreLength(lengthOut, compiled.length);
+      return buffer;
+    });
+    none => 0;
+  };
+}
+
 // Source arrives as a borrowed byte slice and is copied: JavaScript
 // source is bytes to the engine and is never validated as UTF-8, so a
 // script that is not text cannot abort the host.
@@ -359,6 +433,29 @@ export c function zjs_z_created_contexts(): u64 {
 export c function zjs_z_detached_contexts(): u64 {
   const current = engine.get();
   return current.registry.withLock((in registry): u64 => registry.detached);
+}
+
+// Parse and compile one program against a runtime, and write it as a
+// bytecode file (docs/bytecode-files.md); empty when it does not parse
+// or compile, or has a part no file can hold. Nothing runs.
+export function compileToBytecode(inout runtime: Runtime, source: Array<u8>): Array<u8> {
+  const parsed = parseProgram(move source, false);
+  if (parsed.hadError) return Array<u8>();
+  const first = runtime.functions.length;
+  const functionIndex = compileProgram(in parsed.parser, parsed.root, inout runtime);
+  if (functionIndex < 0) return Array<u8>();
+  return writeProgram(inout runtime, u32(first), u32(functionIndex));
+}
+
+// Load a bytecode file and run its script as evaluate runs one compiled
+// from source, its jobs after it. A file the loader refuses runs
+// nothing: the result is undefined and not a throw (zjs.h).
+export function evaluateBytecode(inout runtime: Runtime, bytes: Slice<u8>): RunResult {
+  const script = loadProgram(inout runtime, bytes);
+  if (script < 0) return RunResult({ isThrow: false, value: undefinedValue() });
+  const outcome = runtime.run(u32(script));
+  runtime.runJobs();
+  return outcome;
 }
 
 // Parse, compile, and run one program against a runtime.

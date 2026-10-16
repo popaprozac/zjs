@@ -10,12 +10,13 @@ import process from "std/process";
 import fs from "std/fs";
 import { Value, isCell, asCell, cellValue, undefinedValue } from "../../engine/value.zs";
 import { thread } from "std/thread";
-import { Runtime, truncateDouble } from "../../engine/runtime.zs";
+import { Runtime, RunResult, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate } from "../../engine/lib.zs";
 import { parseProgram } from "../../engine/parser.zs";
 import { compileProgram } from "../../engine/compiler.zs";
 import { bcU16, bcI16 } from "../../engine/bytecode.zs";
+import { writeProgram, loadProgram, isBytecodeFile, LOAD_OTHER_VERSION } from "../../engine/bytecode_file.zs";
 import { opName } from "./opnames.zs";
 import native from "./memstat.h";
 
@@ -145,7 +146,49 @@ function gcHost(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u
   return undefinedValue();
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32): i32 throws String {
+// A bytecode file's script, loaded and run as evaluate runs source. A
+// refused file is a throw the command reports, so test tooling sees it.
+function runBytecode(inout runtime: Runtime, bytes: Slice<u8>): RunResult {
+  const script = loadProgram(inout runtime, bytes);
+  if (script < 0) {
+    if (script == LOAD_OTHER_VERSION) {
+      const otherVersion: String = "bytecode refused: built for another engine";
+      return RunResult({ isThrow: true, value: runtime.syntaxError(in otherVersion) });
+    }
+    const damaged: String = "bytecode refused: damaged";
+    return RunResult({ isThrow: true, value: runtime.syntaxError(in damaged) });
+  }
+  const outcome = runtime.run(u32(script));
+  runtime.runJobs();
+  return outcome;
+}
+
+// The source compiled in an engine of its own and written as a bytecode
+// file, then loaded into `runtime` and run: the round trip that tests the
+// format (--via-bytecode). A parse or compile failure reads as evaluate
+// reports it.
+function runViaBytecode(inout runtime: Runtime, source: Array<u8>): RunResult {
+  let compiling = createEngine();
+  const parsed = parseProgram(move source, false);
+  if (parsed.hadError) {
+    const message: String = "parse error";
+    return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
+  }
+  const first = compiling.functions.length;
+  const root = compileProgram(in parsed.parser, parsed.root, inout compiling);
+  if (root < 0) {
+    const message: String = "compile error";
+    return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
+  }
+  const bytes = writeProgram(inout compiling, u32(first), u32(root));
+  if (bytes.length == 0) {
+    const message: String = "bytecode: the program has a part no file can hold";
+    return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
+  }
+  return runBytecode(inout runtime, bytes);
+}
+
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, viaBytecode: boolean): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
@@ -162,7 +205,14 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
     const gcText: String = "gc";
     runtime.setGlobal("gc", cellValue(runtime.defineHostFunction(gcHost, undefinedValue(), 0, in gcText)));
   }
-  const outcome = evaluate(inout runtime, move source);
+  let outcome = RunResult({ isThrow: false, value: undefinedValue() });
+  if (isBytecodeFile(source)) {
+    outcome = runBytecode(inout runtime, source);
+  } else if (viaBytecode) {
+    outcome = runViaBytecode(inout runtime, move source);
+  } else {
+    outcome = evaluate(inout runtime, move source);
+  }
   if (stats) reportStats(in runtime);
   if (gcStats) reportGcStats(in runtime);
   if (memStats) reportMemStats(in runtime);
@@ -426,6 +476,9 @@ function main(): i32 {
   //   run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats]
   //       [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] <file>
   //   dump <file>        the bytecode the file compiles to
+  // A file that starts as a bytecode file does is loaded, not compiled;
+  // --via-bytecode compiles source in an engine of its own, writes it as
+  // a bytecode file, and loads that (docs/bytecode-files.md).
   // --dict-threshold sets the property count at which an object leaves
   // its hidden class (for measurement); --stats prints heap figures
   // after the run; --gc-stats times every collection and prints the
@@ -466,6 +519,7 @@ function main(): i32 {
   let gcFloor: i32 = -1;
   let gcGrowth: i32 = -1;
   let gcNursery: i32 = -1;
+  let viaBytecode = false;
   while (index + 1 < arguments.length) {
     const optionLength = arguments[index].byteLength;
     const option = arguments[index].copyBytes(0, optionLength);
@@ -504,6 +558,9 @@ function main(): i32 {
     } else if (option == "--expose-gc") {
       exposeGc = true;
       index = index + 1;
+    } else if (option == "--via-bytecode") {
+      viaBytecode = true;
+      index = index + 1;
     } else if (option == "--dict-threshold" && index + 2 < arguments.length) {
       const valueLength = arguments[index + 1].byteLength;
       const value = arguments[index + 1].copyBytes(0, valueLength);
@@ -519,7 +576,7 @@ function main(): i32 {
   }
   const pathLength = arguments[index].byteLength;
   const path = arguments[index].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery);
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery, viaBytecode);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

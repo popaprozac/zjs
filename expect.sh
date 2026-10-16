@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Expectation cases: each tests/expect/<name>.js runs on the Z engine
-# (with --expose-gc), and again collecting at every safe point, and its
-# combined output must equal <name>.expected both times,
+# (with --expose-gc), again collecting at every safe point, and again
+# compiled to a bytecode file and loaded from it, and its combined
+# output must equal <name>.expected all three times,
 # recorded from node --expose-gc and checked by hand. Focused regression cases for behaviour
 # the differential oracle cannot cover (where the reference is wrong).
 #
@@ -24,16 +25,22 @@ for js in "$HERE"/tests/expect/*.js; do
   # The same again with a collection at every safe point: a value a
   # builtin holds unrooted across one is freed there.
   collected="$("$ZJSZ" run --expose-gc --gc-nursery 1 "$js" 2>&1)"
-  if [ "$actual" = "$(cat "$expected")" ] && [ "$collected" = "$actual" ]; then
+  # And from a bytecode file written by an engine of its own.
+  loaded="$("$ZJSZ" run --expose-gc --via-bytecode "$js" 2>&1)"
+  if [ "$actual" = "$(cat "$expected")" ] && [ "$collected" = "$actual" ] && [ "$loaded" = "$actual" ]; then
     passed=$((passed+1))
   elif [ "$actual" != "$(cat "$expected")" ]; then
     failed=$((failed+1))
     echo "FAIL $name"
     diff <(echo "$actual") "$expected" | head -6
-  else
+  elif [ "$collected" != "$actual" ]; then
     failed=$((failed+1))
     echo "FAIL $name (collecting at every safe point)"
     diff <(echo "$collected") "$expected" | head -6
+  else
+    failed=$((failed+1))
+    echo "FAIL $name (loaded from bytecode)"
+    diff <(echo "$loaded") "$expected" | head -6
   fi
 done
 echo "expect: $passed passed, $failed failed"

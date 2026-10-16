@@ -773,6 +773,11 @@ export struct Runtime {
   // interned; the slot is found by atom. Linear for now.
   function globalSlotBytes(inout this, bytes: Array<u8>): u16 {
     const atom = this.internUtf8(move bytes);
+    return this.globalSlotAtom(atom);
+  }
+
+  // Global slot for an interned name, allocating one on first sight.
+  function globalSlotAtom(inout this, atom: u32): u16 {
     const found = this.findGlobalByAtom(atom);
     if (found >= 0) return u16(found);
     this.globals.push(Global({ value: undefinedValue(), defined: false, atom: atom, attr: PROP_WRITABLE | PROP_ENUMERABLE }));
