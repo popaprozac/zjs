@@ -261,6 +261,20 @@ struct ColdStep {
   result: Value;
 }
 
+// A hidden class's JSON form, for JSON.stringify: its enumerable string
+// keys in order, each already written as `"key":` (end to end in `keys`,
+// the n-th ending at keyEnds[n]), their atoms, the slots their values are
+// in, and which of those hold accessors. A class fixes all of it.
+export struct JsonPlan {
+  keys: Array<u8>;
+  keyEnds: Array<u32>;
+  names: Array<u32>;
+  slots: Array<u32>;
+  accessors: Array<boolean>;
+  // The class has the hidden slot a primitive wrapper keeps its value in.
+  wraps: boolean = false;
+}
+
 export struct Runtime {
   heap: Heap;
   functions: Array<FunctionCode>;
@@ -429,6 +443,10 @@ export struct Runtime {
   // asked the engine to stop. A termination unwinds every frame, past
   // every catch and finally, and lets no JavaScript run until it reaches
   // the embedder (see pollInterrupt).
+  // JSON.stringify's plans by class: 0 not made yet, 1 none (the class has
+  // an index key or a key that is not narrow), n + 2 jsonPlans[n].
+  jsonPlans: Array<JsonPlan> = Array<JsonPlan>();
+  jsonPlanOfClass: Array<u32> = Array<u32>();
   interruptHandler: usize = 0;
   interruptOpaque: usize = 0;
   interruptCountdown: u32 = INTERRUPT_POLL_INTERVAL;

@@ -1,10 +1,10 @@
 // JSON.parse and JSON.stringify over byte strings.
 import { isHighSurrogate, isLowSurrogate } from "../text.zs";
 import { thread } from "std/thread";
-import { TextBuilder, textBuilder, putByte, putUnit, putUnits, putString, textLength, truncateTo, finishText } from "./builder.zs";
+import { TextBuilder, textBuilder, putByte, putByteRun, putUnit, putUnits, putString, textLength, truncateTo, finishText } from "./builder.zs";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32, isDeleted } from "../value.zs";
-import { Runtime, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber, FEATURE_JSON } from "../runtime.zs";
-import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN } from "../heap.zs";
+import { Runtime, JsonPlan, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber, FEATURE_JSON } from "../runtime.zs";
+import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN, DICT_BIT } from "../heap.zs";
 
 // --- parse ---
 
@@ -553,23 +553,12 @@ function quoteString(in runtime: Runtime, inout text: TextBuilder, handle: u32):
   putByte(inout text, 34);
   const length = runtime.heap.stringLength(handle);
   if (!runtime.heap.isWideString(handle) && !text.wide) {
-    const arena = runtime.heap.isArenaString(handle);
-    const start = runtime.heap.stringStorageStart(handle);
-    const buffer = usize(runtime.heap.stringBuffer(handle));
-    let index: usize = 0;
-    while (index < length) {
-      let byte: u8 = 0;
-      if (arena) {
-        byte = runtime.heap.smallBytes[start + index];
-      } else {
-        byte = runtime.heap.strings[buffer][index];
-      }
-      if (byte >= 32 && byte != 34 && byte != 92) {
-        text.bytes.push(byte);
-      } else {
-        escapeUnit(inout text, u16(byte));
-      }
-      index = index + 1;
+    // The runs between characters that need an escape go out whole.
+    if (runtime.heap.isArenaString(handle)) {
+      const start = runtime.heap.stringStorageStart(handle);
+      quoteNarrowRuns(inout text, runtime.heap.smallBytes, start, start + length);
+    } else {
+      quoteNarrowRuns(inout text, runtime.heap.strings[usize(runtime.heap.stringBuffer(handle))], 0, length);
     }
     putByte(inout text, 34);
     return;
@@ -588,6 +577,23 @@ function quoteString(in runtime: Runtime, inout text: TextBuilder, handle: u32):
     index = index + 1;
   }
   putByte(inout text, 34);
+}
+
+// Bytes `first` to `last` of a narrow string's storage, quoted: each run
+// with nothing to escape appended at once.
+function quoteNarrowRuns(inout text: TextBuilder, storage: Slice<u8>, first: usize, last: usize): void {
+  let run = first;
+  let index = first;
+  while (index < last) {
+    const byte = storage[index];
+    if (byte < 32 || byte == 34 || byte == 92) {
+      if (index > run) putByteRun(inout text, storage, run, index);
+      escapeUnit(inout text, u16(byte));
+      run = index + 1;
+    }
+    index = index + 1;
+  }
+  if (last > run) putByteRun(inout text, storage, run, last);
 }
 
 // A unit that does not go out as itself: a short escape, or \u and four
@@ -670,6 +676,41 @@ function pushNull(inout text: TextBuilder): void {
   putByte(inout text, 108);
 }
 
+// A primitive that goes out as itself -- an int32, a string, a boolean,
+// null -- written without a SerializeJSONProperty call of its own. False,
+// with nothing written, for anything else (an object, undefined, a
+// symbol, a double), which takes the full path.
+inline function writePlainPrimitive(in runtime: Runtime, value: Value, inout text: TextBuilder): boolean {
+  if (isInt32(value)) {
+    pushInt32(inout text, asInt32(value));
+    return true;
+  }
+  if (runtime.isStringValue(value)) {
+    quoteString(in runtime, inout text, asCell(value));
+    return true;
+  }
+  if (isBoolean(value)) {
+    if (isTrue(value)) {
+      putByte(inout text, 116);
+      putByte(inout text, 114);
+      putByte(inout text, 117);
+      putByte(inout text, 101);
+    } else {
+      putByte(inout text, 102);
+      putByte(inout text, 97);
+      putByte(inout text, 108);
+      putByte(inout text, 115);
+      putByte(inout text, 101);
+    }
+    return true;
+  }
+  if (isNull(value)) {
+    pushNull(inout text);
+    return true;
+  }
+  return false;
+}
+
 // SerializeJSONProperty: returns false when the value has no JSON form
 // (undefined, functions, symbols), leaving `text` untouched.
 function serialize(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, inout text: TextBuilder): boolean {
@@ -706,6 +747,66 @@ function pushPlainKeys(inout runtime: Runtime, inout state: Stringifier, handle:
   }
   popKeys(inout state, write);
   return i64(start);
+}
+
+// The JSON plan of a hidden class (JsonPlan), made the first time an
+// object of the class is written: its index in runtime.jsonPlans, or -1
+// when the class has none (an index key, or a key that is not narrow,
+// takes the general path).
+function jsonPlanFor(inout runtime: Runtime, classId: u32): i64 {
+  const id = usize(classId);
+  if (id < runtime.jsonPlanOfClass.length) {
+    const known = runtime.jsonPlanOfClass[id];
+    if (known == 1) return -1;
+    if (known >= 2) return i64(known - 2);
+  }
+  while (runtime.jsonPlanOfClass.length <= id) {
+    runtime.jsonPlanOfClass.push(0);
+  }
+  // The class chain gives the keys newest first.
+  let names = Array<u32>();
+  let slots = Array<u32>();
+  let current = classId;
+  while (current != 0) {
+    names.push(runtime.heap.classes[usize(current)].transitionName);
+    slots.push(runtime.heap.classes[usize(current)].transitionSlot);
+    current = runtime.heap.classes[usize(current)].parent;
+  }
+  let plan = JsonPlan({ keys: Array<u8>(), keyEnds: Array<u32>(), names: Array<u32>(), slots: Array<u32>(), accessors: Array<boolean>(), wraps: false });
+  let index = names.length;
+  while (index > 0) {
+    index = index - 1;
+    const name = names[index];
+    const slot = slots[index];
+    if (name == runtime.atomPrimitive) plan.wraps = true;
+    // Symbols and the engine's own keys are not written.
+    if (!runtime.heap.isString(name)) continue;
+    const flags = runtime.heap.flagsOf(name);
+    if ((flags & FLAG_INDEX_KEY) != 0) {
+      runtime.jsonPlanOfClass[id] = 1;
+      return -1;
+    }
+    if ((flags & FLAG_HIDDEN) != 0) continue;
+    let attr: u8 = PROP_ENUMERABLE;
+    if (usize(slot) < runtime.heap.classes[id].slotAttrs.length) attr = runtime.heap.classes[id].slotAttrs[usize(slot)];
+    if ((attr & PROP_ENUMERABLE) == 0) continue;
+    let key = textBuilder(16);
+    quoteString(in runtime, inout key, name);
+    putByte(inout key, 58);
+    if (key.wide) {
+      runtime.jsonPlanOfClass[id] = 1;
+      return -1;
+    }
+    plan.keys.append(key.bytes);
+    plan.keyEnds.push(u32(plan.keys.length));
+    plan.names.push(name);
+    plan.slots.push(slot);
+    plan.accessors.push((attr & PROP_ACCESSOR) != 0);
+  }
+  const made = runtime.jsonPlans.length;
+  runtime.jsonPlans.push(move plan);
+  runtime.jsonPlanOfClass[id] = u32(made + 2);
+  return i64(made);
 }
 
 function popKeys(inout state: Stringifier, mark: usize): void {
@@ -776,8 +877,18 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
     value = runtime.callValue(replacer, holder, move args);
     if (runtime.pendingThrow) return false;
   }
-  // Wrappers unwrap.
-  if (runtime.isObjectLike(value) && runtime.heap.isObject(asCell(value))) {
+  // Wrappers unwrap. An object whose class has a plan wraps nothing unless
+  // the plan says so, which spares the search for the primitive's slot.
+  let earlyPlan: i64 = -1;
+  let maybeWrapper = runtime.isObjectLike(value) && runtime.heap.isObject(asCell(value));
+  if (maybeWrapper) {
+    const earlyShape = runtime.heap.objectClass(asCell(value));
+    if ((earlyShape & DICT_BIT) == 0) {
+      earlyPlan = jsonPlanFor(inout runtime, earlyShape);
+      if (earlyPlan >= 0 && !runtime.jsonPlans[usize(earlyPlan)].wraps) maybeWrapper = false;
+    }
+  }
+  if (maybeWrapper) {
     const wrapped = runtime.wrappedPrimitive(asCell(value));
     if (isNumber(wrapped)) {
       const number = runtime.toNumberValue(value);
@@ -855,15 +966,19 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
     appendAll(inout state.indent, in gap);
   }
   const isArray = runtime.heap.isArray(handle);
+  let plan: i64 = -1;
   let plainStart: i64 = -1;
   if (!isArray && !state.useAllowed && runtime.heap.isObject(handle) && handle != runtime.globalObject) {
-    plainStart = pushPlainKeys(inout runtime, inout state, handle);
+    const shape = runtime.heap.objectClass(handle);
+    if ((shape & DICT_BIT) == 0) plan = earlyPlan >= 0 ? earlyPlan : jsonPlanFor(inout runtime, shape);
+    if (plan < 0) plainStart = pushPlainKeys(inout runtime, inout state, handle);
   }
   const open: u8 = isArray ? 91 : 123;
   putByte(inout text, open);
   let wroteAny = false;
   if (isArray) {
     const length = runtime.heap.arrayLength(handle);
+    const direct = !runtime.isCallable(state.replacer);
     let index: u32 = 0;
     while (index < length) {
       if (index > 0) putByte(inout text, 44);
@@ -878,11 +993,65 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
         element = runtime.getProperty(value, int32Value(i32(index)));
         if (runtime.pendingThrow) return false;
       }
-      const wrote = serializeValue(inout runtime, inout state, value, int32Value(i32(index)), element, inout text);
+      let wrote = false;
+      if (direct && writePlainPrimitive(in runtime, element, inout text)) {
+        wrote = true;
+      } else {
+        wrote = serializeValue(inout runtime, inout state, value, int32Value(i32(index)), element, inout text);
+      }
       if (runtime.pendingThrow) return false;
       if (!wrote) pushNull(inout text);
       wroteAny = true;
       index = index + 1;
+    }
+  } else if (plan >= 0) {
+    // An object in class mode: its keys, already quoted, from its class's
+    // plan. A key whose slot holds no value (deleted before the call)
+    // is left out; a value is read from its slot while the object keeps
+    // its class (a getter or toJSON may change it), else by Get.
+    const p = usize(plan);
+    const shape = runtime.heap.objectClass(handle);
+    const count = runtime.jsonPlans[p].slots.length;
+    // Without a replacer function a primitive goes out as itself.
+    const direct = !runtime.isCallable(state.replacer);
+    let k: usize = 0;
+    while (k < count) {
+      const slot = runtime.jsonPlans[p].slots[k];
+      const name = runtime.jsonPlans[p].names[k];
+      let propertyValue = runtime.heap.slot(handle, slot);
+      const sameShape = runtime.heap.objectClass(handle) == shape;
+      if (sameShape && isDeleted(propertyValue)) {
+        k = k + 1;
+        continue;
+      }
+      const mark = textLength(in text);
+      if (wroteAny) putByte(inout text, 44);
+      if (pretty) {
+        putByte(inout text, 10);
+        putUnits(inout text, in state.indent);
+      }
+      let keyStart: usize = 0;
+      if (k > 0) keyStart = usize(runtime.jsonPlans[p].keyEnds[k - 1]);
+      const keyEnd = usize(runtime.jsonPlans[p].keyEnds[k]);
+      putByteRun(inout text, runtime.jsonPlans[p].keys, keyStart, keyEnd);
+      if (pretty) putByte(inout text, 32);
+      if (!sameShape || runtime.jsonPlans[p].accessors[k]) {
+        propertyValue = runtime.getProperty(value, cellValue(name));
+        if (runtime.pendingThrow) return false;
+      }
+      let wrote = false;
+      if (direct && writePlainPrimitive(in runtime, propertyValue, inout text)) {
+        wrote = true;
+      } else {
+        wrote = serializeValue(inout runtime, inout state, value, cellValue(name), propertyValue, inout text);
+      }
+      if (runtime.pendingThrow) return false;
+      if (wrote) {
+        wroteAny = true;
+      } else {
+        truncateTo(inout text, mark);
+      }
+      k = k + 1;
     }
   } else if (plainStart >= 0) {
     // A plain object: its keys from its shape, each value read from its

@@ -17,7 +17,7 @@ export function textBuilder(capacity: usize): TextBuilder {
   return TextBuilder({ bytes: Array<u8>.withCapacity(capacity), units: Array<u16>(), wide: false });
 }
 
-export function putByte(inout text: TextBuilder, byte: u8): void {
+export inline function putByte(inout text: TextBuilder, byte: u8): void {
   if (text.wide) {
     text.units.push(u16(byte));
     return;
@@ -86,6 +86,20 @@ export function putStringRange(in runtime: Runtime, inout text: TextBuilder, han
     bytes = appendRange(runtime.heap.strings[usize(runtime.heap.stringBuffer(handle))], start, end, move bytes);
   }
   const emptied = replace(inout text.bytes, move bytes);
+}
+
+// Bytes `first` to `last` of `source`, appended at once while the text is
+// narrow.
+export function putByteRun(inout text: TextBuilder, source: Slice<u8>, first: usize, last: usize): void {
+  if (text.wide) {
+    let index = first;
+    while (index < last) {
+      text.units.push(u16(source[index]));
+      index = index + 1;
+    }
+    return;
+  }
+  text.bytes.append(source.slice(first, last));
 }
 
 export function textLength(in text: TextBuilder): usize {

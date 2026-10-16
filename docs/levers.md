@@ -450,6 +450,18 @@ in Z now allows (the bytes alone had cost more than they saved, above):
 json -0.4 to -0.8% in cycles over three runs with no encode job (-1.1 to
 -1.7% under one), 6.4% fewer instructions,
 libzjs.a +2 KiB (`bench/speed/results/2026-10-14-json-narrow-parse.json`).
+Then (2026-10-16): stringify writes an object in class mode from its
+class's plan, made once per class -- the keys already quoted, the slots
+their values are in, which hold accessors, whether the class wraps a
+primitive -- where each object had pushed its key list and quoted each
+key; a narrow string's runs without escapes go out whole; an int32,
+string, boolean, or null property value is written without a
+SerializeJSONProperty call of its own. json -13.5 to -14.3% in cycles
+over eight placements, three runs (stringify alone -31%), the other
+kernels within 1.5%, test262 unchanged
+(`bench/speed/results/2026-10-16-json-stringify-plans.json`). What is
+left of stringify is the per-byte Array push, which clang will not
+inline at its many call sites while the growth is inside it.
 The engine retires about six instructions a cycle on json and on calls,
 so fewer instructions buy little now unless they shorten a chain of
 dependent loads.
