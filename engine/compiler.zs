@@ -15,7 +15,7 @@ import { Value, int32Value, doubleValue, isInt32, asInt32 } from "./value.zs";
 import { TokenKind } from "./token.zs";
 import { NodeKind, AstNode, NO_NODE } from "./ast.zs";
 import { Parser, ParseResult, parseProgram } from "./parser.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instABCD, instAU16, instAI16, instI16, instU16, EvalSite, EvalLevel, EvalBinding } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instABCD, instAU16, instAI16, instI16, instU16, instAJump, JUMP_OFFSET_LIMIT, EvalSite, EvalLevel, EvalBinding } from "./bytecode.zs";
 import { Runtime } from "./runtime.zs";
 import { bytesOf, sliceBytes } from "./heap.zs";
 import { cellValue, deletedValue } from "./value.zs";
@@ -174,6 +174,25 @@ struct CompiledFunction {
   minOuterScope: usize;
 }
 
+// At most this many pieces join in one concatN (emitConcat).
+const CONCAT_CHUNK: u32 = 32;
+
+// A body's bindings take registers up to here, and environment slots
+// past it (Compiler.spillFrom), leaving the rest for temporaries.
+const SPILL_FROM: u8 = 128;
+
+// The registers a function may use (allocReg): 255 less the widest fixed
+// layout, a method call's callee, receiver, and CALL_ARGUMENT_LIMIT
+// arguments, with a register to spare.
+const REGISTER_LIMIT: u8 = 186;
+
+// Parameters arrive in registers; a function with more does not compile.
+const PARAMETER_LIMIT: u32 = 240;
+
+// A call with more arguments than this passes them in an array, as a
+// spread call does, rather than in a window of registers.
+const CALL_ARGUMENT_LIMIT: u32 = 64;
+
 export struct Compiler {
   code: Array<Inst>;
   constants: Array<Value>;
@@ -287,6 +306,14 @@ export struct Compiler {
   // Script or eval code: the global slots its declarations make, defined
   // when the code starts (its declareGlobals instruction).
   declaredGlobals: Array<u32>;
+  // While a body's bindings are declared: the register from which a new
+  // one lives in the function's environment instead (0, none). A
+  // function of hundreds of bindings keeps registers for its
+  // temporaries. `spilled` records that one did; `envAt` is the newEnv
+  // the environment's final size is patched into.
+  spillFrom: u8 = 0;
+  spilled: boolean = false;
+  envAt: i32 = -1;
   // The names written in this function, made the first time an inlining
   // candidate asks, once per function rather than per candidate.
   changes: NameChanges = nameChanges();
@@ -298,19 +325,28 @@ export struct Compiler {
     return u32(this.code.length - 1);
   }
 
+  // A constant's index rides in 16 bits; a function with more constants
+  // than that does not compile.
   function addConst(inout this, value: Value): u16 {
+    if (this.constants.length >= 0x1_0000) {
+      this.hadError = true;
+      return 0;
+    }
     this.constants.push(value);
     return u16(this.constants.length - 1);
   }
 
   // Operands are a byte; a function that needs more registers than fit
-  // fails to compile rather than wrapping (the counter stops short of
-  // the top so the fixed-width call layouts below never overflow it).
+  // fails to compile rather than wrapping. The counter stops REGISTER_LIMIT
+  // short of the top by the widest fixed layout an instruction takes -- a
+  // call's callee, receiver, and CALL_ARGUMENT_LIMIT arguments -- so a
+  // layout laid from any register below it stays in a byte, even after
+  // the counter has run out and the compile has failed.
   function allocReg(inout this): u8 {
-    if (this.nextReg >= 252) {
+    if (this.nextReg >= REGISTER_LIMIT) {
       this.hadError = true;
-      this.nextReg = 252;
-      return 252;
+      this.nextReg = REGISTER_LIMIT;
+      return REGISTER_LIMIT;
     }
     const reg = this.nextReg;
     this.nextReg = reg + 1;
@@ -331,6 +367,23 @@ export struct Compiler {
     return here;
   }
 
+  // Whether the body's bindings may spill (spillFrom): those already in
+  // registers and the body-level let, const, and class names to come.
+  function bodyMaySpill(inout this, in parser: Parser, body: u32): boolean {
+    return this.spilled || u32(this.nextReg) + bodyLexicalCount(in parser, body) >= u32(SPILL_FROM);
+  }
+
+  // The environment's size, once the body has compiled: spilled bindings
+  // take slots after the newEnv that makes it is emitted.
+  function patchEnvSize(inout this): void {
+    if (this.envAt < 0) return;
+    if (this.envSize > 0xFFFF) {
+      this.hadError = true;
+      return;
+    }
+    this.code[usize(this.envAt)] = instU16(Op.newEnv, u16(this.envSize));
+  }
+
   // Whether a function declaration's name may be written in this function
   // (NameChanges), from the summary made on first use.
   function nameChanges(inout this, in parser: Parser, nameStart: u32, nameLength: u32, declaration: u32): boolean {
@@ -341,11 +394,30 @@ export struct Compiler {
     return changesName(in parser, in this.changes, nameStart, nameLength, declaration);
   }
 
+  // A loadEnvSlot or storeEnvSlot: the slot's low byte in c and its high
+  // byte in d, which neither op uses otherwise. An environment of more
+  // slots than that does not compile.
+  function envSlotInst(inout this, op: Op, a: u8, hops: u8, slot: i32): Inst {
+    if (slot < 0 || slot > 0xFFFF) {
+      this.hadError = true;
+      return instABCD(op, a, hops, 0, 0);
+    }
+    return instABCD(op, a, hops, u8(slot & 0xFF), u8(slot >> 8));
+  }
+
+  // A jump to `offset` instructions past the one after it. A function
+  // too long for that range does not compile, rather than jump wrong.
+  function jumpInst(inout this, op: Op, a: u8, offset: i32): Inst {
+    if (offset > JUMP_OFFSET_LIMIT || offset < -JUMP_OFFSET_LIMIT - 1) this.hadError = true;
+    return instAJump(op, a, offset);
+  }
+
   function patchJump(inout this, at: u32): void {
     const here = i32(this.markTarget());
     const inst = this.code[usize(at)];
     const offset = here - (i32(at) + 1);
-    this.code[usize(at)] = instAI16(inst.op, inst.a, offset);
+    const patched = this.jumpInst(inst.op, inst.a, offset);
+    this.code[usize(at)] = patched;
   }
 
   // A jump taken when a condition is false, returned for patchJump. A
@@ -422,14 +494,14 @@ export struct Compiler {
           const low = u16(bits & 0xFFFF);
           this.emit(instABCD(fusedImmediateBranch(compare), operand, u8(low & 0xFF), u8(low >> 8), 1));
           const here = i32(this.code.length);
-          this.emit(instAI16(Op.halt, u8(bits >> 16), i32(target) - (here + 1)));
+          this.emit(this.jumpInst(Op.halt, u8(bits >> 16), i32(target) - (here + 1)));
           return;
         }
         const left = this.compileOperand(in parser, inout runtime, n.left, n.right);
         const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
         this.emit(instABCD(fused, left, right, 0, 1));
         const here = i32(this.code.length);
-        this.emit(instAI16(Op.halt, 0, i32(target) - (here + 1)));
+        this.emit(this.jumpInst(Op.halt, 0, i32(target) - (here + 1)));
         return;
       }
       if (compare == Op.cmpStrictEq || compare == Op.cmpStrictNe) {
@@ -497,20 +569,20 @@ export struct Compiler {
       const low = u16(bits & 0xFFFF);
       this.emit(instABCD(Op.incJmpIfLtImm, counter, u8(low & 0xFF), u8(low >> 8), 1));
       const here = i32(this.code.length);
-      this.emit(instAI16(Op.halt, u8(bits >> 16), i32(target) - (here + 1)));
+      this.emit(this.jumpInst(Op.halt, u8(bits >> 16), i32(target) - (here + 1)));
       return;
     }
     const lengthOf = this.lengthOperandReg(in parser, right);
     if (lengthOf >= 0) {
       this.emit(instABCD(Op.incJmpIfLtLength, counter, u8(lengthOf), 0, 1));
       const at = i32(this.code.length);
-      this.emit(instAI16(Op.halt, 0, i32(target) - (at + 1)));
+      this.emit(this.jumpInst(Op.halt, 0, i32(target) - (at + 1)));
       return;
     }
     const bound = u8(this.operandLocalReg(in parser, right));
     this.emit(instABCD(Op.incJmpIfLt, counter, bound, 0, 1));
     const here = i32(this.code.length);
-    this.emit(instAI16(Op.halt, 0, i32(target) - (here + 1)));
+    this.emit(this.jumpInst(Op.halt, 0, i32(target) - (here + 1)));
   }
 
   // Whether a subtree names a binding held in register `reg`, or calls
@@ -577,6 +649,8 @@ export struct Compiler {
     if (this.code.length == 0 || i32(this.code.length) == this.lastTarget) return -1;
     const last = this.code[this.code.length - 1];
     if (last.op != Op.envAdd && last.op != Op.storeEnvSlot) return -1;
+    // A slot past 255, in d, is never a place (envPlace).
+    if (last.op == Op.storeEnvSlot && last.d != 0) return -1;
     const named = parser.ast.node(node);
     const place = this.envPlace(in parser, named.nameStart, named.nameLength);
     const stored = last.op == Op.envAdd ? (i32(last.c) << 8 | i32(last.d)) : (i32(last.b) << 8 | i32(last.c));
@@ -586,12 +660,12 @@ export struct Compiler {
 
   function emitJumpBack(inout this, target: u32): void {
     const here = i32(this.code.length);
-    this.emit(instI16(Op.jmp, i32(target) - (here + 1)));
+    this.emit(this.jumpInst(Op.jmp, 0, i32(target) - (here + 1)));
   }
 
   function emitJumpBackIf(inout this, op: Op, src: u8, target: u32): void {
     const here = i32(this.code.length);
-    this.emit(instAI16(op, src, i32(target) - (here + 1)));
+    this.emit(this.jumpInst(op, src, i32(target) - (here + 1)));
   }
 
   // --- Loops ---
@@ -621,7 +695,8 @@ export struct Compiler {
     while (i < count) {
       const at = this.loops[top].continuePatches[i];
       const inst = this.code[usize(at)];
-      this.code[usize(at)] = instAI16(inst.op, inst.a, i32(target) - (i32(at) + 1));
+      const patched = this.jumpInst(inst.op, inst.a, i32(target) - (i32(at) + 1));
+      this.code[usize(at)] = patched;
       i = i + 1;
     }
   }
@@ -745,7 +820,8 @@ export struct Compiler {
   function patchJumpTo(inout this, at: u32, target: u32): void {
     if (i32(target) > this.lastTarget) this.lastTarget = i32(target);
     const inst = this.code[usize(at)];
-    this.code[usize(at)] = instAI16(inst.op, inst.a, i32(target) - (i32(at) + 1));
+    const patched = this.jumpInst(inst.op, inst.a, i32(target) - (i32(at) + 1));
+    this.code[usize(at)] = patched;
   }
 
   // Patch every pending break to the next instruction, then drop the loop.
@@ -1043,7 +1119,7 @@ export struct Compiler {
             this.emit(instA(Op.loadHole, u8(holeReg)));
           }
           const hops = u8(this.openEnvs - this.locals[i].envDepth);
-          this.emit(instABC(Op.storeEnvSlot, u8(holeReg), hops, u8(slot)));
+          this.emit(this.envSlotInst(Op.storeEnvSlot, u8(holeReg), hops, i32(slot)));
         } else {
           const reg = this.locals[i].reg;
           this.emit(instA(Op.loadHole, reg));
@@ -1280,10 +1356,19 @@ export struct Compiler {
   // A block-level captured binding takes its slot when its scope opens.
   function addLocalKeyed(inout this, nameStart: u32, nameLength: u32, key: u32): u8 {
     let envSlot = this.capturedSlot(key);
-    const captured = envSlot != -1;
+    let captured = envSlot != -1;
     if (envSlot == BLOCK_SLOT) envSlot = -1;
     let reg: u8 = 0;
-    if (!captured) reg = this.allocReg();
+    if (!captured && this.spillFrom > 0 && this.nextReg >= this.spillFrom) {
+      // Past the register budget: the function's environment, as a
+      // captured binding's (spillFrom).
+      envSlot = i32(this.envSize);
+      this.envSize = this.envSize + 1;
+      captured = true;
+      this.spilled = true;
+    } else if (!captured) {
+      reg = this.allocReg();
+    }
     this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     return reg;
   }
@@ -1351,7 +1436,7 @@ export struct Compiler {
     const slot = this.locals[index].envSlot;
     if (slot >= 0) {
       const hops = u8(this.openEnvs - this.locals[index].envDepth);
-      this.emit(instABC(Op.loadEnvSlot, dst, hops, u8(slot)));
+      this.emit(this.envSlotInst(Op.loadEnvSlot, dst, hops, i32(slot)));
     } else {
       const reg = this.locals[index].reg;
       this.emit(instAB(Op.mov, dst, reg));
@@ -1381,7 +1466,7 @@ export struct Compiler {
     const slot = this.locals[index].envSlot;
     if (slot >= 0) {
       const hops = u8(this.openEnvs - this.locals[index].envDepth);
-      this.emit(instABC(Op.storeEnvSlot, value, hops, u8(slot)));
+      this.emit(this.envSlotInst(Op.storeEnvSlot, value, hops, i32(slot)));
     } else {
       const reg = this.locals[index].reg;
       if (reg != value) this.emit(instAB(Op.mov, reg, value));
@@ -1435,34 +1520,49 @@ export struct Compiler {
   // (a register binding's node), `x += pieces`: x first in the run, the
   // pieces added to it after they are joined.
   function emitConcat(inout this, in parser: Parser, inout runtime: Runtime, in pieces: Array<u32>, accumulator: u32, hintReg: i32): u8 {
-    const lead: u32 = accumulator != NO_NODE ? 1 : 0;
-    const count = u32(pieces.length) + lead;
-    const first = this.nextReg;
-    let i: u32 = 0;
-    while (i < count) {
-      this.allocReg();
-      i = i + 1;
+    // The pieces join CONCAT_CHUNK at a time, each chunk after the first
+    // led by the string the ones before it made: a chunk's registers are
+    // taken at once, and its count rides in a byte.
+    const total = u32(pieces.length);
+    let carried: i32 = -1;
+    let start: u32 = 0;
+    while (true) {
+      const lead: u32 = carried >= 0 || (start == 0 && accumulator != NO_NODE) ? 1 : 0;
+      let end = start + (CONCAT_CHUNK - lead);
+      if (end > total) end = total;
+      const count = end - start + lead;
+      if (carried >= 0) this.nextReg = u8(carried);
+      const first = this.nextReg;
+      let i: u32 = 0;
+      while (i < count) {
+        this.allocReg();
+        i = i + 1;
+      }
+      if (carried < 0 && lead == 1) {
+        this.targetReg = i32(first);
+        const held = this.compileExpr(in parser, inout runtime, accumulator);
+        if (held != first) this.emit(instAB(Op.mov, first, held));
+        this.nextReg = first + u8(count);
+      }
+      i = start;
+      while (i < end) {
+        const slot = first + u8(lead + i - start);
+        this.targetReg = i32(slot);
+        const piece = this.compileExpr(in parser, inout runtime, pieces[usize(i)]);
+        if (piece != slot) this.emit(instAB(Op.mov, slot, piece));
+        this.nextReg = first + u8(count);
+        i = i + 1;
+      }
+      const last = end == total;
+      const dst = last && hintReg >= 0 ? u8(hintReg) : first;
+      this.emit(instABCD(Op.concatN, dst, first, u8(count), u8(lead)));
+      this.nextReg = first + 1;
+      if (dst >= this.nextReg) this.nextReg = dst + 1;
+      if (last) return dst;
+      carried = i32(first);
+      start = end;
     }
-    if (accumulator != NO_NODE) {
-      this.targetReg = i32(first);
-      const held = this.compileExpr(in parser, inout runtime, accumulator);
-      if (held != first) this.emit(instAB(Op.mov, first, held));
-      this.nextReg = first + u8(count);
-    }
-    i = 0;
-    while (i < u32(pieces.length)) {
-      const slot = first + u8(lead + i);
-      this.targetReg = i32(slot);
-      const piece = this.compileExpr(in parser, inout runtime, pieces[usize(i)]);
-      if (piece != slot) this.emit(instAB(Op.mov, slot, piece));
-      this.nextReg = first + u8(count);
-      i = i + 1;
-    }
-    const dst = hintReg >= 0 ? u8(hintReg) : first;
-    this.emit(instABCD(Op.concatN, dst, first, u8(count), u8(lead)));
-    this.nextReg = first + 1;
-    if (dst >= this.nextReg) this.nextReg = dst + 1;
-    return dst;
+    return 0;
   }
 
   // A template's part (its cooked text) or substitution (made a string)
@@ -1803,7 +1903,7 @@ export struct Compiler {
     }
     const outer = this.findOuter(in parser, nameStart, nameLength);
     if (outer.found && outer.slot >= 0) {
-      this.emit(instABC(Op.loadEnvSlot, dst, outer.hops, u8(outer.slot)));
+      this.emit(this.envSlotInst(Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
       return;
     }
     this.hadError = true;
@@ -1833,7 +1933,7 @@ export struct Compiler {
       const found = this.findConstructorThis();
       if (found.found) {
         const dst = this.allocReg();
-        this.emit(instABC(Op.loadEnvSlot, dst, found.hops, u8(found.slot)));
+        this.emit(this.envSlotInst(Op.loadEnvSlot, dst, found.hops, i32(found.slot)));
         this.emit(instA(Op.checkThis, dst));
         return dst;
       }
@@ -1879,8 +1979,7 @@ export struct Compiler {
     if (this.thisEnvSlot < 0 || this.thisReg < 0) return;
     const reg = u8(this.thisReg);
     const hops = u8(this.openEnvs);
-    const slot = u8(this.thisEnvSlot);
-    this.emit(instABC(Op.storeEnvSlot, reg, hops, slot));
+    this.emit(this.envSlotInst(Op.storeEnvSlot, reg, hops, this.thisEnvSlot));
   }
 
   // The callee of a method call into base and its receiver into base +
@@ -1970,7 +2069,7 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.call || k == NodeKind.optionalCall) {
-      if (this.hasSpreadArgument(in parser, node)) {
+      if (this.argumentsGathered(in parser, node)) {
         this.hadError = true;
         return 0;
       }
@@ -2136,7 +2235,7 @@ export struct Compiler {
         const key = this.allocReg();
         this.emit(instAU16(Op.newPrivateName, key, description));
         const keyHops = u8(this.openEnvs);
-        this.emit(instABC(Op.storeEnvSlot, key, keyHops, u8(slot)));
+        this.emit(this.envSlotInst(Op.storeEnvSlot, key, keyHops, i32(slot)));
         this.nextReg = key;
       }
       i = i + 1;
@@ -2177,7 +2276,7 @@ export struct Compiler {
       this.emit(instAB(Op.initClassBase, ctorReg, protoReg));
     }
     const classHops = u8(this.openEnvs);
-    if (innerSlot >= 0) this.emit(instABC(Op.storeEnvSlot, ctorReg, classHops, u8(innerSlot)));
+    if (innerSlot >= 0) this.emit(this.envSlotInst(Op.storeEnvSlot, ctorReg, classHops, i32(innerSlot)));
     this.nextReg = protoReg + 1;
     i = 0;
     while (i < n.childrenCount && !this.hadError) {
@@ -2241,7 +2340,7 @@ export struct Compiler {
         }
         const key = this.compileExpr(in parser, inout runtime, member.third);
         const keyHops = u8(this.openEnvs);
-        this.emit(instABC(Op.storeEnvSlot, key, keyHops, u8(slot)));
+        this.emit(this.envSlotInst(Op.storeEnvSlot, key, keyHops, i32(slot)));
       } else if (member.kind == NodeKind.staticBlock) {
         const fnReg = this.allocReg();
         this.emitClassFunction(in parser, inout runtime, memberIndex, fnReg, 0, 0, 0, 3, 0);
@@ -2455,7 +2554,7 @@ export struct Compiler {
       }
       if (outer.needsCheck) {
         const current = this.allocReg();
-        this.emit(instABC(Op.loadEnvSlot, current, outer.hops, u8(outer.slot)));
+        this.emit(this.envSlotInst(Op.loadEnvSlot, current, outer.hops, i32(outer.slot)));
         const named = this.nameConstOf(in parser, inout runtime, target.nameStart, target.nameLength);
         this.emit(instAU16(Op.throwIfHole, current, named));
       }
@@ -2463,7 +2562,7 @@ export struct Compiler {
         if (this.strict || !outer.quiet) this.emit(instA(Op.throwConstAssign, 0));
         return;
       }
-      this.emit(instABC(Op.storeEnvSlot, value, outer.hops, u8(outer.slot)));
+      this.emit(this.envSlotInst(Op.storeEnvSlot, value, outer.hops, i32(outer.slot)));
       return;
     }
     const slot = runtime.globalSlotBytes(globalNameBytes(in parser, target.nameStart, target.nameLength));
@@ -2596,6 +2695,12 @@ export struct Compiler {
       i = i + 1;
     }
     return false;
+  }
+
+  // Whether a call's arguments go through an array rather than registers:
+  // a spread among them, or more than a register window should hold.
+  function argumentsGathered(in parser: Parser, node: u32): boolean {
+    return parser.ast.node(node).childrenCount > CALL_ARGUMENT_LIMIT || this.hasSpreadArgument(in parser, node);
   }
 
   // The arguments of a call with a spread, gathered into the array in
@@ -2948,7 +3053,7 @@ export struct Compiler {
           this.hadError = true;
           return dst;
         }
-        this.emit(instABC(Op.loadEnvSlot, dst, outer.hops, u8(outer.slot)));
+        this.emit(this.envSlotInst(Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
         if (outer.needsCheck) {
           const named = this.nameConstOf(in parser, inout runtime, n.nameStart, n.nameLength);
           this.emit(instAU16(Op.throwIfHole, dst, named));
@@ -2981,17 +3086,39 @@ export struct Compiler {
       // Each substitution evaluated and made a string (ToString, the
       // string hint) in turn, all the parts then joined in one string.
       const count = n.childrenCount;
-      if (count > 64) {
-        let acc = this.templatePiece(in parser, inout runtime, parser.ast.child(node, 0), this.allocReg());
-        let i: u32 = 1;
-        while (i < count) {
-          const next = this.templatePiece(in parser, inout runtime, parser.ast.child(node, i), this.allocReg());
-          const dst = i + 1 == count && hintReg >= 0 ? u8(hintReg) : this.allocReg();
-          this.emit(instABC(Op.add, dst, acc, next));
-          acc = dst;
-          i = i + 1;
+      if (count > CONCAT_CHUNK) {
+        // Long: the parts join a chunk at a time, as emitConcat's do,
+        // each chunk after the first led by the string before it.
+        let carried: i32 = -1;
+        let start: u32 = 0;
+        while (start < count) {
+          const lead: u32 = carried >= 0 ? 1 : 0;
+          let end = start + (CONCAT_CHUNK - lead);
+          if (end > count) end = count;
+          const span = end - start + lead;
+          if (carried >= 0) this.nextReg = u8(carried);
+          const first = this.nextReg;
+          let r: u32 = 0;
+          while (r < span) {
+            this.allocReg();
+            r = r + 1;
+          }
+          let i = start;
+          while (i < end) {
+            const placed = this.templatePiece(in parser, inout runtime, parser.ast.child(node, i), first + u8(lead + i - start));
+            this.nextReg = first + u8(span);
+            i = i + 1;
+          }
+          const last = end == count;
+          const dst = last && hintReg >= 0 ? u8(hintReg) : first;
+          this.emit(instABCD(Op.concatN, dst, first, u8(span), u8(lead)));
+          this.nextReg = first + 1;
+          if (dst >= this.nextReg) this.nextReg = dst + 1;
+          if (last) return dst;
+          carried = i32(first);
+          start = end;
         }
-        return acc;
+        return 0;
       }
       const first = this.nextReg;
       let i: u32 = 0;
@@ -3041,6 +3168,11 @@ export struct Compiler {
       const callee = parser.ast.node(n.left);
       const isMethod = callee.kind == NodeKind.member || callee.kind == NodeKind.computed;
       const argCount = u32(substitutions.length) + 1;
+      // Its arguments take a window of registers, as a call's do.
+      if (argCount > CALL_ARGUMENT_LIMIT) {
+        this.hadError = true;
+        return 0;
+      }
       const base = this.allocReg();
       const first: u8 = isMethod ? base + 2 : base + 1;
       let slot: u32 = 0;
@@ -3509,7 +3641,7 @@ export struct Compiler {
       this.nextReg = base + 1;
       return base;
     }
-    if (k == NodeKind.newExpr && this.hasSpreadArgument(in parser, node)) {
+    if (k == NodeKind.newExpr && this.argumentsGathered(in parser, node)) {
       // new f(...args): callee at base, the arguments array above it.
       const base = this.allocReg();
       const argsReg = this.allocReg();
@@ -3614,8 +3746,10 @@ export struct Compiler {
       }
       const sum = parser.ast.node(inner);
       if (sum.kind == NodeKind.binary && sum.op == TokenKind.plus && smallIntegerLiteral(in parser, sum.right) == NO_IMMEDIATE) {
+        const mark = this.nextReg;
         const left = this.compileOperand(in parser, inout runtime, sum.left, sum.right);
         const right = this.compileOperand(in parser, inout runtime, sum.right, NO_NODE);
+        this.nextReg = mark;
         const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
         this.emit(instABC(Op.addToInt32, dst, left, right));
         return dst;
@@ -3625,12 +3759,16 @@ export struct Compiler {
       const immediateOp = immediateForm(binaryOp(n.op));
       const immediate = smallIntegerLiteral(in parser, n.right);
       if (immediateOp != Op.halt && immediate != NO_IMMEDIATE) {
-        // `x + 1`, `i < 10`: the literal rides in the instruction.
+        // `x + 1`, `i < 10`: the literal rides in the instruction. The
+        // operand's temporaries end at it, as below.
+        const mark = this.nextReg;
         const operand = this.compileOperand(in parser, inout runtime, n.left, NO_NODE);
+        this.nextReg = mark;
         const into = hintReg >= 0 ? u8(hintReg) : this.allocReg();
         this.emit(immediateInst(immediateOp, into, operand, immediate));
         return into;
       }
+      const mark = this.nextReg;
       const left = this.compileOperand(in parser, inout runtime, n.left, n.right);
       const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
       const op = binaryOp(n.op);
@@ -3638,6 +3776,10 @@ export struct Compiler {
         this.hadError = true;
         return 0;
       }
+      // The operands' temporaries end at the operator, which reads both
+      // before it writes, so the result takes the first of them: a chain
+      // of a thousand operators needs two registers, not a thousand.
+      this.nextReg = mark;
       const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
       this.emit(instABC(op, dst, left, right));
       return dst;
@@ -3990,7 +4132,7 @@ export struct Compiler {
       this.emitFunctionValue(in parser, inout runtime, node, dst, contextualStart, contextualLength, contextualPrefix);
       return dst;
     }
-    if (k == NodeKind.call && this.hasSpreadArgument(in parser, node)) {
+    if (k == NodeKind.call && this.argumentsGathered(in parser, node)) {
       // f(...args) / o.m(...args): the arguments gathered into an array.
       const callee = parser.ast.node(n.left);
       if (callee.kind == NodeKind.superExpr) {
@@ -4174,10 +4316,15 @@ export struct Compiler {
       return result;
     }
     if (k == NodeKind.sequence) {
+      // Every value but the last is discarded, and its temporaries with
+      // it: a minifier's `a = x, b = y, ...` of hundreds of parts needs
+      // the registers of one.
+      const mark = this.nextReg;
       let last: u8 = 0;
       let i: u32 = 0;
       while (i < n.childrenCount) {
         last = this.compileExpr(in parser, inout runtime, parser.ast.child(node, i));
+        if (i + 1 < n.childrenCount) this.nextReg = mark;
         i = i + 1;
       }
       return last;
@@ -4699,7 +4846,7 @@ export struct Compiler {
     this.enterScope(inout mark);
     if (bound >= 0) {
       const paramSlot = this.locals[usize(bound)].envSlot;
-      if (paramSlot >= 0) this.emit(instABC(Op.storeEnvSlot, catchReg, 0, u8(paramSlot)));
+      if (paramSlot >= 0) this.emit(this.envSlotInst(Op.storeEnvSlot, catchReg, 0, i32(paramSlot)));
     }
     if (pattern != NO_NODE) {
       this.destructure(in parser, inout runtime, pattern, catchReg);
@@ -5755,6 +5902,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     paramCount = paramCount + 1;
     p = p + 1;
   }
+  if (paramCount > PARAMETER_LIMIT) return failed;
   // The names inside pattern parameters.
   const patternNamesStart = compiler.locals.length;
   p = 0;
@@ -5765,6 +5913,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   const patternNamesEnd = compiler.locals.length;
   const index = runtime.reserveFunction();
+  compiler.spillFrom = SPILL_FROM;
   if (n.left != NO_NODE) compiler.collectBodyLocals(in parser, n.left);
   // A named function expression binds its own name, immutably, unless a
   // parameter or declaration of the function takes it.
@@ -5796,6 +5945,14 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   compiler.scanParameterCaptures(in parser, node, patternNamesEnd);
   if (n.left != NO_NODE) compiler.scanCaptures(in parser, n.left);
+  // A body that may spill keeps an environment, its size patched in once
+  // the body has compiled.
+  const spilling = n.left != NO_NODE && compiler.bodyMaySpill(in parser, n.left);
+  if (spilling) {
+    compiler.hasEnv = true;
+  } else {
+    compiler.spillFrom = 0;
+  }
   // With a default anywhere in the list, the parameters bind in order:
   // each is a hole until its own turn, so a default that reads a later
   // parameter (or its own) throws. A named parameter's binding then
@@ -5833,18 +5990,19 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // The environment first, then the captured parameters into it (in
   // order, later, when the list has expressions).
   if (compiler.hasEnv) {
+    if (spilling) compiler.envAt = i32(compiler.code.length);
     compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
     p = 0;
     while (p < paramCount) {
       const slot = compiler.locals[usize(p)].envSlot;
-      if (slot >= 0 && !orderedParams) compiler.emit(instABC(Op.storeEnvSlot, u8(p), 0, u8(slot)));
+      if (slot >= 0 && !orderedParams) compiler.emit(compiler.envSlotInst(Op.storeEnvSlot, u8(p), 0, i32(slot)));
       p = p + 1;
     }
   }
   if (compiler.thisEnvSlot >= 0) {
     const uninitialized = compiler.allocReg();
     compiler.emit(instA(Op.loadHole, uninitialized));
-    compiler.emit(instABC(Op.storeEnvSlot, uninitialized, 0, u8(compiler.thisEnvSlot)));
+    compiler.emit(compiler.envSlotInst(Op.storeEnvSlot, uninitialized, 0, i32(compiler.thisEnvSlot)));
     compiler.resetTemps();
   }
   if (orderedParams) compiler.emitHoles(0);
@@ -5943,6 +6101,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     if (body.kind == NodeKind.blockStmt) {
       compiler.checkBodyRedeclarations(in parser, node, n.left);
       compiler.declareBodyLexicals(in parser, inout runtime, n.left, false);
+      compiler.spillFrom = 0;
       // Function declarations first, then everything else.
       let b: u32 = 0;
       while (b < body.childrenCount && !compiler.hadError) {
@@ -5976,6 +6135,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.emit(instA(Op.loadUndefined, r));
     compiler.emit(instA(Op.returnOp, r));
   }
+  compiler.spillFrom = 0;
+  compiler.patchEnvSize();
   if (compiler.hadError) return failed;
 
   let compiled = createFunctionCode();
@@ -6596,6 +6757,48 @@ function bodyUsesThis(in parser: Parser, node: u32): boolean {
   return false;
 }
 
+// The let, const, and class names a body declares at its own level,
+// which take registers when it starts (Compiler.bodyMaySpill).
+function bodyLexicalCount(in parser: Parser, body: u32): u32 {
+  if (body == NO_NODE) return 0;
+  const root = parser.ast.node(body);
+  if (root.kind != NodeKind.blockStmt && root.kind != NodeKind.program) return 0;
+  let count: u32 = 0;
+  let i: u32 = 0;
+  while (i < root.childrenCount) {
+    const statement = parser.ast.node(parser.ast.child(body, i));
+    if (statement.kind == NodeKind.classDecl) {
+      count = count + 1;
+    } else if (statement.kind == NodeKind.varDecl && statement.op != TokenKind.kwVar) {
+      let d: u32 = 0;
+      while (d < statement.childrenCount) {
+        const decl = parser.ast.node(parser.ast.child(parser.ast.child(body, i), d));
+        if (decl.nameLength > 0) {
+          count = count + 1;
+        } else {
+          count = count + patternNameCount(in parser, decl.third);
+        }
+        d = d + 1;
+      }
+    }
+    i = i + 1;
+  }
+  return count;
+}
+
+function patternNameCount(in parser: Parser, pattern: u32): u32 {
+  if (pattern == NO_NODE) return 0;
+  const n = parser.ast.node(pattern);
+  if (n.kind == NodeKind.identExpr) return 1;
+  let count = patternNameCount(in parser, n.left) + patternNameCount(in parser, n.right);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    count = count + patternNameCount(in parser, parser.ast.child(pattern, i));
+    i = i + 1;
+  }
+  return count;
+}
+
 // A global the code declares: its slot, found or added, listed once for
 // the code's declareGlobals instruction to define.
 function declareGlobal(inout runtime: Runtime, inout declared: Array<u32>, bytes: Array<u8>): u16 {
@@ -6723,6 +6926,7 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
     varSlot: -1, evalVars: false, parameterLocals: 0, evalSites: Array<EvalSite>(), declaredGlobals: Array<u32>(),
   });
+  runtime.globalsFull = false;
   const resultReg = compiler.allocReg();
   compiler.emit(instA(Op.declareGlobals, 0));
   compiler.emit(instA(Op.loadUndefined, resultReg));
@@ -6735,9 +6939,16 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   // Top-level let / const that functions refer to live in an environment;
   // var and function declarations are globals and need none.
   compiler.scanCaptures(in parser, root);
+  const spilling = compiler.bodyMaySpill(in parser, root);
+  if (spilling) {
+    compiler.hasEnv = true;
+    compiler.spillFrom = SPILL_FROM;
+    compiler.envAt = i32(compiler.code.length);
+  }
   if (compiler.hasEnv) compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
   compiler.checkBodyRedeclarations(in parser, NO_NODE, root);
   compiler.declareBodyLexicals(in parser, inout runtime, root, true);
+  compiler.spillFrom = 0;
   // Function declarations first, then everything else.
   let i: u32 = 0;
   while (i < program.childrenCount && !compiler.hadError) {
@@ -6752,7 +6963,8 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     i = i + 1;
   }
   compiler.emit(instA(Op.returnOp, resultReg));
-  if (compiler.hadError) return -1;
+  compiler.patchEnvSize();
+  if (compiler.hadError || runtime.globalsFull) return -1;
 
   // A field cannot be moved out of its owner; replace hands the buffers
   // out and leaves empty ones behind.
@@ -6822,6 +7034,7 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: true, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
     varSlot: -1, evalVars: evalVars, parameterLocals: 0, evalSites: Array<EvalSite>(), declaredGlobals: Array<u32>(),
   });
+  runtime.globalsFull = false;
   const resultReg = compiler.allocReg();
   if (!compiler.isFunction) compiler.emit(instA(Op.declareGlobals, 0));
   compiler.emit(instA(Op.loadUndefined, resultReg));
@@ -6844,11 +7057,18 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
   }
   compiler.scanCaptures(in parser, root);
   compiler.fixedRegs = compiler.nextReg;
+  const spilling = compiler.bodyMaySpill(in parser, root);
+  if (spilling) {
+    compiler.hasEnv = true;
+    compiler.spillFrom = SPILL_FROM;
+    compiler.envAt = i32(compiler.code.length);
+  }
   if (compiler.hasEnv) compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
   const inParameters = runtime.functions[usize(caller)].evalSites[usize(site)].inParameters;
   if (evalVars) compiler.declareEvalVars(in parser, inout runtime, root, usize(varLevel), inParameters);
   compiler.checkBodyRedeclarations(in parser, NO_NODE, root);
   compiler.declareBodyLexicals(in parser, inout runtime, root, false);
+  compiler.spillFrom = 0;
   // Function declarations first, then everything else.
   let s: u32 = 0;
   while (s < program.childrenCount && !compiler.hadError) {
@@ -6863,7 +7083,8 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
     s = s + 1;
   }
   compiler.emit(instA(Op.returnOp, resultReg));
-  if (compiler.hadError) return -1;
+  compiler.patchEnvSize();
+  if (compiler.hadError || runtime.globalsFull) return -1;
 
   let compiled = createFunctionCode();
   const code = replace(inout compiler.code, Array<Inst>());

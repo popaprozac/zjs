@@ -17,7 +17,7 @@ import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, i
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -224,6 +224,9 @@ export type EvalCompiler = (inout runtime: Runtime, source: Array<u8>, caller: u
 export const COMPILE_PARSE_ERROR: i32 = -1;
 export const COMPILE_ERROR: i32 = -2;
 export const COMPILE_NO_COMPILER: i32 = -3;
+
+// How many global slots there can be: an instruction names one in 16 bits.
+export const GLOBAL_SLOT_LIMIT: usize = 0x1_0000;
 
 // The compilers a runtime has until installCompiler gives it the front
 // end: none.
@@ -472,6 +475,8 @@ export struct Runtime {
   // compiled elsewhere -- a bytecode file's -- and links no front end.
   scriptCompiler: ScriptCompiler = noScriptCompiler;
   evalCompiler: EvalCompiler = noEvalCompiler;
+  // A compile asked for a global slot past the last (globalSlotAtom).
+  globalsFull: boolean = false;
   interruptHandler: usize = 0;
   interruptOpaque: usize = 0;
   interruptCountdown: u32 = INTERRUPT_POLL_INTERVAL;
@@ -801,10 +806,16 @@ export struct Runtime {
     return this.globalSlotAtom(atom);
   }
 
-  // Global slot for an interned name, allocating one on first sight.
+  // Global slot for an interned name, allocating one on first sight. A
+  // slot rides in 16 bits: past that there is none to give, and the
+  // compile that asked fails (globalsFull) rather than share one.
   function globalSlotAtom(inout this, atom: u32): u16 {
     const found = this.findGlobalByAtom(atom);
     if (found >= 0) return u16(found);
+    if (this.globals.length >= GLOBAL_SLOT_LIMIT) {
+      this.globalsFull = true;
+      return 0;
+    }
     this.globals.push(Global({ value: undefinedValue(), defined: false, atom: atom, attr: PROP_WRITABLE | PROP_ENUMERABLE }));
     return u16(this.globals.length - 1);
   }
@@ -4347,9 +4358,9 @@ export struct Runtime {
           const negated = !this.toBooleanValue(this.reg(base, inst.b));
           this.setReg(base, inst.a, booleanValue(negated));
         }
-        jmp => { ip = usize(i64(ip) + i64(bcI16(inst))); }
-        jmpIfTrue => { if (this.toBooleanValue(this.reg(base, inst.a))) ip = usize(i64(ip) + i64(bcI16(inst))); }
-        jmpIfFalse => { if (!this.toBooleanValue(this.reg(base, inst.a))) ip = usize(i64(ip) + i64(bcI16(inst))); }
+        jmp => { ip = usize(i64(ip) + i64(jumpOffset(inst))); }
+        jmpIfTrue => { if (this.toBooleanValue(this.reg(base, inst.a))) ip = usize(i64(ip) + i64(jumpOffset(inst))); }
+        jmpIfFalse => { if (!this.toBooleanValue(this.reg(base, inst.a))) ip = usize(i64(ip) + i64(jumpOffset(inst))); }
         jmpIfNotLt => { ip = this.leafBranch(base, inst, ip, 0); if (ip == 0) return deletedValue(); }
         jmpIfNotLe => { ip = this.leafBranch(base, inst, ip, 1); if (ip == 0) return deletedValue(); }
         jmpIfNotGt => { ip = this.leafBranch(base, inst, ip, 2); if (ip == 0) return deletedValue(); }
@@ -4362,7 +4373,7 @@ export struct Runtime {
           const word = unsafe { select this.codeSegment.uncheckedAt(ip); };
           ip = ip + 1;
           const same = this.strictEquals(this.reg(base, inst.a), this.reg(base, inst.b));
-          if (same == (inst.d != 0)) ip = usize(i64(ip) + i64(bcI16(word)));
+          if (same == (inst.d != 0)) ip = usize(i64(ip) + i64(jumpOffset(word)));
         }
         jmpIfNotStrictEqImm => {
           const word = unsafe { select this.codeSegment.uncheckedAt(ip); };
@@ -4370,7 +4381,7 @@ export struct Runtime {
           const left = this.reg(base, inst.a);
           const immediate = branchImmediateOf(inst, word);
           const same = isInt32(left) ? asInt32(left) == immediate : isDouble(left) && asDouble(left) == f64(immediate);
-          if (same == (inst.d != 0)) ip = usize(i64(ip) + i64(bcI16(word)));
+          if (same == (inst.d != 0)) ip = usize(i64(ip) + i64(jumpOffset(word)));
         }
         loadProp => {
           const object = this.reg(base, inst.b);
@@ -4508,7 +4519,7 @@ export struct Runtime {
     const right = this.reg(base, inst.b);
     if (!isNumber(left) || !isNumber(right)) return 0;
     const holds = orderedNumbers(toNumber(left), toNumber(right), relation);
-    if (holds == (inst.d != 0)) return usize(i64(ip + 1) + i64(bcI16(word)));
+    if (holds == (inst.d != 0)) return usize(i64(ip + 1) + i64(jumpOffset(word)));
     return ip + 1;
   }
 
@@ -4517,7 +4528,7 @@ export struct Runtime {
     const left = this.reg(base, inst.a);
     if (!isNumber(left)) return 0;
     const holds = orderedNumbers(toNumber(left), f64(branchImmediateOf(inst, word)), relation);
-    if (holds == (inst.d != 0)) return usize(i64(ip + 1) + i64(bcI16(word)));
+    if (holds == (inst.d != 0)) return usize(i64(ip + 1) + i64(jumpOffset(word)));
     return ip + 1;
   }
 
@@ -6708,7 +6719,7 @@ export struct Runtime {
           const record = this.generatorRecord(gen);
           returning = asInt32(this.heap.slot(record, 12)) == 2;
         }
-        if (!returning) ip = usize(i64(ip) + i64(bcI16(inst)));
+        if (!returning) ip = usize(i64(ip) + i64(jumpOffset(inst)));
       }
       resumeMode => {
         const gen = this.frames[frameIndex].generator;
@@ -7142,7 +7153,7 @@ export struct Runtime {
           if (own >= 0 && !isDeleted(this.heap.slot(holder, u32(own)))) {
             const value = this.heap.slot(holder, u32(own));
             this.setReg(base, inst.a, value);
-            ip = usize(i64(ip) + i64(bcI16(skip)));
+            ip = usize(i64(ip) + i64(jumpOffset(skip)));
           }
         }
       }
@@ -7158,7 +7169,7 @@ export struct Runtime {
           if (own >= 0 && !isDeleted(this.heap.slot(holder, u32(own)))) {
             const value = this.reg(base, inst.a);
             this.heap.setSlot(holder, u32(own), value);
-            ip = usize(i64(ip) + i64(bcI16(skip)));
+            ip = usize(i64(ip) + i64(jumpOffset(skip)));
           }
         }
       }
@@ -7733,7 +7744,7 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) < asInt32(right) : this.lessThan(left, right, false);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7750,7 +7761,7 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) <= asInt32(right) : this.lessThan(left, right, true);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7767,7 +7778,7 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) > asInt32(right) : this.greaterThan(left, right, false);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7784,7 +7795,7 @@ export struct Runtime {
             ip = ip.wrappingAdd(1);
             const holds = isInt32(left) && isInt32(right) ? asInt32(left) >= asInt32(right) : this.greaterThan(left, right, true);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7803,7 +7814,7 @@ export struct Runtime {
               const stepped = asInt32(counter) + 1;
               this.setReg(base, inst.a, int32Value(stepped));
               if (stepped < immediate) {
-                ip = usize(i64(ip) + i64(bcI16(word)));
+                ip = usize(i64(ip) + i64(jumpOffset(word)));
                 if (this.backEdge(frameIndex, ip)) {
                   thrown = this.takePending();
                   throwing = true;
@@ -7819,7 +7830,7 @@ export struct Runtime {
               const stepped = numericAdd(number, int32Value(1));
               this.setReg(base, inst.a, stepped);
               if (this.lessThan(stepped, int32Value(immediate), false)) {
-                ip = usize(i64(ip) + i64(bcI16(word)));
+                ip = usize(i64(ip) + i64(jumpOffset(word)));
                 if (this.backEdge(frameIndex, ip)) {
                   thrown = this.takePending();
                   throwing = true;
@@ -7837,7 +7848,7 @@ export struct Runtime {
               const stepped = asInt32(counter) + 1;
               this.setReg(base, inst.a, int32Value(stepped));
               if (stepped < asInt32(bound)) {
-                ip = usize(i64(ip) + i64(bcI16(word)));
+                ip = usize(i64(ip) + i64(jumpOffset(word)));
                 if (this.backEdge(frameIndex, ip)) {
                   thrown = this.takePending();
                   throwing = true;
@@ -7851,7 +7862,7 @@ export struct Runtime {
               const stepped = numericAdd(number, int32Value(1));
               this.setReg(base, inst.a, stepped);
               if (this.lessThan(stepped, bound, false) && !this.pendingThrow) {
-                ip = usize(i64(ip) + i64(bcI16(word)));
+                ip = usize(i64(ip) + i64(jumpOffset(word)));
                 if (this.backEdge(frameIndex, ip)) {
                   thrown = this.takePending();
                   throwing = true;
@@ -7879,7 +7890,7 @@ export struct Runtime {
                 const stepped = asInt32(counter) + 1;
                 this.setReg(base, inst.a, int32Value(stepped));
                 if (i64(stepped) < length) {
-                  ip = usize(i64(ip) + i64(bcI16(word)));
+                  ip = usize(i64(ip) + i64(jumpOffset(word)));
                   if (this.backEdge(frameIndex, ip)) {
                     thrown = this.takePending();
                     throwing = true;
@@ -7901,7 +7912,7 @@ export struct Runtime {
               } else {
                 const length = this.getProperty(object, cellValue(atomLength));
                 if (!this.pendingThrow && this.lessThan(stepped, length, false) && !this.pendingThrow) {
-                  ip = usize(i64(ip) + i64(bcI16(word)));
+                  ip = usize(i64(ip) + i64(jumpOffset(word)));
                   if (this.backEdge(frameIndex, ip)) {
                     thrown = this.takePending();
                     throwing = true;
@@ -7918,7 +7929,7 @@ export struct Runtime {
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) < immediate : this.lessThan(left, int32Value(immediate), false);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7935,7 +7946,7 @@ export struct Runtime {
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) <= immediate : this.lessThan(left, int32Value(immediate), true);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7952,7 +7963,7 @@ export struct Runtime {
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) > immediate : this.lessThan(int32Value(immediate), left, false);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7969,7 +7980,7 @@ export struct Runtime {
             const immediate = branchImmediateOf(inst, word);
             const holds = isInt32(left) ? asInt32(left) >= immediate : this.lessThan(int32Value(immediate), left, true);
             if (holds == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -7985,7 +7996,7 @@ export struct Runtime {
             const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
             ip = ip.wrappingAdd(1);
             if (this.strictEquals(left, right) == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -8002,7 +8013,7 @@ export struct Runtime {
             const immediate = branchImmediateOf(inst, word);
             const same = isInt32(left) ? asInt32(left) == immediate : isDouble(left) && asDouble(left) == f64(immediate);
             if (same == (inst.d != 0)) {
-              const offset = bcI16(word);
+              const offset = jumpOffset(word);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -8099,7 +8110,7 @@ export struct Runtime {
             }
           }
           jmp => {
-            const offset = bcI16(inst);
+            const offset = jumpOffset(inst);
             ip = usize(i64(ip) + i64(offset));
             if (offset < 0 && this.backEdge(frameIndex, ip)) {
               thrown = this.takePending();
@@ -8113,7 +8124,7 @@ export struct Runtime {
             const operandA = this.reg(base, inst.a);
             const taken = isBoolean(operandA) ? isTrue(operandA) : this.toBooleanValue(operandA);
             if (taken) {
-              const offset = bcI16(inst);
+              const offset = jumpOffset(inst);
               ip = usize(i64(ip) + i64(offset));
               if (offset < 0 && this.backEdge(frameIndex, ip)) {
                 thrown = this.takePending();
@@ -8126,16 +8137,16 @@ export struct Runtime {
           jmpIfFalse => {
             const operandA = this.reg(base, inst.a);
             const taken = isBoolean(operandA) ? !isTrue(operandA) : !this.toBooleanValue(operandA);
-            if (taken) ip = usize(i64(ip) + i64(bcI16(inst)));
+            if (taken) ip = usize(i64(ip) + i64(jumpOffset(inst)));
             continue;
           }
           jmpIfNotNullish => {
             const tested = this.reg(base, inst.a);
-            if (!(isNull(tested) || isUndefined(tested))) ip = usize(i64(ip) + i64(bcI16(inst)));
+            if (!(isNull(tested) || isUndefined(tested))) ip = usize(i64(ip) + i64(jumpOffset(inst)));
           }
           jmpIfNullish => {
             const tested = this.reg(base, inst.a);
-            if (isNull(tested) || isUndefined(tested)) ip = usize(i64(ip) + i64(bcI16(inst)));
+            if (isNull(tested) || isUndefined(tested)) ip = usize(i64(ip) + i64(jumpOffset(inst)));
           }
           sub => {
             const rawB = this.reg(base, inst.b);
@@ -8848,7 +8859,7 @@ export struct Runtime {
           enterTry => {
             // The catch block starts at the jump target; the thrown value
             // lands in register a.
-            const target = usize(i32(ip) + i32(bcI16(inst)));
+            const target = usize(i32(ip) + i32(jumpOffset(inst)));
             this.pushTry(target, inst.a);
           }
           leaveTry => {
@@ -8902,7 +8913,7 @@ export struct Runtime {
               env = this.heap.linkOf(env);
               hops = hops - 1;
             }
-            const value = this.heap.slot(env, u32(inst.c));
+            const value = this.heap.slot(env, u32(inst.c) | (u32(inst.d) << 8));
             this.setReg(base, inst.a, value);
             continue;
           }
@@ -8939,7 +8950,7 @@ export struct Runtime {
               hops = hops - 1;
             }
             const value = this.reg(base, inst.a);
-            this.heap.setSlot(env, u32(inst.c), value);
+            this.heap.setSlot(env, u32(inst.c) | (u32(inst.d) << 8), value);
             continue;
           }
           makeClosure => {
@@ -9304,12 +9315,12 @@ function isLeafCode(in code: FunctionCode): boolean {
     if (plain) {
       // nothing more to check
     } else if (op == Op.jmp || op == Op.jmpIfTrue || op == Op.jmpIfFalse) {
-      if (bcI16(inst) < 0) return false;
+      if (jumpOffset(inst) < 0) return false;
     } else if (op == Op.jmpIfNotLt || op == Op.jmpIfNotLe || op == Op.jmpIfNotGt || op == Op.jmpIfNotGe
       || op == Op.jmpIfNotLtImm || op == Op.jmpIfNotLeImm || op == Op.jmpIfNotGtImm || op == Op.jmpIfNotGeImm
       || op == Op.jmpIfNotStrictEq || op == Op.jmpIfNotStrictEqImm) {
       // The offset word follows.
-      if (at >= count || bcI16(code.code[at]) < 0) return false;
+      if (at >= count || jumpOffset(code.code[at]) < 0) return false;
       at = at + 1;
     } else {
       return false;

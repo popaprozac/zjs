@@ -317,6 +317,22 @@ export function instI16(op: Op, value: i32): Inst {
   return instAI16(op, 0, value);
 }
 
+// A jump's offset, in instructions from the one after it: 24 bits signed,
+// in b, c, and d, so a function may run to millions of instructions. A
+// jump never needs d for anything else.
+export const JUMP_OFFSET_LIMIT: i32 = 0x7F_FFFF;
+
+export function instAJump(op: Op, a: u8, offset: i32): Inst {
+  const bits: u32 = u32(i64(offset) & 0xFF_FFFF);
+  return Inst({ op: op, a: a, b: u8(bits & 0xFF), c: u8((bits >> 8) & 0xFF), d: u8(bits >> 16) });
+}
+
+export function jumpOffset(inst: Inst): i32 {
+  const bits: u32 = u32(inst.b) | (u32(inst.c) << 8) | (u32(inst.d) << 16);
+  if ((bits & 0x80_0000) != 0) return i32(i64(bits) - 0x100_0000);
+  return i32(bits);
+}
+
 export function bcU16(inst: Inst): u16 {
   return u16(inst.b) | (u16(inst.c) << 8);
 }
@@ -742,7 +758,7 @@ export function opsByCode(): Array<Op> {
 // operands, and what each does. Moves whenever any of them changes, so a
 // file from another engine is refused rather than misread; the test
 // below pins it beside the opcode count, which a new opcode changes.
-export const INSTRUCTION_SET_VERSION: u32 = 1;
+export const INSTRUCTION_SET_VERSION: u32 = 2;
 
 // One property access site's inline cache, kept per property name of a
 // function: the receiver's hidden class and where the property was
@@ -887,6 +903,15 @@ export function createFunctionCode(): FunctionCode {
   });
 }
 
+test "jump offsets take 24 bits" {
+  expect(jumpOffset(instAJump(Op.jmp, 0, -1))).toEqual(-1);
+  expect(jumpOffset(instAJump(Op.jmpIfFalse, 7, 40000))).toEqual(40000);
+  expect(jumpOffset(instAJump(Op.jmp, 0, -40000))).toEqual(-40000);
+  expect(jumpOffset(instAJump(Op.jmp, 0, JUMP_OFFSET_LIMIT))).toEqual(JUMP_OFFSET_LIMIT);
+  expect(jumpOffset(instAJump(Op.jmp, 0, -JUMP_OFFSET_LIMIT - 1))).toEqual(-JUMP_OFFSET_LIMIT - 1);
+  expect(instAJump(Op.jmpIfFalse, 7, 40000).a).toEqual(7);
+}
+
 test "u16 and i16 operands round-trip through b and c" {
   const wide: u16 = 0xBEEF;
   expect(bcU16(instAU16(Op.loadConst, 1, wide))).toEqual(wide);
@@ -899,7 +924,7 @@ test "the instruction set version moves with the opcodes" {
   // A new opcode lands here first: move INSTRUCTION_SET_VERSION with it.
   const ops = opsByCode();
   expect(ops.length).toEqual(199);
-  expect(INSTRUCTION_SET_VERSION).toEqual(1);
+  expect(INSTRUCTION_SET_VERSION).toEqual(2);
   let code: usize = 0;
   while (code < ops.length) {
     expect(opCode(ops[code])).toEqual(i32(code));

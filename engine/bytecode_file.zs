@@ -3,7 +3,7 @@
 // itself. What the file holds and why is docs/bytecode-files.md.
 import { Value, undefinedValue, deletedValue, int32Value, doubleValue, cellValue, asCell, isCell, isInt32, asInt32, isDouble, asDouble, isDeleted, isUndefined } from "./value.zs";
 import { Op, Inst, FunctionCode, EvalSite, EvalLevel, EvalBinding, createFunctionCode, opCode, opsByCode, bcU16, INSTRUCTION_SET_VERSION } from "./bytecode.zs";
-import { Runtime } from "./runtime.zs";
+import { Runtime, GLOBAL_SLOT_LIMIT } from "./runtime.zs";
 
 export const BYTECODE_FORMAT_VERSION: u32 = 1;
 
@@ -11,6 +11,8 @@ export const BYTECODE_FORMAT_VERSION: u32 = 1;
 export const LOAD_NOT_BYTECODE: i64 = -1;
 export const LOAD_OTHER_VERSION: i64 = -2;
 export const LOAD_DAMAGED: i64 = -3;
+// The runtime has no global slots left for the file's names.
+export const LOAD_TOO_MANY_GLOBALS: i64 = -4;
 
 const HEADER_BYTES: usize = 20;
 const NONE: u32 = 0xFFFF_FFFF;
@@ -684,6 +686,9 @@ function getProgram(inout runtime: Runtime, bytes: Slice<u8>, install: boolean):
     g = g + 1;
   }
 
+  // Checked before anything is installed: names the runtime already has
+  // take no slot, but counting them all is the bound the check can make.
+  if (!install && runtime.globals.length + usize(program.globalCount) > GLOBAL_SLOT_LIMIT) return LOAD_TOO_MANY_GLOBALS;
   program.functionCount = getCount(bytes, inout reader, 40);
   if (program.functionCount == 0) reader.failed = true;
   if (install) {

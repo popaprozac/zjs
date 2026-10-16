@@ -17,7 +17,7 @@ import { installCompiler } from "../../engine/compile.zs";
 import { parseProgram } from "../../engine/parser.zs";
 import { compileProgram } from "../../engine/compiler.zs";
 import { bcU16, bcI16 } from "../../engine/bytecode.zs";
-import { writeProgram, loadProgram, isBytecodeFile, LOAD_OTHER_VERSION } from "../../engine/bytecode_file.zs";
+import { writeProgram, loadProgram, isBytecodeFile, LOAD_OTHER_VERSION, LOAD_TOO_MANY_GLOBALS } from "../../engine/bytecode_file.zs";
 import { opName } from "./opnames.zs";
 import native from "./memstat.h";
 
@@ -155,6 +155,10 @@ function runBytecode(inout runtime: Runtime, bytes: Slice<u8>): RunResult {
     if (script == LOAD_OTHER_VERSION) {
       const otherVersion: String = "bytecode refused: built for another engine";
       return RunResult({ isThrow: true, value: runtime.syntaxError(in otherVersion) });
+    }
+    if (script == LOAD_TOO_MANY_GLOBALS) {
+      const tooMany: String = "bytecode refused: no global slots left for its names";
+      return RunResult({ isThrow: true, value: runtime.syntaxError(in tooMany) });
     }
     const damaged: String = "bytecode refused: damaged";
     return RunResult({ isThrow: true, value: runtime.syntaxError(in damaged) });
