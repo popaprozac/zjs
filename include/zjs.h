@@ -126,30 +126,6 @@ const char* zjs_version(void);
 int         zjs_had_error(ZjsContext* ctx);
 ZjsValue    zjs_get_error(ZjsContext* ctx);
 
-/* Interrupts. The engine calls `handler(opaque)` now and then while it
- * runs JavaScript: at loop back edges and calls (once every few thousand
- * of them), on each entry into JavaScript from a builtin, and during a
- * long regular-expression match. A nonzero return stops it: an
- * uncatchable termination unwinds every JavaScript frame, past every
- * catch and finally, and no JavaScript runs until control is back with
- * the embedder. The API call in progress (zjs_eval, zjs_call,
- * zjs_eval_module_source, zjs_drain_microtasks, zjs_run_pending_timers)
- * then returns with zjs_had_error set and zjs_is_interrupted 1; jobs the
- * termination left are dropped. The context stays usable, and the
- * handler is asked again as soon as JavaScript runs.
- *
- * The handler runs on the thread running the context's JavaScript, so
- * a request from another thread is a flag the handler reads, such as an
- * atomic the other thread sets. It must not call back into the engine.
- * NULL removes it.
- *
- * zjs_is_interrupted returns 1 when the last API call that ran
- * JavaScript ended this way, and 0 otherwise.
- */
-typedef int (*ZjsInterruptHandler)(void* opaque);
-void zjs_set_interrupt_handler(ZjsContext* ctx, ZjsInterruptHandler handler, void* opaque);
-int  zjs_is_interrupted(ZjsContext* ctx);
-
 /* Garbage collection.
  *
  * zjs_gc triggers a full stop-the-world mark-sweep. The engine runs

@@ -611,19 +611,6 @@ struct ZjsContext {
     // throw (`throwing = true; thrown = pending_throw_value`).
     pending_throw_active: bool;
     pending_throw_value:  ZjsValue;
-    // zjs_set_interrupt_handler (zjs.h): the embedder's callback and its
-    // argument, the polls left before it is asked again, and whether it
-    // has asked the engine to stop. A termination unwinds every frame,
-    // past every catch and finally, and lets no JavaScript run until
-    // control is back with the embedder; `interrupted` reports that the
-    // last API call ended that way, and `termination_value` is the error
-    // it ended with.
-    interrupt_handler:   void*;
-    interrupt_opaque:    void*;
-    interrupt_countdown: u32;
-    terminating:         bool;
-    interrupted:         bool;
-    termination_value:   ZjsValue;
     // #402a — generator return-completion channel. Set by
     // host_generator_return right before resuming a SUSPENDED_YIELD
     // frame; consumed (cleared) by the Op::JmpIfNotGenReturn that the
@@ -2701,7 +2688,6 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     // ctx_maybe_gc poll on an error path) must not free it. Often a
     // freshly allocated Error object with no other reference.
     gc_mark_value(ctx.pending_throw_value);
-    gc_mark_value(ctx.termination_value);
     // SuperCall→construct rebind side-channel (see last_super_this).
     gc_mark_value(ctx.last_super_this);
     // Each active call frame (current recursive model)
@@ -3167,79 +3153,6 @@ fn gc_run_major(ctx: ZjsContext*) -> void {
 // Compatibility shim — pre-experiment callers (test262 harness, the
 // embed ABI's zjs_gc) want "do a full collection now".
 fn gc_run(ctx: ZjsContext*) -> void { gc_run_major(ctx); }
-
-// --- Interrupts (zjs_set_interrupt_handler) -------------------------
-
-// The embedder's handler is asked once every this many back edges and
-// frame entries.
-def INTERRUPT_POLL_INTERVAL: u32 = 4096;
-
-// A back edge or a frame entry: true when JavaScript is to stop (the
-// termination is then pending).
-fn ctx_interrupt_tick(ctx: ZjsContext*) -> bool {
-    ctx.interrupt_countdown = ctx.interrupt_countdown - 1;
-    if ctx.interrupt_countdown != 0 { return false; }
-    return ctx_poll_interrupt(ctx);
-}
-
-// Ask the handler, and stop if it says so. Once stopping, every poll
-// stops again, at once: a builtin that took the termination for an
-// ordinary error (a promise executor's, say) cannot keep JavaScript
-// running past it.
-fn ctx_poll_interrupt(ctx: ZjsContext*) -> bool {
-    ctx.interrupt_countdown = INTERRUPT_POLL_INTERVAL;
-    if !ctx.terminating {
-        if ctx.interrupt_handler == NULL { return false; }
-        let stop: int = 0;
-        raw { stop = ((int (*)(void*))ctx->interrupt_handler)(ctx->interrupt_opaque); }
-        if stop == 0 { return false; }
-    }
-    ctx_terminate(ctx);
-    return true;
-}
-
-// Raise the termination: an Error that no catch or finally sees.
-fn ctx_terminate(ctx: ZjsContext*) -> void {
-    if !ctx.terminating {
-        ctx.terminating = true;
-        ctx.termination_value = build_typed_error(ctx, (char*)"Error", 5, (char*)"interrupted", 11);
-    }
-    ctx.interrupt_countdown = 1;
-    ctx.pending_throw_active = true;
-    ctx.pending_throw_value = ctx.termination_value;
-}
-
-// An API call that ran JavaScript is returning to the embedder: when
-// no JavaScript frame is left, a termination is over, the error it
-// leaves is the call's, and the jobs it cut short are dropped. True
-// when there was one. A call nested inside JavaScript (a host function
-// that evaluates) leaves the termination to the outermost.
-fn ctx_end_termination(ctx: ZjsContext*) -> bool {
-    if ctx.frame_count != 0 { return false; }
-    ctx.interrupted = ctx.terminating;
-    if !ctx.terminating { return false; }
-    ctx.terminating = false;
-    ctx.interrupt_countdown = INTERRUPT_POLL_INTERVAL;
-    ctx.pending_throw_active = false;
-    ctx.pending_throw_value = zjs_undefined();
-    ctx.microtask_count = 0;
-    ctx.had_error = true;
-    ctx.last_error = ctx.termination_value;
-    ctx.termination_value = zjs_undefined();
-    return true;
-}
-
-// libregexp's timeout hook (src/platform/qjs_regex_shim.c), with the
-// context as its opaque: 1 stops the match.
-fn zjs_regex_should_stop(data: void*) -> int {
-    if data == NULL { return 0; }
-    let ctx: ZjsContext* = NULL;
-    raw { ctx = (ZjsContext*)data; }
-    if ctx.terminating { return 1; }
-    if ctx.interrupt_handler == NULL { return 0; }
-    if ctx_poll_interrupt(ctx) { return 1; }
-    return 0;
-}
 
 fn ctx_maybe_gc(ctx: ZjsContext*) -> void {
     // Generational minor path is OFF in tree (2026-05-18). The
@@ -10210,7 +10123,7 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         while scan <= hay_n {
             let rc: int = -1;
             raw {
-                rc = lre_run(ctx, preg, hay_d, hay_n, scan, pmatch_buf, total_groups);
+                rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, total_groups);
             }
             if rc != 0 { break; }
             // lre_run returns absolute byte offsets into hay_d.
@@ -10653,7 +10566,7 @@ fn host_string_match(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     while scan <= hay_n {
         let rc: int = -1;
         raw {
-            rc = lre_run(ctx, preg, hay_d, hay_n, scan, pmatch_buf, 1);
+            rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, 1);
         }
         if rc != 0 { break; }
         let mstart = (u32)pmatch_buf[0].rm_so;
@@ -10705,7 +10618,7 @@ fn host_string_search(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     let hay_n = s.length;
     let pmatch_buf: ZRegMatch[1];
     let rc: int = -1;
-    raw { rc = lre_run(ctx, preg, hay_d, hay_n, 0, pmatch_buf, 1); }
+    raw { rc = lre_run(preg, hay_d, hay_n, 0, pmatch_buf, 1); }
     if rc != 0 { return zjs_int32(-1); }
     return zjs_int32((i32)pmatch_buf[0].rm_so);
 }
@@ -10774,7 +10687,7 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         while scan <= hay_n && arr.length < limit_u32 {
             let rc: int = -1;
             raw {
-                rc = lre_run(ctx, preg, hay_d, hay_n, scan, pmatch_buf, 1);
+                rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, 1);
             }
             if rc != 0 { break; }
             let mstart = (u32)pmatch_buf[0].rm_so;
@@ -13825,7 +13738,7 @@ fn regexp_free_void(p: void*) -> void {
 // `total_groups` entries. Returns 0 on match, non-zero (typically 1)
 // on no-match — matches the regexec-style convention the rest of
 // context.zc was written against.
-fn lre_run(ctx: ZjsContext*, preg: void*, hay: char*, hay_len: u32, scan_off: u32,
+fn lre_run(preg: void*, hay: char*, hay_len: u32, scan_off: u32,
            pmatch: ZRegMatch*, total_groups: u32) -> int {
     let rc: int = -1;
     raw {
@@ -13847,7 +13760,7 @@ fn lre_run(ctx: ZjsContext*, preg: void*, hay: char*, hay_len: u32, scan_off: u3
         }
         int ret = lre_exec(caps, (const uint8_t*)preg,
                            (const uint8_t*)hay, (int)scan_off, (int)hay_len,
-                           0 /* cbuf_type = 8-bit */, (void*)ctx);
+                           0 /* cbuf_type = 8-bit */, NULL);
         if (ret == 1) {
             /* Match — fill pmatch with byte offsets. */
             for (int gi = 0; gi < n_caps; gi++) {
@@ -13968,7 +13881,7 @@ fn host_regexp_exec(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let pmatch_buf = alloc_n<ZRegMatch>((usize)total_groups);
     let rc: int = -1;
     raw {
-        rc = lre_run(ctx, preg, sdata, hay_n, start_idx, pmatch_buf, total_groups);
+        rc = lre_run(preg, sdata, hay_n, start_idx, pmatch_buf, total_groups);
     }
     if rc != 0 {
         dealloc(pmatch_buf);
@@ -14054,7 +13967,7 @@ fn host_regexp_test(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let pmatch: ZRegMatch[1];
     let rc: int = -1;
     raw {
-        rc = lre_run(ctx, preg, sdata, hay_n, start_idx, pmatch, 1);
+        rc = lre_run(preg, sdata, hay_n, start_idx, pmatch, 1);
     }
     if rc != 0 {
         if stateful { r.last_index = 0; }
@@ -14212,14 +14125,12 @@ fn host_promise_thenable_job(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
         let thrown = ctx.pending_throw_value;
         ctx.pending_throw_active = saved_pt;
         ctx.pending_throw_value = saved_pv;
-        if ctx.terminating { ctx.pending_throw_active = true; ctx.pending_throw_value = ctx.termination_value; }
         let rb: ZjsValue[1]; rb[0] = thrown;
         let rp: ZjsValue* = NULL; raw { rp = &rb[0]; }
         raw { (void)zjs_call_value_with_this(ctx, rej_fn, zjs_undefined(), rp, 1); }
     } else {
         ctx.pending_throw_active = saved_pt;
         ctx.pending_throw_value = saved_pv;
-        if ctx.terminating { ctx.pending_throw_active = true; ctx.pending_throw_value = ctx.termination_value; }
     }
     return zjs_undefined();
 }
@@ -14291,7 +14202,7 @@ def MICROTASK_DRAIN_LIMIT: u32 = 1000000;
 
 fn drain_microtasks(ctx: ZjsContext*) -> void {
     let safety: u32 = 0;
-    while ctx.microtask_count > 0 && safety < MICROTASK_DRAIN_LIMIT && !ctx.terminating {
+    while ctx.microtask_count > 0 && safety < MICROTASK_DRAIN_LIMIT {
         // Pop the first microtask: copy fields into locals, then shift.
         // Could be O(n^2) for many microtasks; acceptable for now.
         let handler = ctx.microtask_queue[0];
@@ -14347,25 +14258,16 @@ fn drain_microtasks(ctx: ZjsContext*) -> void {
             ctx.pending_throw_value = zjs_undefined();
             let r: ZjsValue = zjs_undefined();
             raw { r = zjs_call_value_with_this(ctx, handler, zjs_undefined(), argp, 1); }
-            if ctx.terminating {
-                // The termination stays raised for whoever drains.
-                ctx_pop_temp_root(ctx);
-                ctx_pop_temp_root(ctx);
-                ctx_pop_temp_root(ctx);
-                return;
-            }
             if ctx.pending_throw_active {
                 let thrown = ctx.pending_throw_value;
                 ctx.pending_throw_active = saved_pt;
                 ctx.pending_throw_value = saved_pv;
-                if ctx.terminating { ctx.pending_throw_active = true; ctx.pending_throw_value = ctx.termination_value; }
                 if zjs_is_promise(rp) != 0 {
                     promise_settle(ctx, rp, thrown, false);
                 }
             } else {
                 ctx.pending_throw_active = saved_pt;
                 ctx.pending_throw_value = saved_pv;
-                if ctx.terminating { ctx.pending_throw_active = true; ctx.pending_throw_value = ctx.termination_value; }
                 if zjs_is_promise(rp) != 0 {
                     promise_resolve_with(ctx, rp, r);
                 }
@@ -20137,10 +20039,6 @@ fn zjs_run_pending_timers(ctx: ZjsContext*) -> void {
             }
             let r: ZjsValue = zjs_undefined();
             raw { r = zjs_call_value_with_this(ctx, handler, zjs_undefined(), argp, argc); }
-            if ctx.terminating {
-                if alloc_local { dealloc(argp); }
-                break;
-            }
             // Surface uncaught throws via had_error so the embedder
             // can decide to bail; clear pending_throw so the next
             // timer still runs.
@@ -20150,12 +20048,10 @@ fn zjs_run_pending_timers(ctx: ZjsContext*) -> void {
             }
             if alloc_local { dealloc(argp); }
             drain_microtasks(ctx);
-            if ctx.terminating { break; }
         }
         i = i + 1;
     }
     timer_compact(ctx);
-    let _ = ctx_end_termination(ctx);
 }
 
 // Public ABI: drain pending microtasks now. Embedders call this after
@@ -20165,7 +20061,6 @@ fn zjs_run_pending_timers(ctx: ZjsContext*) -> void {
 fn zjs_drain_microtasks(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
     drain_microtasks(ctx);
-    let _ = ctx_end_termination(ctx);
 }
 
 // =====================================================================
@@ -21918,7 +21813,6 @@ fn host_promise_try(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let thrown = ctx.pending_throw_value;
         ctx.pending_throw_active = saved_pt;
         ctx.pending_throw_value = saved_pv;
-        if ctx.terminating { ctx.pending_throw_active = true; ctx.pending_throw_value = ctx.termination_value; }
         promise_settle(ctx, pv, thrown, false);
         return pv;
     }
@@ -22499,7 +22393,6 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let thrown = ctx.pending_throw_value;
         ctx.pending_throw_active = saved_pt;
         ctx.pending_throw_value = saved_pv;
-        if ctx.terminating { ctx.pending_throw_active = true; ctx.pending_throw_value = ctx.termination_value; }
         promise_settle(ctx, pv, thrown, false);
     }
     return pv;
