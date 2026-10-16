@@ -284,6 +284,9 @@ export struct Compiler {
   parameterLocals: usize;
   // The scopes each direct eval call in the function sees.
   evalSites: Array<EvalSite>;
+  // Script or eval code: the global slots its declarations make, defined
+  // when the code starts (its declareGlobals instruction).
+  declaredGlobals: Array<u32>;
 
   // --- Emission ---
 
@@ -4820,7 +4823,7 @@ export struct Compiler {
           const varLocal = this.findVarLocal(in parser, n.nameStart, n.nameLength);
           if (varLocal >= 0) this.storeLocal(usize(varLocal), value);
         } else {
-          const slot = runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+          const slot = declareGlobal(inout runtime, inout this.declaredGlobals, globalNameBytes(in parser, n.nameStart, n.nameLength));
           this.emit(instAU16(Op.defineGlobal, value, slot));
         }
         this.resetTemps();
@@ -4842,7 +4845,7 @@ export struct Compiler {
           this.locals[usize(local)].inlineFunction = node;
         }
       } else {
-        const slot = runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+        const slot = declareGlobal(inout runtime, inout this.declaredGlobals, globalNameBytes(in parser, n.nameStart, n.nameLength));
         this.emit(instAU16(Op.defineGlobal, r, slot));
       }
       this.resetTemps();
@@ -4859,7 +4862,7 @@ export struct Compiler {
         this.hadError = true;
         return;
       } else {
-        const slot = runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+        const slot = declareGlobal(inout runtime, inout this.declaredGlobals, globalNameBytes(in parser, n.nameStart, n.nameLength));
         this.emit(instAU16(Op.defineGlobal, r, slot));
       }
       this.resetTemps();
@@ -5614,7 +5617,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
-    varSlot: -1, evalVars: false, parameterLocals: 0, evalSites: Array<EvalSite>(),
+    varSlot: -1, evalVars: false, parameterLocals: 0, evalSites: Array<EvalSite>(), declaredGlobals: Array<u32>(),
   });
   if (!compiler.strict && n.left != NO_NODE && parser.bodyHasUseStrictDirective(n.left)) compiler.strict = true;
   compiler.isArrow = n.kind == NodeKind.arrowFunc;
@@ -6470,24 +6473,37 @@ function bodyUsesThis(in parser: Parser, node: u32): boolean {
   return false;
 }
 
+// A global the code declares: its slot, found or added, listed once for
+// the code's declareGlobals instruction to define.
+function declareGlobal(inout runtime: Runtime, inout declared: Array<u32>, bytes: Array<u8>): u16 {
+  const slot = runtime.globalSlotBytes(move bytes);
+  let i: usize = 0;
+  while (i < declared.length) {
+    if (declared[i] == u32(slot)) return slot;
+    i = i + 1;
+  }
+  declared.push(u32(slot));
+  return slot;
+}
+
 // Script-level hoisting: var and function declarations are global bindings
 // that exist before the first statement runs.
 // `enclosing` carries the lexical names of the scopes on the way down:
 // a block's function declaration gets a global (sloppy code, Annex B)
 // only when no enclosing scope but its own declares its name lexically.
-function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32, nested: boolean, inout enclosing: Array<NameRef>): void {
+function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, inout declared: Array<u32>, node: u32, nested: boolean, inout enclosing: Array<NameRef>): void {
   if (node == NO_NODE) return;
   const n = parser.ast.node(node);
   const k = n.kind;
   if (k == NodeKind.classDecl) {
-    if (!nested) runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+    if (!nested) declareGlobal(inout runtime, inout declared, globalNameBytes(in parser, n.nameStart, n.nameLength));
     return;
   }
   if (k == NodeKind.functionDecl) {
     if (!nested) {
-      runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+      declareGlobal(inout runtime, inout declared, globalNameBytes(in parser, n.nameStart, n.nameLength));
     } else if (!parser.strictMode && !enclosingDeclares(in parser, in enclosing, n.nameStart, n.nameLength)) {
-      runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+      declareGlobal(inout runtime, inout declared, globalNameBytes(in parser, n.nameStart, n.nameLength));
     }
     return;
   }
@@ -6519,18 +6535,18 @@ function hoistProgramDecls(in parser: Parser, inout runtime: Runtime, node: u32,
     let j: u32 = 0;
     while (j < n.childrenCount) {
       const decl = parser.ast.node(parser.ast.child(node, j));
-      if (decl.nameLength > 0) runtime.defineGlobalSlotBytes(globalNameBytes(in parser, decl.nameStart, decl.nameLength));
-      if (decl.nameLength == 0) hoistPatternGlobals(in parser, inout runtime, decl.third);
+      if (decl.nameLength > 0) declareGlobal(inout runtime, inout declared, globalNameBytes(in parser, decl.nameStart, decl.nameLength));
+      if (decl.nameLength == 0) hoistPatternGlobals(in parser, inout runtime, inout declared, decl.third);
       j = j + 1;
     }
     return;
   }
-  if (n.left != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.left, childNested, inout enclosing);
-  if (n.right != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.right, childNested, inout enclosing);
-  if (n.third != NO_NODE) hoistProgramDecls(in parser, inout runtime, n.third, childNested, inout enclosing);
+  if (n.left != NO_NODE) hoistProgramDecls(in parser, inout runtime, inout declared, n.left, childNested, inout enclosing);
+  if (n.right != NO_NODE) hoistProgramDecls(in parser, inout runtime, inout declared, n.right, childNested, inout enclosing);
+  if (n.third != NO_NODE) hoistProgramDecls(in parser, inout runtime, inout declared, n.third, childNested, inout enclosing);
   let i: u32 = 0;
   while (i < n.childrenCount) {
-    hoistProgramDecls(in parser, inout runtime, parser.ast.child(node, i), childNested, inout enclosing);
+    hoistProgramDecls(in parser, inout runtime, inout declared, parser.ast.child(node, i), childNested, inout enclosing);
     i = i + 1;
   }
   while (enclosing.length > before) {
@@ -6550,21 +6566,21 @@ function enclosingDeclares(in parser: Parser, in enclosing: Array<NameRef>, name
 }
 
 // Every identifier a script-level var pattern declares is a global.
-function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, pattern: u32): void {
+function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, inout declared: Array<u32>, pattern: u32): void {
   if (pattern == NO_NODE) return;
   const n = parser.ast.node(pattern);
   if (n.kind == NodeKind.identExpr) {
-    if (n.nameLength > 0) runtime.defineGlobalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+    if (n.nameLength > 0) declareGlobal(inout runtime, inout declared, globalNameBytes(in parser, n.nameStart, n.nameLength));
     return;
   }
   if (n.kind == NodeKind.patternEntry) {
-    hoistPatternGlobals(in parser, inout runtime, n.left);
+    hoistPatternGlobals(in parser, inout runtime, inout declared, n.left);
     return;
   }
   if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
     let i: u32 = 0;
     while (i < n.childrenCount) {
-      hoistPatternGlobals(in parser, inout runtime, parser.ast.child(pattern, i));
+      hoistPatternGlobals(in parser, inout runtime, inout declared, parser.ast.child(pattern, i));
       i = i + 1;
     }
   }
@@ -6582,16 +6598,17 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: false, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
-    varSlot: -1, evalVars: false, parameterLocals: 0, evalSites: Array<EvalSite>(),
+    varSlot: -1, evalVars: false, parameterLocals: 0, evalSites: Array<EvalSite>(), declaredGlobals: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
+  compiler.emit(instA(Op.declareGlobals, 0));
   compiler.emit(instA(Op.loadUndefined, resultReg));
   compiler.fixedRegs = resultReg + 1;
   compiler.lastExprReg = i32(resultReg);
 
   const program = parser.ast.node(root);
   let enclosingLexicals = Array<NameRef>();
-  hoistProgramDecls(in parser, inout runtime, root, false, inout enclosingLexicals);
+  hoistProgramDecls(in parser, inout runtime, inout compiler.declaredGlobals, root, false, inout enclosingLexicals);
   // Top-level let / const that functions refer to live in an environment;
   // var and function declarations are globals and need none.
   compiler.scanCaptures(in parser, root);
@@ -6628,6 +6645,8 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   compiled.propertyNames = move propertyNames;
   const evalSites = replace(inout compiler.evalSites, Array<EvalSite>());
   compiled.evalSites = move evalSites;
+  const declaredGlobals = replace(inout compiler.declaredGlobals, Array<u32>());
+  compiled.declaredGlobals = move declaredGlobals;
   return i32(runtime.addFunction(move compiled));
 }
 
@@ -6678,9 +6697,10 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
     hadError: false, strict: strict, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
     pendingNameStart: 0, pendingNameLength: 0, pendingNamePrefix: 0, targetReg: -1, valueUnused: false, thisReg: -1, isArrow: true, derivedCtor: false, thisEnvSlot: -1, fieldSource: NO_NODE, fieldCount: 0, isAsyncBody: false, isAsyncGeneratorBody: false, propertyNames: Array<u32>(), siteOwned: Array<boolean>(),
-    varSlot: -1, evalVars: evalVars, parameterLocals: 0, evalSites: Array<EvalSite>(),
+    varSlot: -1, evalVars: evalVars, parameterLocals: 0, evalSites: Array<EvalSite>(), declaredGlobals: Array<u32>(),
   });
   const resultReg = compiler.allocReg();
+  if (!compiler.isFunction) compiler.emit(instA(Op.declareGlobals, 0));
   compiler.emit(instA(Op.loadUndefined, resultReg));
   compiler.lastExprReg = i32(resultReg);
 
@@ -6697,7 +6717,7 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
   if (bodyUsesThis(in parser, root)) compiler.thisReg = i32(compiler.allocReg());
   if (!compiler.isFunction) {
     let enclosingLexicals = Array<NameRef>();
-    hoistProgramDecls(in parser, inout runtime, root, false, inout enclosingLexicals);
+    hoistProgramDecls(in parser, inout runtime, inout compiler.declaredGlobals, root, false, inout enclosingLexicals);
   }
   compiler.scanCaptures(in parser, root);
   compiler.fixedRegs = compiler.nextReg;
@@ -6736,5 +6756,7 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
   compiled.propertyNames = move propertyNames;
   const evalSites = replace(inout compiler.evalSites, Array<EvalSite>());
   compiled.evalSites = move evalSites;
+  const declaredGlobals = replace(inout compiler.declaredGlobals, Array<u32>());
+  compiled.declaredGlobals = move declaredGlobals;
   return i32(runtime.addFunction(move compiled));
 }

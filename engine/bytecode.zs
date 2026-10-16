@@ -267,6 +267,10 @@ export enum Op {
   loadElemProp,
   // a = b[k], k a non-negative integer literal in c (low byte) and d.
   loadElemImm,
+  // The globals a script or eval code declares (its function's
+  // declaredGlobals) become defined: the start of the code, where
+  // GlobalDeclarationInstantiation makes them, not its compile.
+  declareGlobals,
 }
 
 export struct Inst {
@@ -524,6 +528,7 @@ export function opCode(op: Op): i32 {
     addToInt32 => 195;
     loadElemProp => 196;
     loadElemImm => 197;
+    declareGlobals => 198;
   };
 }
 
@@ -656,6 +661,9 @@ export struct FunctionCode {
   leaf: boolean;
   // Its direct eval calls, by the directEval instruction's index.
   evalSites: Array<EvalSite>;
+  // Script or eval code's hoisted var, function, and class names: the
+  // global slots its declareGlobals instruction defines.
+  declaredGlobals: Array<u32>;
 }
 
 export function createFunctionCode(): FunctionCode {
@@ -663,7 +671,7 @@ export function createFunctionCode(): FunctionCode {
     code: Array<Inst>(), codeStart: 0, codeLength: 0, constants: Array<Value>(), propertyNames: Array<u32>(), caches: Array<PropertyCache>(), nameAtom: 0, registerCount: 0, fixedRegs: 0,
     paramCount: 0, thisReg: -1, expectedArgCount: 0,
     isArrow: false, isAsync: false, isGenerator: false, strict: false,
-    isClassConstructor: false, isDerived: false, isMethod: false, leaf: false, evalSites: Array<EvalSite>(),
+    isClassConstructor: false, isDerived: false, isMethod: false, leaf: false, evalSites: Array<EvalSite>(), declaredGlobals: Array<u32>(),
   });
 }
 

@@ -6481,6 +6481,15 @@ export struct Runtime {
     let result = undefinedValue();
     const op = inst.op;
     match (op) {
+      declareGlobals => {
+        const count = this.functions[usize(fi)].declaredGlobals.length;
+        let i: usize = 0;
+        while (i < count) {
+          const slot = usize(this.functions[usize(fi)].declaredGlobals[i]);
+          this.globals[slot].defined = true;
+          i = i + 1;
+        }
+      }
       defineGlobal => {
         const slot = usize(bcU16(inst));
         this.globals[slot].value = this.reg(base, inst.a);

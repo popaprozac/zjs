@@ -202,5 +202,6 @@ export function opName(op: Op): String {
     addToInt32 => "addToInt32";
     loadElemProp => "loadElemProp";
     loadElemImm => "loadElemImm";
+    declareGlobals => "declareGlobals";
   };
 }
