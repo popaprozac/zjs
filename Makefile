@@ -75,7 +75,6 @@ LIBA_OBJ     := $(BUILD_DIR)/libzjs.o
 CLI          := $(BUILD_DIR)/zjs
 SMOKE        := $(BUILD_DIR)/smoke
 SMOKE_STATIC := $(BUILD_DIR)/smoke_static
-INTERRUPT_TEST := $(BUILD_DIR)/interrupt_test
 LEXER_TEST   := $(BUILD_DIR)/lexer_test
 PARSER_TEST  := $(BUILD_DIR)/parser_test
 INTERP_TEST  := $(BUILD_DIR)/interp_test
@@ -139,7 +138,7 @@ T262_RUNNER_SRC := tests/test262_runner.c
 
 .PHONY: all lib lib-static lib-pgo cli cli-jit cli-pgo smoke smoke-static lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
 
-all: lib lib-static cli smoke smoke-static interrupt-test lexer-test parser-test interp-test
+all: lib lib-static cli smoke smoke-static lexer-test parser-test interp-test
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -455,12 +454,6 @@ smoke-static: $(SMOKE_STATIC)
 $(SMOKE_STATIC): $(SMOKE_SRC) include/zjs.h $(LIBA) | $(BUILD_DIR)
 	$(CLANG) -O0 -g -Wall -Iinclude $(SMOKE_SRC) $(LIBA) -lm $(PLATFORM_LDFLAGS) -o $@
 
-# The interrupt handler through the public ABI (the same test runs
-# against the Z engine's libzjs.a in z/build.sh).
-interrupt-test: $(INTERRUPT_TEST)
-$(INTERRUPT_TEST): tests/interrupt_test.c include/zjs.h $(LIBA) | $(BUILD_DIR)
-	$(CLANG) -O1 -g -Wall -Wextra -Werror -Iinclude tests/interrupt_test.c $(LIBA) -lm -lpthread $(PLATFORM_LDFLAGS) -o $@
-
 lexer-test: $(LEXER_TEST)
 $(LEXER_TEST): $(LEXER_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(LEXER_TEST_SRC) $(ZC_LINK) -o $@
@@ -542,8 +535,6 @@ test: all
 	@$(SMOKE)
 	@echo '--- C smoke test (static .a) ---'
 	@$(SMOKE_STATIC)
-	@echo '--- Interrupt handler test ---'
-	@$(INTERRUPT_TEST)
 	@echo '--- Lexer test ---'
 	@$(LEXER_TEST)
 	@echo '--- Parser test ---'

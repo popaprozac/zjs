@@ -3023,23 +3023,6 @@ fn interpret_inner_full(ctx: ZjsContext*,
 
     // ---------- Outer loop ----------
     while ctx.frame_count > entry_frame {
-        // A termination an instruction absorbed (an async function's
-        // start makes it a rejection) still ends the run; and a
-        // termination unwinds every frame, past every catch and finally,
-        // to whoever entered the engine (the deferred pop above). It is
-        // raised as well as returned, so a caller that would make the
-        // result a rejection stops too.
-        if ctx.terminating {
-            if !throwing {
-                if !ctx.pending_throw_active { ctx_terminate(ctx); }
-                thrown = ctx.pending_throw_value;
-                throwing = true;
-            }
-            ctx.pending_throw_active = true;
-            ctx.pending_throw_value = thrown;
-            if gen != NULL { gen.state = GEN_COMPLETED; }
-            return InterpretResult{is_throw: true, value: thrown};
-        }
         // Throw unwinding runs BEFORE we re-enter the inner loop for a
         // frame. If the current top frame has a matching try-handler we
         // jump to its catch site; otherwise we pop the top frame and
@@ -3150,14 +3133,6 @@ fn interpret_inner_full(ctx: ZjsContext*,
         raw { regs = &ctx->reg_stack[regs_base]; }
         let ip: usize = ctx.frames[cur_idx].ip;
 
-        // A frame's first instruction is a poll of the interrupt
-        // handler: calls, and every entry from a builtin, count toward it.
-        if ip == 0 && ctx_interrupt_tick(ctx) {
-            thrown = consume_pending_throw(ctx);
-            throwing = true;
-            continue;
-        }
-
         // On first entry to a frame, seed regs[f.this_reg] from the
         // host_this set by the call site. Replaces the Op::LoadThis the
         // compiler used to emit at function entry — saves one dispatch
@@ -3183,9 +3158,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // result to the caller / final_result). A deopt discards the run
         // (side-effect-free subset) and falls through to the interpreter,
         // marking the function so we don't keep retrying.
-        // JIT code polls nothing inside its loops, so it waits while an
-        // interrupt handler is set.
-        if ip == 0 && jit_build_enabled() != 0 && jit_runtime_enabled() != 0 && ctx.interrupt_handler == NULL {
+        if ip == 0 && jit_build_enabled() != 0 && jit_runtime_enabled() != 0 {
             let jst = f.jit_state;
             if jst == 0 {
                 f.jit_calls = f.jit_calls + 1;
@@ -4181,7 +4154,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -4215,7 +4188,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -4249,7 +4222,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -4283,7 +4256,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -4312,7 +4285,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -4341,7 +4314,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -4370,7 +4343,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -4399,7 +4372,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if cond_true {
                 let off = inst_bc_i16(code[ip + 1]);
-                if off < 0 { ctx_maybe_gc(ctx); if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; } }
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
@@ -5420,7 +5393,6 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // to keep loops responsive to GC pressure.
             if off < 0 {
                 ctx_maybe_gc(ctx);
-                if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; }
                 // OSR-entry (J12a; folds out of the default/iOS build). The
                 // back-edge target is the loop head (ip + 1 after the bottom
                 // increment). Compile just the loop region once it's hot, then
@@ -5429,7 +5401,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // or whose JIT region deopted) is the steady state for any loop
                 // outside the subset — check it first so those loops skip the
                 // per-back-edge work entirely (no runtime-enabled call).
-                if f.jit_osr_state != 2 && jit_build_enabled() != 0 && jit_runtime_enabled() != 0 && ctx.interrupt_handler == NULL {
+                if f.jit_osr_state != 2 && jit_build_enabled() != 0 && jit_runtime_enabled() != 0 {
                     let header: u32 = (u32)(ip + 1);
                     // A header that already deopted (skip_hdr) will never compile;
                     // short-circuit it so a re-armed function doesn't pay the
@@ -5506,7 +5478,6 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
                     ctx_maybe_gc(ctx);
-                    if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; }
                 }
             }
         } else if op == Op::JmpIfFalse {
@@ -5515,7 +5486,6 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
                     ctx_maybe_gc(ctx);
-                    if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; }
                 }
             }
         } else if op == Op::JmpIfNotNullish {
@@ -5526,7 +5496,6 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
                     ctx_maybe_gc(ctx);
-                    if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; }
                 }
             }
         } else if op == Op::JmpIfNullish {
@@ -5537,7 +5506,6 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
                     ctx_maybe_gc(ctx);
-                    if ctx_interrupt_tick(ctx) { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; break; }
                 }
             }
         } else if op == Op::MethodInvoke {
@@ -8563,10 +8531,6 @@ fn raise_symbol_to_number(ctx: ZjsContext*) -> bool {
 // loop. ctx.pending_throw_active should be checked separately.
 fn consume_pending_throw(ctx: ZjsContext*) -> ZjsValue {
     let v = ctx.pending_throw_value;
-    // A termination stays raised: whatever takes it for an ordinary
-    // error leaves it pending for the next check, so no JavaScript runs
-    // past it.
-    if ctx.terminating { return v; }
     ctx.pending_throw_active = false;
     ctx.pending_throw_value  = zjs_undefined();
     return v;
