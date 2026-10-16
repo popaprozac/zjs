@@ -462,6 +462,15 @@ kernels within 1.5%, test262 unchanged
 (`bench/speed/results/2026-10-16-json-stringify-plans.json`). What is
 left of stringify is the per-byte Array push, which clang will not
 inline at its many call sites while the growth is inside it.
+Tried (2026-10-16), in the compiler: every generated Array's growth
+moved into a cold out-of-line function, the room check left inline, and
+`push` always inlined. json -3 to -5% over eight placements, but
+properties +3 to +4% and strings +3 to +4% on every placement, helpers
++1 to +2.5%. Passing the array's address to the cold function had kept
+local arrays in memory on the fast path (strings +6%); passing its
+fields and taking the new storage back in registers fixed that, and
+leaving `push` to clang did not help. Dropped: what the split moves is
+clang's inlining elsewhere, not the cost of a push.
 The engine retires about six instructions a cycle on json and on calls,
 so fewer instructions buy little now unless they shorten a chain of
 dependent loads.
