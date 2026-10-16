@@ -1238,12 +1238,18 @@ export struct Heap {
     return result;
   }
 
-  // Whether `child` is the class `parent` reaches by adding `atom`.
   // The slot the property a class adds lives in.
   function classSlot(classId: u32): u32 {
     return this.classes[usize(classId)].transitionSlot;
   }
 
+  // The name of the property a class adds. A class is never freed, and
+  // the collector marks the names classes carry, so the atom lives too.
+  function transitionNameOf(classId: u32): u32 {
+    return this.classes[usize(classId)].transitionName;
+  }
+
+  // Whether `child` is the class `parent` reaches by adding `atom`.
   function isTransitionOf(child: u32, parent: u32, atom: u32): boolean {
     return this.classes[usize(child)].parent == parent && this.classes[usize(child)].transitionName == atom;
   }

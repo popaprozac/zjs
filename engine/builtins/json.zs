@@ -28,9 +28,16 @@ struct JsonParser {
   shapeName: Array<u32>;
   shapeTo: Array<u32>;
   shapeSlot: Array<u32>;
+  // The class each recent class last moved to, direct-mapped by class: a
+  // document repeating a shape names the same key next, so the text is
+  // compared with that class's name in place, with no copy or lookup. A
+  // class whose name a string would escape is not kept.
+  nextFrom: Array<u32>;
+  nextTo: Array<u32>;
 }
 
 const SHAPE_CACHE: usize = 64;
+const NEXT_CACHE: usize = 64;
 
 // Define a parsed property on a fresh object, through the transition
 // cache when it holds.
@@ -39,6 +46,7 @@ function defineParsed(inout runtime: Runtime, inout parser: JsonParser, object: 
   const at = usize(before.wrappingMultiply(31).wrappingAdd(atom)) & (SHAPE_CACHE - 1);
   if (parser.shapeFrom[at] == before && parser.shapeName[at] == atom && parser.shapeTo[at] != 0) {
     runtime.heap.transitionTo(object, parser.shapeTo[at], parser.shapeSlot[at], value);
+    noteNext(in runtime, inout parser, before, parser.shapeTo[at]);
     return;
   }
   runtime.heap.objectSet(object, atom, value);
@@ -48,7 +56,50 @@ function defineParsed(inout runtime: Runtime, inout parser: JsonParser, object: 
     parser.shapeName[at] = atom;
     parser.shapeTo[at] = after;
     parser.shapeSlot[at] = runtime.heap.classSlot(after);
+    noteNext(in runtime, inout parser, before, after);
   }
+}
+
+// Record that an object of class `before` moved to `after`, the key to
+// expect next time.
+function noteNext(in runtime: Runtime, inout parser: JsonParser, before: u32, after: u32): void {
+  const at = usize(before) & (NEXT_CACHE - 1);
+  if (parser.nextFrom[at] == before && parser.nextTo[at] == after) return;
+  parser.nextFrom[at] = before;
+  parser.nextTo[at] = plainName(in runtime, runtime.heap.transitionNameOf(after)) ? after : 0;
+}
+
+// Whether a name is narrow and holds no byte a JSON string escapes, so
+// the text spells it as its bytes.
+function plainName(in runtime: Runtime, atom: u32): boolean {
+  if (runtime.heap.isWideString(atom)) return false;
+  const length = runtime.heap.stringLength(atom);
+  let index: usize = 0;
+  while (index < length) {
+    const byte = runtime.heap.stringStorageByte(atom, index);
+    if (byte < 32 || byte == 34 || byte == 92) return false;
+    index = index + 1;
+  }
+  return true;
+}
+
+// Whether a narrow text holds the plain name `atom` and then the closing
+// quote at the position.
+function nameAt(in runtime: Runtime, in parser: JsonParser, atom: u32): boolean {
+  const length = runtime.heap.stringLength(atom);
+  const end = parser.position + length;
+  if (end >= parser.length || parser.bytes[end] != 34) return false;
+  if (runtime.heap.isArenaString(atom)) return sameBytes(runtime.heap.smallBytes, runtime.heap.stringStorageStart(atom), parser.bytes, parser.position, length);
+  return sameBytes(runtime.heap.strings[usize(runtime.heap.stringBuffer(atom))], 0, parser.bytes, parser.position, length);
+}
+
+function sameBytes(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, length: usize): boolean {
+  let index: usize = 0;
+  while (index < length) {
+    if (a[aStart + index] != b[bStart + index]) return false;
+    index = index + 1;
+  }
+  return true;
 }
 
 function zeros(count: usize): Array<u32> {
@@ -248,8 +299,40 @@ function isDigitAt(in parser: JsonParser): boolean {
   return byte >= 48 && byte <= 57;
 }
 
+// The end of an int32 of up to 9 digits at `start` in a narrow text, or
+// `start` when the number there is anything else.
+function narrowInt32End(bytes: Slice<u8>, start: usize): usize {
+  let index = start;
+  if (index < bytes.length && bytes[index] == 45) index = index + 1;
+  const first = index;
+  while (index < bytes.length && index - first < 10) {
+    const byte = bytes[index];
+    if (byte < 48 || byte > 57) break;
+    index = index + 1;
+  }
+  const count = index - first;
+  if (count == 0 || count > 9 || (count > 1 && bytes[first] == 48)) return start;
+  if (index < bytes.length && (bytes[index] == 46 || bytes[index] == 101 || bytes[index] == 69)) return start;
+  return index;
+}
+
 function parseNumber(inout parser: JsonParser): Value {
   const start = parser.position;
+  if (!parser.textWide) {
+    const end = narrowInt32End(parser.bytes.slice(0, parser.length), start);
+    if (end > start) {
+      const negative = parser.bytes[start] == 45;
+      let index = negative ? start + 1 : start;
+      let magnitude: i32 = 0;
+      while (index < end) {
+        magnitude = magnitude * 10 + i32(parser.bytes[index]) - 48;
+        index = index + 1;
+      }
+      parser.position = end;
+      if (negative && magnitude == 0) return doubleValue(-0.0);
+      return int32Value(negative ? -magnitude : magnitude);
+    }
+  }
   if (peekByte(in parser) == 45) parser.position = parser.position + 1;
   const first = peekByte(in parser);
   if (first == 48) {
@@ -277,11 +360,13 @@ function parseNumber(inout parser: JsonParser): Value {
     }
     while (isDigitAt(in parser)) { parser.position = parser.position + 1; }
   }
-  // An integer of up to 15 digits is exact as it is read.
+  // An integer of up to 15 digits is exact as it is read; one of up to
+  // 9 is an int32, unless it is -0.
   let index = start;
   const negative = unitAt(in parser, index) == 45;
   if (negative) index = index + 1;
   if (parser.position - index <= 15) {
+    const count = parser.position - index;
     let magnitude: i64 = 0;
     let integral = true;
     while (index < parser.position) {
@@ -293,6 +378,7 @@ function parseNumber(inout parser: JsonParser): Value {
       magnitude = magnitude * 10 + i64(unit - 48);
       index = index + 1;
     }
+    if (integral && count <= 9 && (magnitude != 0 || !negative)) return int32Value(i32(negative ? -magnitude : magnitude));
     if (integral) return numberValue(negative ? -f64(magnitude) : f64(magnitude));
   }
   let digits = Array<u8>();
@@ -315,6 +401,7 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
     parser.position = parser.position + 1;
     const objectProto = runtime.objectProto;
     const object = runtime.heap.allocateObject(objectProto);
+    const mark = runtime.tempRoots.length;
     runtime.pushTempRoot(cellValue(object));
     skipSpace(inout parser);
     if (peekByte(in parser) == 125) {
@@ -326,43 +413,59 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
       skipSpace(inout parser);
       if (peekByte(in parser) != 34) {
         parser.failed = true;
-        runtime.popTempRoot();
+        runtime.popTempRootsTo(mark);
         return undefinedValue();
       }
       parser.position = parser.position + 1;
-      parseStringBody(inout parser);
-      if (parser.failed) {
-        runtime.popTempRoot();
-        return undefinedValue();
+      // The key the object's class last moved on by, if the text has it.
+      // Its atom needs no root: a class's name lives as long as the class.
+      const before = runtime.heap.objectClass(object);
+      const at = usize(before) & (NEXT_CACHE - 1);
+      let expected: u32 = 0;
+      if (parser.nextFrom[at] == before && !parser.textWide) expected = parser.nextTo[at];
+      let atom: u32 = 0;
+      if (expected != 0 && nameAt(in runtime, in parser, runtime.heap.transitionNameOf(expected))) {
+        atom = runtime.heap.transitionNameOf(expected);
+        parser.position = parser.position + runtime.heap.stringLength(atom) + 1;
+      } else {
+        expected = 0;
+        parseStringBody(inout parser);
+        if (parser.failed) {
+          runtime.popTempRootsTo(mark);
+          return undefinedValue();
+        }
+        // The name is interned now, since parsing the value reuses the
+        // buffer; the intern table is weak, so it stays rooted until the
+        // object holds it.
+        atom = parsedKey(inout runtime, in parser);
+        runtime.pushTempRoot(cellValue(atom));
       }
-      // The name is interned now, since parsing the value reuses the
-      // buffer; the intern table is weak, so it stays rooted until the
-      // object holds it.
-      const atom = parsedKey(inout runtime, in parser);
-      runtime.pushTempRoot(cellValue(atom));
       skipSpace(inout parser);
       if (peekByte(in parser) != 58) {
         parser.failed = true;
-        runtime.popTempRoot();
-        runtime.popTempRoot();
+        runtime.popTempRootsTo(mark);
         return undefinedValue();
       }
       parser.position = parser.position + 1;
       const value = parseValue(inout runtime, inout parser, depth + 1);
       if (parser.failed) {
-        runtime.popTempRoot();
-        runtime.popTempRoot();
+        runtime.popTempRootsTo(mark);
         return undefinedValue();
       }
-      defineParsed(inout runtime, inout parser, object, atom, value);
-      runtime.popTempRoot();
+      // The object is still of class `before`: nothing else reaches it.
+      if (expected != 0) {
+        runtime.heap.transitionTo(object, expected, runtime.heap.classSlot(expected), value);
+      } else {
+        defineParsed(inout runtime, inout parser, object, atom, value);
+        runtime.popTempRoot();
+      }
       skipSpace(inout parser);
       const next = peekByte(in parser);
       parser.position = parser.position + 1;
       if (next == 125) break;
       if (next != 44) {
         parser.failed = true;
-        runtime.popTempRoot();
+        runtime.popTempRootsTo(mark);
         return undefinedValue();
       }
     }
@@ -402,6 +505,15 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
   }
   if (byte == 34) {
     parser.position = parser.position + 1;
+    // A string with nothing escaped is made from a narrow text's bytes.
+    if (!parser.textWide) {
+      const end = plainRunEnd(parser.bytes, parser.position);
+      if (end < parser.length && parser.bytes[end] == 34) {
+        const start = parser.position;
+        parser.position = end + 1;
+        return runtime.newStringLatin1Slice(parser.bytes.slice(start, end));
+      }
+    }
     parseStringBody(inout parser);
     if (parser.failed) return undefinedValue();
     return parsedString(inout runtime, in parser);
@@ -493,7 +605,7 @@ function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   } else {
     bytes = runtime.heap.stringStorageBytes(textHandle);
   }
-  let parser = JsonParser({ bytes: move bytes, textUnits: move textUnits, textWide, length: runtime.heap.stringLength(textHandle), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeFrom: zeros(SHAPE_CACHE), shapeName: zeros(SHAPE_CACHE), shapeTo: zeros(SHAPE_CACHE), shapeSlot: zeros(SHAPE_CACHE) });
+  let parser = JsonParser({ bytes: move bytes, textUnits: move textUnits, textWide, length: runtime.heap.stringLength(textHandle), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeFrom: zeros(SHAPE_CACHE), shapeName: zeros(SHAPE_CACHE), shapeTo: zeros(SHAPE_CACHE), shapeSlot: zeros(SHAPE_CACHE), nextFrom: zeros(NEXT_CACHE), nextTo: zeros(NEXT_CACHE) });
   const value = parseValue(inout runtime, inout parser, 0);
   skipSpace(inout parser);
   if (parser.failed || parser.position != parser.length) {

@@ -1,0 +1,364 @@
+{
+ "what": "JSON.parse compares an object's next key in place with the name of the class its class last moved to, with no copy or interning, and defines it through that transition; makes a string with nothing escaped from a narrow text's bytes; reads an int32 of up to 9 digits in one pass. Against the engine before (ZJS 8a64faf). Median over eight placements, change the geometric mean over placements, three runs. Parse alone: 1396-1400M cycles before, 961-973M after; jsc --useJIT=false 876-886M.",
+ "date": "2026-10-16",
+ "engine": "Stage 0 z-lang f0ef0269, -O2 -DNDEBUG",
+ "load_average": [
+  3.93,
+  3.75
+ ],
+ "test262": {
+  "tests": 53330,
+  "regressions": 0,
+  "fixes": 0
+ },
+ "kernels": {
+  "allocation": [
+   {
+    "before_cycles": 64779212,
+    "after_cycles": 64260851,
+    "change_percent": -0.8,
+    "placement_range_percent": [
+     -2.6,
+     1.2
+    ]
+   },
+   {
+    "before_cycles": 64602792,
+    "after_cycles": 64321059,
+    "change_percent": -0.6,
+    "placement_range_percent": [
+     -1.3,
+     0.1
+    ]
+   },
+   {
+    "before_cycles": 64758374,
+    "after_cycles": 64556350,
+    "change_percent": -0.4,
+    "placement_range_percent": [
+     -1.7,
+     0.5
+    ]
+   }
+  ],
+  "arrays": [
+   {
+    "before_cycles": 281290860,
+    "after_cycles": 281449245,
+    "change_percent": -0.4,
+    "placement_range_percent": [
+     -3.6,
+     2.4
+    ]
+   },
+   {
+    "before_cycles": 283373359,
+    "after_cycles": 281745613,
+    "change_percent": 0.1,
+    "placement_range_percent": [
+     -1.8,
+     2.4
+    ]
+   },
+   {
+    "before_cycles": 281349318,
+    "after_cycles": 282462616,
+    "change_percent": 0.5,
+    "placement_range_percent": [
+     -2.1,
+     1.9
+    ]
+   }
+  ],
+  "calls": [
+   {
+    "before_cycles": 41212184,
+    "after_cycles": 41468940,
+    "change_percent": 0.3,
+    "placement_range_percent": [
+     -1.4,
+     1.7
+    ]
+   },
+   {
+    "before_cycles": 41377711,
+    "after_cycles": 40712370,
+    "change_percent": -1.5,
+    "placement_range_percent": [
+     -3.6,
+     2.0
+    ]
+   },
+   {
+    "before_cycles": 41511598,
+    "after_cycles": 41291310,
+    "change_percent": -1.0,
+    "placement_range_percent": [
+     -5.0,
+     1.5
+    ]
+   }
+  ],
+  "closures": [
+   {
+    "before_cycles": 62783818,
+    "after_cycles": 62894724,
+    "change_percent": -0.0,
+    "placement_range_percent": [
+     -1.6,
+     1.3
+    ]
+   },
+   {
+    "before_cycles": 62536624,
+    "after_cycles": 62687705,
+    "change_percent": 0.3,
+    "placement_range_percent": [
+     -2.1,
+     2.1
+    ]
+   },
+   {
+    "before_cycles": 62775130,
+    "after_cycles": 62540112,
+    "change_percent": -0.3,
+    "placement_range_percent": [
+     -1.0,
+     0.7
+    ]
+   }
+  ],
+  "helpers": [
+   {
+    "before_cycles": 71658560,
+    "after_cycles": 71543214,
+    "change_percent": -0.1,
+    "placement_range_percent": [
+     -1.0,
+     1.3
+    ]
+   },
+   {
+    "before_cycles": 71258062,
+    "after_cycles": 71158882,
+    "change_percent": -0.1,
+    "placement_range_percent": [
+     -1.4,
+     1.2
+    ]
+   },
+   {
+    "before_cycles": 71569132,
+    "after_cycles": 71377577,
+    "change_percent": -0.4,
+    "placement_range_percent": [
+     -1.2,
+     0.2
+    ]
+   }
+  ],
+  "json": [
+   {
+    "before_cycles": 65933292,
+    "after_cycles": 56247284,
+    "change_percent": -15.3,
+    "placement_range_percent": [
+     -17.2,
+     -13.3
+    ]
+   },
+   {
+    "before_cycles": 65605380,
+    "after_cycles": 56608811,
+    "change_percent": -13.8,
+    "placement_range_percent": [
+     -16.6,
+     -11.6
+    ]
+   },
+   {
+    "before_cycles": 66097700,
+    "after_cycles": 56381524,
+    "change_percent": -14.6,
+    "placement_range_percent": [
+     -18.1,
+     -12.5
+    ]
+   }
+  ],
+  "long-strings": [
+   {
+    "before_cycles": 18091955,
+    "after_cycles": 18275953,
+    "change_percent": 0.8,
+    "placement_range_percent": [
+     -11.9,
+     11.5
+    ]
+   },
+   {
+    "before_cycles": 18002458,
+    "after_cycles": 18054233,
+    "change_percent": 0.6,
+    "placement_range_percent": [
+     -6.8,
+     9.0
+    ]
+   },
+   {
+    "before_cycles": 18613389,
+    "after_cycles": 18616758,
+    "change_percent": -1.3,
+    "placement_range_percent": [
+     -6.7,
+     4.4
+    ]
+   }
+  ],
+  "maps": [
+   {
+    "before_cycles": 152444090,
+    "after_cycles": 152260343,
+    "change_percent": 0.0,
+    "placement_range_percent": [
+     -1.2,
+     0.9
+    ]
+   },
+   {
+    "before_cycles": 152217247,
+    "after_cycles": 153350872,
+    "change_percent": 0.6,
+    "placement_range_percent": [
+     -0.8,
+     1.8
+    ]
+   },
+   {
+    "before_cycles": 152208569,
+    "after_cycles": 152865998,
+    "change_percent": 0.3,
+    "placement_range_percent": [
+     -0.8,
+     1.6
+    ]
+   }
+  ],
+  "polymorphic": [
+   {
+    "before_cycles": 39404248,
+    "after_cycles": 38815565,
+    "change_percent": -1.5,
+    "placement_range_percent": [
+     -3.2,
+     2.5
+    ]
+   },
+   {
+    "before_cycles": 39024646,
+    "after_cycles": 38490853,
+    "change_percent": -0.4,
+    "placement_range_percent": [
+     -1.6,
+     1.9
+    ]
+   },
+   {
+    "before_cycles": 39234736,
+    "after_cycles": 38471302,
+    "change_percent": -1.1,
+    "placement_range_percent": [
+     -2.9,
+     0.4
+    ]
+   }
+  ],
+  "properties": [
+   {
+    "before_cycles": 98557522,
+    "after_cycles": 98280336,
+    "change_percent": -0.2,
+    "placement_range_percent": [
+     -1.1,
+     0.4
+    ]
+   },
+   {
+    "before_cycles": 98520756,
+    "after_cycles": 98668628,
+    "change_percent": 0.2,
+    "placement_range_percent": [
+     -0.6,
+     0.7
+    ]
+   },
+   {
+    "before_cycles": 98287496,
+    "after_cycles": 98453777,
+    "change_percent": -0.0,
+    "placement_range_percent": [
+     -0.6,
+     0.5
+    ]
+   }
+  ],
+  "regexp": [
+   {
+    "before_cycles": 86347218,
+    "after_cycles": 86649284,
+    "change_percent": 0.5,
+    "placement_range_percent": [
+     -1.6,
+     2.0
+    ]
+   },
+   {
+    "before_cycles": 86312896,
+    "after_cycles": 87203144,
+    "change_percent": 0.9,
+    "placement_range_percent": [
+     -0.2,
+     2.6
+    ]
+   },
+   {
+    "before_cycles": 85635140,
+    "after_cycles": 86499694,
+    "change_percent": 0.4,
+    "placement_range_percent": [
+     -1.9,
+     2.6
+    ]
+   }
+  ],
+  "strings": [
+   {
+    "before_cycles": 38305283,
+    "after_cycles": 38306161,
+    "change_percent": -0.0,
+    "placement_range_percent": [
+     -2.4,
+     1.9
+    ]
+   },
+   {
+    "before_cycles": 38213248,
+    "after_cycles": 38376853,
+    "change_percent": 0.4,
+    "placement_range_percent": [
+     -1.0,
+     1.5
+    ]
+   },
+   {
+    "before_cycles": 38267298,
+    "after_cycles": 38182798,
+    "change_percent": 0.2,
+    "placement_range_percent": [
+     -2.3,
+     3.9
+    ]
+   }
+  ]
+ }
+}

@@ -471,6 +471,21 @@ local arrays in memory on the fast path (strings +6%); passing its
 fields and taking the new storage back in registers fixed that, and
 leaving `push` to clang did not help. Dropped: what the split moves is
 clang's inlining elsewhere, not the cost of a push.
+Then (2026-10-16): parse expects of each object the key its class last
+moved on by, as a document repeating a shape names the same key next,
+and compares the text with that class's name in place -- no copy, no
+interning, no root, since a class and its name are never freed -- then
+defines it through the transition; a string with nothing escaped is made
+from the text's bytes; an int32 of up to 9 digits is read in one pass,
+where it had been scanned twice through the parser's checks. json -13.8
+to -15.3% in cycles over eight placements, three runs, the other
+kernels within 1.5%, test262 unchanged, libzjs.a +2 KiB; parse alone
+-31%, from 1.58x JavaScriptCore's interpreter to 1.10x
+(`bench/speed/results/2026-10-16-json-parse-keys.json`). Tried: parsing
+objects and arrays in functions of their own, so a scalar would not
+need the registers they save -- clang inlined them back, identical
+code; reading a scalar member without the recursive call -- clang kept
+the new helpers out of line, parse +2.8%. Both dropped.
 The engine retires about six instructions a cycle on json and on calls,
 so fewer instructions buy little now unless they shorten a chain of
 dependent loads.
