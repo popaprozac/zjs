@@ -8,43 +8,41 @@ lever's status in the same commit that moves it.
 
 ## The gap
 
-`bench/speed`, `results/2026-10-15-dispatch-matrix.json` (engine
-`62c8113`, the dispatch loop as tail-called handlers, load 4), milliseconds
-per kernel, startup subtracted, against the fastest engine without a JIT on
-each, and the engine's figure that morning (`results/2026-10-15.json`,
-engine `705415a`, load 7). JavaScriptCore's interpreter and V8 jitless are
+`bench/speed`, `results/2026-10-16-matrix.json` (engine `2ce664c`, after
+the JSON plans and parse keys, load 5), milliseconds per kernel, startup
+subtracted, against the fastest engine without a JIT on each, and the
+engine's figure the day before (`results/2026-10-15-dispatch-matrix.json`,
+engine `62c8113`, load 4). JavaScriptCore's interpreter and V8 jitless are
 measured in the same run; QuickJS and Hermes, not on the machine, are their
-2026-09-29 figures. The machine was quieter than in the morning run, and
-JavaScriptCore and V8 ran 10 to 20% faster on several kernels too, so
-compare the gaps, not the milliseconds across runs:
+2026-09-29 figures (`results/2026-09-29-core.json`). Both engines' own
+figures move from run to run with the machine's load, so compare the gaps,
+not the milliseconds across runs:
 
-| Kernel | zjsz | 2026-10-15 am | Fastest jit-less | Engine | Gap |
+| Kernel | zjsz | 2026-10-15 | Fastest jit-less | Engine | Gap |
 |---|---|---|---|---|---|
-| allocation | 14 | 15 | 22 | V8 | ahead |
-| arrays | 68 | 76 | 84 | V8 | ahead |
-| calls | 9 | 10 | 8 | Hermes precompiled | 1.1x |
-| closures | 15 | 17 | 12 | Hermes precompiled | 1.2x |
-| helpers | 17 | 20 | 22 | Hermes precompiled | ahead |
-| json | 18 | 17 | 7 | JavaScriptCore | 2.4x |
-| long-strings | 4 | 4 | 3 | JavaScriptCore | 1.5x |
-| maps | 37 | 38 | 51 | Hermes precompiled | ahead |
-| polymorphic | 8 | 8 | 17 | QuickJS | ahead |
-| properties | 23 | 24 | 25 | JavaScriptCore | ahead |
-| regexp | 20 | 20 | 16 | JavaScriptCore | 1.2x |
-| strings | 8 | 8 | 8 | JavaScriptCore | ahead |
+| allocation | 15 | 14 | 22 | V8 | ahead |
+| arrays | 70 | 68 | 84 | V8 | ahead |
+| calls | 9 | 9 | 8 | Hermes precompiled | 1.1x |
+| closures | 14 | 15 | 12 | Hermes precompiled | 1.2x |
+| helpers | 16 | 17 | 22 | Hermes precompiled | ahead |
+| json | 13 | 18 | 8 | JavaScriptCore | 1.7x |
+| long-strings | 3 | 4 | 3 | JavaScriptCore | 1.2x |
+| maps | 37 | 37 | 51 | Hermes precompiled | ahead |
+| polymorphic | 9 | 8 | 17 | QuickJS | ahead |
+| properties | 24 | 23 | 26 | JavaScriptCore | ahead |
+| regexp | 20 | 20 | 16 | JavaScriptCore | 1.3x |
+| strings | 8 | 8 | 10 | JavaScriptCore | ahead |
 
-Over the twelve kernels the engine is 1.28 times faster than
-JavaScriptCore's interpreter and 1.42 times faster than V8 jitless in the
-same run, and about 1.9, 1.6, and 1.6 times faster than QuickJS, Hermes,
+Over the twelve kernels the engine is 1.39 times faster than
+JavaScriptCore's interpreter and 1.37 times faster than V8 jitless in the
+same run, and about 1.9, 1.7, and 1.6 times faster than QuickJS, Hermes,
 and Hermes on precompiled bytecode on their 2026-09-29 figures. Startup is
-3.1 ms against 6.9 and 27.7.
+3.5 ms against 6.9 and 30.7.
 
-That morning the margins were 1.37 over JavaScriptCore and 1.31 over V8:
-both engines' own figures move from run to run with the machine's load,
-so the margins within a run are the measure (geometric mean of engine
-time over zjsz time). Behind on five: json 2.4x and long-strings 1.5x
-(JavaScriptCore), closures 1.2x and calls 1.1x (Hermes precompiled),
-regexp 1.2x (JavaScriptCore).
+The day before the margins were 1.28 over JavaScriptCore and 1.42 over V8
+(geometric mean of engine time over zjsz time, within one run). Behind on
+five: json 1.7x (was 2.4x) and long-strings 1.2x (JavaScriptCore), regexp
+1.3x (JavaScriptCore), closures 1.2x and calls 1.1x (Hermes precompiled).
 For size, the engine's minimal embedder is 0.77 MB of code (0.56 MB on a
 core context); the
 Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
