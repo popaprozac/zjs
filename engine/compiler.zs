@@ -134,10 +134,163 @@ struct ScopeMark {
   hasEnv: boolean;
 }
 
+// A function's bindings as its compile goes. The functions compiled
+// inside it hold the same instance as one of their outer scopes and see
+// the bindings as they stand -- the parent does nothing while a nested
+// function compiles -- where each had copied all of them. A name's
+// latest binding is found through an index, not a scan of them all.
+class Bindings {
+  locals: Array<Local>;
+  // The index, brought up to date by each lookup (which has the source to
+  // hash names with): open-addressed buckets from a name to its latest
+  // local, and per indexed local its bucket and the previous local of its
+  // name. locals[0 .. indexed) are indexed; `stale` is the lowest
+  // position a pop has reached since, from which the index is redone.
+  hashes: Array<u32>;
+  keyStarts: Array<u32>;
+  keyLengths: Array<u32>;
+  heads: Array<i32>;
+  bucketOf: Array<u32>;
+  previous: Array<i32>;
+  indexed: usize;
+  stale: usize;
+  buckets: usize;
+
+  function push(inout this, local: Local): void {
+    this.locals.push(local);
+  }
+
+  function pop(inout this): Option<Local> {
+    const dropped = this.locals.pop();
+    if (this.locals.length < this.stale) this.stale = this.locals.length;
+    return dropped;
+  }
+
+  // A binding's scope closed where the entry must stay: an empty name
+  // never matches, and the index is redone from it.
+  function unbind(inout this, index: usize): void {
+    this.locals[index].nameLength = 0;
+    if (index < this.stale) this.stale = index;
+  }
+
+  // The latest local named so, or -1.
+  function find(inout this, in parser: Parser, nameStart: u32, nameLength: u32): i32 {
+    this.sync(in parser);
+    if (this.hashes.length == 0 || nameLength == 0) return -1;
+    const at = this.bucket(in parser, nameStart, nameLength, bindingHash(in parser, nameStart, nameLength));
+    if (this.hashes[at] == 0) return -1;
+    return this.heads[at];
+  }
+
+  function bucket(in parser: Parser, nameStart: u32, nameLength: u32, hash: u32): usize {
+    const mask = this.hashes.length - 1;
+    let at = usize(hash) & mask;
+    while (this.hashes[at] != 0) {
+      if (this.hashes[at] == hash && this.keyLengths[at] == nameLength && parser.slicesEqual(this.keyStarts[at], nameLength, nameStart, nameLength)) return at;
+      at = (at + 1) & mask;
+    }
+    return at;
+  }
+
+  function sync(inout this, in parser: Parser): void {
+    // Undo the entries a pop reached, newest first.
+    while (this.indexed > this.stale) {
+      this.indexed = this.indexed - 1;
+      const bucket = this.bucketOf[this.indexed];
+      if (bucket != NO_BUCKET) this.heads[usize(bucket)] = this.previous[this.indexed];
+      const droppedBucket = this.bucketOf.pop();
+      const droppedPrevious = this.previous.pop();
+    }
+    while (this.indexed < this.locals.length) {
+      if ((this.buckets + 1) * 2 > this.hashes.length) this.rebuild(in parser);
+      const nameStart = this.locals[this.indexed].nameStart;
+      const nameLength = this.locals[this.indexed].nameLength;
+      if (nameLength == 0) {
+        this.bucketOf.push(NO_BUCKET);
+        this.previous.push(-1);
+      } else {
+        const hash = bindingHash(in parser, nameStart, nameLength);
+        const at = this.bucket(in parser, nameStart, nameLength, hash);
+        if (this.hashes[at] == 0) {
+          this.hashes[at] = hash;
+          this.keyStarts[at] = nameStart;
+          this.keyLengths[at] = nameLength;
+          this.heads[at] = -1;
+          this.buckets = this.buckets + 1;
+        }
+        this.previous.push(this.heads[at]);
+        this.heads[at] = i32(this.indexed);
+        this.bucketOf.push(u32(at));
+      }
+      this.indexed = this.indexed + 1;
+    }
+    this.stale = this.indexed;
+  }
+
+  // Twice the buckets, the indexed locals placed again in order.
+  function rebuild(inout this, in parser: Parser): void {
+    const size: usize = this.hashes.length == 0 ? 64 : this.hashes.length * 2;
+    this.hashes = zerosOf(size);
+    this.keyStarts = zerosOf(size);
+    this.keyLengths = zerosOf(size);
+    let heads = Array<i32>.withCapacity(size);
+    heads.appendRepeated(-1, size);
+    this.heads = move heads;
+    this.buckets = 0;
+    const count = this.indexed;
+    this.indexed = 0;
+    this.stale = 0;
+    this.bucketOf = Array<u32>();
+    this.previous = Array<i32>();
+    // Indexing again from the start keeps every chain in push order.
+    const limit = count;
+    while (this.indexed < limit) {
+      const nameStart = this.locals[this.indexed].nameStart;
+      const nameLength = this.locals[this.indexed].nameLength;
+      if (nameLength == 0) {
+        this.bucketOf.push(NO_BUCKET);
+        this.previous.push(-1);
+      } else {
+        const hash = bindingHash(in parser, nameStart, nameLength);
+        const at = this.bucket(in parser, nameStart, nameLength, hash);
+        if (this.hashes[at] == 0) {
+          this.hashes[at] = hash;
+          this.keyStarts[at] = nameStart;
+          this.keyLengths[at] = nameLength;
+          this.heads[at] = -1;
+          this.buckets = this.buckets + 1;
+        }
+        this.previous.push(this.heads[at]);
+        this.heads[at] = i32(this.indexed);
+        this.bucketOf.push(u32(at));
+      }
+      this.indexed = this.indexed + 1;
+    }
+    this.stale = this.indexed;
+  }
+}
+
+const NO_BUCKET: u32 = 0xFFFF_FFFF;
+
+function newBindings(locals: Array<Local>): Bindings {
+  return new Bindings({ locals: move locals, hashes: Array<u32>(), keyStarts: Array<u32>(), keyLengths: Array<u32>(), heads: Array<i32>(), bucketOf: Array<u32>(), previous: Array<i32>(), indexed: 0, stale: 0, buckets: 0 });
+}
+
+function bindingHash(in parser: Parser, start: u32, length: u32): u32 {
+  let hash: u32 = 2166136261;
+  let i: u32 = 0;
+  while (i < length) {
+    hash = (hash ^ u32(parser.source[usize(start + i)])).wrappingMultiply(16777619);
+    i = i + 1;
+  }
+  // 0 marks an empty bucket.
+  return hash | 1;
+}
+
 // An enclosing function's bindings, as seen from a nested one: the
 // captured ones are reachable through the environment chain.
 struct Scope {
-  names: Array<Local>;
+  bindings: Bindings;
   hasEnv: boolean;
   // Nested environments open in that function where the nested function
   // was created: each is one more hop to its bindings.
@@ -199,7 +352,9 @@ export struct Compiler {
   nextReg: u8;
   maxReg: u8;
   fixedRegs: u8;
-  locals: Array<Local>;
+  // This function's bindings, shared with the functions compiled inside
+  // it (Bindings).
+  bindings: Bindings;
   // The enclosing functions' bindings, outermost first; the program's
   // top-level lexical bindings are scope 0.
   outerScopes: Array<Scope>;
@@ -317,6 +472,10 @@ export struct Compiler {
   // The names written in this function, made the first time an inlining
   // candidate asks, once per function rather than per candidate.
   changes: NameChanges = nameChanges();
+  // The capture scan's answers, one walk per extent (CaptureTable).
+  captures: CaptureTable = captureTable();
+  // Where each name is first read, per extent (FirstUses).
+  uses: FirstUses = firstUses();
 
   // --- Emission ---
 
@@ -517,7 +676,7 @@ export struct Compiler {
   // The register a counted loop steps: `update` is `i++` or `++i` on a
   // register binding and `test` is `i < bound`, the bound a 24-bit
   // literal or another register binding; -1 for any other loop.
-  function countedLoopReg(in parser: Parser, test: u32, update: u32): i32 {
+  function countedLoopReg(inout this, in parser: Parser, test: u32, update: u32): i32 {
     let step = update;
     while (step != NO_NODE && parser.ast.node(step).kind == NodeKind.paren) {
       step = parser.ast.node(step).left;
@@ -544,7 +703,7 @@ export struct Compiler {
   }
 
   // For `x.length` with x a register binding, x's register; else -1.
-  function lengthOperandReg(in parser: Parser, node: u32): i32 {
+  function lengthOperandReg(inout this, in parser: Parser, node: u32): i32 {
     let current = node;
     while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
       current = parser.ast.node(current).left;
@@ -592,8 +751,8 @@ export struct Compiler {
     const n = parser.ast.node(node);
     if (n.kind == NodeKind.identExpr) {
       let index: usize = 0;
-      while (index < this.locals.length) {
-        if (this.locals[index].reg == reg && this.locals[index].nameLength == n.nameLength && this.nameMatches(in parser, this.locals[index].nameStart, this.locals[index].nameLength, n.nameStart, n.nameLength)) return true;
+      while (index < this.bindings.locals.length) {
+        if (this.bindings.locals[index].reg == reg && this.bindings.locals[index].nameLength == n.nameLength && this.nameMatches(in parser, this.bindings.locals[index].nameStart, this.bindings.locals[index].nameLength, n.nameStart, n.nameLength)) return true;
         index = index + 1;
       }
       return false;
@@ -704,7 +863,7 @@ export struct Compiler {
   // --- Regions ---
 
   function pushRegion(inout this, kind: u32, finallyNode: u32, iterReg: u8, doneReg: u8): void {
-    const region = Region({ kind: kind, finallyNode: finallyNode, iterReg: iterReg, doneReg: doneReg, openEnvs: this.openEnvs, localsLength: this.locals.length });
+    const region = Region({ kind: kind, finallyNode: finallyNode, iterReg: iterReg, doneReg: doneReg, openEnvs: this.openEnvs, localsLength: this.bindings.locals.length });
     if (this.regionDepth < this.regions.length) {
       this.regions[this.regionDepth] = region;
     } else {
@@ -765,8 +924,8 @@ export struct Compiler {
         this.openEnvs = regionEnvs;
         let hidden = Array<Local>();
         const keep = this.regions[index].localsLength;
-        while (this.locals.length > keep) {
-          match (this.locals.pop()) {
+        while (this.bindings.locals.length > keep) {
+          match (this.bindings.pop()) {
             some(local) => {
               hidden.push(local);
             }
@@ -779,7 +938,7 @@ export struct Compiler {
         while (hidden.length > 0) {
           match (hidden.pop()) {
             some(local) => {
-              this.locals.push(local);
+              this.bindings.push(local);
             }
             none => {
             }
@@ -922,16 +1081,16 @@ export struct Compiler {
 
   // A parameter that binds in order starts as a hole.
   function markOrderedParameter(inout this, in parser: Parser, inout runtime: Runtime, index: usize): void {
-    this.locals[index].initialized = false;
-    this.locals[index].needsHole = true;
-    const start = this.locals[index].nameStart;
-    const length = this.locals[index].nameLength;
+    this.bindings.locals[index].initialized = false;
+    this.bindings.locals[index].needsHole = true;
+    const start = this.bindings.locals[index].nameStart;
+    const length = this.bindings.locals[index].nameLength;
     const named = this.nameConstOf(in parser, inout runtime, start, length);
-    this.locals[index].nameConst = i32(named);
+    this.bindings.locals[index].nameConst = i32(named);
   }
 
   function openScope(): ScopeMark {
-    return ScopeMark({ locals: this.locals.length, fixedRegs: this.fixedRegs, envReg: 0, hasEnv: false });
+    return ScopeMark({ locals: this.bindings.locals.length, fixedRegs: this.fixedRegs, envReg: 0, hasEnv: false });
   }
 
   // Declare one lexical binding of the scope being opened. `key` is the
@@ -939,16 +1098,16 @@ export struct Compiler {
   // declaration; `scope` the node a reference before that would sit in.
   function declareLexical(inout this, in parser: Parser, inout runtime: Runtime, nameStart: u32, nameLength: u32, key: u32, isConst: boolean, alwaysCheck: boolean, extent: u32, limit: u32): void {
     const unusedReg = this.addLocalKeyed(nameStart, nameLength, key);
-    const index = this.locals.length - 1;
-    this.locals[index].lexical = true;
-    this.locals[index].isConst = isConst;
-    this.locals[index].initialized = false;
-    this.locals[index].alwaysCheck = alwaysCheck;
-    const needsHole = alwaysCheck || nameReferencedBefore(in parser, extent, nameStart, nameLength, limit, false);
-    this.locals[index].needsHole = needsHole;
+    const index = this.bindings.locals.length - 1;
+    this.bindings.locals[index].lexical = true;
+    this.bindings.locals[index].isConst = isConst;
+    this.bindings.locals[index].initialized = false;
+    this.bindings.locals[index].alwaysCheck = alwaysCheck;
+    const needsHole = alwaysCheck || referencedBefore(in parser, inout this.uses, extent, nameStart, nameLength, limit);
+    this.bindings.locals[index].needsHole = needsHole;
     if (needsHole) {
       const named = this.nameConstOf(in parser, inout runtime, nameStart, nameLength);
-      this.locals[index].nameConst = i32(named);
+      this.bindings.locals[index].nameConst = i32(named);
     }
   }
 
@@ -980,10 +1139,10 @@ export struct Compiler {
       // Initialized when the block opens, before anything can read it:
       // no hole, no check.
       this.declareLexical(in parser, inout runtime, st.nameStart, st.nameLength, st.nameStart, false, false, extent, st.end);
-      const index = this.locals.length - 1;
-      this.locals[index].needsHole = false;
-      this.locals[index].nameConst = -1;
-      this.locals[index].blockFunction = true;
+      const index = this.bindings.locals.length - 1;
+      this.bindings.locals[index].needsHole = false;
+      this.bindings.locals[index].nameConst = -1;
+      this.bindings.locals[index].blockFunction = true;
       return;
     }
     if (st.kind == NodeKind.varDecl && st.op != TokenKind.kwVar) {
@@ -1023,7 +1182,7 @@ export struct Compiler {
       const st = parser.ast.node(statement);
       if (st.kind == NodeKind.functionDecl && st.nameLength > 0) {
         const local = this.findLocal(in parser, st.nameStart, st.nameLength);
-        if (local >= 0 && this.locals[usize(local)].blockFunction) {
+        if (local >= 0 && this.bindings.locals[usize(local)].blockFunction) {
           const r = this.allocReg();
           this.emitFunctionValue(in parser, inout runtime, statement, r, 0, 0, 0);
           if (this.hadError) return;
@@ -1039,8 +1198,8 @@ export struct Compiler {
   // body-level function), the oldest such local, or -1.
   function findVarLocal(in parser: Parser, nameStart: u32, nameLength: u32): i32 {
     let index: usize = 0;
-    while (index < this.locals.length) {
-      const local = this.locals[index];
+    while (index < this.bindings.locals.length) {
+      const local = this.bindings.locals[index];
       if (!local.lexical && local.nameLength == nameLength && this.nameMatches(in parser, local.nameStart, local.nameLength, nameStart, nameLength)) return i32(index);
       index = index + 1;
     }
@@ -1052,8 +1211,8 @@ export struct Compiler {
   // code makes no var for a block's function declaration (Annex B).
   function hasLexicalConflict(in parser: Parser, nameStart: u32, nameLength: u32, except: usize): boolean {
     let index: usize = 0;
-    while (index < this.locals.length) {
-      const local = this.locals[index];
+    while (index < this.bindings.locals.length) {
+      const local = this.bindings.locals[index];
       if (index != except && local.lexical && local.nameLength == nameLength && this.nameMatches(in parser, local.nameStart, local.nameLength, nameStart, nameLength)) return true;
       index = index + 1;
     }
@@ -1079,9 +1238,9 @@ export struct Compiler {
   function enterScope(inout this, inout mark: ScopeMark): void {
     let count: usize = 0;
     let i = mark.locals;
-    while (i < this.locals.length) {
-      if (this.locals[i].captured) {
-        this.locals[i].envSlot = i32(count);
+    while (i < this.bindings.locals.length) {
+      if (this.bindings.locals[i].captured) {
+        this.bindings.locals[i].envSlot = i32(count);
         count = count + 1;
       }
       i = i + 1;
@@ -1094,8 +1253,8 @@ export struct Compiler {
       this.openEnvs = this.openEnvs + 1;
       const depth = this.openEnvs;
       i = mark.locals;
-      while (i < this.locals.length) {
-        if (this.locals[i].captured) this.locals[i].envDepth = depth;
+      while (i < this.bindings.locals.length) {
+        if (this.bindings.locals[i].captured) this.bindings.locals[i].envDepth = depth;
         i = i + 1;
       }
       mark.hasEnv = true;
@@ -1110,18 +1269,18 @@ export struct Compiler {
   function emitHoles(inout this, since: usize): void {
     let holeReg: i32 = -1;
     let i = since;
-    while (i < this.locals.length) {
-      if (this.locals[i].needsHole) {
-        const slot = this.locals[i].envSlot;
+    while (i < this.bindings.locals.length) {
+      if (this.bindings.locals[i].needsHole) {
+        const slot = this.bindings.locals[i].envSlot;
         if (slot >= 0) {
           if (holeReg < 0) {
             holeReg = i32(this.allocReg());
             this.emit(instA(Op.loadHole, u8(holeReg)));
           }
-          const hops = u8(this.openEnvs - this.locals[i].envDepth);
+          const hops = u8(this.openEnvs - this.bindings.locals[i].envDepth);
           this.emit(this.envSlotInst(Op.storeEnvSlot, u8(holeReg), hops, i32(slot)));
         } else {
-          const reg = this.locals[i].reg;
+          const reg = this.bindings.locals[i].reg;
           this.emit(instA(Op.loadHole, reg));
         }
       }
@@ -1138,8 +1297,8 @@ export struct Compiler {
       this.openEnvs = this.openEnvs - 1;
       const droppedReg = this.envRegs.pop();
     }
-    while (this.locals.length > mark.locals) {
-      const dropped = this.locals.pop();
+    while (this.bindings.locals.length > mark.locals) {
+      const dropped = this.bindings.pop();
     }
     this.fixedRegs = mark.fixedRegs;
     this.nextReg = mark.fixedRegs;
@@ -1157,7 +1316,7 @@ export struct Compiler {
   // function's own environment (the capture scan gave them slots) or in
   // registers, declared ahead of everything else in the body.
   function declareBodyLexicals(inout this, in parser: Parser, inout runtime: Runtime, body: u32, skipClasses: boolean): void {
-    const since = this.locals.length;
+    const since = this.bindings.locals.length;
     this.declareBlockLexicals(in parser, inout runtime, body, false, skipClasses, false);
     this.fixedRegs = this.nextReg;
     this.emitHoles(since);
@@ -1196,7 +1355,7 @@ export struct Compiler {
   function pushCapturedLocal(inout this, in parser: Parser, nameStart: u32, nameLength: u32, inout found: Array<usize>): void {
     const index = this.findLocal(in parser, nameStart, nameLength);
     if (index < 0) return;
-    if (this.locals[usize(index)].captured) found.push(usize(index));
+    if (this.bindings.locals[usize(index)].captured) found.push(usize(index));
   }
 
   function pushPatternCaptures(inout this, in parser: Parser, pattern: u32, inout found: Array<usize>): void {
@@ -1287,10 +1446,10 @@ export struct Compiler {
     let i: usize = 0;
     while (i < captures.length) {
       const index = captures[i];
-      saved.push(this.locals[index].envSlot);
-      saved.push(i32(this.locals[index].envDepth));
-      this.locals[index].envSlot = i32(i);
-      this.locals[index].envDepth = this.openEnvs;
+      saved.push(this.bindings.locals[index].envSlot);
+      saved.push(i32(this.bindings.locals[index].envDepth));
+      this.bindings.locals[index].envSlot = i32(i);
+      this.bindings.locals[index].envDepth = this.openEnvs;
       i = i + 1;
     }
     return iterReg;
@@ -1307,8 +1466,8 @@ export struct Compiler {
     let i: usize = 0;
     while (i < captures.length) {
       const index = captures[i];
-      this.locals[index].envSlot = saved[i * 2];
-      this.locals[index].envDepth = u32(saved[i * 2 + 1]);
+      this.bindings.locals[index].envSlot = saved[i * 2];
+      this.bindings.locals[index].envDepth = u32(saved[i * 2 + 1]);
       i = i + 1;
     }
   }
@@ -1325,16 +1484,8 @@ export struct Compiler {
     return parser.slicesEqual(aStart, aLength, bStart, bLength);
   }
 
-  function findLocal(in parser: Parser, nameStart: u32, nameLength: u32): i32 {
-    let index: usize = this.locals.length;
-    while (index > 0) {
-      index = index - 1;
-      const local = this.locals[index];
-      if (local.nameLength == nameLength && this.nameMatches(in parser, local.nameStart, local.nameLength, nameStart, nameLength)) {
-        return i32(index);
-      }
-    }
-    return -1;
+  function findLocal(inout this, in parser: Parser, nameStart: u32, nameLength: u32): i32 {
+    return this.bindings.find(in parser, nameStart, nameLength);
   }
 
   // The environment slot the capture scan reserved for a binding
@@ -1369,20 +1520,20 @@ export struct Compiler {
     } else if (!captured) {
       reg = this.allocReg();
     }
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+    this.bindings.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     return reg;
   }
 
   // Whether a read of the binding here must check for the hole.
   function mustCheck(index: usize): boolean {
-    const local = this.locals[index];
+    const local = this.bindings.locals[index];
     return local.nameConst >= 0 && (local.alwaysCheck || !local.initialized);
   }
 
   // The register of a binding read as an operand, when it can be read in
   // place: a local of this function held in a register, whose read needs
   // no hole check. -1 otherwise.
-  function operandLocalReg(in parser: Parser, node: u32): i32 {
+  function operandLocalReg(inout this, in parser: Parser, node: u32): i32 {
     let current = node;
     while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
       current = parser.ast.node(current).left;
@@ -1393,22 +1544,22 @@ export struct Compiler {
     const local = this.findLocal(in parser, n.nameStart, n.nameLength);
     if (local < 0) return -1;
     const index = usize(local);
-    if (this.locals[index].envSlot >= 0 || this.mustCheck(index)) return -1;
-    return i32(this.locals[index].reg);
+    if (this.bindings.locals[index].envSlot >= 0 || this.mustCheck(index)) return -1;
+    return i32(this.bindings.locals[index].reg);
   }
 
   // The register of a binding an assignment can write directly: a local
   // of this function in a register, not constant, whose write needs no
   // hole check. -1 otherwise.
-  function storableLocalReg(in parser: Parser, node: u32): i32 {
+  function storableLocalReg(inout this, in parser: Parser, node: u32): i32 {
     if (node == NO_NODE) return -1;
     const n = parser.ast.node(node);
     if (n.kind != NodeKind.identExpr) return -1;
     const local = this.findLocal(in parser, n.nameStart, n.nameLength);
     if (local < 0) return -1;
     const index = usize(local);
-    if (this.locals[index].envSlot >= 0 || this.mustCheck(index) || this.locals[index].isConst) return -1;
-    return i32(this.locals[index].reg);
+    if (this.bindings.locals[index].envSlot >= 0 || this.mustCheck(index) || this.bindings.locals[index].isConst) return -1;
+    return i32(this.bindings.locals[index].reg);
   }
 
   // A value only read by the instruction that consumes it. A local held
@@ -1433,16 +1584,16 @@ export struct Compiler {
 
   // Load a binding of this function into a register.
   function loadLocal(inout this, index: usize, dst: u8): void {
-    const slot = this.locals[index].envSlot;
+    const slot = this.bindings.locals[index].envSlot;
     if (slot >= 0) {
-      const hops = u8(this.openEnvs - this.locals[index].envDepth);
+      const hops = u8(this.openEnvs - this.bindings.locals[index].envDepth);
       this.emit(this.envSlotInst(Op.loadEnvSlot, dst, hops, i32(slot)));
     } else {
-      const reg = this.locals[index].reg;
+      const reg = this.bindings.locals[index].reg;
       this.emit(instAB(Op.mov, dst, reg));
     }
     if (this.mustCheck(index)) {
-      const named = u16(this.locals[index].nameConst);
+      const named = u16(this.bindings.locals[index].nameConst);
       this.emit(instAU16(Op.throwIfHole, dst, named));
     }
   }
@@ -1454,8 +1605,8 @@ export struct Compiler {
       const current = this.allocReg();
       this.loadLocal(index, current);
     }
-    if (this.locals[index].isConst) {
-      if (this.strict || this.locals[index].lexical) this.emit(instA(Op.throwConstAssign, 0));
+    if (this.bindings.locals[index].isConst) {
+      if (this.strict || this.bindings.locals[index].lexical) this.emit(instA(Op.throwConstAssign, 0));
       return;
     }
     this.initLocal(index, value);
@@ -1463,15 +1614,15 @@ export struct Compiler {
 
   // Store a register into a binding, initializing it.
   function initLocal(inout this, index: usize, value: u8): void {
-    const slot = this.locals[index].envSlot;
+    const slot = this.bindings.locals[index].envSlot;
     if (slot >= 0) {
-      const hops = u8(this.openEnvs - this.locals[index].envDepth);
+      const hops = u8(this.openEnvs - this.bindings.locals[index].envDepth);
       this.emit(this.envSlotInst(Op.storeEnvSlot, value, hops, i32(slot)));
     } else {
-      const reg = this.locals[index].reg;
+      const reg = this.bindings.locals[index].reg;
       if (reg != value) this.emit(instAB(Op.mov, reg, value));
     }
-    this.locals[index].initialized = true;
+    this.bindings.locals[index].initialized = true;
   }
 
   // --- String joins ---
@@ -1485,7 +1636,7 @@ export struct Compiler {
 
   // The pieces of the `+` chain `node` in order, and whether it can be
   // joined at once: three pieces or more, as above.
-  function concatChain(in parser: Parser, node: u32, inout pieces: Array<u32>): boolean {
+  function concatChain(inout this, in parser: Parser, node: u32, inout pieces: Array<u32>): boolean {
     let spine = Array<u32>();
     let current = node;
     while (current != NO_NODE) {
@@ -1585,18 +1736,14 @@ export struct Compiler {
 
   // The declaration a call through the binding `name` inlines, or
   // NO_NODE: the nearest binding of the name decides, here or outside.
-  function findInline(in parser: Parser, nameStart: u32, nameLength: u32): u32 {
+  function findInline(inout this, in parser: Parser, nameStart: u32, nameLength: u32): u32 {
     const local = this.findLocal(in parser, nameStart, nameLength);
-    if (local >= 0) return this.locals[usize(local)].inlineFunction;
+    if (local >= 0) return this.bindings.locals[usize(local)].inlineFunction;
     let level: usize = this.outerScopes.length;
     while (level > 0) {
       level = level - 1;
-      let index: usize = this.outerScopes[level].names.length;
-      while (index > 0) {
-        index = index - 1;
-        const outer = this.outerScopes[level].names[index];
-        if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) return outer.inlineFunction;
-      }
+      const found = this.outerScopes[level].bindings.find(in parser, nameStart, nameLength);
+      if (found >= 0) return this.outerScopes[level].bindings.locals[usize(found)].inlineFunction;
     }
     return NO_NODE;
   }
@@ -1626,7 +1773,7 @@ export struct Compiler {
       }
       a = a + 1;
     }
-    const mark = this.locals.length;
+    const mark = this.bindings.locals.length;
     const paramCount = parser.ast.node(declaration).childrenCount;
     let p: u32 = 0;
     while (p < paramCount) {
@@ -1638,13 +1785,13 @@ export struct Compiler {
         reg = this.allocReg();
         this.emit(instA(Op.loadUndefined, reg));
       }
-      this.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+      this.bindings.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
       p = p + 1;
     }
     this.targetReg = hintReg;
     let result = this.compileExpr(in parser, inout runtime, returned);
-    while (this.locals.length > mark) {
-      const dropped = this.locals.pop();
+    while (this.bindings.locals.length > mark) {
+      const dropped = this.bindings.pop();
     }
     // A parameter read in place is the caller's own binding: the call's
     // value must not change with it.
@@ -1667,16 +1814,13 @@ export struct Compiler {
     let level: usize = this.outerScopes.length;
     while (level > 0) {
       level = level - 1;
-      let index: usize = this.outerScopes[level].names.length;
-      while (index > 0) {
-        index = index - 1;
-        const outer = this.outerScopes[level].names[index];
-        if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) {
-          if (level < this.minOuterScope) this.minOuterScope = level;
-          const above = this.outerScopes[level].openEnvs - outer.envDepth;
-          const needsCheck = outer.needsHole && (outer.alwaysCheck || !outer.initialized);
-          return OuterRef({ found: true, hops: u8(hops + above), slot: outer.envSlot, scopeIndex: level, needsCheck: needsCheck, isConst: outer.isConst, quiet: outer.isConst && !outer.lexical });
-        }
+      const found = this.outerScopes[level].bindings.find(in parser, nameStart, nameLength);
+      if (found >= 0) {
+        const outer = this.outerScopes[level].bindings.locals[usize(found)];
+        if (level < this.minOuterScope) this.minOuterScope = level;
+        const above = this.outerScopes[level].openEnvs - outer.envDepth;
+        const needsCheck = outer.needsHole && (outer.alwaysCheck || !outer.initialized);
+        return OuterRef({ found: true, hops: u8(hops + above), slot: outer.envSlot, scopeIndex: level, needsCheck: needsCheck, isConst: outer.isConst, quiet: outer.isConst && !outer.lexical });
       }
       hops = hops + this.outerScopes[level].openEnvs;
       if (this.outerScopes[level].hasEnv) hops = hops + 1;
@@ -1696,12 +1840,7 @@ export struct Compiler {
     let level: usize = this.outerScopes.length;
     while (level > 0) {
       level = level - 1;
-      let index: usize = this.outerScopes[level].names.length;
-      while (index > 0) {
-        index = index - 1;
-        const outer = this.outerScopes[level].names[index];
-        if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) return refs;
-      }
+      if (this.outerScopes[level].bindings.find(in parser, nameStart, nameLength) >= 0) return refs;
       const slot = this.outerScopes[level].varSlot;
       if (slot >= 0) {
         refs.push(((hops + this.outerScopes[level].openEnvs) << 8) | u32(slot));
@@ -1748,11 +1887,11 @@ export struct Compiler {
   // `bindLocal` to find.
   function scanCaptures(inout this, in parser: Parser, body: u32): void {
     let index: usize = 0;
-    while (index < this.locals.length) {
-      const local = this.locals[index];
-      if (local.nameLength > 0 && local.envSlot < 0 && capturedBy(in parser, body, local.nameStart, local.nameLength, false)) {
+    while (index < this.bindings.locals.length) {
+      const local = this.bindings.locals[index];
+      if (local.nameLength > 0 && local.envSlot < 0 && capturedIn(in parser, inout this.captures, body, local.nameStart, local.nameLength)) {
         const envSlot = i32(this.envSize);
-        this.locals[index].envSlot = envSlot;
+        this.bindings.locals[index].envSlot = envSlot;
         // The slot is on record for the binding's own statement too, so
         // a let / const bound later lands in the same slot the function
         // declarations compiled before it were resolved against.
@@ -1781,21 +1920,21 @@ export struct Compiler {
     const n = parser.ast.node(fn);
     let index: usize = 0;
     while (index < upTo) {
-      const local = this.locals[index];
+      const local = this.bindings.locals[index];
       if (local.nameLength > 0 && local.envSlot < 0) {
         let p: u32 = 0;
         let captured = false;
         while (p < n.childrenCount && !captured) {
           const paramIndex = parser.ast.child(fn, p);
           const param = parser.ast.node(paramIndex);
-          if (param.right != NO_NODE && capturedBy(in parser, param.right, local.nameStart, local.nameLength, false)) captured = true;
+          if (param.right != NO_NODE && capturedIn(in parser, inout this.captures, param.right, local.nameStart, local.nameLength)) captured = true;
           const pattern = parameterPattern(in parser, paramIndex);
-          if (pattern != NO_NODE && capturedBy(in parser, pattern, local.nameStart, local.nameLength, false)) captured = true;
+          if (pattern != NO_NODE && capturedIn(in parser, inout this.captures, pattern, local.nameStart, local.nameLength)) captured = true;
           p = p + 1;
         }
         if (captured) {
           const envSlot = i32(this.envSize);
-          this.locals[index].envSlot = envSlot;
+          this.bindings.locals[index].envSlot = envSlot;
           this.capturedNames.push(Local({ nameStart: local.nameStart, nameLength: local.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
           this.envSize = this.envSize + 1;
         }
@@ -1821,7 +1960,7 @@ export struct Compiler {
     if (pattern == NO_NODE) return;
     const n = parser.ast.node(pattern);
     if (n.kind == NodeKind.identExpr) {
-      if (n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, extent, n.nameStart, n.nameLength, false)) {
+      if (n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedIn(in parser, inout this.captures, extent, n.nameStart, n.nameLength)) {
         this.recordCapture(n.nameStart, n.nameLength, nested);
       }
       return;
@@ -1849,7 +1988,7 @@ export struct Compiler {
     const n = parser.ast.node(node);
     // A declaration's inner name is recorded under the `class` keyword,
     // apart from the block-level binding the declaration creates.
-    if (n.nameLength > 0 && capturedBy(in parser, node, n.nameStart, n.nameLength, false)) {
+    if (n.nameLength > 0 && capturedIn(in parser, inout this.captures, node, n.nameStart, n.nameLength)) {
       const key = n.kind == NodeKind.classExpr ? n.nameStart : n.start;
       this.capturedNames.push(Local({ nameStart: key, nameLength: n.nameLength, reg: 0, envSlot: i32(this.envSize), envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
       this.envSize = this.envSize + 1;
@@ -2194,13 +2333,13 @@ export struct Compiler {
     const classNameLength: u32 = n.nameLength > 0 ? n.nameLength : contextualLength;
     const ctorReg = this.allocReg();
     const protoReg = this.allocReg();
-    const localsBefore = this.locals.length;
+    const localsBefore = this.bindings.locals.length;
     // The class's own name, bound inside its body (a declaration's
     // outer binding is a hole until the definition completes).
     let innerSlot: i32 = -1;
     if (n.nameLength > 0) {
       innerSlot = this.capturedSlot(n.kind == NodeKind.classExpr ? n.nameStart : n.start);
-      this.locals.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+      this.bindings.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     }
     let fieldCount: u32 = 0;
     let ctorNode: u32 = NO_NODE;
@@ -2222,7 +2361,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+        this.bindings.push(Local({ nameStart: keyNode.start - 1, nameLength: keyNode.end - keyNode.start + 1, reg: 0, envSlot: keySlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
       }
       if (this.isPrivateName(in parser, member.nameStart, member.nameLength) && this.findLocal(in parser, member.nameStart, member.nameLength) < 0) {
         const slot = this.capturedSlotByText(in parser, member.nameStart, member.nameLength);
@@ -2230,7 +2369,7 @@ export struct Compiler {
           this.hadError = true;
           return ctorReg;
         }
-        this.locals.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+        this.bindings.push(Local({ nameStart: member.nameStart, nameLength: member.nameLength, reg: 0, envSlot: slot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
         const description = this.addConst(runtime.internUtf8Value(sliceBytes(in parser.source, usize(member.nameStart), usize(member.nameStart + member.nameLength))));
         const key = this.allocReg();
         this.emit(instAU16(Op.newPrivateName, key, description));
@@ -2353,7 +2492,7 @@ export struct Compiler {
       this.nextReg = protoReg + 1;
       i = i + 1;
     }
-    let u = this.locals.length;
+    let u = this.bindings.locals.length;
     while (u > localsBefore) {
       u = u - 1;
       this.unbindLocal(u);
@@ -2368,7 +2507,7 @@ export struct Compiler {
   function emitClassFunction(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32, role: u32, fieldCount: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2390,14 +2529,14 @@ export struct Compiler {
     const n = parser.ast.node(node);
     const k = n.kind;
     if (k == NodeKind.functionDecl) {
-      if (nested && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, extent, n.nameStart, n.nameLength, false)) {
+      if (nested && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedIn(in parser, inout this.captures, extent, n.nameStart, n.nameLength)) {
         this.recordCapture(n.nameStart, n.nameLength, true);
       }
       return;
     }
     if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef || k == NodeKind.staticBlock) return;
     if (k == NodeKind.classDecl || k == NodeKind.classExpr) {
-      if (k == NodeKind.classDecl && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, extent, n.nameStart, n.nameLength, false)) {
+      if (k == NodeKind.classDecl && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedIn(in parser, inout this.captures, extent, n.nameStart, n.nameLength)) {
         this.recordCapture(n.nameStart, n.nameLength, nested);
       }
       this.scanClassBindings(in parser, node, extent, nested);
@@ -2408,7 +2547,7 @@ export struct Compiler {
       while (i < n.childrenCount) {
         const declIndex = parser.ast.child(node, i);
         const decl = parser.ast.node(declIndex);
-        if (decl.nameLength > 0 && this.capturedSlot(decl.nameStart) < 0 && capturedBy(in parser, extent, decl.nameStart, decl.nameLength, false)) {
+        if (decl.nameLength > 0 && this.capturedSlot(decl.nameStart) < 0 && capturedIn(in parser, inout this.captures, extent, decl.nameStart, decl.nameLength)) {
           this.recordCapture(decl.nameStart, decl.nameLength, nested);
         }
         if (decl.nameLength == 0 && decl.third != NO_NODE) this.scanPatternCaptures(in parser, decl.third, extent, nested);
@@ -2417,7 +2556,7 @@ export struct Compiler {
       }
       return;
     }
-    if (k == NodeKind.tryStmt && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedBy(in parser, n.right, n.nameStart, n.nameLength, false)) {
+    if (k == NodeKind.tryStmt && n.nameLength > 0 && this.capturedSlot(n.nameStart) < 0 && capturedIn(in parser, inout this.captures, n.right, n.nameStart, n.nameLength)) {
       this.recordCapture(n.nameStart, n.nameLength, true);
     }
     // A block, loop, or switch scopes what it declares.
@@ -2520,9 +2659,9 @@ export struct Compiler {
     const local = this.findLocal(in parser, nameStart, nameLength);
     if (local >= 0) {
       const index = usize(local);
-      const slot = this.locals[index].envSlot;
-      if (slot < 0 || slot > 255 || this.mustCheck(index) || this.locals[index].isConst) return -1;
-      return i32(this.openEnvs - this.locals[index].envDepth) << 8 | slot;
+      const slot = this.bindings.locals[index].envSlot;
+      if (slot < 0 || slot > 255 || this.mustCheck(index) || this.bindings.locals[index].isConst) return -1;
+      return i32(this.openEnvs - this.bindings.locals[index].envDepth) << 8 | slot;
     }
     // A binding a sloppy direct eval may have added comes first.
     const refs = this.evalVarRefs(in parser, nameStart, nameLength);
@@ -2577,14 +2716,14 @@ export struct Compiler {
     let envSlot = this.capturedSlot(nameStart);
     const captured = envSlot != -1;
     if (envSlot == BLOCK_SLOT) envSlot = -1;
-    this.locals.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
-    return this.locals.length - 1;
+    this.bindings.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: reg, envSlot: envSlot, envDepth: 0, captured: captured, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+    return this.bindings.locals.length - 1;
   }
 
   // Close a binding's scope. The entry stays, since Z's Array cannot
   // remove elements, but an empty name never matches a lookup.
   function unbindLocal(inout this, index: usize): void {
-    this.locals[index].nameLength = 0;
+    this.bindings.unbind(index);
   }
 
   // --- Property names ---
@@ -2732,7 +2871,7 @@ export struct Compiler {
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, in this.locals, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2807,8 +2946,8 @@ export struct Compiler {
     while (level < this.outerScopes.length) {
       let bindings = Array<EvalBinding>();
       let i: usize = 0;
-      while (i < this.outerScopes[level].names.length) {
-        const local = this.outerScopes[level].names[i];
+      while (i < this.outerScopes[level].bindings.locals.length) {
+        const local = this.outerScopes[level].bindings.locals[i];
         if (local.nameLength > 0 && local.envSlot >= 0) bindings.push(evalBindingOf(in parser, inout site.names, local));
         i = i + 1;
       }
@@ -2822,8 +2961,8 @@ export struct Compiler {
     }
     let own = Array<EvalBinding>();
     let i: usize = 0;
-    while (i < this.locals.length) {
-      const local = this.locals[i];
+    while (i < this.bindings.locals.length) {
+      const local = this.bindings.locals[i];
       if (local.nameLength > 0 && local.envSlot >= 0) {
         let binding = evalBindingOf(in parser, inout site.names, local);
         if (i < this.parameterLocals) binding.conflicts = true;
@@ -2873,17 +3012,13 @@ export struct Compiler {
       let scan = this.outerScopes.length;
       while (scan > varLevel && !bound) {
         scan = scan - 1;
-        let index = this.outerScopes[scan].names.length;
-        while (index > 0 && !bound) {
-          index = index - 1;
-          const outer = this.outerScopes[scan].names[index];
-          if (outer.nameLength == nameLength && this.nameMatches(in parser, outer.nameStart, outer.nameLength, nameStart, nameLength)) {
-            if (outer.lexical) {
-              this.hadError = true;
-              return;
-            }
-            bound = true;
+        const found = this.outerScopes[scan].bindings.find(in parser, nameStart, nameLength);
+        if (found >= 0) {
+          if (this.outerScopes[scan].bindings.locals[usize(found)].lexical) {
+            this.hadError = true;
+            return;
           }
+          bound = true;
         }
       }
       if (!bound) {
@@ -4438,7 +4573,7 @@ export struct Compiler {
       this.checkHeadRedeclarations(in parser, node, n.left);
       this.declareLexicalHead(in parser, inout runtime, n.left, n.right, 4294967295);
       const decl = parser.ast.node(parser.ast.child(n.left, 0));
-      if (decl.nameLength > 0) lexical = i32(this.locals.length - 1);
+      if (decl.nameLength > 0) lexical = i32(this.bindings.locals.length - 1);
     }
     const captures = this.headCaptures(in parser, n.left);
     let saved = Array<i32>();
@@ -4491,7 +4626,7 @@ export struct Compiler {
       this.checkHeadRedeclarations(in parser, node, n.left);
       this.declareLexicalHead(in parser, inout runtime, n.left, n.right, 4294967295);
       const decl = parser.ast.node(parser.ast.child(n.left, 0));
-      if (decl.nameLength > 0) lexical = i32(this.locals.length - 1);
+      if (decl.nameLength > 0) lexical = i32(this.bindings.locals.length - 1);
     }
     const captures = this.headCaptures(in parser, n.left);
     let saved = Array<i32>();
@@ -4845,7 +4980,7 @@ export struct Compiler {
     }
     this.enterScope(inout mark);
     if (bound >= 0) {
-      const paramSlot = this.locals[usize(bound)].envSlot;
+      const paramSlot = this.bindings.locals[usize(bound)].envSlot;
       if (paramSlot >= 0) this.emit(this.envSlotInst(Op.storeEnvSlot, catchReg, 0, i32(paramSlot)));
     }
     if (pattern != NO_NODE) {
@@ -4912,13 +5047,13 @@ export struct Compiler {
           if (decl.left != NO_NODE) {
             this.nameNext(decl.nameStart, decl.nameLength, 0);
             const index = usize(local);
-            if (this.locals[index].envSlot < 0 && !this.mustCheck(index) && !this.locals[index].isConst) {
-              this.targetReg = i32(this.locals[index].reg);
+            if (this.bindings.locals[index].envSlot < 0 && !this.mustCheck(index) && !this.bindings.locals[index].isConst) {
+              this.targetReg = i32(this.bindings.locals[index].reg);
             }
             // A binding in the environment is stored at once: its
             // initializer is read in place.
             let value: u8 = 0;
-            if (this.locals[index].envSlot >= 0) {
+            if (this.bindings.locals[index].envSlot >= 0) {
               value = this.compileOperand(in parser, inout runtime, decl.left, NO_NODE);
             } else {
               value = this.compileExpr(in parser, inout runtime, decl.left);
@@ -4951,8 +5086,8 @@ export struct Compiler {
             // instruction, after every read of the binding (checked for
             // the hole) has happened.
             let value: u8 = 0;
-            if (this.locals[usize(local)].envSlot < 0) {
-              this.targetReg = i32(this.locals[usize(local)].reg);
+            if (this.bindings.locals[usize(local)].envSlot < 0) {
+              this.targetReg = i32(this.bindings.locals[usize(local)].reg);
               value = this.compileExpr(in parser, inout runtime, decl.left);
             } else {
               value = this.compileOperand(in parser, inout runtime, decl.left, NO_NODE);
@@ -4972,7 +5107,7 @@ export struct Compiler {
     if (k == NodeKind.emptyStmt) return;
     if (k == NodeKind.functionDecl) {
       const blockLocal = this.findLocal(in parser, n.nameStart, n.nameLength);
-      if (blockLocal >= 0 && this.locals[usize(blockLocal)].blockFunction) {
+      if (blockLocal >= 0 && this.bindings.locals[usize(blockLocal)].blockFunction) {
         // Created when its block opened. Sloppy code also assigns the
         // function-scoped binding (or global) of the name here.
         if (this.strict) return;
@@ -5002,7 +5137,7 @@ export struct Compiler {
         }
         this.storeLocal(usize(local), r);
         if (inlineReturn(in parser, node) != NO_NODE && !this.nameChanges(in parser, n.nameStart, n.nameLength, node)) {
-          this.locals[usize(local)].inlineFunction = node;
+          this.bindings.locals[usize(local)].inlineFunction = node;
         }
       } else {
         const slot = declareGlobal(inout runtime, inout this.declaredGlobals, globalNameBytes(in parser, n.nameStart, n.nameLength));
@@ -5828,36 +5963,26 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, in enclosingLocals: Array<Local>, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
   // name the parser attached to a method or accessor does not.
   const writtenName = n.kind == NodeKind.functionExpr && n.nameLength > 0 && parser.sliceEquals(n.start, 8, "function");
-  // The enclosing scopes, outermost first, ending with the parent's own.
-  let scopes = Array<Scope>();
+  // The enclosing scopes, outermost first, ending with the parent's own:
+  // each its bindings by reference, with what the function was when this
+  // one was made in it.
+  let scopes = Array<Scope>.withCapacity(enclosingScopes.length + 1);
   let i: usize = 0;
   while (i < enclosingScopes.length) {
-    let names = Array<Local>();
-    let j: usize = 0;
-    while (j < enclosingScopes[i].names.length) {
-      names.push(enclosingScopes[i].names[j]);
-      j = j + 1;
-    }
-    scopes.push(Scope({ names: move names, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs, isArrow: enclosingScopes[i].isArrow, thisSlot: enclosingScopes[i].thisSlot, varSlot: enclosingScopes[i].varSlot }));
+    scopes.push(Scope({ bindings: enclosingScopes[i].bindings, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs, isArrow: enclosingScopes[i].isArrow, thisSlot: enclosingScopes[i].thisSlot, varSlot: enclosingScopes[i].varSlot }));
     i = i + 1;
   }
-  let parentNames = Array<Local>();
-  i = 0;
-  while (i < enclosingLocals.length) {
-    parentNames.push(enclosingLocals[i]);
-    i = i + 1;
-  }
-  scopes.push(Scope({ names: move parentNames, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs, isArrow: enclosingIsArrow, thisSlot: enclosingThisSlot, varSlot: enclosingVarSlot }));
+  scopes.push(Scope({ bindings: enclosingBindings, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs, isArrow: enclosingIsArrow, thisSlot: enclosingThisSlot, varSlot: enclosingVarSlot }));
   const scopeCount = scopes.length;
   const failed = CompiledFunction({ index: -1, minOuterScope: scopeCount });
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
-    locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
+    bindings: newBindings(Array<Local>()), outerScopes: move scopes, capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, lastTarget: -1, isFunction: true, functionNode: node,
     hadError: false, strict: enclosingStrict || role != 0, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
@@ -5881,7 +6006,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       const inner = parser.ast.node(param.left);
       if (inner.kind != NodeKind.identExpr || inner.nameLength == 0) return failed;
       compiler.addLocal(inner.nameStart, inner.nameLength);
-      restIndex = i32(compiler.locals.length - 1);
+      restIndex = i32(compiler.bindings.locals.length - 1);
       p = p + 1;
       continue;
     }
@@ -5889,7 +6014,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       // A pattern parameter: the argument lands in a register with no
       // name; the pattern's own names are locals bound at entry.
       const reg = compiler.allocReg();
-      compiler.locals.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+      compiler.bindings.push(Local({ nameStart: 0, nameLength: 0, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
       paramCount = paramCount + 1;
       p = p + 1;
       continue;
@@ -5898,20 +6023,20 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     // Parameters arrive in the first registers; a captured one is copied
     // into the environment once it exists.
     const reg = compiler.allocReg();
-    compiler.locals.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+    compiler.bindings.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: reg, envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     paramCount = paramCount + 1;
     p = p + 1;
   }
   if (paramCount > PARAMETER_LIMIT) return failed;
   // The names inside pattern parameters.
-  const patternNamesStart = compiler.locals.length;
+  const patternNamesStart = compiler.bindings.locals.length;
   p = 0;
   while (p < n.childrenCount) {
     const pattern = parameterPattern(in parser, parser.ast.child(node, p));
     if (pattern != NO_NODE) compiler.collectPatternLocals(in parser, pattern);
     p = p + 1;
   }
-  const patternNamesEnd = compiler.locals.length;
+  const patternNamesEnd = compiler.bindings.locals.length;
   const index = runtime.reserveFunction();
   compiler.spillFrom = SPILL_FROM;
   if (n.left != NO_NODE) compiler.collectBodyLocals(in parser, n.left);
@@ -5921,8 +6046,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   let selfLocal: i32 = -1;
   if (writtenName && compiler.findLocal(in parser, n.nameStart, n.nameLength) < 0) {
     selfReg = i32(compiler.addLocal(n.nameStart, n.nameLength));
-    selfLocal = i32(compiler.locals.length - 1);
-    compiler.locals[usize(selfLocal)].isConst = true;
+    selfLocal = i32(compiler.bindings.locals.length - 1);
+    compiler.bindings.locals[usize(selfLocal)].isConst = true;
   }
   let usesThis = n.left != NO_NODE && bodyUsesThis(in parser, n.left);
   p = 0;
@@ -5940,7 +6065,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     if (usage == 0 && directEvalWithin(in parser, n.left, true)) usage = parser.argumentsName;
     if (usage != 0 && compiler.findLocal(in parser, usage, 9) < 0) {
       compiler.addLocal(usage, 9);
-      argumentsIndex = i32(compiler.locals.length - 1);
+      argumentsIndex = i32(compiler.bindings.locals.length - 1);
     }
   }
   compiler.scanParameterCaptures(in parser, node, patternNamesEnd);
@@ -5961,8 +6086,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   if (orderedParams) {
     p = 0;
     while (p < paramCount) {
-      if (compiler.locals[usize(p)].nameLength > 0) {
-        if (compiler.locals[usize(p)].envSlot < 0) compiler.locals[usize(p)].reg = compiler.allocReg();
+      if (compiler.bindings.locals[usize(p)].nameLength > 0) {
+        if (compiler.bindings.locals[usize(p)].envSlot < 0) compiler.bindings.locals[usize(p)].reg = compiler.allocReg();
         compiler.markOrderedParameter(in parser, inout runtime, usize(p));
       }
       p = p + 1;
@@ -5994,7 +6119,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
     p = 0;
     while (p < paramCount) {
-      const slot = compiler.locals[usize(p)].envSlot;
+      const slot = compiler.bindings.locals[usize(p)].envSlot;
       if (slot >= 0 && !orderedParams) compiler.emit(compiler.envSlotInst(Op.storeEnvSlot, u8(p), 0, i32(slot)));
       p = p + 1;
     }
@@ -6324,64 +6449,483 @@ function collectParameterNames(in parser: Parser, fn: u32, inout names: Array<Na
   }
 }
 
-// Whether an identifier spelled like the binding appears in `node`
+// Where each name of an extent is first read, for the hole check a
+// let, const, or class needs when its binding may be read before its
+// declaration runs: per (extent, name) the position of the earliest
+// identifier spelled so -- 0 for one inside a function declaration,
+// which is hoisted above everything -- and per extent the earliest
+// direct eval, which may read any name. Made in one walk per extent.
+struct FirstUses {
+  extentKeys: Array<u32>;
+  extentEval: Array<u32>;
+  extents: usize;
+  pairHashes: Array<u32>;
+  pairExtents: Array<u32>;
+  pairStarts: Array<u32>;
+  pairLengths: Array<u32>;
+  pairFirst: Array<u32>;
+  pairs: usize;
+}
+
+const NOT_READ: u32 = 0xFFFF_FFFF;
+
+function firstUses(): FirstUses {
+  return FirstUses({ extentKeys: Array<u32>(), extentEval: Array<u32>(), extents: 0, pairHashes: Array<u32>(), pairExtents: Array<u32>(), pairStarts: Array<u32>(), pairLengths: Array<u32>(), pairFirst: Array<u32>(), pairs: 0 });
+}
+
+function useExtentSlot(in uses: FirstUses, extent: u32): usize {
+  const mask = uses.extentKeys.length - 1;
+  let at = usize(extent.wrappingMultiply(2654435761)) & mask;
+  while (uses.extentKeys[at] != 0 && uses.extentKeys[at] != extent + 1) { at = (at + 1) & mask; }
+  return at;
+}
+
+function usePairSlot(in parser: Parser, in uses: FirstUses, extent: u32, start: u32, length: u32, hash: u32): usize {
+  const mask = uses.pairHashes.length - 1;
+  let at = usize(hash) & mask;
+  while (uses.pairHashes[at] != 0) {
+    if (uses.pairHashes[at] == hash && uses.pairExtents[at] == extent && uses.pairLengths[at] == length && parser.slicesEqual(uses.pairStarts[at], length, start, length)) return at;
+    at = (at + 1) & mask;
+  }
+  return at;
+}
+
+// Record a read of the name at `position`, keeping the earliest.
+function noteUse(in parser: Parser, inout uses: FirstUses, extent: u32, start: u32, length: u32, position: u32): void {
+  if ((uses.pairs + 1) * 2 > uses.pairHashes.length) {
+    const size: usize = uses.pairHashes.length == 0 ? 64 : uses.pairHashes.length * 2;
+    let hashes = zerosOf(size);
+    let extents = zerosOf(size);
+    let starts = zerosOf(size);
+    let lengths = zerosOf(size);
+    let first = zerosOf(size);
+    let k: usize = 0;
+    while (k < uses.pairHashes.length) {
+      if (uses.pairHashes[k] != 0) {
+        const mask = size - 1;
+        let at = usize(uses.pairHashes[k]) & mask;
+        while (hashes[at] != 0) { at = (at + 1) & mask; }
+        hashes[at] = uses.pairHashes[k];
+        extents[at] = uses.pairExtents[k];
+        starts[at] = uses.pairStarts[k];
+        lengths[at] = uses.pairLengths[k];
+        first[at] = uses.pairFirst[k];
+      }
+      k = k + 1;
+    }
+    uses.pairHashes = move hashes;
+    uses.pairExtents = move extents;
+    uses.pairStarts = move starts;
+    uses.pairLengths = move lengths;
+    uses.pairFirst = move first;
+  }
+  const hash = pairHash(in parser, extent, start, length);
+  const at = usePairSlot(in parser, in uses, extent, start, length, hash);
+  if (uses.pairHashes[at] == 0) {
+    uses.pairHashes[at] = hash;
+    uses.pairExtents[at] = extent;
+    uses.pairStarts[at] = start;
+    uses.pairLengths[at] = length;
+    uses.pairFirst[at] = position;
+    uses.pairs = uses.pairs + 1;
+  } else if (position < uses.pairFirst[at]) {
+    uses.pairFirst[at] = position;
+  }
+}
+
+function collectUses(in parser: Parser, inout uses: FirstUses, extent: u32, node: u32, hoisted: boolean, inout evalAt: u32): void {
+  if (node == NO_NODE) return;
+  const n = parser.ast.node(node);
+  if (n.kind == NodeKind.identExpr && n.nameLength > 0) {
+    let position: u32 = n.nameStart;
+    if (hoisted) position = 0;
+    noteUse(in parser, inout uses, extent, n.nameStart, n.nameLength, position);
+  }
+  if (n.kind == NodeKind.call && isDirectEvalCall(in parser, node)) {
+    let position: u32 = n.start;
+    if (hoisted) position = 0;
+    if (position < evalAt) evalAt = position;
+  }
+  const inside = hoisted || n.kind == NodeKind.functionDecl;
+  collectUses(in parser, inout uses, extent, n.left, inside, inout evalAt);
+  collectUses(in parser, inout uses, extent, n.right, inside, inout evalAt);
+  collectUses(in parser, inout uses, extent, n.third, inside, inout evalAt);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    collectUses(in parser, inout uses, extent, parser.ast.child(node, i), inside, inout evalAt);
+    i = i + 1;
+  }
+}
+
+// Whether an identifier spelled like the binding appears in `extent`
 // before `limit` -- or anywhere inside a function declaration, which is
 // hoisted above the declaration -- so the binding may be read before
 // its declaration has run.
-function nameReferencedBefore(in parser: Parser, node: u32, nameStart: u32, nameLength: u32, limit: u32, hoisted: boolean): boolean {
-  if (node == NO_NODE) return false;
-  const n = parser.ast.node(node);
-  if (n.kind == NodeKind.identExpr && n.nameLength == nameLength && (hoisted || n.nameStart < limit)
-      && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength)) {
-    return true;
+function referencedBefore(in parser: Parser, inout uses: FirstUses, extent: u32, nameStart: u32, nameLength: u32, limit: u32): boolean {
+  if (extent == NO_NODE) return false;
+  if (uses.extentKeys.length == 0 || uses.extentKeys[useExtentSlot(in uses, extent)] == 0) {
+    if ((uses.extents + 1) * 2 > uses.extentKeys.length) {
+      const size: usize = uses.extentKeys.length == 0 ? 16 : uses.extentKeys.length * 2;
+      let keys = zerosOf(size);
+      let evals = zerosOf(size);
+      let k: usize = 0;
+      while (k < uses.extentKeys.length) {
+        if (uses.extentKeys[k] != 0) {
+          const mask = size - 1;
+          let at = usize((uses.extentKeys[k] - 1).wrappingMultiply(2654435761)) & mask;
+          while (keys[at] != 0) { at = (at + 1) & mask; }
+          keys[at] = uses.extentKeys[k];
+          evals[at] = uses.extentEval[k];
+        }
+        k = k + 1;
+      }
+      uses.extentKeys = move keys;
+      uses.extentEval = move evals;
+    }
+    let evalAt = NOT_READ;
+    collectUses(in parser, inout uses, extent, extent, false, inout evalAt);
+    const at = useExtentSlot(in uses, extent);
+    uses.extentKeys[at] = extent + 1;
+    uses.extentEval[at] = evalAt;
+    uses.extents = uses.extents + 1;
   }
-  if (n.kind == NodeKind.call && (hoisted || n.start < limit) && isDirectEvalCall(in parser, node)) return true;
-  const inside = hoisted || n.kind == NodeKind.functionDecl;
-  if (nameReferencedBefore(in parser, n.left, nameStart, nameLength, limit, inside)) return true;
-  if (nameReferencedBefore(in parser, n.right, nameStart, nameLength, limit, inside)) return true;
-  if (nameReferencedBefore(in parser, n.third, nameStart, nameLength, limit, inside)) return true;
-  let i: u32 = 0;
-  while (i < n.childrenCount) {
-    if (nameReferencedBefore(in parser, parser.ast.child(node, i), nameStart, nameLength, limit, inside)) return true;
-    i = i + 1;
-  }
-  return false;
+  if (uses.extentEval[useExtentSlot(in uses, extent)] < limit) return true;
+  if (uses.pairs == 0) return false;
+  const at = usePairSlot(in parser, in uses, extent, nameStart, nameLength, pairHash(in parser, extent, nameStart, nameLength));
+  return uses.pairHashes[at] != 0 && uses.pairFirst[at] < limit;
 }
 
 // --- Capture scan ---
 
-// Whether a function nested somewhere in `node` refers to the binding
-// named at `nameStart` -- unless a function on the way binds the name
-// itself. `insideNested` is set once the walk has entered a nested
-// function.
-function capturedBy(in parser: Parser, node: u32, nameStart: u32, nameLength: u32, insideNested: boolean): boolean {
-  if (node == NO_NODE) return false;
-  const n = parser.ast.node(node);
-  const k = n.kind;
-  // Direct eval code may name any binding in scope.
-  if (k == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
-  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef || k == NodeKind.staticBlock) {
-    if (functionBinds(in parser, node, nameStart, nameLength)) return false;
-    return capturedInside(in parser, node, nameStart, nameLength, true);
-  }
-  if (insideNested && k == NodeKind.identExpr && n.nameLength == nameLength
-      && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength)) {
-    return true;
-  }
-  return capturedInside(in parser, node, nameStart, nameLength, insideNested);
+// A set of names by spelling: open-addressed on the name's hash.
+struct NameSet {
+  hashes: Array<u32>;
+  starts: Array<u32>;
+  lengths: Array<u32>;
+  used: usize;
 }
 
-function capturedInside(in parser: Parser, node: u32, nameStart: u32, nameLength: u32, insideNested: boolean): boolean {
+function nameSet(): NameSet {
+  return NameSet({ hashes: Array<u32>(), starts: Array<u32>(), lengths: Array<u32>(), used: 0 });
+}
+
+function nameSetSlot(in parser: Parser, in set: NameSet, start: u32, length: u32, hash: u32): usize {
+  const mask = set.hashes.length - 1;
+  let at = usize(hash) & mask;
+  while (set.hashes[at] != 0) {
+    if (set.hashes[at] == hash && set.lengths[at] == length && parser.slicesEqual(set.starts[at], length, start, length)) return at;
+    at = (at + 1) & mask;
+  }
+  return at;
+}
+
+function nameSetHas(in parser: Parser, in set: NameSet, start: u32, length: u32): boolean {
+  if (set.used == 0) return false;
+  const at = nameSetSlot(in parser, in set, start, length, bindingHash(in parser, start, length));
+  return set.hashes[at] != 0;
+}
+
+function nameSetAdd(in parser: Parser, inout set: NameSet, start: u32, length: u32): void {
+  if (length == 0) return;
+  if ((set.used + 1) * 2 > set.hashes.length) {
+    const size: usize = set.hashes.length == 0 ? 16 : set.hashes.length * 2;
+    let grown = NameSet({ hashes: zerosOf(size), starts: zerosOf(size), lengths: zerosOf(size), used: set.used });
+    let k: usize = 0;
+    while (k < set.hashes.length) {
+      if (set.hashes[k] != 0) {
+        const at = nameSetSlot(in parser, in grown, set.starts[k], set.lengths[k], set.hashes[k]);
+        grown.hashes[at] = set.hashes[k];
+        grown.starts[at] = set.starts[k];
+        grown.lengths[at] = set.lengths[k];
+      }
+      k = k + 1;
+    }
+    set = move grown;
+  }
+  const hash = bindingHash(in parser, start, length);
+  const at = nameSetSlot(in parser, in set, start, length, hash);
+  if (set.hashes[at] != 0) return;
+  set.hashes[at] = hash;
+  set.starts[at] = start;
+  set.lengths[at] = length;
+  set.used = set.used + 1;
+}
+
+// The names a function binds throughout itself: its own name (a function
+// expression's), its parameters, a declaration among its body's own
+// statements, and a var anywhere in its body, nested functions aside. A
+// let, const, class, or function declared in an inner block binds the
+// name only there and does not count: the capture scan then looks inside,
+// and at worst gives the outer binding an environment slot it did not
+// need.
+function functionBindings(in parser: Parser, fn: u32): NameSet {
+  let names = nameSet();
+  const n = parser.ast.node(fn);
+  if (n.kind == NodeKind.functionExpr && n.nameLength > 0) nameSetAdd(in parser, inout names, n.nameStart, n.nameLength);
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    const paramIndex = parser.ast.child(fn, p);
+    const param = parser.ast.node(paramIndex);
+    if (param.kind == NodeKind.identExpr && param.nameLength > 0) nameSetAdd(in parser, inout names, param.nameStart, param.nameLength);
+    if (param.kind == NodeKind.restParam) addPatternNames(in parser, param.left, inout names);
+    addPatternNames(in parser, parameterPattern(in parser, paramIndex), inout names);
+    p = p + 1;
+  }
+  const body = n.left;
+  if (body != NO_NODE) {
+    const root = parser.ast.node(body);
+    if (root.kind == NodeKind.blockStmt) {
+      let i: u32 = 0;
+      while (i < root.childrenCount) {
+        const statementIndex = parser.ast.child(body, i);
+        const statement = parser.ast.node(statementIndex);
+        if (statement.kind == NodeKind.functionDecl || statement.kind == NodeKind.classDecl) nameSetAdd(in parser, inout names, statement.nameStart, statement.nameLength);
+        if (statement.kind == NodeKind.varDecl) addDeclarationNames(in parser, statementIndex, inout names);
+        i = i + 1;
+      }
+    }
+    addVarNames(in parser, body, inout names);
+  }
+  return names;
+}
+
+function addPatternNames(in parser: Parser, pattern: u32, inout names: NameSet): void {
+  if (pattern == NO_NODE) return;
+  const n = parser.ast.node(pattern);
+  if (n.kind == NodeKind.identExpr) {
+    nameSetAdd(in parser, inout names, n.nameStart, n.nameLength);
+    return;
+  }
+  if (n.kind == NodeKind.patternEntry) {
+    addPatternNames(in parser, n.left, inout names);
+    return;
+  }
+  if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      addPatternNames(in parser, parser.ast.child(pattern, i), inout names);
+      i = i + 1;
+    }
+  }
+}
+
+function addDeclarationNames(in parser: Parser, node: u32, inout names: NameSet): void {
   const n = parser.ast.node(node);
-  if (capturedBy(in parser, n.left, nameStart, nameLength, insideNested)) return true;
-  if (capturedBy(in parser, n.right, nameStart, nameLength, insideNested)) return true;
-  if (capturedBy(in parser, n.third, nameStart, nameLength, insideNested)) return true;
   let i: u32 = 0;
   while (i < n.childrenCount) {
-    if (capturedBy(in parser, parser.ast.child(node, i), nameStart, nameLength, insideNested)) return true;
+    const decl = parser.ast.node(parser.ast.child(node, i));
+    if (decl.nameLength > 0) nameSetAdd(in parser, inout names, decl.nameStart, decl.nameLength);
+    if (decl.nameLength == 0) addPatternNames(in parser, decl.third, inout names);
     i = i + 1;
   }
+}
+
+// The vars declared in `node`, nested functions and classes aside.
+function addVarNames(in parser: Parser, node: u32, inout names: NameSet): void {
+  if (node == NO_NODE) return;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classDecl || k == NodeKind.classExpr || k == NodeKind.methodDef || k == NodeKind.staticBlock) return;
+  if (k == NodeKind.varDecl) {
+    if (n.op == TokenKind.kwVar) addDeclarationNames(in parser, node, inout names);
+    return;
+  }
+  addVarNames(in parser, n.left, inout names);
+  addVarNames(in parser, n.right, inout names);
+  addVarNames(in parser, n.third, inout names);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    addVarNames(in parser, parser.ast.child(node, i), inout names);
+    i = i + 1;
+  }
+}
+
+// The capture scan's answer for every name of an extent at once: the
+// names a function inside it refers to that no function between binds --
+// those must live in an environment the inner function reaches -- found
+// in one walk; `all` when it calls eval directly, which may name any
+// binding (counted wherever it is: a slot more than needed at worst).
+struct CaptureSummary {
+  all: boolean;
+  names: NameSet;
+}
+
+function isFunctionLike(k: NodeKind): boolean {
+  return k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef || k == NodeKind.staticBlock;
+}
+
+function collectCaptures(in parser: Parser, node: u32, inout enclosing: Array<NameSet>, inout summary: CaptureSummary): void {
+  if (node == NO_NODE) return;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.call && isDirectEvalCall(in parser, node)) summary.all = true;
+  if (isFunctionLike(k)) {
+    enclosing.push(functionBindings(in parser, node));
+    collectCapturesInside(in parser, node, inout enclosing, inout summary);
+    const left = enclosing.pop();
+    return;
+  }
+  if (enclosing.length > 0 && k == NodeKind.identExpr && n.nameLength > 0) {
+    if (!anyBinds(in parser, enclosing, n.nameStart, n.nameLength)) nameSetAdd(in parser, inout summary.names, n.nameStart, n.nameLength);
+  }
+  collectCapturesInside(in parser, node, inout enclosing, inout summary);
+}
+
+// Whether one of the functions on the way binds the name, innermost
+// first.
+function anyBinds(in parser: Parser, sets: Slice<NameSet>, start: u32, length: u32): boolean {
+  const hash = bindingHash(in parser, start, length);
+  let level = sets.length;
+  while (level > 0) {
+    level = level - 1;
+    if (sets[level].used > 0) {
+      const mask = sets[level].hashes.length - 1;
+      let at = usize(hash) & mask;
+      while (sets[level].hashes[at] != 0) {
+        if (sets[level].hashes[at] == hash && sets[level].lengths[at] == length && parser.slicesEqual(sets[level].starts[at], length, start, length)) return true;
+        at = (at + 1) & mask;
+      }
+    }
+  }
   return false;
+}
+
+function collectCapturesInside(in parser: Parser, node: u32, inout enclosing: Array<NameSet>, inout summary: CaptureSummary): void {
+  const n = parser.ast.node(node);
+  collectCaptures(in parser, n.left, inout enclosing, inout summary);
+  collectCaptures(in parser, n.right, inout enclosing, inout summary);
+  collectCaptures(in parser, n.third, inout enclosing, inout summary);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    collectCaptures(in parser, parser.ast.child(node, i), inout enclosing, inout summary);
+    i = i + 1;
+  }
+}
+
+function captureSummaryOf(in parser: Parser, extent: u32): CaptureSummary {
+  let summary = CaptureSummary({ all: false, names: nameSet() });
+  let enclosing = Array<NameSet>();
+  collectCaptures(in parser, extent, inout enclosing, inout summary);
+  return summary;
+}
+
+// Every extent's capture summary a compile has asked for, in one table:
+// the extents summarized (and which call eval directly), and the
+// (extent, name) pairs captured there.
+struct CaptureTable {
+  extentKeys: Array<u32>;
+  extentAll: Array<u32>;
+  extents: usize;
+  pairHashes: Array<u32>;
+  pairExtents: Array<u32>;
+  pairStarts: Array<u32>;
+  pairLengths: Array<u32>;
+  pairs: usize;
+}
+
+function captureTable(): CaptureTable {
+  return CaptureTable({ extentKeys: Array<u32>(), extentAll: Array<u32>(), extents: 0, pairHashes: Array<u32>(), pairExtents: Array<u32>(), pairStarts: Array<u32>(), pairLengths: Array<u32>(), pairs: 0 });
+}
+
+// The extent's bucket: its entry, or the empty one it would take.
+function extentSlot(in table: CaptureTable, extent: u32): usize {
+  const mask = table.extentKeys.length - 1;
+  let at = usize(extent.wrappingMultiply(2654435761)) & mask;
+  while (table.extentKeys[at] != 0 && table.extentKeys[at] != extent + 1) { at = (at + 1) & mask; }
+  return at;
+}
+
+function pairHash(in parser: Parser, extent: u32, start: u32, length: u32): u32 {
+  return (bindingHash(in parser, start, length) ^ extent.wrappingMultiply(2654435761)) | 1;
+}
+
+function pairSlot(in parser: Parser, in table: CaptureTable, extent: u32, start: u32, length: u32, hash: u32): usize {
+  const mask = table.pairHashes.length - 1;
+  let at = usize(hash) & mask;
+  while (table.pairHashes[at] != 0) {
+    if (table.pairHashes[at] == hash && table.pairExtents[at] == extent && table.pairLengths[at] == length && parser.slicesEqual(table.pairStarts[at], length, start, length)) return at;
+    at = (at + 1) & mask;
+  }
+  return at;
+}
+
+function addCapturePair(in parser: Parser, inout table: CaptureTable, extent: u32, start: u32, length: u32): void {
+  if ((table.pairs + 1) * 2 > table.pairHashes.length) {
+    const size: usize = table.pairHashes.length == 0 ? 64 : table.pairHashes.length * 2;
+    let hashes = zerosOf(size);
+    let extents = zerosOf(size);
+    let starts = zerosOf(size);
+    let lengths = zerosOf(size);
+    let k: usize = 0;
+    while (k < table.pairHashes.length) {
+      if (table.pairHashes[k] != 0) {
+        const mask = size - 1;
+        let at = usize(table.pairHashes[k]) & mask;
+        while (hashes[at] != 0) { at = (at + 1) & mask; }
+        hashes[at] = table.pairHashes[k];
+        extents[at] = table.pairExtents[k];
+        starts[at] = table.pairStarts[k];
+        lengths[at] = table.pairLengths[k];
+      }
+      k = k + 1;
+    }
+    table.pairHashes = move hashes;
+    table.pairExtents = move extents;
+    table.pairStarts = move starts;
+    table.pairLengths = move lengths;
+  }
+  const hash = pairHash(in parser, extent, start, length);
+  const at = pairSlot(in parser, in table, extent, start, length, hash);
+  if (table.pairHashes[at] != 0) return;
+  table.pairHashes[at] = hash;
+  table.pairExtents[at] = extent;
+  table.pairStarts[at] = start;
+  table.pairLengths[at] = length;
+  table.pairs = table.pairs + 1;
+}
+
+// Summarize an extent into the table, once.
+function summarizeExtent(in parser: Parser, inout table: CaptureTable, extent: u32): void {
+  if (table.extentKeys.length > 0 && table.extentKeys[extentSlot(in table, extent)] != 0) return;
+  if ((table.extents + 1) * 2 > table.extentKeys.length) {
+    const size: usize = table.extentKeys.length == 0 ? 16 : table.extentKeys.length * 2;
+    let keys = zerosOf(size);
+    let all = zerosOf(size);
+    let k: usize = 0;
+    while (k < table.extentKeys.length) {
+      if (table.extentKeys[k] != 0) {
+        const mask = size - 1;
+        let at = usize((table.extentKeys[k] - 1).wrappingMultiply(2654435761)) & mask;
+        while (keys[at] != 0) { at = (at + 1) & mask; }
+        keys[at] = table.extentKeys[k];
+        all[at] = table.extentAll[k];
+      }
+      k = k + 1;
+    }
+    table.extentKeys = move keys;
+    table.extentAll = move all;
+  }
+  const summary = captureSummaryOf(in parser, extent);
+  const at = extentSlot(in table, extent);
+  table.extentKeys[at] = extent + 1;
+  table.extentAll[at] = summary.all ? 1 : 0;
+  table.extents = table.extents + 1;
+  let k: usize = 0;
+  while (k < summary.names.hashes.length) {
+    if (summary.names.hashes[k] != 0) addCapturePair(in parser, inout table, extent, summary.names.starts[k], summary.names.lengths[k]);
+    k = k + 1;
+  }
+}
+
+// Whether a function inside `extent` captures the name, from the
+// extent's summary.
+function capturedIn(in parser: Parser, inout table: CaptureTable, extent: u32, nameStart: u32, nameLength: u32): boolean {
+  if (extent == NO_NODE) return false;
+  summarizeExtent(in parser, inout table, extent);
+  if (table.extentAll[extentSlot(in table, extent)] != 0) return true;
+  if (table.pairs == 0) return false;
+  const at = pairSlot(in parser, in table, extent, nameStart, nameLength, pairHash(in parser, extent, nameStart, nameLength));
+  return table.pairHashes[at] != 0;
 }
 
 // A call spelled `eval(...)`, the callee perhaps parenthesized, with no
@@ -6448,29 +6992,6 @@ function evalBindingOf(in parser: Parser, inout names: Array<u8>, local: Local):
   }
   const checked = local.needsHole && (local.alwaysCheck || !local.initialized);
   return EvalBinding({ nameStart: start, nameLength: local.nameLength, slot: u32(local.envSlot), depth: local.envDepth, isConst: local.isConst, conflicts: local.lexical, checked: checked });
-}
-
-// Whether a function node binds the name itself: as a parameter, as its
-// own name, or by a declaration in its body.
-function functionBinds(in parser: Parser, fn: u32, nameStart: u32, nameLength: u32): boolean {
-  const n = parser.ast.node(fn);
-  if (n.kind == NodeKind.functionExpr && n.nameLength == nameLength
-      && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength)) {
-    return true;
-  }
-  let p: u32 = 0;
-  while (p < n.childrenCount) {
-    const paramIndex = parser.ast.child(fn, p);
-    const param = parser.ast.node(paramIndex);
-    if (param.kind == NodeKind.identExpr && param.nameLength == nameLength
-        && parser.slicesEqual(param.nameStart, param.nameLength, nameStart, nameLength)) {
-      return true;
-    }
-    if (param.kind == NodeKind.restParam && patternBinds(in parser, param.left, nameStart, nameLength)) return true;
-    if (patternBinds(in parser, parameterPattern(in parser, paramIndex), nameStart, nameLength)) return true;
-    p = p + 1;
-  }
-  return bodyBinds(in parser, n.left, nameStart, nameLength);
 }
 
 // Whether any parameter has a default, directly or inside a pattern.
@@ -6615,81 +7136,6 @@ function chainHasOptional(in parser: Parser, node: u32): boolean {
     if (k == NodeKind.optionalMember || k == NodeKind.optionalComputed || k == NodeKind.optionalCall) return true;
     if (k != NodeKind.member && k != NodeKind.computed && k != NodeKind.call) return false;
     current = n.left;
-  }
-  return false;
-}
-
-// Whether a pattern (or identifier) binds `name`.
-function patternBinds(in parser: Parser, pattern: u32, nameStart: u32, nameLength: u32): boolean {
-  if (pattern == NO_NODE) return false;
-  const n = parser.ast.node(pattern);
-  if (n.kind == NodeKind.identExpr) {
-    return n.nameLength == nameLength && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength);
-  }
-  if (n.kind == NodeKind.patternEntry) return patternBinds(in parser, n.left, nameStart, nameLength);
-  if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) {
-    let i: u32 = 0;
-    while (i < n.childrenCount) {
-      if (patternBinds(in parser, parser.ast.child(pattern, i), nameStart, nameLength)) return true;
-      i = i + 1;
-    }
-  }
-  return false;
-}
-
-// Whether a function's body binds the name for all of it: a declaration
-// among its own statements, or a var anywhere in it, nested functions
-// aside. A let, const, class, or function declared in an inner block
-// binds the name only there and does not count: the capture scan then
-// looks inside, and at worst gives the outer binding an environment slot
-// it did not need -- where counting it hid a capture the block's code
-// outside the declaration made.
-function bodyBinds(in parser: Parser, body: u32, nameStart: u32, nameLength: u32): boolean {
-  if (body == NO_NODE) return false;
-  const root = parser.ast.node(body);
-  if (root.kind == NodeKind.blockStmt) {
-    let i: u32 = 0;
-    while (i < root.childrenCount) {
-      const statementIndex = parser.ast.child(body, i);
-      const statement = parser.ast.node(statementIndex);
-      if ((statement.kind == NodeKind.functionDecl || statement.kind == NodeKind.classDecl)
-          && statement.nameLength == nameLength && parser.slicesEqual(statement.nameStart, statement.nameLength, nameStart, nameLength)) {
-        return true;
-      }
-      if (statement.kind == NodeKind.varDecl && declarationBinds(in parser, statementIndex, nameStart, nameLength)) return true;
-      i = i + 1;
-    }
-  }
-  return varBinds(in parser, body, nameStart, nameLength);
-}
-
-function declarationBinds(in parser: Parser, node: u32, nameStart: u32, nameLength: u32): boolean {
-  const n = parser.ast.node(node);
-  let i: u32 = 0;
-  while (i < n.childrenCount) {
-    const decl = parser.ast.node(parser.ast.child(node, i));
-    if (decl.nameLength == nameLength && parser.slicesEqual(decl.nameStart, decl.nameLength, nameStart, nameLength)) return true;
-    if (decl.nameLength == 0 && patternBinds(in parser, decl.third, nameStart, nameLength)) return true;
-    i = i + 1;
-  }
-  return false;
-}
-
-// Whether a var of the name is declared in `node`, nested functions and
-// classes aside.
-function varBinds(in parser: Parser, node: u32, nameStart: u32, nameLength: u32): boolean {
-  if (node == NO_NODE) return false;
-  const n = parser.ast.node(node);
-  const k = n.kind;
-  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classDecl || k == NodeKind.classExpr || k == NodeKind.methodDef || k == NodeKind.staticBlock) return false;
-  if (k == NodeKind.varDecl) return n.op == TokenKind.kwVar && declarationBinds(in parser, node, nameStart, nameLength);
-  if (varBinds(in parser, n.left, nameStart, nameLength)) return true;
-  if (varBinds(in parser, n.right, nameStart, nameLength)) return true;
-  if (varBinds(in parser, n.third, nameStart, nameLength)) return true;
-  let i: u32 = 0;
-  while (i < n.childrenCount) {
-    if (varBinds(in parser, parser.ast.child(node, i), nameStart, nameLength)) return true;
-    i = i + 1;
   }
   return false;
 }
@@ -6919,7 +7365,7 @@ function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, inout de
 export function compileProgram(in parser: Parser, root: u32, inout runtime: Runtime): i32 {
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
-    locals: Array<Local>(), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
+    bindings: newBindings(Array<Local>()), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: 0, lastExprReg: -1, lastTarget: -1, isFunction: false, functionNode: NO_NODE,
     hadError: false, strict: parser.strictMode, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
@@ -7019,7 +7465,7 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
     const thisSlot = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].thisSlot;
     const varSlot = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].varSlot;
     if (varSlot >= 0) varLevel = i32(level);
-    scopes.push(Scope({ names: move names, hasEnv: hasEnv, openEnvs: openEnvs, isArrow: isArrow, thisSlot: thisSlot, varSlot: varSlot }));
+    scopes.push(Scope({ bindings: newBindings(move names), hasEnv: hasEnv, openEnvs: openEnvs, isArrow: isArrow, thisSlot: thisSlot, varSlot: varSlot }));
     level = level + 1;
   }
   const scopeCount = scopes.length;
@@ -7027,7 +7473,7 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
   const evalVars = !strict && varLevel >= 0;
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
-    locals: Array<Local>(), outerScopes: move scopes, capturedNames: Array<Local>(),
+    bindings: newBindings(Array<Local>()), outerScopes: move scopes, capturedNames: Array<Local>(),
     hasEnv: false, envSize: 0, minOuterScope: scopeCount, lastExprReg: -1, lastTarget: -1, isFunction: strict || evalVars, functionNode: root,
     hadError: false, strict: strict, loops: Array<LoopFrame>(),
     pendingLabelStart: 0, pendingLabelLength: 0, regions: Array<Region>(), regionDepth: 0,
