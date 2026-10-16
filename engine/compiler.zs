@@ -6378,33 +6378,58 @@ function patternBinds(in parser: Parser, pattern: u32, nameStart: u32, nameLengt
   return false;
 }
 
-// var, let, const, and function declarations of a body, not entering
-// nested functions.
-function bodyBinds(in parser: Parser, node: u32, nameStart: u32, nameLength: u32): boolean {
+// Whether a function's body binds the name for all of it: a declaration
+// among its own statements, or a var anywhere in it, nested functions
+// aside. A let, const, class, or function declared in an inner block
+// binds the name only there and does not count: the capture scan then
+// looks inside, and at worst gives the outer binding an environment slot
+// it did not need -- where counting it hid a capture the block's code
+// outside the declaration made.
+function bodyBinds(in parser: Parser, body: u32, nameStart: u32, nameLength: u32): boolean {
+  if (body == NO_NODE) return false;
+  const root = parser.ast.node(body);
+  if (root.kind == NodeKind.blockStmt) {
+    let i: u32 = 0;
+    while (i < root.childrenCount) {
+      const statementIndex = parser.ast.child(body, i);
+      const statement = parser.ast.node(statementIndex);
+      if ((statement.kind == NodeKind.functionDecl || statement.kind == NodeKind.classDecl)
+          && statement.nameLength == nameLength && parser.slicesEqual(statement.nameStart, statement.nameLength, nameStart, nameLength)) {
+        return true;
+      }
+      if (statement.kind == NodeKind.varDecl && declarationBinds(in parser, statementIndex, nameStart, nameLength)) return true;
+      i = i + 1;
+    }
+  }
+  return varBinds(in parser, body, nameStart, nameLength);
+}
+
+function declarationBinds(in parser: Parser, node: u32, nameStart: u32, nameLength: u32): boolean {
+  const n = parser.ast.node(node);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    const decl = parser.ast.node(parser.ast.child(node, i));
+    if (decl.nameLength == nameLength && parser.slicesEqual(decl.nameStart, decl.nameLength, nameStart, nameLength)) return true;
+    if (decl.nameLength == 0 && patternBinds(in parser, decl.third, nameStart, nameLength)) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
+// Whether a var of the name is declared in `node`, nested functions and
+// classes aside.
+function varBinds(in parser: Parser, node: u32, nameStart: u32, nameLength: u32): boolean {
   if (node == NO_NODE) return false;
   const n = parser.ast.node(node);
   const k = n.kind;
-  if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classExpr || k == NodeKind.methodDef || k == NodeKind.staticBlock) return false;
-  if (k == NodeKind.functionDecl || k == NodeKind.classDecl) {
-    return n.nameLength == nameLength && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength);
-  }
-  if (k == NodeKind.varDecl) {
-    let i: u32 = 0;
-    while (i < n.childrenCount) {
-      const declIndex = parser.ast.child(node, i);
-      const decl = parser.ast.node(declIndex);
-      if (decl.nameLength == nameLength && parser.slicesEqual(decl.nameStart, decl.nameLength, nameStart, nameLength)) return true;
-      if (decl.nameLength == 0 && patternBinds(in parser, decl.third, nameStart, nameLength)) return true;
-      i = i + 1;
-    }
-    return false;
-  }
-  if (bodyBinds(in parser, n.left, nameStart, nameLength)) return true;
-  if (bodyBinds(in parser, n.right, nameStart, nameLength)) return true;
-  if (bodyBinds(in parser, n.third, nameStart, nameLength)) return true;
+  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classDecl || k == NodeKind.classExpr || k == NodeKind.methodDef || k == NodeKind.staticBlock) return false;
+  if (k == NodeKind.varDecl) return n.op == TokenKind.kwVar && declarationBinds(in parser, node, nameStart, nameLength);
+  if (varBinds(in parser, n.left, nameStart, nameLength)) return true;
+  if (varBinds(in parser, n.right, nameStart, nameLength)) return true;
+  if (varBinds(in parser, n.third, nameStart, nameLength)) return true;
   let i: u32 = 0;
   while (i < n.childrenCount) {
-    if (bodyBinds(in parser, parser.ast.child(node, i), nameStart, nameLength)) return true;
+    if (varBinds(in parser, parser.ast.child(node, i), nameStart, nameLength)) return true;
     i = i + 1;
   }
   return false;
