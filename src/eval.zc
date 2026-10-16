@@ -57,6 +57,7 @@ fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
     // async-test harness rely on the next sync turn observing the
     // settled value.
     drain_microtasks(ctx);
+    if ctx_end_termination(ctx) { return ctx.last_error; }
     if r.is_throw {
         ctx.had_error = true;
         ctx.last_error = r.value;
@@ -105,6 +106,7 @@ fn zjs_run_function(ctx: ZjsContext*, f: Function*) -> ZjsValue {
     let r = interpret(ctx, f, NULL, 0);
     ctx.host_this = saved_this;
     drain_microtasks(ctx);
+    if ctx_end_termination(ctx) { return ctx.last_error; }
     if r.is_throw {
         ctx.had_error = true;
         ctx.last_error = r.value;
@@ -125,6 +127,7 @@ fn zjs_eval_module(ctx: ZjsContext*, abs_path: char*) -> ZjsValue {
     let path_atom = ctx_intern_atom(ctx, abs_path, len);
     let m = ctx_load_module(ctx, path_atom);
     drain_microtasks(ctx);
+    if ctx_end_termination(ctx) { return ctx.last_error; }
     if ctx.pending_throw_active {
         ctx.had_error = true;
         ctx.last_error = consume_pending_throw(ctx);
@@ -194,6 +197,7 @@ fn zjs_eval_module_source(ctx: ZjsContext*, source: char*, source_len: usize, vi
 
     let m = ctx_eval_module_with_source(ctx, path_atom, src_owned);
     drain_microtasks(ctx);
+    if ctx_end_termination(ctx) { return ctx.last_error; }
     if ctx.pending_throw_active {
         ctx.had_error = true;
         ctx.last_error = consume_pending_throw(ctx);

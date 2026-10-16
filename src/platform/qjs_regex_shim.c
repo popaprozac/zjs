@@ -42,9 +42,13 @@ bool lre_check_stack_overflow(void *opaque, size_t alloca_size)
     return false;
 }
 
+/* The engine's interrupt hook (src/context.zc), with the context as the
+ * opaque lre_exec was handed: libregexp asks once every 10000
+ * backtracks, so a catastrophic pattern stops when the embedder's
+ * interrupt handler says so (zjs_set_interrupt_handler). */
+int zjs_regex_should_stop(void *opaque);
+
 int lre_check_timeout(void *opaque)
 {
-    (void)opaque;
-    /* No interrupt mechanism wired today; never time out. */
-    return 0;
+    return zjs_regex_should_stop(opaque);
 }
