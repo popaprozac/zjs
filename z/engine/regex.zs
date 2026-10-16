@@ -27,6 +27,8 @@ export const REGEX_BAD_BYTECODE: i32 = -3;
 export const REGEX_STACK_LIMIT: i32 = -4;
 export const REGEX_SYNTAX: i32 = -5;
 export const REGEX_SIZE_LIMIT: i32 = -6;
+// The embedder's interrupt handler asked the engine to stop.
+export const REGEX_INTERRUPTED: i32 = -7;
 
 const CACHE_LIMIT: usize = 256;
 
@@ -297,6 +299,12 @@ export struct RegexBackend {
 
   function setStepBudget(checks: usize): void {
     native.zjs_re_set_step_budget(this.context, checks);
+  }
+
+  // The embedder's interrupt handler, asked during a long match; 0 for
+  // none. A backend with no native context yet has nothing to tell.
+  function setInterrupt(handler: usize, opaque: usize): void {
+    if (this.context != 0) native.zjs_re_set_interrupt(this.context, handler, opaque);
   }
 
   // Deterministic out-of-memory coverage: the Nth allocation through the

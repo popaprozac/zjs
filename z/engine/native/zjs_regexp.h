@@ -46,6 +46,8 @@
 /* libregexp's own bytecode size limit (64 MiB), a resource limit that is
    not an allocator refusal. */
 #define ZJS_RE_SIZE_LIMIT (-6)
+/* The embedder's interrupt handler asked the engine to stop. */
+#define ZJS_RE_INTERRUPTED (-7)
 
 /* A context: created once per runtime, freed at its teardown (which
    releases the scratch buffer and capture storage, not the patterns).
@@ -96,6 +98,9 @@ int zjs_re_capture_end(uintptr_t context, int group);
    set. */
 void zjs_re_set_stack_budget(uintptr_t context, uintptr_t bytes);
 void zjs_re_set_step_budget(uintptr_t context, uintptr_t checks);
+/* The embedder's interrupt handler (zjs_host_interrupt), asked every
+   time libregexp checks its timeout; 0 for none. */
+void zjs_re_set_interrupt(uintptr_t context, uintptr_t handler, uintptr_t opaque);
 void zjs_re_set_allocation_limit(uintptr_t context, uintptr_t count);
 
 /* Accounting, per context: compiled patterns alive and the bytes they

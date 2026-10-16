@@ -18,6 +18,7 @@ clang "${VENDOR_CFLAGS[@]}" -falign-functions=64 -c -o "$OUT/libregexp.o" "$VEND
 clang "${VENDOR_CFLAGS[@]}" -c -o "$OUT/libunicode.o" "$VENDOR/libunicode.c"
 clang "${VENDOR_CFLAGS[@]}" -c -o "$OUT/cutils.o" "$VENDOR/cutils.c"
 clang "${CFLAGS[@]}" -Werror -c -o "$OUT/zjs_regexp.o" "$HERE/engine/native/zjs_regexp.c"
+clang "${CFLAGS[@]}" -Werror -c -o "$OUT/zjs_host.o" "$HERE/engine/native/zjs_host.c"
 rm -f "$OUT/libzjsregexp.a"
-ar rcs "$OUT/libzjsregexp.a" "$OUT/libregexp.o" "$OUT/libunicode.o" "$OUT/cutils.o" "$OUT/zjs_regexp.o"
+ar rcs "$OUT/libzjsregexp.a" "$OUT/libregexp.o" "$OUT/libunicode.o" "$OUT/cutils.o" "$OUT/zjs_regexp.o" "$OUT/zjs_host.o"
 echo "built: $OUT/libzjsregexp.a"

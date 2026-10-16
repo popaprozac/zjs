@@ -94,6 +94,18 @@ ZjsValue zjs_eval(ZjsContext *ctx, const char *source) {
   return undefined;
 }
 
+/* The handler runs on the thread evaluating ctx, so it sees no engine
+   state from another thread; it is handed to the Z side as two words. */
+void zjs_set_interrupt_handler(ZjsContext *ctx, ZjsInterruptHandler handler, void *opaque) {
+  if (ctx == NULL) return;
+  zjs_z_set_interrupt_handler((uintptr_t)ctx, (uintptr_t)handler, (uintptr_t)opaque);
+}
+
+int zjs_is_interrupted(ZjsContext *ctx) {
+  if (ctx == NULL) return 0;
+  return (int)zjs_z_was_interrupted((uintptr_t)ctx);
+}
+
 int zjs_had_error(ZjsContext *ctx) {
   if (ctx == NULL) return 1;
   return (int)zjs_z_had_error((uintptr_t)ctx);

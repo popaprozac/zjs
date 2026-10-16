@@ -12,8 +12,9 @@ import { thread } from "std/thread";
 import { replace } from "std/memory";
 import math from "std/math";
 import native from "./builtins/clock.h";
+import host from "./native/zjs_host.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
-import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT } from "./regex.zs";
+import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
@@ -119,6 +120,9 @@ const JOB_THENABLE: i32 = 1;
 // The drained front of the job queue is dropped once it is this long
 // (in values, four to a job) and at least half the queue.
 const JOB_COMPACT_AT: usize = 4096;
+// The embedder's interrupt handler is asked once every this many back
+// edges and calls.
+const INTERRUPT_POLL_INTERVAL: u32 = 4096;
 // Queue storage up to this many values is kept between drains.
 const JOB_STORAGE_KEPT: usize = 65536;
 export const REACTION_HANDLER: i32 = 0;
@@ -420,6 +424,15 @@ export struct Runtime {
   regexCtor: u32;
   regexBackend: RegexBackend;
   regexpMaker: RegExpMaker;
+  // zjs_set_interrupt_handler's callback and its argument as words (0 for
+  // none), the polls left before it is asked again, and whether it has
+  // asked the engine to stop. A termination unwinds every frame, past
+  // every catch and finally, and lets no JavaScript run until it reaches
+  // the embedder (see pollInterrupt).
+  interruptHandler: usize = 0;
+  interruptOpaque: usize = 0;
+  interruptCountdown: u32 = INTERRUPT_POLL_INTERVAL;
+  terminating: boolean = false;
   // FEATURE_* bits of the optional builtins installed.
   features: u32;
   symbolMatch: Value;
@@ -1139,6 +1152,10 @@ export struct Runtime {
 
   function takePending(inout this): Value {
     const value = this.pendingValue;
+    // A termination stays raised: whatever takes it for an ordinary error
+    // (a promise executor's rejection, say) leaves it pending for the next
+    // check, so no JavaScript runs past it.
+    if (this.terminating) return value;
     this.pendingThrow = false;
     this.pendingValue = undefinedValue();
     return value;
@@ -1434,6 +1451,8 @@ export struct Runtime {
       const message: String = "Maximum call stack size exceeded";
       const error = this.rangeError(in message);
       this.raise(error);
+    } else if (result == REGEX_INTERRUPTED) {
+      this.terminate();
     } else {
       const message: String = "Regular expression: invalid bytecode";
       const error = this.typeError(in message);
@@ -5411,6 +5430,7 @@ export struct Runtime {
   // the closure's environment installed, the constructed object (if any)
   // recorded.
   inline function enterCallable(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): boolean {
+    if (this.interruptTick()) return false;
     const handle = asCell(callee);
     const target = this.heap.functionIndex(handle);
     const code = usize(target);
@@ -5476,6 +5496,7 @@ export struct Runtime {
   // A class constructor (an error without `new`), a generator, or an
   // async function.
   function enterSpecial(inout this, callee: Value, returnDst: u8, thisValue: Value, argsBase: u32, argc: u32, constructThis: Value): boolean {
+    if (this.interruptTick()) return false;
     const handle = asCell(callee);
     const target = this.heap.functionIndex(handle);
     if (this.functions[usize(target)].isClassConstructor && isUndefined(constructThis)) {
@@ -6004,7 +6025,7 @@ export struct Runtime {
   // of a long queue is dropped, so a program that settles promises
   // forever runs in bounded memory.
   function runJobs(inout this): void {
-    while (this.jobCursor < this.jobEnd) {
+    while (this.jobCursor < this.jobEnd && !this.terminating) {
       const at = this.jobCursor;
       const kind = asInt32(this.jobs[at]);
       const first = this.jobs[at + 1];
@@ -7299,25 +7320,108 @@ export struct Runtime {
   }
 
   // A loop's back edge is a safe point too, so a program that allocates
-  // without calling collects all the same.
-  function backEdge(inout this, frameIndex: usize, ip: usize): void {
+  // without calling collects all the same; and a poll of the interrupt
+  // handler, true when the loop is to stop (the termination is pending).
+  function backEdge(inout this, frameIndex: usize, ip: usize): boolean {
+    if (this.interruptTick()) return true;
     if (this.heap.shouldCollect()) {
       this.frames[frameIndex].ip = ip;
       this.collectGarbage();
     }
+    return false;
+  }
+
+  // The embedder's interrupt handler (zjs.h), as words: 0 for none.
+  function setInterruptHandler(inout this, handler: usize, opaque: usize): void {
+    this.interruptHandler = handler;
+    this.interruptOpaque = opaque;
+    this.interruptCountdown = INTERRUPT_POLL_INTERVAL;
+    this.regexBackend.setInterrupt(handler, opaque);
+  }
+
+  // Back edges and calls count down to the next question to the handler.
+  inline function interruptTick(inout this): boolean {
+    this.interruptCountdown = this.interruptCountdown - 1;
+    if (this.interruptCountdown != 0) return false;
+    return this.pollInterrupt();
+  }
+
+  // Ask the handler, and stop if it says so. Once stopping, every poll
+  // stops again, at once: a builtin that took the termination for an
+  // ordinary error (a promise executor's, say) cannot keep JavaScript
+  // running past it.
+  cold function pollInterrupt(inout this): boolean {
+    this.interruptCountdown = INTERRUPT_POLL_INTERVAL;
+    if (!this.terminating) {
+      if (this.interruptHandler == 0) return false;
+      if (host.zjs_host_interrupt(this.interruptHandler, this.interruptOpaque) == 0) return false;
+    }
+    this.terminate();
+    return true;
+  }
+
+  // Raise the termination: an Error that no catch or finally sees.
+  cold function terminate(inout this): void {
+    this.terminating = true;
+    this.interruptCountdown = 1;
+    const message: String = "interrupted";
+    const error = this.makeError(ERROR_KIND_ERROR, bytesOf(in message));
+    this.raise(error);
+  }
+
+  // Control is back with the embedder: the termination is over, and the
+  // jobs it left are dropped, so a context still holds none between calls.
+  // True when there was one.
+  function endTermination(inout this): boolean {
+    if (!this.terminating) return false;
+    this.terminating = false;
+    this.interruptCountdown = INTERRUPT_POLL_INTERVAL;
+    if (this.pendingThrow) this.takePending();
+    this.jobs = Array<Value>();
+    this.jobCursor = 0;
+    this.jobEnd = 0;
+    return true;
   }
 
   // The dispatch loop, until the frame stack is back to `entryDepth`.
   function runFrames(inout this, entryDepth: u32): RunResult {
     let result = undefinedValue();
-    // A throw pending on entry is thrown into the running frame.
+    // A throw pending on entry is thrown into the running frame. An entry
+    // is a poll too, so a builtin calling back in a loop stops, and during
+    // a termination no JavaScript runs at all.
     let throwing = false;
     let thrown = undefinedValue();
+    if (this.terminating) {
+      this.terminate();
+    } else {
+      this.interruptTick();
+    }
     if (this.pendingThrow && this.frameCount > entryDepth) {
       thrown = this.takePending();
       throwing = true;
     }
     while (true) {
+      // A termination an instruction absorbed (an async function's start
+      // makes it a rejection and returns) still ends the run.
+      if (this.terminating && !throwing) {
+        if (!this.pendingThrow) this.terminate();
+        thrown = this.takePending();
+        throwing = true;
+      }
+      if (throwing && this.terminating) {
+        // A termination unwinds every frame, past every catch and
+        // finally, to whoever entered the engine.
+        while (this.frameCount > entryDepth) {
+          const generator = this.frames[usize(this.frameCount - 1)].generator;
+          if (generator != 0) this.completeGenerator(generator);
+          this.popFrame();
+        }
+        // Raised as well as returned, so a caller that would make the
+        // result a rejection (an async function's start) stops too.
+        this.raise(thrown);
+        this.lastResult = thrown;
+        return RunResult({ isThrow: true, value: thrown });
+      }
       if (throwing) {
         // Unwind to the nearest handler, popping frames as needed. The
         // handler's frame resumes at its catch block with the value in
@@ -7545,7 +7649,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left) && isInt32(right)) continue;
           }
@@ -7558,7 +7666,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left) && isInt32(right)) continue;
           }
@@ -7571,7 +7683,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left) && isInt32(right)) continue;
           }
@@ -7584,7 +7700,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left) && isInt32(right)) continue;
           }
@@ -7598,7 +7718,11 @@ export struct Runtime {
               this.setReg(base, inst.a, int32Value(stepped));
               if (stepped < immediate) {
                 ip = usize(i64(ip) + i64(bcI16(word)));
-                this.backEdge(frameIndex, ip);
+                if (this.backEdge(frameIndex, ip)) {
+                  thrown = this.takePending();
+                  throwing = true;
+                  break;
+                }
               }
               continue;
             }
@@ -7610,7 +7734,11 @@ export struct Runtime {
               this.setReg(base, inst.a, stepped);
               if (this.lessThan(stepped, int32Value(immediate), false)) {
                 ip = usize(i64(ip) + i64(bcI16(word)));
-                this.backEdge(frameIndex, ip);
+                if (this.backEdge(frameIndex, ip)) {
+                  thrown = this.takePending();
+                  throwing = true;
+                  break;
+                }
               }
             }
           }
@@ -7624,7 +7752,11 @@ export struct Runtime {
               this.setReg(base, inst.a, int32Value(stepped));
               if (stepped < asInt32(bound)) {
                 ip = usize(i64(ip) + i64(bcI16(word)));
-                this.backEdge(frameIndex, ip);
+                if (this.backEdge(frameIndex, ip)) {
+                  thrown = this.takePending();
+                  throwing = true;
+                  break;
+                }
               }
               continue;
             }
@@ -7634,7 +7766,11 @@ export struct Runtime {
               this.setReg(base, inst.a, stepped);
               if (this.lessThan(stepped, bound, false) && !this.pendingThrow) {
                 ip = usize(i64(ip) + i64(bcI16(word)));
-                this.backEdge(frameIndex, ip);
+                if (this.backEdge(frameIndex, ip)) {
+                  thrown = this.takePending();
+                  throwing = true;
+                  break;
+                }
               }
             }
           }
@@ -7658,7 +7794,11 @@ export struct Runtime {
                 this.setReg(base, inst.a, int32Value(stepped));
                 if (i64(stepped) < length) {
                   ip = usize(i64(ip) + i64(bcI16(word)));
-                  this.backEdge(frameIndex, ip);
+                  if (this.backEdge(frameIndex, ip)) {
+                    thrown = this.takePending();
+                    throwing = true;
+                    break;
+                  }
                 }
                 continue;
               }
@@ -7676,7 +7816,11 @@ export struct Runtime {
                 const length = this.getProperty(object, cellValue(atomLength));
                 if (!this.pendingThrow && this.lessThan(stepped, length, false) && !this.pendingThrow) {
                   ip = usize(i64(ip) + i64(bcI16(word)));
-                  this.backEdge(frameIndex, ip);
+                  if (this.backEdge(frameIndex, ip)) {
+                    thrown = this.takePending();
+                    throwing = true;
+                    break;
+                  }
                 }
               }
             }
@@ -7690,7 +7834,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left)) continue;
           }
@@ -7703,7 +7851,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left)) continue;
           }
@@ -7716,7 +7868,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left)) continue;
           }
@@ -7729,7 +7885,11 @@ export struct Runtime {
             if (holds == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             if (isInt32(left)) continue;
           }
@@ -7741,7 +7901,11 @@ export struct Runtime {
             if (this.strictEquals(left, right) == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             continue;
           }
@@ -7754,7 +7918,11 @@ export struct Runtime {
             if (same == (inst.d != 0)) {
               const offset = bcI16(word);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             continue;
           }
@@ -7847,7 +8015,11 @@ export struct Runtime {
           jmp => {
             const offset = bcI16(inst);
             ip = usize(i64(ip) + i64(offset));
-            if (offset < 0) this.backEdge(frameIndex, ip);
+            if (offset < 0 && this.backEdge(frameIndex, ip)) {
+              thrown = this.takePending();
+              throwing = true;
+              break;
+            }
             continue;
           }
           // A boolean, what a comparison leaves, branches without a call.
@@ -7857,7 +8029,11 @@ export struct Runtime {
             if (taken) {
               const offset = bcI16(inst);
               ip = usize(i64(ip) + i64(offset));
-              if (offset < 0) this.backEdge(frameIndex, ip);
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
             }
             continue;
           }

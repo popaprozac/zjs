@@ -573,6 +573,13 @@ profile through `z build` (or a build step compiling the emitted C).
 
 ## Tried and not kept
 
+- The interrupt poll's countdown (zjs_set_interrupt_handler) kept in a
+  dispatch-loop local, which took the handlers' ninth argument register,
+  rather than in the runtime (2026-10-15): properties +0.7% where the
+  field costs +1.3 to +2.1%, but allocation +5.1 to +5.9% where the field
+  costs +1.6 to +1.9%; with nine state registers pinned the allocating
+  handlers have too few left
+  (`bench/speed/results/2026-10-15-interrupt-poll.json`).
 - A compact per-function record for calls (code range, frame size,
   `this` register, flags) apart from the function's code and caches, a
   frame entry without a separate fill loop, a return that reads the frame

@@ -40,11 +40,16 @@ export struct ContextState {
   evalCount: u64;
   runtime: Runtime;
   lastResult: Value;
+  // The last evaluation ended because the interrupt handler asked it to.
+  interrupted: boolean = false;
 
   function evaluate(inout this, source: Array<u8>): void {
     this.evalCount = this.evalCount + 1;
     const outcome = evaluate(inout this.runtime, move source);
-    this.hadError = outcome.isThrow;
+    this.interrupted = this.runtime.endTermination();
+    // A termination is an error to the embedder, even one that came while
+    // the script's jobs ran, after the script itself had completed.
+    this.hadError = outcome.isThrow || this.interrupted;
     this.lastResult = outcome.value;
   }
 }
@@ -256,6 +261,35 @@ export function sliceToBytes(source: Slice<u8>): Array<u8> {
     index = index + 1;
   }
   return bytes;
+}
+
+// The embedder's interrupt handler (zjs_set_interrupt_handler): a C
+// function's address and its argument, as words; 0 removes it. The engine
+// calls it on the thread that runs the context's JavaScript.
+export c function zjs_z_set_interrupt_handler(handle: usize, handler: usize, opaque: usize): void {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        state.runtime.setInterruptHandler(handler, opaque);
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// 1 when the last evaluation ended because the interrupt handler asked.
+export c function zjs_z_was_interrupted(handle: usize): i32 {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((in state): i32 => state.interrupted ? 1 : 0);
+    }
+    none => {
+      return 0;
+    }
+  }
 }
 
 // 1 after a throw, and for a handle that names no context.

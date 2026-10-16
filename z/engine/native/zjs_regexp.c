@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "libregexp.h"
+#include "zjs_host.h"
 
 /* libregexp caps a pattern at 255 groups. */
 #define ZJS_RE_MAX_CAPTURES 255
@@ -17,6 +18,9 @@ typedef struct {
   uintptr_t stack_floor;
   uintptr_t step_budget;
   uintptr_t steps_left;
+  /* The embedder's interrupt handler and its argument, or 0. */
+  uintptr_t interrupt_handler;
+  uintptr_t interrupt_opaque;
   int last_failure;
   /* Set by lre_realloc when the allocator refuses (or the injected
      limit does); the category of a failed call. */
@@ -92,7 +96,14 @@ int lre_check_stack_overflow(void *opaque, size_t alloca_size) {
 
 int lre_check_timeout(void *opaque) {
   Context *context = (Context *)opaque;
-  if (context == NULL || context->step_budget == 0) return 0;
+  if (context == NULL) return 0;
+  /* libregexp asks once every 10000 backtracks: often enough to stop a
+     catastrophic pattern promptly, rarely enough to cost nothing. */
+  if (zjs_host_interrupt(context->interrupt_handler, context->interrupt_opaque)) {
+    context->last_failure = ZJS_RE_INTERRUPTED;
+    return 1;
+  }
+  if (context->step_budget == 0) return 0;
   if (context->steps_left == 0) {
     context->last_failure = ZJS_RE_STEP_LIMIT;
     return 1;
@@ -141,6 +152,11 @@ uintptr_t zjs_re_live_contexts(void) {
 
 void zjs_re_set_stack_budget(uintptr_t handle, uintptr_t bytes) {
   ((Context *)handle)->stack_budget = bytes;
+}
+
+void zjs_re_set_interrupt(uintptr_t handle, uintptr_t handler, uintptr_t opaque) {
+  ((Context *)handle)->interrupt_handler = handler;
+  ((Context *)handle)->interrupt_opaque = opaque;
 }
 
 void zjs_re_set_step_budget(uintptr_t handle, uintptr_t checks) {

@@ -1314,6 +1314,7 @@ export function installRegExp(inout runtime: Runtime): void {
   if ((runtime.features & FEATURE_REGEXP) != 0) return;
   runtime.features = runtime.features | FEATURE_REGEXP;
   runtime.regexBackend = createRegexBackend();
+  runtime.regexBackend.setInterrupt(runtime.interruptHandler, runtime.interruptOpaque);
   runtime.regexpMaker = makeRegExp;
   // The String methods that make a RegExp from their argument come with it.
   const stringProto = runtime.stringProto;

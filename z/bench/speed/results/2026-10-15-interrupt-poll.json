@@ -1,0 +1,717 @@
+{
+ "what": "What polling for zjs_set_interrupt_handler costs the engine when no handler is set: every loop back edge, call, and entry from a builtin decrements a countdown and asks the handler at zero. Against the engine without it (ZJS 84d75e1, Stage 0 027dc49b). `kept` keeps the countdown in the runtime; `register` (tried, not kept) counts back edges in a dispatch-loop local, which took the handlers' ninth argument register. Median over eight placements, change the geometric mean over placements, three runs each.",
+ "date": "2026-10-15",
+ "engine": "Stage 0 z-lang 027dc49b, -O2 -DNDEBUG",
+ "kept": {
+  "load_average": [
+   4.37,
+   3.65
+  ],
+  "kernels": {
+   "allocation": [
+    {
+     "before_cycles": 63487150,
+     "after_cycles": 64705384,
+     "change_percent": 1.6,
+     "placement_range_percent": [
+      0.5,
+      4.1
+     ]
+    },
+    {
+     "before_cycles": 62648022,
+     "after_cycles": 63814457,
+     "change_percent": 1.8,
+     "placement_range_percent": [
+      0.2,
+      3.0
+     ]
+    },
+    {
+     "before_cycles": 63551018,
+     "after_cycles": 64468316,
+     "change_percent": 1.9,
+     "placement_range_percent": [
+      0.1,
+      3.6
+     ]
+    }
+   ],
+   "arrays": [
+    {
+     "before_cycles": 283962795,
+     "after_cycles": 285341764,
+     "change_percent": 0.2,
+     "placement_range_percent": [
+      -3.5,
+      4.3
+     ]
+    },
+    {
+     "before_cycles": 280522994,
+     "after_cycles": 284031785,
+     "change_percent": 0.4,
+     "placement_range_percent": [
+      -2.1,
+      3.6
+     ]
+    },
+    {
+     "before_cycles": 281340102,
+     "after_cycles": 283118320,
+     "change_percent": 0.6,
+     "placement_range_percent": [
+      -1.4,
+      3.2
+     ]
+    }
+   ],
+   "calls": [
+    {
+     "before_cycles": 41297616,
+     "after_cycles": 41003757,
+     "change_percent": -0.5,
+     "placement_range_percent": [
+      -5.9,
+      3.4
+     ]
+    },
+    {
+     "before_cycles": 42013424,
+     "after_cycles": 41786308,
+     "change_percent": -0.4,
+     "placement_range_percent": [
+      -2.4,
+      1.7
+     ]
+    },
+    {
+     "before_cycles": 41469180,
+     "after_cycles": 41516551,
+     "change_percent": -0.2,
+     "placement_range_percent": [
+      -3.2,
+      2.0
+     ]
+    }
+   ],
+   "closures": [
+    {
+     "before_cycles": 62183789,
+     "after_cycles": 62274366,
+     "change_percent": 0.2,
+     "placement_range_percent": [
+      -1.2,
+      2.2
+     ]
+    },
+    {
+     "before_cycles": 61905412,
+     "after_cycles": 62695274,
+     "change_percent": 0.7,
+     "placement_range_percent": [
+      -1.5,
+      2.1
+     ]
+    },
+    {
+     "before_cycles": 62012704,
+     "after_cycles": 62106908,
+     "change_percent": 0.3,
+     "placement_range_percent": [
+      -1.4,
+      1.6
+     ]
+    }
+   ],
+   "helpers": [
+    {
+     "before_cycles": 72866777,
+     "after_cycles": 70848206,
+     "change_percent": -2.9,
+     "placement_range_percent": [
+      -4.9,
+      -0.4
+     ]
+    },
+    {
+     "before_cycles": 74142818,
+     "after_cycles": 72530532,
+     "change_percent": -1.6,
+     "placement_range_percent": [
+      -2.5,
+      -0.1
+     ]
+    },
+    {
+     "before_cycles": 73229122,
+     "after_cycles": 71468466,
+     "change_percent": -2.3,
+     "placement_range_percent": [
+      -4.2,
+      0.0
+     ]
+    }
+   ],
+   "json": [
+    {
+     "before_cycles": 76629548,
+     "after_cycles": 76579300,
+     "change_percent": -0.1,
+     "placement_range_percent": [
+      -1.7,
+      1.6
+     ]
+    },
+    {
+     "before_cycles": 76861028,
+     "after_cycles": 77324138,
+     "change_percent": 0.6,
+     "placement_range_percent": [
+      -0.6,
+      1.4
+     ]
+    },
+    {
+     "before_cycles": 76538041,
+     "after_cycles": 76763954,
+     "change_percent": 0.3,
+     "placement_range_percent": [
+      -1.6,
+      3.3
+     ]
+    }
+   ],
+   "long-strings": [
+    {
+     "before_cycles": 18223528,
+     "after_cycles": 18257564,
+     "change_percent": 0.6,
+     "placement_range_percent": [
+      -8.9,
+      5.4
+     ]
+    },
+    {
+     "before_cycles": 19774460,
+     "after_cycles": 20075511,
+     "change_percent": 0.4,
+     "placement_range_percent": [
+      -6.6,
+      7.2
+     ]
+    },
+    {
+     "before_cycles": 19168136,
+     "after_cycles": 18976628,
+     "change_percent": -1.1,
+     "placement_range_percent": [
+      -5.5,
+      6.8
+     ]
+    }
+   ],
+   "maps": [
+    {
+     "before_cycles": 150714331,
+     "after_cycles": 151579367,
+     "change_percent": 0.4,
+     "placement_range_percent": [
+      -0.3,
+      1.2
+     ]
+    },
+    {
+     "before_cycles": 151415028,
+     "after_cycles": 152527290,
+     "change_percent": 0.4,
+     "placement_range_percent": [
+      -0.7,
+      1.4
+     ]
+    },
+    {
+     "before_cycles": 150829836,
+     "after_cycles": 152097246,
+     "change_percent": 0.8,
+     "placement_range_percent": [
+      -0.5,
+      2.6
+     ]
+    }
+   ],
+   "polymorphic": [
+    {
+     "before_cycles": 37813589,
+     "after_cycles": 38452951,
+     "change_percent": 2.2,
+     "placement_range_percent": [
+      -2.5,
+      6.7
+     ]
+    },
+    {
+     "before_cycles": 37993426,
+     "after_cycles": 38292270,
+     "change_percent": 0.9,
+     "placement_range_percent": [
+      -1.5,
+      3.2
+     ]
+    },
+    {
+     "before_cycles": 37762922,
+     "after_cycles": 38743979,
+     "change_percent": 0.8,
+     "placement_range_percent": [
+      -1.9,
+      4.6
+     ]
+    }
+   ],
+   "properties": [
+    {
+     "before_cycles": 96266747,
+     "after_cycles": 97934986,
+     "change_percent": 1.7,
+     "placement_range_percent": [
+      0.7,
+      2.4
+     ]
+    },
+    {
+     "before_cycles": 97462382,
+     "after_cycles": 98553386,
+     "change_percent": 1.3,
+     "placement_range_percent": [
+      -0.4,
+      2.9
+     ]
+    },
+    {
+     "before_cycles": 96662136,
+     "after_cycles": 98583469,
+     "change_percent": 2.1,
+     "placement_range_percent": [
+      1.2,
+      3.5
+     ]
+    }
+   ],
+   "regexp": [
+    {
+     "before_cycles": 84752150,
+     "after_cycles": 85130920,
+     "change_percent": 0.1,
+     "placement_range_percent": [
+      -1.6,
+      0.9
+     ]
+    },
+    {
+     "before_cycles": 86412518,
+     "after_cycles": 86652448,
+     "change_percent": 0.2,
+     "placement_range_percent": [
+      -1.1,
+      1.5
+     ]
+    },
+    {
+     "before_cycles": 86672934,
+     "after_cycles": 86304373,
+     "change_percent": -0.1,
+     "placement_range_percent": [
+      -2.6,
+      1.9
+     ]
+    }
+   ],
+   "strings": [
+    {
+     "before_cycles": 37744284,
+     "after_cycles": 38050724,
+     "change_percent": 0.7,
+     "placement_range_percent": [
+      -0.7,
+      1.6
+     ]
+    },
+    {
+     "before_cycles": 38836447,
+     "after_cycles": 38876776,
+     "change_percent": 0.0,
+     "placement_range_percent": [
+      -3.6,
+      2.8
+     ]
+    },
+    {
+     "before_cycles": 39113168,
+     "after_cycles": 38868410,
+     "change_percent": -0.7,
+     "placement_range_percent": [
+      -2.3,
+      0.9
+     ]
+    }
+   ]
+  }
+ },
+ "register": {
+  "load_average": [
+   2.34,
+   2.06
+  ],
+  "kernels": {
+   "allocation": [
+    {
+     "before_cycles": 62000698,
+     "after_cycles": 65689266,
+     "change_percent": 5.9,
+     "placement_range_percent": [
+      4.5,
+      7.5
+     ]
+    },
+    {
+     "before_cycles": 61786112,
+     "after_cycles": 65028998,
+     "change_percent": 5.6,
+     "placement_range_percent": [
+      3.0,
+      8.2
+     ]
+    },
+    {
+     "before_cycles": 62105690,
+     "after_cycles": 65213023,
+     "change_percent": 5.1,
+     "placement_range_percent": [
+      3.4,
+      7.7
+     ]
+    }
+   ],
+   "arrays": [
+    {
+     "before_cycles": 277125008,
+     "after_cycles": 283053353,
+     "change_percent": 0.8,
+     "placement_range_percent": [
+      -4.7,
+      4.0
+     ]
+    },
+    {
+     "before_cycles": 278123019,
+     "after_cycles": 279909058,
+     "change_percent": 0.2,
+     "placement_range_percent": [
+      -3.5,
+      1.4
+     ]
+    },
+    {
+     "before_cycles": 280505241,
+     "after_cycles": 281432782,
+     "change_percent": 0.5,
+     "placement_range_percent": [
+      -4.4,
+      3.6
+     ]
+    }
+   ],
+   "calls": [
+    {
+     "before_cycles": 40902935,
+     "after_cycles": 40808321,
+     "change_percent": -0.2,
+     "placement_range_percent": [
+      -3.7,
+      2.7
+     ]
+    },
+    {
+     "before_cycles": 40780880,
+     "after_cycles": 40828078,
+     "change_percent": 0.1,
+     "placement_range_percent": [
+      -2.9,
+      2.7
+     ]
+    },
+    {
+     "before_cycles": 40559858,
+     "after_cycles": 41125160,
+     "change_percent": 0.8,
+     "placement_range_percent": [
+      -2.5,
+      2.8
+     ]
+    }
+   ],
+   "closures": [
+    {
+     "before_cycles": 60992932,
+     "after_cycles": 61666643,
+     "change_percent": 1.0,
+     "placement_range_percent": [
+      0.1,
+      2.7
+     ]
+    },
+    {
+     "before_cycles": 61312236,
+     "after_cycles": 61493405,
+     "change_percent": 0.4,
+     "placement_range_percent": [
+      -0.7,
+      0.8
+     ]
+    },
+    {
+     "before_cycles": 61253516,
+     "after_cycles": 61954446,
+     "change_percent": 1.0,
+     "placement_range_percent": [
+      -0.3,
+      2.2
+     ]
+    }
+   ],
+   "helpers": [
+    {
+     "before_cycles": 72467120,
+     "after_cycles": 70967742,
+     "change_percent": -1.8,
+     "placement_range_percent": [
+      -3.4,
+      0.0
+     ]
+    },
+    {
+     "before_cycles": 72680496,
+     "after_cycles": 71164494,
+     "change_percent": -2.3,
+     "placement_range_percent": [
+      -3.6,
+      0.2
+     ]
+    },
+    {
+     "before_cycles": 72583006,
+     "after_cycles": 71381778,
+     "change_percent": -1.5,
+     "placement_range_percent": [
+      -3.1,
+      -0.1
+     ]
+    }
+   ],
+   "json": [
+    {
+     "before_cycles": 75603026,
+     "after_cycles": 75629058,
+     "change_percent": 0.5,
+     "placement_range_percent": [
+      -0.8,
+      2.2
+     ]
+    },
+    {
+     "before_cycles": 75792174,
+     "after_cycles": 75833660,
+     "change_percent": -0.5,
+     "placement_range_percent": [
+      -2.2,
+      1.2
+     ]
+    },
+    {
+     "before_cycles": 75263542,
+     "after_cycles": 75758014,
+     "change_percent": 0.5,
+     "placement_range_percent": [
+      -1.5,
+      2.4
+     ]
+    }
+   ],
+   "long-strings": [
+    {
+     "before_cycles": 16255874,
+     "after_cycles": 16345138,
+     "change_percent": 0.9,
+     "placement_range_percent": [
+      -0.4,
+      3.9
+     ]
+    },
+    {
+     "before_cycles": 15966646,
+     "after_cycles": 15987588,
+     "change_percent": -0.1,
+     "placement_range_percent": [
+      -1.4,
+      2.2
+     ]
+    },
+    {
+     "before_cycles": 15914597,
+     "after_cycles": 16292210,
+     "change_percent": 2.7,
+     "placement_range_percent": [
+      0.3,
+      5.6
+     ]
+    }
+   ],
+   "maps": [
+    {
+     "before_cycles": 148507348,
+     "after_cycles": 148896584,
+     "change_percent": 0.2,
+     "placement_range_percent": [
+      -0.6,
+      1.1
+     ]
+    },
+    {
+     "before_cycles": 148551137,
+     "after_cycles": 149071424,
+     "change_percent": 0.3,
+     "placement_range_percent": [
+      -0.7,
+      0.9
+     ]
+    },
+    {
+     "before_cycles": 148713283,
+     "after_cycles": 149039386,
+     "change_percent": 0.3,
+     "placement_range_percent": [
+      -0.7,
+      1.2
+     ]
+    }
+   ],
+   "polymorphic": [
+    {
+     "before_cycles": 37079974,
+     "after_cycles": 37872134,
+     "change_percent": 1.6,
+     "placement_range_percent": [
+      -0.9,
+      4.6
+     ]
+    },
+    {
+     "before_cycles": 36846924,
+     "after_cycles": 37617888,
+     "change_percent": 1.9,
+     "placement_range_percent": [
+      -0.0,
+      3.7
+     ]
+    },
+    {
+     "before_cycles": 36930696,
+     "after_cycles": 37842072,
+     "change_percent": 2.3,
+     "placement_range_percent": [
+      -0.4,
+      5.9
+     ]
+    }
+   ],
+   "properties": [
+    {
+     "before_cycles": 95695958,
+     "after_cycles": 96056618,
+     "change_percent": 0.7,
+     "placement_range_percent": [
+      -0.7,
+      2.2
+     ]
+    },
+    {
+     "before_cycles": 95590798,
+     "after_cycles": 95933764,
+     "change_percent": 0.6,
+     "placement_range_percent": [
+      -0.3,
+      2.1
+     ]
+    },
+    {
+     "before_cycles": 95651986,
+     "after_cycles": 96266630,
+     "change_percent": 0.7,
+     "placement_range_percent": [
+      -1.4,
+      2.2
+     ]
+    }
+   ],
+   "regexp": [
+    {
+     "before_cycles": 84554094,
+     "after_cycles": 84307432,
+     "change_percent": -0.0,
+     "placement_range_percent": [
+      -1.9,
+      1.6
+     ]
+    },
+    {
+     "before_cycles": 84315084,
+     "after_cycles": 83498944,
+     "change_percent": -0.9,
+     "placement_range_percent": [
+      -1.9,
+      0.5
+     ]
+    },
+    {
+     "before_cycles": 84721975,
+     "after_cycles": 84766070,
+     "change_percent": 0.3,
+     "placement_range_percent": [
+      -1.3,
+      2.8
+     ]
+    }
+   ],
+   "strings": [
+    {
+     "before_cycles": 37333498,
+     "after_cycles": 37539026,
+     "change_percent": 0.9,
+     "placement_range_percent": [
+      -0.3,
+      3.6
+     ]
+    },
+    {
+     "before_cycles": 37172945,
+     "after_cycles": 37667338,
+     "change_percent": 1.3,
+     "placement_range_percent": [
+      -0.9,
+      2.9
+     ]
+    },
+    {
+     "before_cycles": 37486854,
+     "after_cycles": 37254674,
+     "change_percent": 0.0,
+     "placement_range_percent": [
+      -2.6,
+      1.3
+     ]
+    }
+   ]
+  }
+ }
+}
