@@ -12,7 +12,7 @@ import { Value, isCell, asCell, cellValue, undefinedValue } from "../../engine/v
 import { thread } from "std/thread";
 import { Runtime, RunResult, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
-import { evaluate } from "../../engine/lib.zs";
+import { evaluate, compileToBytecode } from "../../engine/lib.zs";
 import { installCompiler } from "../../engine/compile.zs";
 import { parseProgram } from "../../engine/parser.zs";
 import { compileProgram } from "../../engine/compiler.zs";
@@ -224,6 +224,20 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
   if (!outcome.isThrow) return 0;
   reportThrow(inout runtime, outcome.value);
   return 1;
+}
+
+// `zjsz compile <in.js> -o <out.zbc>`: the source compiled in an engine
+// of its own and written as a bytecode file (docs/bytecode-files.md).
+function compileFile(in input: String, in output: String): i32 throws String {
+  const source = try fs.readBytes(input);
+  let runtime = createEngine();
+  const bytes = compileToBytecode(inout runtime, move source);
+  if (bytes.length == 0) {
+    console.error("zjsz compile: the program does not parse or compile, or has a part no bytecode file can hold");
+    return 1;
+  }
+  try fs.writeBytes(output, bytes);
+  return 0;
 }
 
 // The bytecode a script compiles to, on stdout: each function's header
@@ -481,6 +495,7 @@ function main(): i32 {
   //   run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats]
   //       [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] <file>
   //   dump <file>        the bytecode the file compiles to
+  //   compile <in.js> -o <out.zbc>   a bytecode file
   // A file that starts as a bytecode file does is loaded, not compiled;
   // --via-bytecode compiles source in an engine of its own, writes it as
   // a bytecode file, and loads that (docs/bytecode-files.md); with
@@ -504,6 +519,19 @@ function main(): i32 {
   }
   const commandLength = arguments[0].byteLength;
   const command = arguments[0].copyBytes(0, commandLength);
+  if (command == "compile") {
+    if (arguments.length != 4 || arguments[2].copyBytes(0, arguments[2].byteLength) != "-o") {
+      console.error("usage: zjsz compile <in.js> -o <out.zbc>");
+      return 2;
+    }
+    const input = arguments[1].copyBytes(0, arguments[1].byteLength);
+    const output = arguments[3].copyBytes(0, arguments[3].byteLength);
+    const compiled = attempt compileFile(in input, in output);
+    return match (compiled) {
+      success(code) => code;
+      failure(message) => 2;
+    };
+  }
   if (command == "dump") {
     const pathLength = arguments[1].byteLength;
     const dumpPath = arguments[1].copyBytes(0, pathLength);

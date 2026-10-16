@@ -177,5 +177,9 @@ compiler, and the bytecode writer are gone, and only the loader remains.
   as from source.
 - The loader's refusals: truncated files, each byte flipped, wrong
   magic and versions, out-of-range indices.
-- Load time against parse and compile time for the speed kernels and a
-  large script.
+- Load time against parse and compile time (2026-10-16): a generated
+  program of 3,000 functions, 1.29 MB of source, runs in 204M cycles
+  from source and 28M from its bytecode file, startup (5.5M) included:
+  loading is 8.6 times faster than parsing and compiling. The file is
+  1.31 MB, the size of the source; nothing in the format is compact yet
+  (an instruction is 5 bytes, every count and index 4).

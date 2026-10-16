@@ -2206,7 +2206,44 @@ Ask: an `Option<T>` reads by value wherever a `T` does (a retain for a function
 value), or `copy` admits it. A rule for value reads of `Option`, not new syntax;
 for deliberation. Reproduction: a struct with `plain: Step = twice` and
 `maybe: Option<Step>`; `const step = holder.plain` is accepted and
-`const step = holder.maybe` is not.
+`const step = holder.maybe` is not. Probe `option-function-field-read`.
+
+## G60 — Native compiler: a block callable as a match arm's value
+
+**Status:** `consumer-verified` — z-lang `e50e06ea` (the pin) · **Size:** small ·
+**Confirmed:** native compiler at z-lang `1b105418`; Stage 0 accepts ·
+**Blocked:** the native build of the engine, from ZJS `a90b62c`
+(`zjs_z_compile_to_bytecode`, whose `Mutex.withLock` callback is a match arm's
+value) until the pin moved
+
+```
+Abort trap: 6   (z_stage1_bounds_index(index=1, length=1) in appendMutexWithLockHelpers)
+```
+
+A value match (`return match`, `let x = match`, a nested value match) lowers each
+arm's value outside statement lowering, and statement lowering is what completes
+block callables: a `withLock` callback's body, a block closure. An arm's callback
+kept its unlowered "block" evidence, so the emitter took the expression-body
+path and read a body child that was never there; a block closure in an arm
+failed as "received a detached match arm". Any block body triggers it.
+Implemented: the arm value and an arm's `try` call are completed as a
+statement's value is, before the arm's exit is built. Fixture
+`match-arm-lock-callbacks` (z-lang), in the native closure cleanup table;
+probe `native/lock-callback-as-match-arm`.
+
+## G61 — Stage 0: `console.log` of a template prints before its later parts run
+
+**Status:** `open` · **Size:** small · **Confirmed:** Stage 0 at z-lang
+`1b105418`; native is right · **Blocked:** nothing in the engine
+
+```z
+console.log(`${noisy(1)} ${noisy(2)}`);   // noisy prints "side effect"
+```
+
+Stage 0 prints `side effect`, `1 side effect`, `2`: it writes each part of the
+template as it goes, so the first value is out before the second interpolation
+runs. A template is a String the call receives whole; native prints
+`side effect`, `side effect`, `1 2`, which is the order the program asks for.
 
 ## G10 — Z is macOS-only
 
