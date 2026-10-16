@@ -277,6 +277,8 @@ export struct Parser {
     if (kind == TokenKind.kwAwait && this.inAsync) return false;
     if (kind == TokenKind.kwAwait && this.inStaticBlock && this.functionDepth == this.staticBlockDepth) return false;
     if (kind == TokenKind.kwYield && this.strictMode) return false;
+    // `let` is reserved in strict code.
+    if (kind == TokenKind.kwLet && this.strictMode) return false;
     return this.isBindingIdent(kind);
   }
 
@@ -1896,7 +1898,11 @@ export struct Parser {
     this.inAsync = isAsync;
     this.inGenerator = isGenerator;
     this.functionDepth = this.functionDepth + 1;
+    // A body whose directive prologue says 'use strict' is strict code.
+    const savedStrict = this.strictMode;
+    if (this.peekKind() == TokenKind.lBrace && this.tokensHaveUseStrictPrologue(usize(this.pos) + 1)) this.strictMode = true;
     const body = this.parseBlock();
+    this.strictMode = savedStrict;
     this.functionDepth = this.functionDepth - 1;
     this.inAsync = savedAsync;
     this.inGenerator = savedGenerator;
@@ -1999,7 +2005,11 @@ export struct Parser {
     this.functionDepth = this.functionDepth + 1;
     let body: u32 = NO_NODE;
     if (this.peekKind() == TokenKind.lBrace) {
+      // As parseFunctionBody: a 'use strict' prologue makes it strict code.
+      const savedStrict = this.strictMode;
+      if (this.tokensHaveUseStrictPrologue(usize(this.pos) + 1)) this.strictMode = true;
       body = this.parseBlock();
+      this.strictMode = savedStrict;
     } else {
       body = this.parseAssignment();
     }
@@ -2292,7 +2302,10 @@ export struct Parser {
         propEnd = this.endOf(body);
       } else {
         // Shorthand `{ x }`, and the cover-grammar default `{ x = init }`.
-        if (keyToken.kind != TokenKind.identifier) {
+        // The key is an identifier reference: a contextual keyword such as
+        // `from`, `of`, `async`, or sloppy `let` is one too. After an
+        // `async` or `*` prefix only a method may follow.
+        if (isAsync || isGenerator || !this.isBindingIdentTok(keyToken)) {
           this.hadError = true;
           break;
         }
