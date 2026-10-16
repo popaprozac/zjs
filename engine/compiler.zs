@@ -287,6 +287,9 @@ export struct Compiler {
   // Script or eval code: the global slots its declarations make, defined
   // when the code starts (its declareGlobals instruction).
   declaredGlobals: Array<u32>;
+  // The names written in this function, made the first time an inlining
+  // candidate asks, once per function rather than per candidate.
+  changes: NameChanges = nameChanges();
 
   // --- Emission ---
 
@@ -326,6 +329,16 @@ export struct Compiler {
     const here = u32(this.code.length);
     if (i32(here) > this.lastTarget) this.lastTarget = i32(here);
     return here;
+  }
+
+  // Whether a function declaration's name may be written in this function
+  // (NameChanges), from the summary made on first use.
+  function nameChanges(inout this, in parser: Parser, nameStart: u32, nameLength: u32, declaration: u32): boolean {
+    if (!this.changes.built) {
+      this.changes.built = true;
+      collectChanges(in parser, inout this.changes, this.functionNode, false);
+    }
+    return changesName(in parser, in this.changes, nameStart, nameLength, declaration);
   }
 
   function patchJump(inout this, at: u32): void {
@@ -4841,7 +4854,7 @@ export struct Compiler {
           return;
         }
         this.storeLocal(usize(local), r);
-        if (inlineReturn(in parser, node) != NO_NODE && !nameMayChange(in parser, this.functionNode, n.nameStart, n.nameLength, node, false)) {
+        if (inlineReturn(in parser, node) != NO_NODE && !this.nameChanges(in parser, n.nameStart, n.nameLength, node)) {
           this.locals[usize(local)].inlineFunction = node;
         }
       } else {
@@ -5301,25 +5314,100 @@ function isParameterOf(in parser: Parser, fn: u32, nameStart: u32, nameLength: u
   return false;
 }
 
-// Whether the binding `name` of function declaration `declaration` may be
-// written anywhere under `node` (the function it is declared in, nested
-// functions included): as the target of an assignment, an update, a
-// pattern, or a for-in / for-of head; by another declaration of the name;
-// or through a direct eval or a with statement. Conservative: any doubt
-// is a yes.
-function nameMayChange(in parser: Parser, node: u32, nameStart: u32, nameLength: u32, declaration: u32, target: boolean): boolean {
-  if (node == NO_NODE) return false;
+// The names that may be written anywhere in a function, nested functions
+// included -- as the target of an assignment, an update, a pattern, or a
+// for-in / for-of head, or by a declaration of the name -- found in one
+// walk: an open-addressed table by the name's hash, with how many writes
+// each has and the node of its first. `opaque` when a with statement or
+// a direct eval may write any name. Conservative: any doubt is a write.
+// An inlining candidate asks whether its name is written other than by
+// its own declaration (changesName).
+struct NameChanges {
+  built: boolean;
+  opaque: boolean;
+  hashes: Array<u32>;
+  starts: Array<u32>;
+  lengths: Array<u32>;
+  counts: Array<u32>;
+  nodes: Array<u32>;
+  used: u32;
+}
+
+function nameChanges(): NameChanges {
+  return NameChanges({ built: false, opaque: false, hashes: Array<u32>(), starts: Array<u32>(), lengths: Array<u32>(), counts: Array<u32>(), nodes: Array<u32>(), used: 0 });
+}
+
+function nameHash(in parser: Parser, start: u32, length: u32): u32 {
+  let hash: u32 = 2166136261;
+  let i: u32 = 0;
+  while (i < length) {
+    hash = (hash ^ u32(parser.source[usize(start + i)])).wrappingMultiply(16777619);
+    i = i + 1;
+  }
+  // 0 marks an empty bucket.
+  return hash | 1;
+}
+
+// The bucket of a name: its entry, or the empty one it would take.
+function changeBucket(in parser: Parser, in changes: NameChanges, start: u32, length: u32, hash: u32): usize {
+  const mask = changes.hashes.length - 1;
+  let at = usize(hash) & mask;
+  while (changes.hashes[at] != 0) {
+    if (changes.hashes[at] == hash && changes.lengths[at] == length && parser.slicesEqual(changes.starts[at], length, start, length)) return at;
+    at = (at + 1) & mask;
+  }
+  return at;
+}
+
+function growChanges(in parser: Parser, inout changes: NameChanges): void {
+  const size: usize = changes.hashes.length == 0 ? 64 : changes.hashes.length * 2;
+  let grown = NameChanges({ built: true, opaque: changes.opaque, hashes: zerosOf(size), starts: zerosOf(size), lengths: zerosOf(size), counts: zerosOf(size), nodes: zerosOf(size), used: changes.used });
+  let i: usize = 0;
+  while (i < changes.hashes.length) {
+    if (changes.hashes[i] != 0) {
+      const at = changeBucket(in parser, in grown, changes.starts[i], changes.lengths[i], changes.hashes[i]);
+      grown.hashes[at] = changes.hashes[i];
+      grown.starts[at] = changes.starts[i];
+      grown.lengths[at] = changes.lengths[i];
+      grown.counts[at] = changes.counts[i];
+      grown.nodes[at] = changes.nodes[i];
+    }
+    i = i + 1;
+  }
+  changes = move grown;
+}
+
+function zerosOf(count: usize): Array<u32> {
+  let list = Array<u32>.withCapacity(count);
+  list.appendRepeated(0, count);
+  return list;
+}
+
+function recordChange(in parser: Parser, inout changes: NameChanges, start: u32, length: u32, node: u32): void {
+  if ((usize(changes.used) + 1) * 2 > changes.hashes.length) growChanges(in parser, inout changes);
+  const hash = nameHash(in parser, start, length);
+  const at = changeBucket(in parser, in changes, start, length, hash);
+  if (changes.hashes[at] == 0) {
+    changes.hashes[at] = hash;
+    changes.starts[at] = start;
+    changes.lengths[at] = length;
+    changes.nodes[at] = node;
+    changes.used = changes.used + 1;
+  }
+  changes.counts[at] = changes.counts[at] + 1;
+}
+
+// One walk of `node` recording the writes NameChanges keeps.
+function collectChanges(in parser: Parser, inout changes: NameChanges, node: u32, target: boolean): void {
+  if (node == NO_NODE) return;
   const n = parser.ast.node(node);
   const k = n.kind;
-  if (k == NodeKind.withStmt) return true;
-  if (k == NodeKind.identExpr && n.nameLength == 4 && parser.sliceEquals(n.nameStart, 4, "eval")) return true;
-  const named = node != declaration && n.nameLength == nameLength && nameLength > 0 && parser.slicesEqual(n.nameStart, n.nameLength, nameStart, nameLength);
-  if (named) {
-    if (target) return true;
-    // A read, a property name, or a label names nothing it could change.
+  if (k == NodeKind.withStmt) changes.opaque = true;
+  if (k == NodeKind.identExpr && n.nameLength == 4 && parser.sliceEquals(n.nameStart, 4, "eval")) changes.opaque = true;
+  if (n.nameLength > 0) {
     const harmless = k == NodeKind.identExpr || k == NodeKind.member || k == NodeKind.optionalMember || k == NodeKind.objectProp
       || k == NodeKind.methodDef || k == NodeKind.classField || k == NodeKind.labeledStmt || k == NodeKind.breakStmt || k == NodeKind.continueStmt;
-    if (!harmless) return true;
+    if (target || !harmless) recordChange(in parser, inout changes, n.nameStart, n.nameLength, node);
   }
   let leftTarget = target;
   let restTarget = target;
@@ -5329,15 +5417,25 @@ function nameMayChange(in parser: Parser, node: u32, nameStart: u32, nameLength:
     leftTarget = true;
     restTarget = true;
   }
-  if (nameMayChange(in parser, n.left, nameStart, nameLength, declaration, leftTarget)) return true;
-  if (nameMayChange(in parser, n.right, nameStart, nameLength, declaration, restTarget)) return true;
-  if (nameMayChange(in parser, n.third, nameStart, nameLength, declaration, restTarget)) return true;
+  collectChanges(in parser, inout changes, n.left, leftTarget);
+  collectChanges(in parser, inout changes, n.right, restTarget);
+  collectChanges(in parser, inout changes, n.third, restTarget);
   let i: u32 = 0;
   while (i < n.childrenCount) {
-    if (nameMayChange(in parser, parser.ast.child(node, i), nameStart, nameLength, declaration, restTarget)) return true;
+    collectChanges(in parser, inout changes, parser.ast.child(node, i), restTarget);
     i = i + 1;
   }
-  return false;
+}
+
+// Whether the summary has a write of the name other than the
+// declaration itself.
+function changesName(in parser: Parser, in changes: NameChanges, nameStart: u32, nameLength: u32, declaration: u32): boolean {
+  if (changes.opaque) return true;
+  if (changes.hashes.length == 0) return false;
+  const at = changeBucket(in parser, in changes, nameStart, nameLength, nameHash(in parser, nameStart, nameLength));
+  if (changes.hashes[at] == 0) return false;
+  if (changes.counts[at] > 1) return true;
+  return changes.nodes[at] != declaration;
 }
 
 // Whether `node` is a string for certain: a string literal or a template.
