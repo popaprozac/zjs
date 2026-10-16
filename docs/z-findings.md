@@ -24,8 +24,8 @@ Items also note whether they **block** progress, since most do not.
 
 Confirmations stamped with a revision are **Stage 0** reproductions unless
 stated otherwise; they are not a claim of native-compiler verification.
-Since 2026-10-15 the pin is `027dc49b` (Stage 0; before it, `e75c8b0d` earlier
-that day, `d48e790b` from 2026-10-14, `9fbd9aad` from 2026-10-10, `46fa78ca`, `4adacfea`, `c2b6805c`, and
+Since 2026-10-16 the pin is `f0ef0269` (Stage 0; before it, `027dc49b` and
+`e75c8b0d` from 2026-10-15, `d48e790b` from 2026-10-14, `9fbd9aad` from 2026-10-10, `46fa78ca`, `4adacfea`, `c2b6805c`, and
 `a642cafe` from 2026-10-02, and `bdc237d2` from 2026-09-21). At the pin the
 engine builds with the native compiler and passes every gate (G56 and G57 had
 stopped it from `2c21974` to `d48e790b`); the Stage 0 build at the pin remains
@@ -2156,6 +2156,30 @@ through the call's recorded type, and a struct literal's field records
 none, so the call reached C as its source text.
 
 Minimal reproduction: probe `native/array-capacity-in-struct-literal`.
+
+## G58 — Native compiler: a module constant in a struct field's default
+
+**Status:** `consumer-verified` — z-lang `f0ef0269` (the pin) · **Size:** small ·
+**Confirmed:** native compiler at `027dc49b`; Stage 0 accepts · **Blocked:** the
+native build of the engine, from ZJS `8984665` (the interrupt handler) until the pin
+moved
+**Implemented:** the native resolver records the module-level names a field's
+default uses, as it does for a function body; the rest of the default is still
+checked where the aggregate is built.
+
+```
+zjsz.c:22795:10: error: use of undeclared identifier 'INTERRUPT_POLL_INTERVAL'
+```
+
+`Runtime.interruptCountdown: u32 = INTERRUPT_POLL_INTERVAL` names a module
+constant. Native lowering takes a constant's C name (`__z_module_N_NAME`) from a
+resolution the resolver records while it analyzes a body, and a field's default is
+not part of one, so the name reached C bare. Inferring the whole default at the
+declaration was the first fix tried and was wrong: a default runs where the
+aggregate is built, so a `thread.main` call in it is checked there (the suite's
+thread-main callable fixture caught it).
+
+Minimal reproduction: probe `native/constant-in-field-default`.
 
 ## G10 — Z is macOS-only
 
