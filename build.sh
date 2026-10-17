@@ -66,6 +66,22 @@ if ! zc build "$HERE/tools/zjsz" --release >"$OUT/zjsz-build.log" 2>&1; then
   cat "$OUT/zjsz-build.log"; exit 1
 fi
 cp "$HERE/tools/zjsz/build/zjsz" "$OUT/zjsz"
+echo "[5a/6] ES modules from bytecode on a core context (public ABI, no compiler linked)"
+rm -rf "$OUT/module_bytecode_files" && mkdir -p "$OUT/module_bytecode_files"
+for module in "$ROOT"/tests/module_bytecode/*.mjs; do
+  name="$(basename "$module")"
+  if [ "$name" = plain.mjs ]; then
+    cp "$module" "$OUT/module_bytecode_files/$name"
+  else
+    "$OUT/zjsz" compile --module "$module" -o "$OUT/module_bytecode_files/$name"
+  fi
+done
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" -Wl,-dead_strip \
+  -o "$OUT/module_bytecode_test" "$ROOT/tests/module_bytecode_test.c" "$OUT/libzjs.a"
+if nm "$OUT/module_bytecode_test" | grep -q "compileFunction\|Parser_parseStatement"; then
+  echo "module bytecode: FAIL the binary links the compiler"; exit 1
+fi
+"$OUT/module_bytecode_test" "$OUT/module_bytecode_files"
 echo "[5b/6] expectation cases (tests/expect, recorded from node)"
 "$HERE/expect.sh"
 echo "[5c/6] collector checks (tests/gc, engine counters)"

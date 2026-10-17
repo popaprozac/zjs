@@ -175,6 +175,11 @@ A module compiles to a module file as a script does to a bytecode file
 module's, and its requests, imports, and exports. A loader may hand back
 either source or a module file for a specifier; a module file is loaded,
 not compiled, so a runtime without the compiler runs a graph of them.
+`zjs_eval_module_bytecode` is `zjs_eval_module` without the module
+compiler: on a core context an embedder that runs module files links no
+front end, 410 KB of `__TEXT` against 393 KB for scripts from bytecode
+(`bench/size`, `module`). Its graph's modules must be module files; one
+left as source fails it with an EvalError.
 Each module is a file of its own: compiling one does not read its
 imports. `zjsz run --via-bytecode` passes every module of a graph
 through a module file made in an engine of its own, which the
@@ -206,5 +211,10 @@ expectation cases and the test262 runner's `--aot` use.
   have the outcomes they have from source.
 - The Vite build of `ipodos`: its three chunks load, link, and run until
   the entry reaches `document`, which a browser provides.
-- `tests/module_test.c`: the ABI's two entries, the cache, a module from
-  memory importing files, and load, link, and evaluation errors.
+- `tests/module_test.c`: the ABI's two source entries, the cache, a
+  module from memory importing files, top-level await and import(), and
+  load, link, and evaluation errors. `tests/module_bytecode_test.c`:
+  `zjs_eval_module_bytecode` on a core context running a graph of module
+  files (live bindings, top-level await, import(), import.meta), the
+  cache, and a module left as source or missing; build.sh checks that
+  its binary links no compiler.

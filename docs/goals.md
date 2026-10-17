@@ -25,6 +25,7 @@ segment sizes; nothing is stripped):
 | **A minimal embedder, linked and dead-stripped (macOS)** | **770 KB** | **16 KB** |
 | **The same on a core context (`zjs_new_core_context`), no installers** | **557 KB** | **16 KB** |
 | **A core context running bytecode only (`zjs_eval_bytecode`), no front end, 2026-10-16** | **393 KB** | **16 KB** |
+| **A core context running a module graph from bytecode (`zjs_eval_module_bytecode`), no front end, 2026-10-17** | **410 KB** | **16 KB** |
 | The core with JSON and Map / Set installed | 606 KB | 16 KB |
 | The same, iOS device (arm64), 2026-09-26 (688 KB on macOS then) | 705 KB | 16 KB |
 

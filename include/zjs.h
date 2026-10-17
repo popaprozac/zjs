@@ -419,6 +419,23 @@ ZjsValue zjs_eval_module_source(ZjsContext* ctx,
                                 const char* virtual_path);
 
 /* -----------------------------------------------------------------------
+ * Evaluate an ES module whose graph is module bytecode files.
+ *
+ * As zjs_eval_module, but nothing it reaches installs the compiler, so
+ * an embedder that calls it on a core context (zjs_new_core_context)
+ * and never evaluates source links no lexer, parser, or compiler. Each
+ * module the graph names is read from its file and must be a module
+ * bytecode file (`zjsz compile --module in.mjs -o out.mjs`); a module
+ * that is source fails the graph with an EvalError, unless the context
+ * was given a module compiler by an earlier zjs_eval_module or
+ * zjs_eval_module_source. Specifiers resolve as zjs_eval_module's do,
+ * so a graph compiled file for file keeps its import paths. The
+ * namespace, the cache, top-level await, import(), and errors are as
+ * zjs_eval_module has them.
+ * --------------------------------------------------------------------- */
+ZjsValue zjs_eval_module_bytecode(ZjsContext* ctx, const char* abs_path);
+
+/* -----------------------------------------------------------------------
  * Set process.argv. Idiomatic call:
  *   zjs_set_process_argv(ctx, argc, argv);
  * where argc/argv match Node's convention: argv[0] = executable path,

@@ -113,6 +113,15 @@ ZjsValue zjs_eval_module(ZjsContext *ctx, const char *abs_path) {
   return undefined;
 }
 
+/* As zjs_eval_module, the graph's modules module bytecode files: nothing
+   it reaches installs or links the compiler. */
+ZjsValue zjs_eval_module_bytecode(ZjsContext *ctx, const char *abs_path) {
+  if (ctx != NULL && abs_path != NULL) zjs_z_eval_module_bytecode((uintptr_t)ctx, (const uint8_t *)abs_path, strlen(abs_path));
+  ZjsValue undefined;
+  undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
+  return undefined;
+}
+
 ZjsValue zjs_eval_module_source(ZjsContext *ctx, const char *source, size_t source_len, const char *virtual_path) {
   if (ctx != NULL && source != NULL && virtual_path != NULL) {
     zjs_z_eval_module_source((uintptr_t)ctx, (const uint8_t *)source, source_len, (const uint8_t *)virtual_path, strlen(virtual_path));

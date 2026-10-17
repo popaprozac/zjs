@@ -79,6 +79,19 @@ export struct ContextState {
     this.lastResult = outcome.value;
   }
 
+  // The module at `path` and its graph from module files alone: no
+  // compiler is installed, so a runtime that is given none (a core
+  // context) links no front end for it (zjs_eval_module_bytecode).
+  function evaluateModuleBytecode(inout this, path: Array<u8>): void {
+    this.evalCount = this.evalCount + 1;
+    installFileLoader(inout this.runtime);
+    installModuleSupport(inout this.runtime);
+    const outcome = evaluateModule(inout this.runtime, move path);
+    this.interrupted = this.runtime.endTermination();
+    this.hadError = outcome.isThrow || this.interrupted;
+    this.lastResult = outcome.value;
+  }
+
   function evaluateModuleSource(inout this, source: Array<u8>, key: Array<u8>): void {
     this.evalCount = this.evalCount + 1;
     installModuleCompiler(inout this.runtime);
@@ -370,6 +383,23 @@ export c function zjs_z_eval_module(handle: usize, path: Slice<u8>): void {
       context.state.withLock((inout state): void => {
         const byteCount = bytes.length;
         state.evaluateModule(sliceBytes(in bytes, 0, byteCount));
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// zjs_eval_module_bytecode: the module at `path`, its graph's modules
+// module files.
+export c function zjs_z_eval_module_bytecode(handle: usize, path: Slice<u8>): void {
+  const bytes = sliceToBytes(path);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        const byteCount = bytes.length;
+        state.evaluateModuleBytecode(sliceBytes(in bytes, 0, byteCount));
       });
     }
     none => {
