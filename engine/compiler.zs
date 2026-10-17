@@ -2055,6 +2055,16 @@ export struct Compiler {
     return dst;
   }
 
+  // The key a read-modify-write of `target` (`o.x += 1`, `o[k]++`,
+  // `o.#x ||= v`) reads and writes through: a name's atom, a private
+  // name's symbol, or the computed key.
+  function memberKeyReg(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode): u8 {
+    if (target.kind == NodeKind.computed) return this.compileExpr(in parser, inout runtime, target.right);
+    if (this.isPrivateName(in parser, target.nameStart, target.nameLength)) return this.privateKeyReg(in parser, target.nameStart, target.nameLength);
+    const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
+    return this.emitKey(atom);
+  }
+
   // `this` into dst: a static initializer's constructor register, a
   // function's this register, or the top level's.
   function emitThis(inout this, dst: u8): void {
@@ -3924,13 +3934,7 @@ export struct Compiler {
       if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
         // Read through the key, step, write back through the same key.
         const object = this.compileExpr(in parser, inout runtime, target.left);
-        let key: u8 = 0;
-        if (target.kind == NodeKind.member) {
-          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
-          key = this.emitKey(atom);
-        } else {
-          key = this.compileExpr(in parser, inout runtime, target.right);
-        }
+        const key = this.memberKeyReg(in parser, inout runtime, target);
         const loaded = this.allocReg();
         this.emit(instABC(Op.loadElem, loaded, object, key));
         const zero = this.allocReg();
@@ -3989,15 +3993,15 @@ export struct Compiler {
       }
       const target = parser.ast.node(operandNode);
       const dst = this.allocReg();
+      // A private name cannot be deleted: an early error, however the
+      // reference is parenthesized.
+      if (target.kind == NodeKind.member && this.isPrivateName(in parser, target.nameStart, target.nameLength)) {
+        this.hadError = true;
+        return dst;
+      }
       if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
         const object = this.compileExpr(in parser, inout runtime, target.left);
-        let key: u8 = 0;
-        if (target.kind == NodeKind.member) {
-          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
-          key = this.emitKey(atom);
-        } else {
-          key = this.compileExpr(in parser, inout runtime, target.right);
-        }
+        const key = this.memberKeyReg(in parser, inout runtime, target);
         this.emit(instABC(Op.deleteElem, dst, object, key));
         return dst;
       }
@@ -4087,13 +4091,7 @@ export struct Compiler {
       }
       if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
         const object = this.compileExpr(in parser, inout runtime, target.left);
-        let key: u8 = 0;
-        if (target.kind == NodeKind.member) {
-          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
-          key = this.emitKey(atom);
-        } else {
-          key = this.compileExpr(in parser, inout runtime, target.right);
-        }
+        const key = this.memberKeyReg(in parser, inout runtime, target);
         const dst = this.allocReg();
         this.emit(instABC(Op.loadElem, dst, object, key));
         const skip = this.emit(instAI16(jumpOp, dst, 0));
@@ -4183,13 +4181,7 @@ export struct Compiler {
         return value;
       }
       if ((target.kind == NodeKind.member || target.kind == NodeKind.computed) && n.op == TokenKind.eq && target.left != NO_NODE && parser.ast.node(target.left).kind == NodeKind.superExpr) {
-        let key: u8 = 0;
-        if (target.kind == NodeKind.member) {
-          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
-          key = this.emitKey(atom);
-        } else {
-          key = this.compileExpr(in parser, inout runtime, target.right);
-        }
+        const key = this.memberKeyReg(in parser, inout runtime, target);
         const value = this.compileExpr(in parser, inout runtime, n.right);
         this.emit(instAB(Op.storeSuper, key, value));
         return value;
@@ -4241,13 +4233,7 @@ export struct Compiler {
           return value;
         }
         // Compound: read through the key, operate, write back.
-        let key: u8 = 0;
-        if (target.kind == NodeKind.member) {
-          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
-          key = this.emitKey(atom);
-        } else {
-          key = this.compileExpr(in parser, inout runtime, target.right);
-        }
+        const key = this.memberKeyReg(in parser, inout runtime, target);
         const current = this.allocReg();
         this.emit(instABC(Op.loadElem, current, object, key));
         const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
