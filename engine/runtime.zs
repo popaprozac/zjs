@@ -6225,6 +6225,13 @@ export struct Runtime {
       this.fulfillPromise(handle, resolution);
       return;
     }
+    // A runtime without Promise installed (a core context) still makes
+    // promises of its own -- an async function's, a module's -- that have
+    // no `then` to read: one resolved with another takes its outcome.
+    if (this.promiseCtor == 0 && this.isPromise(resolution)) {
+      this.performThen(asCell(resolution), undefinedValue(), undefinedValue(), cellValue(handle));
+      return;
+    }
     const thenKey = cellValue(this.atomThen);
     const then = this.getProperty(resolution, thenKey);
     if (this.pendingThrow) {
@@ -6292,6 +6299,8 @@ export struct Runtime {
   // `constructor` read is the program's to observe, and its throw is
   // left pending.
   function promiseResolveValue(inout this, value: Value): Value {
+    // Without Promise installed every promise is the runtime's own.
+    if (this.promiseCtor == 0 && this.isPromise(value)) return value;
     if (this.isPromise(value)) {
       const atomConstructor = this.atomConstructor;
       this.pushTempRoot(value);

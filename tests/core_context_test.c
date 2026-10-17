@@ -43,6 +43,11 @@ int main(void) {
         "try { /a/; throw 'made'; } catch (e) { if (!(e instanceof TypeError)) throw e; }");
   check(core, "async functions run without Promise",
         "async function f() { await 1; return 2; } var p = f(); if (typeof p !== 'object' || 'then' in p) throw 6;");
+  check(core, "an awaited async call takes its outcome without Promise",
+        "var got = []; async function two() { await null; return 2; } async function passOn() { return two(); }"
+        "async function run() { got.push(await two(), await passOn()); try { await (async () => { throw 8; })(); } catch (e) { got.push(e); } }"
+        "run();");
+  check(core, "...once the jobs have run", "if (got.join() !== '2,2,8') throw 9;");
   check(core, "collections under the core",
         "var kept = []; for (var i = 0; i < 200000; i++) { var c = { i: i, next: kept.length }; if (i % 100 === 0) kept.push(c); }"
         "if (kept.length !== 2000 || kept[1999].i !== 199900) throw 7;");
