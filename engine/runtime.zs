@@ -104,6 +104,8 @@ export const HOST_FINALLY_REJECTED: usize = 7;
 export const HOST_ELEMENT_FULFILLED: usize = 8;
 export const HOST_ELEMENT_REJECTED: usize = 9;
 export const HOST_BOUND_TRAMPOLINE: usize = 10;
+// A module namespace's getter for one export (engine/modules.zs).
+export const HOST_NAMESPACE_GET: usize = 11;
 
 // What a function's [[Prototype]] chain answered to a [[Set]].
 // How far past an array's slots a write may land and still grow them
@@ -227,6 +229,104 @@ export const COMPILE_NO_COMPILER: i32 = -3;
 
 // How many global slots there can be: an instruction names one in 16 bits.
 export const GLOBAL_SLOT_LIMIT: usize = 0x1_0000;
+
+// --- Modules (docs/modules.md) ---
+//
+// What compiling a module records of its imports and exports, names and
+// specifiers as atoms; slots are in the module's environment.
+
+// The name of a module's namespace, where an import or export names one.
+export const MODULE_NAMESPACE: u32 = 0;
+
+// An import binding: the request it names, the export it imports (or
+// MODULE_NAMESPACE), and its slots: a named import's two (the exporting
+// module's environment and the binding's slot there, written at link),
+// a namespace import's one (the namespace object).
+export struct ModuleImport {
+  request: u32;
+  name: u32;
+  slot: u32;
+}
+
+// An export of a binding of the module's own, by its slot.
+export struct ModuleExport {
+  name: u32;
+  slot: u32;
+}
+
+// An export of another module's: `export { x as y } from "m"`, an
+// exported import, or `export * as ns from "m"` (MODULE_NAMESPACE).
+export struct ModuleIndirect {
+  name: u32;
+  request: u32;
+  importName: u32;
+}
+
+export struct ModuleInfo {
+  // The specifiers the module requests, each once, in source order.
+  requests: Array<u32>;
+  imports: Array<ModuleImport>;
+  locals: Array<ModuleExport>;
+  indirect: Array<ModuleIndirect>;
+  // `export * from "m"`: the requests whose exports this one passes on.
+  stars: Array<u32>;
+}
+
+export function emptyModuleInfo(): ModuleInfo {
+  return ModuleInfo({ requests: Array<u32>(), imports: Array<ModuleImport>(), locals: Array<ModuleExport>(), indirect: Array<ModuleIndirect>(), stars: Array<u32>() });
+}
+
+// A compiled module: its function (a generator: its first step links
+// the module, its second evaluates it), or below 0 a COMPILE_ reason.
+export struct CompiledModule {
+  index: i32;
+  info: ModuleInfo;
+}
+
+export type ModuleCompiler = (inout runtime: Runtime, source: Array<u8>) => CompiledModule on thread.any;
+
+// What a loader found for a specifier: the module's key (an atom; the
+// cache is by key) and its source, or not found.
+export struct LoadedSource {
+  found: boolean;
+  key: u32;
+  source: Array<u8>;
+}
+
+// Resolve `specifier` (an atom) requested by the module keyed `referrer`
+// (an atom, 0 for none) and read the module it names.
+export type ModuleLoader = (inout runtime: Runtime, specifier: u32, referrer: u32) => LoadedSource on thread.any;
+
+export const MODULE_NEW: u8 = 0;
+export const MODULE_LINKED: u8 = 1;
+export const MODULE_EVALUATING: u8 = 2;
+export const MODULE_EVALUATED: u8 = 3;
+export const MODULE_FAILED: u8 = 4;
+
+export struct ModuleRecord {
+  key: u32;
+  info: ModuleInfo;
+  // The module's generator function, and once linked its generator
+  // object and environment.
+  code: u32;
+  generator: Value;
+  env: u32;
+  // The module each request resolved to, by index in `modules`.
+  requested: Array<u32>;
+  status: u8;
+  error: Value;
+  namespace: u32;
+  dfsIndex: u32;
+  dfsAncestor: u32;
+}
+
+function noModuleCompiler(inout runtime: Runtime, source: Array<u8>): CompiledModule on thread.any {
+  return CompiledModule({ index: COMPILE_NO_COMPILER, info: emptyModuleInfo() });
+}
+
+function noModuleLoader(inout runtime: Runtime, specifier: u32, referrer: u32): LoadedSource on thread.any {
+  return LoadedSource({ found: false, key: 0, source: Array<u8>() });
+}
 
 // The compilers a runtime has until installCompiler gives it the front
 // end: none.
@@ -475,6 +575,11 @@ export struct Runtime {
   // compiled elsewhere -- a bytecode file's -- and links no front end.
   scriptCompiler: ScriptCompiler = noScriptCompiler;
   evalCompiler: EvalCompiler = noEvalCompiler;
+  moduleCompiler: ModuleCompiler = noModuleCompiler;
+  // How modules are found: none until an embedder or the file loader
+  // sets one (docs/modules.md).
+  moduleLoader: ModuleLoader = noModuleLoader;
+  modules: Array<ModuleRecord> = Array<ModuleRecord>();
   // A compile asked for a global slot past the last (globalSlotAtom).
   globalsFull: boolean = false;
   interruptHandler: usize = 0;
@@ -5112,6 +5217,52 @@ export struct Runtime {
       this.heap.markHandle(nameAtom);
       index = index + 1;
     }
+    this.markModules();
+  }
+
+  // What the module records hold: their keys and names, and the
+  // generator, environment, namespace, and error of each.
+  function markModules(inout this): void {
+    let m: usize = 0;
+    while (m < this.modules.length) {
+      const key = this.modules[m].key;
+      this.heap.markHandle(key);
+      const generator = this.modules[m].generator;
+      this.heap.markValue(generator);
+      const env = this.modules[m].env;
+      this.heap.markHandle(env);
+      const error = this.modules[m].error;
+      this.heap.markValue(error);
+      const namespace = this.modules[m].namespace;
+      this.heap.markHandle(namespace);
+      let i: usize = 0;
+      while (i < this.modules[m].info.requests.length) {
+        const request = this.modules[m].info.requests[i];
+        this.heap.markHandle(request);
+        i = i + 1;
+      }
+      i = 0;
+      while (i < this.modules[m].info.imports.length) {
+        const name = this.modules[m].info.imports[i].name;
+        this.heap.markHandle(name);
+        i = i + 1;
+      }
+      i = 0;
+      while (i < this.modules[m].info.locals.length) {
+        const name = this.modules[m].info.locals[i].name;
+        this.heap.markHandle(name);
+        i = i + 1;
+      }
+      i = 0;
+      while (i < this.modules[m].info.indirect.length) {
+        const name = this.modules[m].info.indirect[i].name;
+        this.heap.markHandle(name);
+        const importName = this.modules[m].info.indirect[i].importName;
+        this.heap.markHandle(importName);
+        i = i + 1;
+      }
+      m = m + 1;
+    }
   }
 
   function dropDeadAtoms(inout this): void {
@@ -8914,6 +9065,24 @@ export struct Runtime {
               hops = hops - 1;
             }
             const value = this.heap.slot(env, u32(inst.c) | (u32(inst.d) << 8));
+            this.setReg(base, inst.a, value);
+            continue;
+          }
+          importBind => {
+            // An import's slots, as loadEnvSlot's operands name them: the
+            // exporting module's environment and its binding's slot,
+            // written when the module linked. The compiler checks the
+            // value for the hole after.
+            let env = this.frames[frameIndex].env;
+            let hops = u32(inst.b);
+            while (hops > 0) {
+              env = this.heap.linkOf(env);
+              hops = hops - 1;
+            }
+            const pair = u32(inst.c) | (u32(inst.d) << 8);
+            const target = this.heap.slot(env, pair);
+            let value = holeValue();
+            if (isCell(target)) value = this.heap.slot(asCell(target), u32(asInt32(this.heap.slot(env, pair + 1))));
             this.setReg(base, inst.a, value);
             continue;
           }

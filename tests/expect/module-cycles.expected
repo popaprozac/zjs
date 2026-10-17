@@ -1,0 +1,8 @@
+leaf
+left
+right after leaf
+b runs first: hoisted in a
+ReferenceError Cannot access 'lateA' before initialization
+ReferenceError Cannot access 'constA' before initialization
+a runs: b gave b value hoisted in b, sees late a
+entry: hoisted in a late a

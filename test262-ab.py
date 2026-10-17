@@ -39,9 +39,9 @@ for rel, path in ref.gather_tests(suite, cfg, None):
         continue
     for mode in ref.execution_modes(meta):
         total += 1
-        full = ref.build_source(suite, src, meta, strict_mode=(mode == "strict"))
-        old, _ = ref.classify(meta, *ref.run_one(before, full, 5.0))
-        new, reason = ref.classify(meta, *ref.run_one(after, full, 5.0))
+        full, module_path = ref.assemble(suite, src, meta, path, strict_mode=(mode == "strict"))
+        old, _ = ref.classify(meta, *ref.run_one(before, full, 5.0, module_path=module_path))
+        new, reason = ref.classify(meta, *ref.run_one(after, full, 5.0, module_path=module_path))
         if old == "pass" and new != "pass":
             regressions.append(f"{rel} [{mode}]: {reason}")
         elif old != "pass" and new == "pass":

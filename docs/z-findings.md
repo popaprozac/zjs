@@ -2245,6 +2245,30 @@ template as it goes, so the first value is out before the second interpolation
 runs. A template is a String the call receives whole; native prints
 `side effect`, `side effect`, `1 2`, which is the order the program asks for.
 
+## G62 — Native compiler: an imported function called in a struct field's default
+
+**Status:** `consumer-verified` — z-lang `17662184` (the pin) · **Size:** small ·
+**Confirmed:** native compiler at z-lang `e50e06ea`; Stage 0 accepts ·
+**Blocked:** the native build of the engine, from the ES module work (the
+compiler's `module: ModuleInfo = emptyModuleInfo()`) until the pin moved
+
+```
+zjsz.c:2142:1600: error: call to undeclared function 'emptyModuleInfo'
+```
+
+G58 taught the native resolver to record the module-level names a field's
+default uses, so lowering emits the same C name a function body would; a
+function the default calls was not among them. A call of the module's own
+function still came out right, by the same-module renaming every function
+gets; a call of an imported one reached C bare. Implemented: the resolver
+records a call resolution for a default's call of a function, the module's own
+or imported, non-generic, under the callee's checked identity, as a body's call
+has; as in G58 the rest of the default is still checked where the aggregate is
+built. Fixture `call-field-default` (z-lang native semantic parity: an own
+function, an import under another name, and an imported struct whose default
+calls a function of its own module); probe
+`native/imported-call-in-field-default`.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

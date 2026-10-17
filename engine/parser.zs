@@ -187,6 +187,17 @@ export struct Parser {
     this.hadError = true;
   }
 
+  // A contextual keyword where the grammar has it: written with an
+  // escape it is an error, not the keyword.
+  function peekKeyword(inout this, kind: TokenKind): boolean {
+    if (this.peekKind() != kind) return false;
+    if (this.tokenHasEscape(this.peek())) {
+      this.hadError = true;
+      return false;
+    }
+    return true;
+  }
+
   function hasNewlineBetween(a: u32, b: u32): boolean {
     let index = usize(a);
     while (index < usize(b)) {
@@ -1024,6 +1035,11 @@ export struct Parser {
         }
       }
       if (isNewTarget) {
+        // A module's own code is in no function to have a new.target.
+        if (this.isModule && this.functionDepth == 0) {
+          this.hadError = true;
+          return NO_NODE;
+        }
         this.advance();
         const targetToken = this.advance();
         const meta = this.ast.newNode(NodeKind.thisExpr, newToken.start, targetToken.start + 6);
@@ -3432,7 +3448,7 @@ export struct Parser {
     // `import 'mod'` -- side effect only.
     if (this.peekKind() == TokenKind.stringLit) {
       const specifier = this.advance();
-      this.matchKind(TokenKind.semicolon);
+      this.matchTerminator();
       const declaration = this.ast.newNode(NodeKind.importDecl, keyword.start, specifier.start + specifier.length);
       this.ast.setName(declaration, specifier.start, specifier.length);
       return declaration;
@@ -3449,7 +3465,7 @@ export struct Parser {
     if (this.peekKind() == TokenKind.star) {
       // `* as ns`
       const star = this.advance();
-      if (this.peekKind() != TokenKind.kwAs) {
+      if (!this.peekKeyword(TokenKind.kwAs)) {
         this.hadError = true;
         return NO_NODE;
       }
@@ -3468,15 +3484,22 @@ export struct Parser {
       // `{ a, b as c }`
       this.advance();
       while (this.peekKind() != TokenKind.rBrace && this.peekKind() != TokenKind.eof) {
+        // The name imported: an identifier, a keyword, or a string,
+        // which `as` must rename.
         const sourceToken = this.peek();
-        if (!this.isBindingIdentTok(sourceToken) && !this.isKeywordToken(sourceToken.kind)) {
+        const quoted = sourceToken.kind == TokenKind.stringLit;
+        if (!quoted && !this.isBindingIdentTok(sourceToken) && !this.isKeywordToken(sourceToken.kind)) {
           this.hadError = true;
           return NO_NODE;
         }
         this.advance();
         let localStart = sourceToken.start;
         let localLength = sourceToken.length;
-        if (this.peekKind() == TokenKind.kwAs) {
+        if (quoted && this.peekKind() != TokenKind.kwAs) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        if (this.peekKeyword(TokenKind.kwAs)) {
           this.advance();
           const localToken = this.peek();
           if (!this.isBindingIdentTok(localToken)) {
@@ -3498,7 +3521,7 @@ export struct Parser {
       }
       if (!this.expectKind(TokenKind.rBrace)) return NO_NODE;
     }
-    if (this.peekKind() != TokenKind.kwFrom) {
+    if (!this.peekKeyword(TokenKind.kwFrom)) {
       this.hadError = true;
       return NO_NODE;
     }
@@ -3509,7 +3532,7 @@ export struct Parser {
       return NO_NODE;
     }
     this.advance();
-    this.matchKind(TokenKind.semicolon);
+    this.matchTerminator();
     const declaration = this.ast.newNode(NodeKind.importDecl, keyword.start, specifier.start + specifier.length);
     this.ast.setName(declaration, specifier.start, specifier.length);
     this.ast.setChildren(declaration, in clauses);
@@ -3518,8 +3541,44 @@ export struct Parser {
 
   function parseExportDecl(inout this): u32 {
     const keyword = this.advance();
-    if (this.peekKind() == TokenKind.kwDefault) {
+    if (this.peekKind() == TokenKind.star) {
+      // `export * from 'mod'`, and `export * as ns from 'mod'`: the
+      // declaration's `op` is the star, its name the specifier, and the
+      // exported name, if any, an identifier in `third`.
       this.advance();
+      let exported: u32 = NO_NODE;
+      if (this.peekKeyword(TokenKind.kwAs)) {
+        this.advance();
+        const nameToken = this.peek();
+        if (nameToken.kind != TokenKind.stringLit && !this.isBindingIdentTok(nameToken) && !this.isKeywordToken(nameToken.kind)) {
+          this.hadError = true;
+          return NO_NODE;
+        }
+        this.advance();
+        exported = this.identNode(nameToken);
+      }
+      if (!this.peekKeyword(TokenKind.kwFrom)) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      this.advance();
+      const specifier = this.peek();
+      if (specifier.kind != TokenKind.stringLit) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      this.advance();
+      this.matchTerminator();
+      const declaration = this.ast.newNode(NodeKind.exportDecl, keyword.start, specifier.start + specifier.length);
+      this.ast.setOp(declaration, TokenKind.star);
+      this.ast.setName(declaration, specifier.start, specifier.length);
+      this.ast.setThird(declaration, exported);
+      return declaration;
+    }
+    if (this.peekKeyword(TokenKind.kwDefault)) {
+      // The `default` keyword's span names the binding an anonymous
+      // default export makes.
+      const defaultToken = this.advance();
       let value: u32 = NO_NODE;
       const k = this.peekKind();
       if (k == TokenKind.kwFunction) {
@@ -3531,30 +3590,40 @@ export struct Parser {
         value = this.parseClassExpr();
       } else {
         value = this.parseAssignment();
-        this.matchKind(TokenKind.semicolon);
+        if (value == NO_NODE) return NO_NODE;
+        this.matchTerminator();
       }
       if (value == NO_NODE) return NO_NODE;
+      // `export default function f() {}` declares f, as a declaration
+      // would: hoisted, and no binding of its own inside.
+      if (this.kindOf(value) == NodeKind.functionExpr && this.node(value).nameLength > 0) this.ast.setKind(value, NodeKind.functionDecl);
       const declaration = this.ast.newNode(NodeKind.exportDecl, keyword.start, this.endOf(value));
       this.ast.setBool(declaration, true);
       this.ast.setLeft(declaration, value);
+      this.ast.setName(declaration, defaultToken.start, defaultToken.length);
       return declaration;
     }
     if (this.peekKind() == TokenKind.lBrace) {
       this.advance();
       let clauses = Array<u32>();
+      // A string or a keyword names a binding only of the module
+      // exported from.
+      let referencesOthers = false;
       while (this.peekKind() != TokenKind.rBrace && this.peekKind() != TokenKind.eof) {
         const localToken = this.peek();
-        if (!this.isBindingIdentTok(localToken) && !this.isKeywordToken(localToken.kind)) {
+        const quoted = localToken.kind == TokenKind.stringLit;
+        if (!quoted && !this.isBindingIdentTok(localToken) && !this.isKeywordToken(localToken.kind)) {
           this.hadError = true;
           break;
         }
+        if (quoted || !this.isBindingIdentTok(localToken)) referencesOthers = true;
         this.advance();
         let exportStart = localToken.start;
         let exportLength = localToken.length;
-        if (this.peekKind() == TokenKind.kwAs) {
+        if (this.peekKeyword(TokenKind.kwAs)) {
           this.advance();
           const exportToken = this.peek();
-          if (!this.isBindingIdentTok(exportToken) && !this.isKeywordToken(exportToken.kind)) {
+          if (exportToken.kind != TokenKind.stringLit && !this.isBindingIdentTok(exportToken) && !this.isKeywordToken(exportToken.kind)) {
             this.hadError = true;
             break;
           }
@@ -3573,7 +3642,7 @@ export struct Parser {
       if (!this.expectKind(TokenKind.rBrace)) return NO_NODE;
       let fromStart: u32 = 0;
       let fromLength: u32 = 0;
-      if (this.peekKind() == TokenKind.kwFrom) {
+      if (this.peekKeyword(TokenKind.kwFrom)) {
         this.advance();
         const specifier = this.peek();
         if (specifier.kind != TokenKind.stringLit) {
@@ -3583,8 +3652,11 @@ export struct Parser {
         this.advance();
         fromStart = specifier.start;
         fromLength = specifier.length;
+      } else if (referencesOthers) {
+        this.hadError = true;
+        return NO_NODE;
       }
-      this.matchKind(TokenKind.semicolon);
+      this.matchTerminator();
       const declaration = this.ast.newNode(NodeKind.exportDecl, keyword.start, this.peek().start);
       this.ast.setChildren(declaration, in clauses);
       this.ast.setName(declaration, fromStart, fromLength);
@@ -3694,8 +3766,9 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     labels: Array<u32>(),
   });
 
-  // A top-level "use strict" prologue makes the whole script strict.
-  if (parser.tokensHaveUseStrictPrologue(0)) parser.strictMode = true;
+  // A top-level "use strict" prologue makes the whole script strict;
+  // module code is strict throughout.
+  if (isModule || parser.tokensHaveUseStrictPrologue(0)) parser.strictMode = true;
 
   const program = parser.ast.newNode(NodeKind.program, 0, sourceLength);
   parser.ast.setBool(program, isModule);
@@ -3706,6 +3779,17 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     statements.push(statement);
   }
   parser.ast.setChildren(program, in statements);
+  // A module's statements, also the body of a generator function the
+  // compiler compiles the module as (docs/modules.md), in the program's
+  // `third`: its first step links the module, its second evaluates it.
+  if (isModule) {
+    const body = parser.ast.newNode(NodeKind.blockStmt, 0, sourceLength);
+    parser.ast.setChildren(body, in statements);
+    const moduleFunction = parser.ast.newNode(NodeKind.functionExpr, 0, sourceLength);
+    parser.ast.setNum(moduleFunction, 3.0);
+    parser.ast.setLeft(moduleFunction, body);
+    parser.ast.setThird(program, moduleFunction);
+  }
 
   // AllPrivateNamesValid: checked after parsing because a class body may use
   // a private name before its declaration.

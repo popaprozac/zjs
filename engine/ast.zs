@@ -148,6 +148,7 @@ export struct Ast {
   function setRight(inout this, node: u32, value: u32): void { this.nodes[usize(node)].right = value; }
   function setThird(inout this, node: u32, value: u32): void { this.nodes[usize(node)].third = value; }
   function setOp(inout this, node: u32, value: TokenKind): void { this.nodes[usize(node)].op = value; }
+  function setKind(inout this, node: u32, value: NodeKind): void { this.nodes[usize(node)].kind = value; }
   function setNum(inout this, node: u32, value: f64): void { this.nodes[usize(node)].num = value; }
   function setBool(inout this, node: u32, value: boolean): void { this.nodes[usize(node)].boolValue = value; }
   function setConciseMethod(inout this, node: u32): void { this.nodes[usize(node)].conciseMethod = true; }

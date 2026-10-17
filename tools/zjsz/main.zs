@@ -13,7 +13,10 @@ import { thread } from "std/thread";
 import { Runtime, RunResult, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate, compileToBytecode } from "../../engine/lib.zs";
-import { installCompiler } from "../../engine/compile.zs";
+import { evaluateModule } from "../../engine/modules.zs";
+import { installFileLoader } from "../../engine/module_files.zs";
+import { bytesOf } from "../../engine/heap.zs";
+import { installCompiler, installModuleCompiler } from "../../engine/compile.zs";
 import { parseProgram } from "../../engine/parser.zs";
 import { compileProgram } from "../../engine/compiler.zs";
 import { bcU16, bcI16 } from "../../engine/bytecode.zs";
@@ -65,8 +68,16 @@ function reportThrow(inout runtime: Runtime, thrown: Value): void {
   if (runtime.isObjectLike(thrown)) {
     const nameText: String = "name";
     const nameKey = runtime.internText(in nameText);
-    const nameValue = runtime.getProperty(thrown, nameKey);
-    if (runtime.isStringValue(nameValue)) {
+    let nameValue = runtime.getProperty(thrown, nameKey);
+    // A thrown object with no name of its own is named by its
+    // constructor, as test262's Test262Error is.
+    if (!runtime.isStringValue(nameValue)) {
+      const constructorText: String = "constructor";
+      const constructorKey = runtime.internText(in constructorText);
+      const maker = runtime.getProperty(thrown, constructorKey);
+      if (runtime.isObjectLike(maker)) nameValue = runtime.getProperty(maker, nameKey);
+    }
+    if (runtime.isStringValue(nameValue) && runtime.heap.stringLength(asCell(nameValue)) > 0) {
       appendString(inout line, in runtime, nameValue);
     } else {
       appendText(inout line, "(unknown)");
@@ -193,7 +204,7 @@ function runViaBytecode(inout runtime: Runtime, source: Array<u8>): RunResult {
   return runBytecode(inout runtime, bytes);
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, viaBytecode: boolean, noCompiler: boolean): i32 throws String {
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, viaBytecode: boolean, noCompiler: boolean, module: boolean, in includes: Array<String>): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
@@ -215,7 +226,22 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
   // runtime an embedder that only loads bytecode has.
   if (!noCompiler) installCompiler(inout runtime);
   let outcome = RunResult({ isThrow: false, value: undefinedValue() });
-  if (isBytecodeFile(source)) {
+  // Scripts --include names run first, in order, in the same realm.
+  let i: usize = 0;
+  while (i < includes.length) {
+    const included = try fs.readBytes(includes[i]);
+    outcome = evaluate(inout runtime, move included);
+    if (outcome.isThrow) {
+      reportThrow(inout runtime, outcome.value);
+      return 1;
+    }
+    i = i + 1;
+  }
+  if (module) {
+    installModuleCompiler(inout runtime);
+    installFileLoader(inout runtime);
+    outcome = evaluateModule(inout runtime, bytesOf(in path));
+  } else if (isBytecodeFile(source)) {
     outcome = runBytecode(inout runtime, source);
   } else if (viaBytecode) {
     outcome = runViaBytecode(inout runtime, move source);
@@ -498,6 +524,7 @@ function main(): i32 {
   // Arguments exclude the program name:
   //   run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats]
   //       [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] <file>
+  //       [--module] [--include <script>]...
   //   dump <file>        the bytecode the file compiles to
   //   compile <in.js> -o <out.zbc>   a bytecode file
   // A file that starts as a bytecode file does is loaded, not compiled;
@@ -515,7 +542,9 @@ function main(): i32 {
   // survivor multiple (percent), and --gc-nursery the allocations
   // between minor collections (0: every collection is full), for
   // measurement and testing; --expose-gc defines a global gc() that
-  // collects everything.
+  // collects everything. --module (or a .mjs file) runs the file as an
+  // ES module, its imports read from files (docs/modules.md); each
+  // --include script runs first, in order.
   const arguments = process.args();
   if (arguments.length < 2) {
     console.error("usage: zjsz run [--dict-threshold N] [--stats] [--expose-gc] <file>");
@@ -560,6 +589,8 @@ function main(): i32 {
   let gcNursery: i32 = -1;
   let viaBytecode = false;
   let noCompiler = false;
+  let module = false;
+  let includes = Array<String>();
   while (index + 1 < arguments.length) {
     const optionLength = arguments[index].byteLength;
     const option = arguments[index].copyBytes(0, optionLength);
@@ -604,6 +635,12 @@ function main(): i32 {
     } else if (option == "--no-compiler") {
       noCompiler = true;
       index = index + 1;
+    } else if (option == "--module") {
+      module = true;
+      index = index + 1;
+    } else if (option == "--include" && index + 2 < arguments.length) {
+      includes.push(arguments[index + 1].copyBytes(0, arguments[index + 1].byteLength));
+      index = index + 2;
     } else if (option == "--dict-threshold" && index + 2 < arguments.length) {
       const valueLength = arguments[index + 1].byteLength;
       const value = arguments[index + 1].copyBytes(0, valueLength);
@@ -619,7 +656,9 @@ function main(): i32 {
   }
   const pathLength = arguments[index].byteLength;
   const path = arguments[index].copyBytes(0, pathLength);
-  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery, viaBytecode, noCompiler);
+  // A .mjs file is a module whether or not --module says so.
+  if (pathLength >= 4 && path.copyBytes(pathLength - 4, pathLength) == ".mjs") module = true;
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery, viaBytecode, noCompiler, module, in includes);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

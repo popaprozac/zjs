@@ -16,7 +16,7 @@ import { TokenKind } from "./token.zs";
 import { NodeKind, AstNode, NO_NODE } from "./ast.zs";
 import { Parser, ParseResult, parseProgram } from "./parser.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, instAB, instABC, instABCD, instAU16, instAI16, instI16, instU16, instAJump, JUMP_OFFSET_LIMIT, EvalSite, EvalLevel, EvalBinding } from "./bytecode.zs";
-import { Runtime } from "./runtime.zs";
+import { Runtime, ModuleInfo, ModuleImport, ModuleExport, ModuleIndirect, CompiledModule, MODULE_NAMESPACE, emptyModuleInfo } from "./runtime.zs";
 import { bytesOf, sliceBytes } from "./heap.zs";
 import { cellValue, deletedValue } from "./value.zs";
 import { replace } from "std/memory";
@@ -124,6 +124,9 @@ struct Local {
   // A function declaration a call may inline (see emitInline): the
   // declaration. NO_NODE otherwise.
   inlineFunction: u32;
+  // A module's import: its slots hold the exporting module's environment
+  // and the binding's slot there, read through importBind.
+  imported: boolean = false;
 }
 
 // What a scope records when it opens, to close it again.
@@ -317,6 +320,8 @@ struct OuterRef {
   // A named function expression's own name: sloppy code's assignment is
   // ignored.
   quiet: boolean;
+  // A module's import (Local.imported).
+  imported: boolean = false;
 }
 
 // What compiling a nested function tells its parent.
@@ -325,7 +330,12 @@ struct CompiledFunction {
   // The outermost enclosing scope the function (or anything nested in
   // it) refers to; `scopes.length` when it refers to none.
   minOuterScope: usize;
+  // A module's imports and exports (compileModule).
+  module: ModuleInfo = emptyModuleInfo();
 }
+
+// compileFunction's role for a module's function (docs/modules.md).
+const ROLE_MODULE: u32 = 4;
 
 // At most this many pieces join in one concatN (emitConcat).
 const CONCAT_CHUNK: u32 = 32;
@@ -476,6 +486,11 @@ export struct Compiler {
   captures: CaptureTable = captureTable();
   // Where each name is first read, per extent (FirstUses).
   uses: FirstUses = firstUses();
+  // A module's body declaring its bindings: every one lives in the
+  // module's environment, where other modules import it from.
+  allToEnv: boolean = false;
+  // A module's imports and exports as its compile finds them.
+  module: ModuleInfo = emptyModuleInfo();
 
   // --- Emission ---
 
@@ -1070,6 +1085,38 @@ export struct Compiler {
     this.checkRedeclarations(in parser, in lexical, in vars);
   }
 
+  // A module's top level: its function and class declarations are
+  // lexical, as its imports are, each against every other name it
+  // declares.
+  function checkModuleRedeclarations(inout this, in parser: Parser, body: u32): void {
+    const n = parser.ast.node(body);
+    let lexical = Array<NameRef>();
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      const statement = parser.ast.child(body, i);
+      const st = parser.ast.node(statement);
+      if (st.kind == NodeKind.importDecl) {
+        let c: u32 = 0;
+        while (c < st.childrenCount) {
+          const clause = parser.ast.node(parser.ast.child(statement, c));
+          pushName(inout lexical, clause.nameStart, clause.nameLength, false);
+          c = c + 1;
+        }
+      } else if (st.kind == NodeKind.exportDecl && st.boolValue) {
+        const value = parser.ast.node(st.left);
+        if ((value.kind == NodeKind.functionDecl || value.kind == NodeKind.classExpr) && value.nameLength > 0) pushName(inout lexical, value.nameStart, value.nameLength, false);
+      } else if (st.kind == NodeKind.exportDecl && st.left != NO_NODE) {
+        pushLexicalNames(in parser, st.left, true, inout lexical);
+      } else {
+        pushLexicalNames(in parser, statement, true, inout lexical);
+      }
+      i = i + 1;
+    }
+    let vars = Array<NameRef>();
+    collectVarNames(in parser, body, inout vars);
+    this.checkRedeclarations(in parser, in lexical, in vars);
+  }
+
   // A loop head's lexical names against each other and the loop's vars.
   function checkHeadRedeclarations(inout this, in parser: Parser, loop: u32, head: u32): void {
     let lexical = Array<NameRef>();
@@ -1103,7 +1150,9 @@ export struct Compiler {
     this.bindings.locals[index].isConst = isConst;
     this.bindings.locals[index].initialized = false;
     this.bindings.locals[index].alwaysCheck = alwaysCheck;
-    const needsHole = alwaysCheck || referencedBefore(in parser, inout this.uses, extent, nameStart, nameLength, limit);
+    // A module's own binding starts as the hole whatever its module
+    // reads first: another module may read it before it is declared.
+    const needsHole = alwaysCheck || this.allToEnv || referencedBefore(in parser, inout this.uses, extent, nameStart, nameLength, limit);
     this.bindings.locals[index].needsHole = needsHole;
     if (needsHole) {
       const named = this.nameConstOf(in parser, inout runtime, nameStart, nameLength);
@@ -1135,6 +1184,23 @@ export struct Compiler {
   // script's top-level classes are globals, not lexical bindings.
   function declareStatementLexicals(inout this, in parser: Parser, inout runtime: Runtime, statement: u32, alwaysCheck: boolean, extent: u32, skipClasses: boolean, inBlock: boolean): void {
     const st = parser.ast.node(statement);
+    if (st.kind == NodeKind.exportDecl) {
+      // A default class binds its name, any other default value the
+      // `*default*` binding (spelled by the `default` keyword, which no
+      // program can name); a default function is hoisted instead.
+      if (st.boolValue) {
+        const value = parser.ast.node(st.left);
+        if (value.kind == NodeKind.functionExpr || value.kind == NodeKind.functionDecl) return;
+        if (value.kind == NodeKind.classExpr && value.nameLength > 0) {
+          this.declareLexical(in parser, inout runtime, value.nameStart, value.nameLength, value.nameStart, false, alwaysCheck, extent, st.end);
+        } else {
+          this.declareLexical(in parser, inout runtime, st.nameStart, st.nameLength, st.nameStart, true, alwaysCheck, extent, st.end);
+        }
+        return;
+      }
+      if (st.left != NO_NODE) this.declareStatementLexicals(in parser, inout runtime, st.left, alwaysCheck, extent, skipClasses, inBlock);
+      return;
+    }
     if (st.kind == NodeKind.functionDecl && inBlock && st.nameLength > 0) {
       // Initialized when the block opens, before anything can read it:
       // no hole, no check.
@@ -1510,7 +1576,7 @@ export struct Compiler {
     let captured = envSlot != -1;
     if (envSlot == BLOCK_SLOT) envSlot = -1;
     let reg: u8 = 0;
-    if (!captured && this.spillFrom > 0 && this.nextReg >= this.spillFrom) {
+    if (!captured && (this.allToEnv || (this.spillFrom > 0 && this.nextReg >= this.spillFrom))) {
       // Past the register budget: the function's environment, as a
       // captured binding's (spillFrom).
       envSlot = i32(this.envSize);
@@ -1587,7 +1653,7 @@ export struct Compiler {
     const slot = this.bindings.locals[index].envSlot;
     if (slot >= 0) {
       const hops = u8(this.openEnvs - this.bindings.locals[index].envDepth);
-      this.emit(this.envSlotInst(Op.loadEnvSlot, dst, hops, i32(slot)));
+      this.emit(this.envSlotInst(this.bindings.locals[index].imported ? Op.importBind : Op.loadEnvSlot, dst, hops, i32(slot)));
     } else {
       const reg = this.bindings.locals[index].reg;
       this.emit(instAB(Op.mov, dst, reg));
@@ -1820,7 +1886,7 @@ export struct Compiler {
         if (level < this.minOuterScope) this.minOuterScope = level;
         const above = this.outerScopes[level].openEnvs - outer.envDepth;
         const needsCheck = outer.needsHole && (outer.alwaysCheck || !outer.initialized);
-        return OuterRef({ found: true, hops: u8(hops + above), slot: outer.envSlot, scopeIndex: level, needsCheck: needsCheck, isConst: outer.isConst, quiet: outer.isConst && !outer.lexical });
+        return OuterRef({ found: true, hops: u8(hops + above), slot: outer.envSlot, scopeIndex: level, needsCheck: needsCheck, isConst: outer.isConst, quiet: outer.isConst && !outer.lexical, imported: outer.imported });
       }
       hops = hops + this.outerScopes[level].openEnvs;
       if (this.outerScopes[level].hasEnv) hops = hops + 1;
@@ -2042,7 +2108,7 @@ export struct Compiler {
     }
     const outer = this.findOuter(in parser, nameStart, nameLength);
     if (outer.found && outer.slot >= 0) {
-      this.emit(this.envSlotInst(Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
+      this.emit(this.envSlotInst(outer.imported ? Op.importBind : Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
       return;
     }
     this.hadError = true;
@@ -2082,7 +2148,7 @@ export struct Compiler {
       const found = this.findConstructorThis();
       if (found.found) {
         const dst = this.allocReg();
-        this.emit(this.envSlotInst(Op.loadEnvSlot, dst, found.hops, i32(found.slot)));
+        this.emit(this.envSlotInst(found.imported ? Op.importBind : Op.loadEnvSlot, dst, found.hops, i32(found.slot)));
         this.emit(instA(Op.checkThis, dst));
         return dst;
       }
@@ -2517,7 +2583,7 @@ export struct Compiler {
   function emitClassFunction(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32, role: u32, fieldCount: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount, noModuleSteps);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2615,6 +2681,21 @@ export struct Compiler {
       if (this.findLocal(in parser, n.nameStart, n.nameLength) < 0) this.addLocal(n.nameStart, n.nameLength);
       return;
     }
+    if (k == NodeKind.exportDecl) {
+      // An exported declaration is the module's own, at its level; a
+      // default function is hoisted as a declaration is.
+      if (n.boolValue) {
+        const value = parser.ast.node(n.left);
+        if (value.kind == NodeKind.functionExpr || value.kind == NodeKind.functionDecl) {
+          const start = value.nameLength > 0 ? value.nameStart : n.nameStart;
+          const length = value.nameLength > 0 ? value.nameLength : n.nameLength;
+          if (this.findLocal(in parser, start, length) < 0) this.addLocal(start, length);
+        }
+        return;
+      }
+      if (n.left != NO_NODE) this.collectLocals(in parser, n.left, nested);
+      return;
+    }
     if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.classExpr || k == NodeKind.classDecl) return;
     if (k == NodeKind.varDecl && n.op != TokenKind.kwVar) return;
     if (k == NodeKind.varDecl) {
@@ -2703,7 +2784,7 @@ export struct Compiler {
       }
       if (outer.needsCheck) {
         const current = this.allocReg();
-        this.emit(this.envSlotInst(Op.loadEnvSlot, current, outer.hops, i32(outer.slot)));
+        this.emit(this.envSlotInst(outer.imported ? Op.importBind : Op.loadEnvSlot, current, outer.hops, i32(outer.slot)));
         const named = this.nameConstOf(in parser, inout runtime, target.nameStart, target.nameLength);
         this.emit(instAU16(Op.throwIfHole, current, named));
       }
@@ -2734,6 +2815,289 @@ export struct Compiler {
   // remove elements, but an empty name never matches a lookup.
   function unbindLocal(inout this, index: usize): void {
     this.bindings.unbind(index);
+  }
+
+  // --- Modules (docs/modules.md) ---
+
+  // A request's index: the specifier, a string literal's span, decoded
+  // and interned, kept once in source order.
+  function moduleRequest(inout this, in parser: Parser, inout runtime: Runtime, start: u32, length: u32): u32 {
+    const decoded = decodeStringBody(in parser, start + 1, start + length - 1);
+    const atom = runtime.internUnits(move decoded);
+    let i: usize = 0;
+    while (i < this.module.requests.length) {
+      if (this.module.requests[i] == atom) return u32(i);
+      i = i + 1;
+    }
+    this.module.requests.push(atom);
+    return u32(this.module.requests.length - 1);
+  }
+
+  // An import or export name: an identifier, or a string, which must be
+  // well-formed Unicode (no lone surrogate).
+  function moduleNameAtom(inout this, in parser: Parser, inout runtime: Runtime, start: u32, length: u32): u32 {
+    const first = parser.source[usize(start)];
+    if ((first == 34 || first == 39) && length >= 2) {
+      const units = decodeStringBody(in parser, start + 1, start + length - 1);
+      let i: usize = 0;
+      while (i < units.length) {
+        const unit = units[i];
+        if (unit >= 0xD800 && unit <= 0xDBFF && i + 1 < units.length && units[i + 1] >= 0xDC00 && units[i + 1] <= 0xDFFF) {
+          i = i + 2;
+          continue;
+        }
+        if (unit >= 0xD800 && unit <= 0xDFFF) this.hadError = true;
+        i = i + 1;
+      }
+      return runtime.internUnits(move units);
+    }
+    return this.propertyNameAtom(in parser, inout runtime, start, length);
+  }
+
+  function defaultAtom(inout this, inout runtime: Runtime): u32 {
+    const text: String = "default";
+    return runtime.atomOf(in text);
+  }
+
+  // The module's requests, in source order, and its imports as bindings:
+  // a named import's two slots, written when the module links, its
+  // namespace import's one.
+  function declareModuleImports(inout this, in parser: Parser, inout runtime: Runtime, body: u32): void {
+    const n = parser.ast.node(body);
+    let i: u32 = 0;
+    while (i < n.childrenCount && !this.hadError) {
+      const statementIndex = parser.ast.child(body, i);
+      const st = parser.ast.node(statementIndex);
+      if (st.kind == NodeKind.importDecl) {
+        const request = this.moduleRequest(in parser, inout runtime, st.nameStart, st.nameLength);
+        let c: u32 = 0;
+        while (c < st.childrenCount) {
+          const clause = parser.ast.node(parser.ast.child(statementIndex, c));
+          let name = MODULE_NAMESPACE;
+          if (clause.op == TokenKind.kwDefault) {
+            name = this.defaultAtom(inout runtime);
+          } else if (clause.op == TokenKind.eq) {
+            const source = parser.ast.node(clause.third);
+            name = this.moduleNameAtom(in parser, inout runtime, source.nameStart, source.nameLength);
+          }
+          this.addImport(in parser, inout runtime, clause.nameStart, clause.nameLength, request, name);
+          c = c + 1;
+        }
+      } else if (st.kind == NodeKind.exportDecl && !st.boolValue && st.nameLength > 0) {
+        // `export ... from "m"`: its request in order among the imports.
+        const request = this.moduleRequest(in parser, inout runtime, st.nameStart, st.nameLength);
+      }
+      i = i + 1;
+    }
+  }
+
+  function addImport(inout this, in parser: Parser, inout runtime: Runtime, nameStart: u32, nameLength: u32, request: u32, name: u32): void {
+    // Module code is strict: no binding is named eval or arguments.
+    const strictName = (nameLength == 4 && parser.sliceEquals(nameStart, 4, "eval")) || (nameLength == 9 && parser.sliceEquals(nameStart, 9, "arguments"));
+    if (strictName || this.findLocal(in parser, nameStart, nameLength) >= 0) {
+      this.hadError = true;
+      return;
+    }
+    const namespace = name == MODULE_NAMESPACE;
+    const slot = this.envSize;
+    let nameConst: i32 = -1;
+    if (namespace) {
+      this.envSize = this.envSize + 1;
+    } else {
+      this.envSize = this.envSize + 2;
+      nameConst = i32(this.nameConstOf(in parser, inout runtime, nameStart, nameLength));
+    }
+    this.hasEnv = true;
+    this.bindings.push(Local({ nameStart: nameStart, nameLength: nameLength, reg: 0, envSlot: i32(slot), envDepth: 0, captured: true, isConst: true, initialized: true, alwaysCheck: !namespace, needsHole: !namespace, nameConst: nameConst, blockFunction: false, lexical: true, inlineFunction: NO_NODE, imported: !namespace }));
+    this.module.imports.push(ModuleImport({ request: request, name: name, slot: u32(slot) }));
+  }
+
+  // The module's exports, once its bindings are declared.
+  function recordModuleExports(inout this, in parser: Parser, inout runtime: Runtime, body: u32): void {
+    const n = parser.ast.node(body);
+    let i: u32 = 0;
+    while (i < n.childrenCount && !this.hadError) {
+      const statementIndex = parser.ast.child(body, i);
+      const st = parser.ast.node(statementIndex);
+      if (st.kind != NodeKind.exportDecl) {
+        i = i + 1;
+        continue;
+      }
+      if (st.op == TokenKind.star) {
+        const request = this.moduleRequest(in parser, inout runtime, st.nameStart, st.nameLength);
+        if (st.third == NO_NODE) {
+          this.module.stars.push(request);
+        } else {
+          const exported = parser.ast.node(st.third);
+          const name = this.moduleNameAtom(in parser, inout runtime, exported.nameStart, exported.nameLength);
+          this.module.indirect.push(ModuleIndirect({ name: name, request: request, importName: MODULE_NAMESPACE }));
+        }
+      } else if (st.boolValue) {
+        const value = parser.ast.node(st.left);
+        const named = (value.kind == NodeKind.functionDecl || value.kind == NodeKind.classExpr) && value.nameLength > 0;
+        const name = this.defaultAtom(inout runtime);
+        this.exportBinding(in parser, inout runtime, name, named ? value.nameStart : st.nameStart, named ? value.nameLength : st.nameLength);
+      } else if (st.left != NO_NODE) {
+        this.exportDeclared(in parser, inout runtime, st.left);
+      } else {
+        let c: u32 = 0;
+        while (c < st.childrenCount) {
+          const clause = parser.ast.node(parser.ast.child(statementIndex, c));
+          const exported = parser.ast.node(clause.third);
+          const name = this.moduleNameAtom(in parser, inout runtime, exported.nameStart, exported.nameLength);
+          if (st.nameLength > 0) {
+            // `export { a as b } from "m"`
+            const request = this.moduleRequest(in parser, inout runtime, st.nameStart, st.nameLength);
+            const importName = this.moduleNameAtom(in parser, inout runtime, clause.nameStart, clause.nameLength);
+            this.module.indirect.push(ModuleIndirect({ name: name, request: request, importName: importName }));
+          } else {
+            this.exportBinding(in parser, inout runtime, name, clause.nameStart, clause.nameLength);
+          }
+          c = c + 1;
+        }
+      }
+      i = i + 1;
+    }
+    // A name is exported once.
+    let names = Array<u32>();
+    i = 0;
+    while (i < u32(this.module.locals.length)) {
+      names.push(this.module.locals[usize(i)].name);
+      i = i + 1;
+    }
+    i = 0;
+    while (i < u32(this.module.indirect.length)) {
+      names.push(this.module.indirect[usize(i)].name);
+      i = i + 1;
+    }
+    let a: usize = 0;
+    while (a < names.length) {
+      let b: usize = 0;
+      while (b < a) {
+        if (names[a] == names[b]) this.hadError = true;
+        b = b + 1;
+      }
+      a = a + 1;
+    }
+  }
+
+  // Each name an exported declaration binds, exported as itself.
+  function exportDeclared(inout this, in parser: Parser, inout runtime: Runtime, declaration: u32): void {
+    const d = parser.ast.node(declaration);
+    if (d.kind == NodeKind.functionDecl || d.kind == NodeKind.classDecl) {
+      const name = this.moduleNameAtom(in parser, inout runtime, d.nameStart, d.nameLength);
+      this.exportBinding(in parser, inout runtime, name, d.nameStart, d.nameLength);
+      return;
+    }
+    if (d.kind == NodeKind.varDecl) {
+      let i: u32 = 0;
+      while (i < d.childrenCount) {
+        const decl = parser.ast.node(parser.ast.child(declaration, i));
+        if (decl.nameLength > 0) {
+          const name = this.moduleNameAtom(in parser, inout runtime, decl.nameStart, decl.nameLength);
+          this.exportBinding(in parser, inout runtime, name, decl.nameStart, decl.nameLength);
+        } else {
+          this.exportPattern(in parser, inout runtime, decl.third);
+        }
+        i = i + 1;
+      }
+    }
+  }
+
+  function exportPattern(inout this, in parser: Parser, inout runtime: Runtime, pattern: u32): void {
+    if (pattern == NO_NODE) return;
+    const p = parser.ast.node(pattern);
+    if (p.kind == NodeKind.identExpr) {
+      const name = this.moduleNameAtom(in parser, inout runtime, p.nameStart, p.nameLength);
+      this.exportBinding(in parser, inout runtime, name, p.nameStart, p.nameLength);
+      return;
+    }
+    if (p.kind == NodeKind.patternEntry) {
+      this.exportPattern(in parser, inout runtime, p.left);
+      return;
+    }
+    if (p.kind == NodeKind.arrayPattern || p.kind == NodeKind.objectPattern) {
+      let i: u32 = 0;
+      while (i < p.childrenCount) {
+        this.exportPattern(in parser, inout runtime, parser.ast.child(pattern, i));
+        i = i + 1;
+      }
+    }
+  }
+
+  // Export the binding spelled at `start` as `name`: one of the module's
+  // own by its slot, or a named import as the export it came from. A
+  // name the module does not bind is an early error.
+  function exportBinding(inout this, in parser: Parser, inout runtime: Runtime, name: u32, start: u32, length: u32): void {
+    const local = this.findLocal(in parser, start, length);
+    if (local < 0) {
+      this.hadError = true;
+      return;
+    }
+    // An import, a namespace one too, is exported as the binding it is
+    // of the module it came from.
+    const slot = this.bindings.locals[usize(local)].envSlot;
+    let k: usize = 0;
+    while (k < this.module.imports.length) {
+      if (i32(this.module.imports[k].slot) == slot) {
+        this.module.indirect.push(ModuleIndirect({ name: name, request: this.module.imports[k].request, importName: this.module.imports[k].name }));
+        return;
+      }
+      k = k + 1;
+    }
+    this.module.locals.push(ModuleExport({ name: name, slot: u32(slot) }));
+  }
+
+  // `export function f` and `export default function`, made with the
+  // module's other function declarations, when it links.
+  function hoistExportedFunction(inout this, in parser: Parser, inout runtime: Runtime, statement: u32): void {
+    const st = parser.ast.node(statement);
+    if (!st.boolValue) {
+      if (st.left != NO_NODE && parser.ast.node(st.left).kind == NodeKind.functionDecl) this.compileStmt(in parser, inout runtime, st.left);
+      return;
+    }
+    const value = parser.ast.node(st.left);
+    if (value.kind == NodeKind.functionDecl) {
+      this.compileStmt(in parser, inout runtime, st.left);
+      return;
+    }
+    if (value.kind != NodeKind.functionExpr) return;
+    const local = this.findLocal(in parser, st.nameStart, st.nameLength);
+    if (local < 0) {
+      this.hadError = true;
+      return;
+    }
+    const r = this.allocReg();
+    this.emitFunctionValue(in parser, inout runtime, st.left, r, st.nameStart, st.nameLength, 0);
+    this.initLocal(usize(local), r);
+    this.resetTemps();
+  }
+
+  // A module's export statement in its turn: the declaration it carries,
+  // or a default value into its binding. Hoisted functions are made
+  // already; the rest of an export is static.
+  function compileExportStatement(inout this, in parser: Parser, inout runtime: Runtime, statement: u32): void {
+    const st = parser.ast.node(statement);
+    if (st.op == TokenKind.star) return;
+    if (!st.boolValue) {
+      if (st.left != NO_NODE && parser.ast.node(st.left).kind != NodeKind.functionDecl) this.compileStmt(in parser, inout runtime, st.left);
+      return;
+    }
+    const value = parser.ast.node(st.left);
+    if (value.kind == NodeKind.functionExpr || value.kind == NodeKind.functionDecl) return;
+    const named = value.kind == NodeKind.classExpr && value.nameLength > 0;
+    const start = named ? value.nameStart : st.nameStart;
+    const length = named ? value.nameLength : st.nameLength;
+    const local = this.findLocal(in parser, start, length);
+    if (local < 0) {
+      this.hadError = true;
+      return;
+    }
+    // An anonymous function or class is named "default".
+    this.nameNext(st.nameStart, st.nameLength, 0);
+    const r = this.compileExpr(in parser, inout runtime, st.left);
+    this.initLocal(usize(local), r);
+    this.resetTemps();
   }
 
   // --- Property names ---
@@ -2881,7 +3245,7 @@ export struct Compiler {
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0, noModuleSteps);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -3198,7 +3562,7 @@ export struct Compiler {
           this.hadError = true;
           return dst;
         }
-        this.emit(this.envSlotInst(Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
+        this.emit(this.envSlotInst(outer.imported ? Op.importBind : Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
         if (outer.needsCheck) {
           const named = this.nameConstOf(in parser, inout runtime, n.nameStart, n.nameLength);
           this.emit(instAU16(Op.throwIfHole, dst, named));
@@ -5949,7 +6313,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32, steps: ModuleSteps): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
   // name the parser attached to a method or accessor does not.
@@ -6025,6 +6389,11 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   const patternNamesEnd = compiler.bindings.locals.length;
   const index = runtime.reserveFunction();
   compiler.spillFrom = SPILL_FROM;
+  // A module's bindings all live in its environment, its imports first.
+  if (role == ROLE_MODULE) {
+    compiler.allToEnv = true;
+    steps(inout compiler, in parser, inout runtime, MODULE_STEP_IMPORTS, n.left);
+  }
   if (n.left != NO_NODE) compiler.collectBodyLocals(in parser, n.left);
   // A named function expression binds its own name, immutably, unless a
   // parameter or declaration of the function takes it.
@@ -6045,7 +6414,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // `arguments`, when the body (or an arrow inside it) reads it and no
   // parameter or declaration takes the name, is a local built at entry.
   let argumentsIndex: i32 = -1;
-  if (n.kind != NodeKind.arrowFunc && n.left != NO_NODE) {
+  if (n.kind != NodeKind.arrowFunc && n.left != NO_NODE && role != ROLE_MODULE) {
     let usage = argumentsUsage(in parser, n.left);
     // Direct eval code may read it.
     if (usage == 0 && directEvalWithin(in parser, n.left, true)) usage = parser.argumentsName;
@@ -6058,7 +6427,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   if (n.left != NO_NODE) compiler.scanCaptures(in parser, n.left);
   // A body that may spill keeps an environment, its size patched in once
   // the body has compiled.
-  const spilling = n.left != NO_NODE && compiler.bodyMaySpill(in parser, n.left);
+  const spilling = role == ROLE_MODULE || (n.left != NO_NODE && compiler.bodyMaySpill(in parser, n.left));
   if (spilling) {
     compiler.hasEnv = true;
   } else {
@@ -6210,22 +6579,47 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   if (!forwards && n.left != NO_NODE) {
     const body = parser.ast.node(n.left);
     if (body.kind == NodeKind.blockStmt) {
-      compiler.checkBodyRedeclarations(in parser, node, n.left);
+      if (role == ROLE_MODULE) {
+        steps(inout compiler, in parser, inout runtime, MODULE_STEP_REDECLARATIONS, n.left);
+      } else {
+        compiler.checkBodyRedeclarations(in parser, node, n.left);
+      }
       compiler.declareBodyLexicals(in parser, inout runtime, n.left, false);
       compiler.spillFrom = 0;
+      compiler.allToEnv = false;
+      if (role == ROLE_MODULE) steps(inout compiler, in parser, inout runtime, MODULE_STEP_EXPORTS, n.left);
       // Function declarations first, then everything else.
       let b: u32 = 0;
       while (b < body.childrenCount && !compiler.hadError) {
         const statement = parser.ast.child(n.left, b);
-        if (parser.ast.node(statement).kind == NodeKind.functionDecl) compiler.compileStmt(in parser, inout runtime, statement);
+        const kind = parser.ast.node(statement).kind;
+        if (kind == NodeKind.functionDecl) {
+          compiler.compileStmt(in parser, inout runtime, statement);
+        } else if (role == ROLE_MODULE && kind == NodeKind.exportDecl) {
+          steps(inout compiler, in parser, inout runtime, MODULE_STEP_HOIST, statement);
+        }
         b = b + 1;
+      }
+      // A module's first step ends here, its environment made and its
+      // functions in it: linking resumes it this far, evaluation the rest.
+      if (role == ROLE_MODULE) {
+        const nothing = compiler.allocReg();
+        compiler.emit(instA(Op.loadUndefined, nothing));
+        const sent = compiler.allocReg();
+        compiler.emit(instAB(Op.yieldOp, sent, nothing));
+        compiler.resetTemps();
       }
       b = 0;
       while (b < body.childrenCount && !compiler.hadError) {
         const statement = parser.ast.child(n.left, b);
-        if (parser.ast.node(statement).kind != NodeKind.functionDecl) {
+        const kind = parser.ast.node(statement).kind;
+        if (kind != NodeKind.functionDecl) {
           if (b < fieldCount) {
             if (role == 1) compiler.compileFieldStatement(in parser, inout runtime, statement);
+          } else if (role == ROLE_MODULE && kind == NodeKind.importDecl) {
+            // Bound when the module links.
+          } else if (role == ROLE_MODULE && kind == NodeKind.exportDecl) {
+            steps(inout compiler, in parser, inout runtime, MODULE_STEP_STATEMENT, statement);
           } else {
             compiler.compileStmt(in parser, inout runtime, statement);
           }
@@ -6314,7 +6708,8 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   const evalSites = replace(inout compiler.evalSites, Array<EvalSite>());
   compiled.evalSites = move evalSites;
   runtime.setFunction(index, move compiled);
-  return CompiledFunction({ index: i32(index), minOuterScope: compiler.minOuterScope });
+  const moduleInfo = replace(inout compiler.module, emptyModuleInfo());
+  return CompiledFunction({ index: i32(index), minOuterScope: compiler.minOuterScope, module: move moduleInfo });
 }
 
 // --- Early errors: redeclarations ---
@@ -7345,6 +7740,51 @@ function hoistPatternGlobals(in parser: Parser, inout runtime: Runtime, inout de
 }
 
 // --- Entry ----------------------------------------------------------------
+
+// What compileFunction does for a module that it does not for any other
+// function: its imports declared, its redeclarations checked, its
+// exports recorded, its exported functions hoisted, and its export
+// statements compiled. A function argument, so that a front end that
+// compiles only scripts links none of it.
+type ModuleSteps = (inout compiler: Compiler, in parser: Parser, inout runtime: Runtime, step: u32, node: u32) => void;
+
+const MODULE_STEP_IMPORTS: u32 = 0;
+const MODULE_STEP_REDECLARATIONS: u32 = 1;
+const MODULE_STEP_EXPORTS: u32 = 2;
+const MODULE_STEP_HOIST: u32 = 3;
+const MODULE_STEP_STATEMENT: u32 = 4;
+
+function noModuleSteps(inout compiler: Compiler, in parser: Parser, inout runtime: Runtime, step: u32, node: u32): void {
+  compiler.hadError = true;
+}
+
+function moduleSteps(inout compiler: Compiler, in parser: Parser, inout runtime: Runtime, step: u32, node: u32): void {
+  if (step == MODULE_STEP_IMPORTS) {
+    compiler.declareModuleImports(in parser, inout runtime, node);
+  } else if (step == MODULE_STEP_REDECLARATIONS) {
+    compiler.checkModuleRedeclarations(in parser, node);
+  } else if (step == MODULE_STEP_EXPORTS) {
+    compiler.recordModuleExports(in parser, inout runtime, node);
+  } else if (step == MODULE_STEP_HOIST) {
+    compiler.hoistExportedFunction(in parser, inout runtime, node);
+  } else {
+    compiler.compileExportStatement(in parser, inout runtime, node);
+  }
+}
+
+// Compiles a parsed module (docs/modules.md): its function, a generator
+// whose first step links it and second evaluates it, and its imports
+// and exports; an index below 0 when it does not compile.
+export function compileModule(in parser: Parser, root: u32, inout runtime: Runtime): CompiledModule {
+  const moduleFunction = parser.ast.node(root).third;
+  if (moduleFunction == NO_NODE) return CompiledModule({ index: -1, info: emptyModuleInfo() });
+  runtime.globalsFull = false;
+  let scopes = Array<Scope>();
+  let compiled = compileFunction(in parser, inout runtime, moduleFunction, in scopes, newBindings(Array<Local>()), false, 0, false, -1, -1, true, 0, 0, 0, ROLE_MODULE, 0, moduleSteps);
+  if (runtime.globalsFull) return CompiledModule({ index: -1, info: emptyModuleInfo() });
+  const info = replace(inout compiled.module, emptyModuleInfo());
+  return CompiledModule({ index: compiled.index, info: move info });
+}
 
 // Compiles a parsed program into the runtime's function table; returns the
 // function index, or -1 on error.

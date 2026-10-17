@@ -68,11 +68,14 @@ single optional piece is `libunicode` (60 KB, 38 KB once dead-stripped),
 which only Unicode-aware regular expressions and case mapping need.
 
 Not yet in the engine, and each will add to it: Proxy, typed arrays and
-ArrayBuffer, BigInt, WeakRef, ES modules. Opt-in: JSON, RegExp, Date,
-Map / Set / WeakMap / WeakSet, Promise, and Reflect, each with its own
-installer on a core context; the frozen ABI's other installers
-(`zjs_new_minimal_context`, `zjs_install_web_*`) are not implemented by
-the Z engine yet.
+ArrayBuffer, BigInt, WeakRef. ES modules are opt-in by what an embedder
+calls: a front end that compiles only scripts links none of the module
+compiler or linker (under 5 KB of `__TEXT` goes to the parser and
+compiler for all, 1.2 KB to a bytecode-only runtime; docs/modules.md).
+Opt-in: JSON, RegExp, Date, Map / Set / WeakMap / WeakSet, Promise, and
+Reflect, each with its own installer on a core context; the frozen ABI's
+other installers (`zjs_new_minimal_context`, `zjs_install_web_*`) are not
+implemented by the Z engine yet.
 
 ## 2. Speed
 
@@ -153,7 +156,10 @@ rewriting the generated C by hand, was slower on Apple silicon
 - **Embedding.** The frozen `zjs.h` ABI; handle-based contexts, created,
   used, and freed from any host thread, independent contexts concurrent;
   a lifecycle test (1,000 create/free cycles with no growth, free after
-  admission, shutdown on a worker). ES modules are not supported yet.
+  admission, shutdown on a worker). ES modules through
+  `zjs_eval_module` and `zjs_eval_module_source`, with the
+  specification's live bindings, linking, and cycles (docs/modules.md);
+  top-level await, dynamic `import()`, and `import.meta` are not yet.
 
 ## 4. JIT
 

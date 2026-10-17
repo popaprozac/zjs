@@ -67,6 +67,9 @@
     "test/language/expressions/unary-plus",
     "test/language/expressions/unsigned-right-shift",
     "test/language/expressions/void",
+    "test/language/export",
+    "test/language/import",
+    "test/language/module-code",
     "test/language/statements/async-function",
     "test/language/statements/block",
     "test/language/statements/break",
@@ -112,12 +115,16 @@
     "string-matchAll",
     "string-replaceAll",
     "import.meta",
+    "top-level-await",
+    "import-defer",
+    "import-attributes",
+    "import-text",
+    "import-bytes",
+    "source-phase-imports",
     "json-parse-with-source"
   ],
-  "_skip_flags_comment": "Tests whose flags include any of these are skipped. We don't support modules or async test stubs.",
-  "skip_flags": [
-    "module"
-  ],
+  "_skip_flags_comment": "Tests whose flags include any of these are skipped.",
+  "skip_flags": [],
   "_skip_includes_comment": "Harness includes we don't support. Tests requiring these are skipped.",
   "skip_includes": [
     "fnGlobalObject.js",

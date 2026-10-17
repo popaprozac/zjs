@@ -355,21 +355,27 @@ unsigned char* zjs_compile_to_bytecode(ZjsContext* ctx, const char* source, size
  *
  * Load and evaluate an ES module (import/export). `abs_path` is the
  * absolute filesystem path to the entry module. The engine reads the
- * file, parses + compiles, evaluates the body with module semantics,
- * resolves relative imports against the entry's directory (with `./`
- * and `../` normalized), and drains the microtask queue.
+ * file and every module it imports, links them, evaluates them with
+ * module semantics, resolves relative imports against the importing
+ * module's directory (with `.` and `..` normalized), and drains the
+ * microtask queue.
  *
- * Returns the module's exports object on success — properties read
- * via zjs_get_property correspond to the module's named exports.
- * On failure (file not found, parse error, throw during evaluation),
- * zjs_had_error returns true and zjs_get_error carries the thrown
- * value; the return value in that case is undefined.
+ * Returns the module's namespace object on success — properties read
+ * via zjs_get_property correspond to the module's exports.
+ * On failure (file not found, parse error, an import no module
+ * exports, throw during evaluation), zjs_had_error returns true and
+ * zjs_get_error carries the thrown value; the return value in that
+ * case is undefined. Nothing runs when a module of the graph cannot be
+ * found, does not parse, or imports a name nothing exports.
  *
- * The module cache is keyed by abs_path: a second call with the same
- * path returns the cached exports without re-evaluating. Cycles are
- * supported with the "partially-populated exports" model — an
- * import that re-enters an in-flight module sees `undefined` for
- * names not yet exported.
+ * The module cache is keyed by the normalized path: a second call with
+ * the same path returns the cached namespace without re-evaluating,
+ * and a module that failed throws its error again. Imports are live
+ * bindings, as the language has them: an import reads the exporting
+ * module's binding as it is now, so a cycle that reaches a `let` or
+ * `const` before its module has run it throws a ReferenceError, and a
+ * function declaration is callable from any module of the graph
+ * before its own module runs.
  *
  * Bare specifiers (`import "lodash"`) are treated as literal paths;
  * package.json / node_modules resolution is not built in. Embedders
@@ -394,9 +400,9 @@ ZjsValue zjs_eval_module(ZjsContext* ctx, const char* abs_path);
  *                  the same virtual_path returns the cached exports
  *                  without re-parsing.
  *
- * Returns the module's exports object on success. On parse / compile /
- * evaluation failure, sets zjs_had_error and returns the thrown value
- * (or undefined on truly fatal failures).
+ * Returns the module's namespace object on success. On parse /
+ * compile / link / evaluation failure, sets zjs_had_error; the thrown
+ * value is zjs_get_error's.
  *
  * Bare specifiers (`import "lodash"`) still go through the same
  * resolver as zjs_eval_module — preprocess them before evaluation if

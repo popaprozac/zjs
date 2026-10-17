@@ -30,7 +30,9 @@ import { installDate } from "./builtins/date.zs";
 import { installCollections } from "./builtins/collections.zs";
 import { installPromise } from "./builtins/promise.zs";
 import { installReflect } from "./builtins/reflect.zs";
-import { installCompiler } from "./compile.zs";
+import { installCompiler, installModuleCompiler } from "./compile.zs";
+import { evaluateModule, evaluateModuleSource } from "./modules.zs";
+import { installFileLoader } from "./module_files.zs";
 import { writeProgram, loadProgram } from "./bytecode_file.zs";
 import { Value, undefinedValue } from "./value.zs";
 import { sliceBytes } from "./heap.zs";
@@ -58,6 +60,29 @@ export struct ContextState {
   function evaluateBytecode(inout this, bytes: Slice<u8>): void {
     this.evalCount = this.evalCount + 1;
     const outcome = evaluateBytecode(inout this.runtime, bytes);
+    this.interrupted = this.runtime.endTermination();
+    this.hadError = outcome.isThrow || this.interrupted;
+    this.lastResult = outcome.value;
+  }
+
+  // An ES module and the graph it imports, run as evaluate runs a
+  // script: from the file at `path`, or from `source` keyed `key`, its
+  // imports read from files either way (docs/modules.md).
+  function evaluateModule(inout this, path: Array<u8>): void {
+    this.evalCount = this.evalCount + 1;
+    installModuleCompiler(inout this.runtime);
+    installFileLoader(inout this.runtime);
+    const outcome = evaluateModule(inout this.runtime, move path);
+    this.interrupted = this.runtime.endTermination();
+    this.hadError = outcome.isThrow || this.interrupted;
+    this.lastResult = outcome.value;
+  }
+
+  function evaluateModuleSource(inout this, source: Array<u8>, key: Array<u8>): void {
+    this.evalCount = this.evalCount + 1;
+    installModuleCompiler(inout this.runtime);
+    installFileLoader(inout this.runtime);
+    const outcome = evaluateModuleSource(inout this.runtime, move key, move source);
     this.interrupted = this.runtime.endTermination();
     this.hadError = outcome.isThrow || this.interrupted;
     this.lastResult = outcome.value;
@@ -327,6 +352,40 @@ export c function zjs_z_eval(handle: usize, source: Slice<u8>): void {
         // The lock callback borrows `bytes`; the evaluation owns a copy.
         const byteCount = bytes.length;
         state.evaluate(sliceBytes(in bytes, 0, byteCount));
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// zjs_eval_module: the module at `path`, read as a file.
+export c function zjs_z_eval_module(handle: usize, path: Slice<u8>): void {
+  const bytes = sliceToBytes(path);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        const byteCount = bytes.length;
+        state.evaluateModule(sliceBytes(in bytes, 0, byteCount));
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// zjs_eval_module_source: `source` as the module keyed `key`.
+export c function zjs_z_eval_module_source(handle: usize, source: Slice<u8>, key: Slice<u8>): void {
+  const bytes = sliceToBytes(source);
+  const keyBytes = sliceToBytes(key);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        const byteCount = bytes.length;
+        const keyCount = keyBytes.length;
+        state.evaluateModuleSource(sliceBytes(in bytes, 0, byteCount), sliceBytes(in keyBytes, 0, keyCount));
       });
     }
     none => {

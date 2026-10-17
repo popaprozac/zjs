@@ -345,7 +345,16 @@ def execution_modes(meta):
     if "noStrict" in flags:   return ["sloppy"]
     return ["sloppy", "strict"]
 
-def run_one(zjs_bin, source, timeout_s, aot=False):
+def assemble(test262_root, test_src, meta, test_path, *, strict_mode: bool):
+    """What one run of a test is: (source, module_path). A module test
+    runs from its own file, so that its relative imports (fixtures, and
+    itself) resolve, with the harness as a script included first; any
+    other test is its source with the harness prepended."""
+    if "module" in set(meta.get("flags", [])):
+        return build_source(test262_root, "", meta, strict_mode=False), str(test_path)
+    return build_source(test262_root, test_src, meta, strict_mode=strict_mode), None
+
+def run_one(zjs_bin, source, timeout_s, aot=False, module_path=None):
     """Run zjs on the given source. Returns (exit_code, stderr_text, stdout_text).
 
     In aot mode: compile the source to a .zbc bytecode file first, then
@@ -366,6 +375,15 @@ def run_one(zjs_bin, source, timeout_s, aot=False):
         path = f.name
     zbc_path = path + ".zbc"
     try:
+        if module_path is not None:
+            # A module: the harness (`source`) runs first as a script.
+            # Bytecode files hold scripts only, so --aot runs it as is.
+            r = subprocess.run(
+                [str(zjs_bin), "run", "--include", path, "--module", module_path],
+                capture_output=True,
+                timeout=timeout_s,
+            )
+            return r.returncode, r.stderr.decode("utf-8", errors="replace"), r.stdout.decode("utf-8", errors="replace")
         if aot:
             # Compile to bytecode. If the compile itself fails (parser
             # error, syntax-error-on-purpose tests, etc.) we still
@@ -691,9 +709,10 @@ def main():
         reason  = ""
         failing_mode = ""
         for mode in modes:
-            full = build_source(args.test262, src, meta,
-                                strict_mode=(mode == "strict"))
-            exit_code, stderr, stdout = run_one(ZJS_BIN, full, args.timeout, aot=args.aot)
+            full, module_path = assemble(args.test262, src, meta, abs_path,
+                                         strict_mode=(mode == "strict"))
+            exit_code, stderr, stdout = run_one(ZJS_BIN, full, args.timeout, aot=args.aot,
+                                                module_path=module_path)
             v, r = classify(meta, exit_code, stderr, stdout)
             if v != "pass":
                 verdict = v
