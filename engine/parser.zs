@@ -122,6 +122,9 @@ export struct Parser {
   inDerivedConstructor: boolean;
   inStaticBlock: boolean;
   staticBlockDepth: u32;
+  // The labels the statement being parsed is nested in: start, length,
+  // and function depth, three entries a label.
+  labels: Array<u32>;
   // Where the source spells `arguments`, past the program's own text: the
   // name of the binding a function makes when only direct eval code in
   // it can read it.
@@ -170,10 +173,18 @@ export struct Parser {
     return true;
   }
 
-  // Lenient statement terminator: consumes `;` if present, tolerates its
-  // absence before `}` / EOF, and lets anything else slip through.
+  // A statement's end: its `;`, which may be left out before `}`, at the
+  // end of the input, or after a line break (ECMA-262 12.10).
   function matchTerminator(inout this): void {
-    if (this.peekKind() == TokenKind.semicolon) this.advance();
+    const k = this.peekKind();
+    if (k == TokenKind.semicolon) {
+      this.advance();
+      return;
+    }
+    if (k == TokenKind.rBrace || k == TokenKind.eof || this.pos == 0) return;
+    const previous = this.tokens[this.pos - 1];
+    if (this.hasNewlineBetween(previous.start + previous.length, this.peek().start)) return;
+    this.hadError = true;
   }
 
   function hasNewlineBetween(a: u32, b: u32): boolean {
@@ -396,18 +407,23 @@ export struct Parser {
     if (k == TokenKind.identifier && this.peekKind2() == TokenKind.colon) {
       const id = this.advance();
       this.advance();
-      const body = this.parseStatement();
-      if (body == NO_NODE) return NO_NODE;
-      // A label must not repeat an enclosing label.
-      let chain = body;
-      while (chain != NO_NODE && this.kindOf(chain) == NodeKind.labeledStmt) {
-        const c = this.node(chain);
-        if (c.nameLength == id.length && this.labelsEqual(id.start, id.length, c.nameStart, c.nameLength)) {
+      // A label must not repeat one the statement is nested in, in the
+      // same function.
+      let l: usize = 0;
+      while (l < this.labels.length) {
+        if (this.labels[l + 2] == this.functionDepth && this.labels[l + 1] == id.length && this.labelsEqual(id.start, id.length, this.labels[l], this.labels[l + 1])) {
           this.hadError = true;
           return NO_NODE;
         }
-        chain = c.left;
+        l = l + 3;
       }
+      const depth = this.labels.length;
+      this.labels.push(id.start);
+      this.labels.push(id.length);
+      this.labels.push(this.functionDepth);
+      const body = this.parseStatement();
+      while (this.labels.length > depth) { this.labels.pop(); }
+      if (body == NO_NODE) return NO_NODE;
       if (this.isDisallowedStatementBody(body)) {
         this.hadError = true;
         return NO_NODE;
@@ -619,7 +635,8 @@ export struct Parser {
     const statement = this.ast.newNode(NodeKind.doWhileStmt, keyword.start, close.start + close.length);
     this.ast.setLeft(statement, body);
     this.ast.setRight(statement, condition);
-    this.matchTerminator();
+    // A `;` is inserted after a do-while's `)` wherever it is missing.
+    this.matchKind(TokenKind.semicolon);
     return statement;
   }
 
@@ -3674,6 +3691,7 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     inStaticBlock: false,
     staticBlockDepth: 0,
     argumentsName: 0,
+    labels: Array<u32>(),
   });
 
   // A top-level "use strict" prologue makes the whole script strict.
