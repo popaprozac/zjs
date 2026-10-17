@@ -3719,10 +3719,15 @@ export struct Compiler {
       // `import(specifier)`: a promise for the module's namespace, the
       // specifier resolved against the module (or script) the call is
       // in; `import.meta`: that module's meta object. The module is
-      // named by its function's index (docs/modules.md).
+      // named by its function, a constant a bytecode file relocates;
+      // a script by undefined (docs/modules.md).
       const referrer = this.allocReg();
-      const code = this.addConst(int32Value(this.moduleCode));
-      this.emit(instAU16(Op.loadConst, referrer, code));
+      if (this.moduleCode >= 0) {
+        const code = this.addConst(runtime.functionValue(u32(this.moduleCode)));
+        this.emit(instAU16(Op.loadConst, referrer, code));
+      } else {
+        this.emit(instA(Op.loadUndefined, referrer));
+      }
       const dst = this.allocReg();
       if (k == NodeKind.importMetaExpr) {
         this.emit(instAB(Op.importMeta, dst, referrer));

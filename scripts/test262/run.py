@@ -385,9 +385,11 @@ def run_one(zjs_bin, source, timeout_s, aot=False, module_path=None, script_dir=
     try:
         if module_path is not None:
             # A module: the harness (`source`) runs first as a script.
-            # Bytecode files hold scripts only, so --aot runs it as is.
+            # Under --aot each module of the graph is compiled to a module
+            # file in an engine of its own and loaded from it.
+            via = ["--via-bytecode"] if aot else []
             r = subprocess.run(
-                [str(zjs_bin), "run", "--include", path, "--module", module_path],
+                [str(zjs_bin), "run", "--include", path] + via + ["--module", module_path],
                 capture_output=True,
                 timeout=timeout_s,
             )

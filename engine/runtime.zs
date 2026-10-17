@@ -2447,6 +2447,13 @@ export struct Runtime {
   // [[GetOwnProperty]] for every value: objects (with the global object's
   // bindings and a String wrapper's characters), arrays, strings, and
   // the virtual properties of functions.
+  // The module function an `import()` or `import.meta` names (its
+  // operand, a function value; undefined in a script): its index, or -1.
+  function referrerCode(value: Value): i32 {
+    if (!isCell(value) || asCell(value) == 0 || !this.heap.isFunction(asCell(value))) return -1;
+    return i32(this.heap.functionIndex(asCell(value)));
+  }
+
   // A module namespace's export read through its getter's data (the
   // holder of the binding, its slot, and the export's name, made in
   // engine/modules.zs): the binding's value, or a ReferenceError left
@@ -6989,12 +6996,12 @@ export struct Runtime {
       }
       dynamicImport => {
         const importer = this.dynamicImporter;
-        const promise = importer(inout this, this.reg(base, inst.b), asInt32(this.reg(base, inst.c)));
+        const promise = importer(inout this, this.reg(base, inst.b), this.referrerCode(this.reg(base, inst.c)));
         this.setReg(base, inst.a, promise);
       }
       importMeta => {
         const maker = this.metaMaker;
-        const meta = maker(inout this, asInt32(this.reg(base, inst.b)));
+        const meta = maker(inout this, this.referrerCode(this.reg(base, inst.b)));
         this.setReg(base, inst.a, meta);
       }
       iterGetAsync => {

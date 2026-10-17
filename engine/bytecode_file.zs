@@ -3,9 +3,12 @@
 // itself. What the file holds and why is docs/bytecode-files.md.
 import { Value, undefinedValue, deletedValue, int32Value, doubleValue, cellValue, asCell, isCell, isInt32, asInt32, isDouble, asDouble, isDeleted, isUndefined } from "./value.zs";
 import { Op, Inst, FunctionCode, EvalSite, EvalLevel, EvalBinding, createFunctionCode, opCode, opsByCode, bcU16, INSTRUCTION_SET_VERSION } from "./bytecode.zs";
-import { Runtime, GLOBAL_SLOT_LIMIT } from "./runtime.zs";
+import { Runtime, GLOBAL_SLOT_LIMIT, ModuleInfo, ModuleImport, ModuleExport, ModuleIndirect, CompiledModule, emptyModuleInfo, MODULE_NAMESPACE } from "./runtime.zs";
 
 export const BYTECODE_FORMAT_VERSION: u32 = 1;
+// A module's file: a script's payload, the module's function last, then
+// what its imports and exports are (docs/modules.md).
+export const MODULE_FORMAT_VERSION: u32 = 2;
 
 // Why a file was refused (loadProgram's result below zero).
 export const LOAD_NOT_BYTECODE: i64 = -1;
@@ -367,6 +370,25 @@ function putFunction(inout runtime: Runtime, inout buffer: Array<u8>, inout writ
 // The program whose functions are `first` to `script`, the script last,
 // as a bytecode file; empty if any part has no form in one.
 export function writeProgram(inout runtime: Runtime, first: u32, script: u32): Array<u8> {
+  const none = emptyModuleInfo();
+  return writeFile(inout runtime, first, script, BYTECODE_FORMAT_VERSION, in none, script);
+}
+
+// A compiled module as a module file: its functions as a script's, every
+// one compiled from `first` on (the module's own reserved its index
+// before those nested in it), then which of them is the module's, and its
+// requests, imports, and exports, every name a string of the file's.
+export function writeModule(inout runtime: Runtime, first: u32, module: u32, in info: ModuleInfo): Array<u8> {
+  const last = u32(runtime.functions.length - 1);
+  return writeFile(inout runtime, first, last, MODULE_FORMAT_VERSION, in info, module);
+}
+
+function moduleName(in runtime: Runtime, inout writer: Writer, atom: u32): u32 {
+  if (atom == MODULE_NAMESPACE) return NONE;
+  return stringOf(in runtime, inout writer, atom);
+}
+
+function writeFile(inout runtime: Runtime, first: u32, script: u32, format: u32, in info: ModuleInfo, root: u32): Array<u8> {
   let writer = Writer({ strings: indexTable(), globals: indexTable(), first: first, script: script, failed: false });
   let functions = Array<u8>();
   putU32(inout functions, script - first + 1);
@@ -374,6 +396,45 @@ export function writeProgram(inout runtime: Runtime, first: u32, script: u32): A
   while (fi <= script) {
     putFunction(inout runtime, inout functions, inout writer, fi);
     fi = fi + 1;
+  }
+  let module = Array<u8>();
+  if (format == MODULE_FORMAT_VERSION) {
+    putU32(inout module, root - first);
+    putU32(inout module, u32(info.requests.length));
+    let i: usize = 0;
+    while (i < info.requests.length) {
+      putU32(inout module, stringOf(in runtime, inout writer, info.requests[i]));
+      i = i + 1;
+    }
+    putU32(inout module, u32(info.imports.length));
+    i = 0;
+    while (i < info.imports.length) {
+      putU32(inout module, info.imports[i].request);
+      putU32(inout module, moduleName(in runtime, inout writer, info.imports[i].name));
+      putU32(inout module, info.imports[i].slot);
+      i = i + 1;
+    }
+    putU32(inout module, u32(info.locals.length));
+    i = 0;
+    while (i < info.locals.length) {
+      putU32(inout module, stringOf(in runtime, inout writer, info.locals[i].name));
+      putU32(inout module, info.locals[i].slot);
+      i = i + 1;
+    }
+    putU32(inout module, u32(info.indirect.length));
+    i = 0;
+    while (i < info.indirect.length) {
+      putU32(inout module, stringOf(in runtime, inout writer, info.indirect[i].name));
+      putU32(inout module, info.indirect[i].request);
+      putU32(inout module, moduleName(in runtime, inout writer, info.indirect[i].importName));
+      i = i + 1;
+    }
+    putU32(inout module, u32(info.stars.length));
+    i = 0;
+    while (i < info.stars.length) {
+      putU32(inout module, info.stars[i]);
+      i = i + 1;
+    }
   }
   let globalNames = Array<u32>();
   let g: usize = 0;
@@ -399,13 +460,14 @@ export function writeProgram(inout runtime: Runtime, first: u32, script: u32): A
     g = g + 1;
   }
   payload.append(functions);
+  payload.append(module);
 
   let file = Array<u8>.withCapacity(HEADER_BYTES + payload.length);
   file.push(90);
   file.push(74);
   file.push(83);
   file.push(98);
-  putU32(inout file, BYTECODE_FORMAT_VERSION);
+  putU32(inout file, format);
   putU32(inout file, INSTRUCTION_SET_VERSION);
   putU32(inout file, u32(payload.length));
   putU32(inout file, checksum(payload, 0));
@@ -644,10 +706,67 @@ function getFunction(inout runtime: Runtime, bytes: Slice<u8>, inout reader: Rea
   if (program.install) runtime.setFunction(program.base + position, move code);
 }
 
+// A module file's imports and exports, every name a string of the file
+// and every request one of its requests.
+function getModuleSection(bytes: Slice<u8>, inout reader: Reader, in program: Program, inout info: ModuleInfo): u32 {
+  const root = getIndex(bytes, inout reader, program.functionCount, false);
+  const requestCount = getCount(bytes, inout reader, 4);
+  let i: u32 = 0;
+  while (i < requestCount && !reader.failed) {
+    const name = getIndex(bytes, inout reader, program.stringCount, false);
+    if (program.install && !reader.failed) info.requests.push(program.atoms[usize(name)]);
+    i = i + 1;
+  }
+  const importCount = getCount(bytes, inout reader, 12);
+  i = 0;
+  while (i < importCount && !reader.failed) {
+    const request = getIndex(bytes, inout reader, requestCount, false);
+    const name = getIndex(bytes, inout reader, program.stringCount, true);
+    const slot = getU32(bytes, inout reader);
+    if (program.install && !reader.failed) info.imports.push(ModuleImport({ request: request, name: name == NONE ? MODULE_NAMESPACE : program.atoms[usize(name)], slot: slot }));
+    i = i + 1;
+  }
+  const localCount = getCount(bytes, inout reader, 8);
+  i = 0;
+  while (i < localCount && !reader.failed) {
+    const name = getIndex(bytes, inout reader, program.stringCount, false);
+    const slot = getU32(bytes, inout reader);
+    if (program.install && !reader.failed) info.locals.push(ModuleExport({ name: program.atoms[usize(name)], slot: slot }));
+    i = i + 1;
+  }
+  const indirectCount = getCount(bytes, inout reader, 12);
+  i = 0;
+  while (i < indirectCount && !reader.failed) {
+    const name = getIndex(bytes, inout reader, program.stringCount, false);
+    const request = getIndex(bytes, inout reader, requestCount, false);
+    const importName = getIndex(bytes, inout reader, program.stringCount, true);
+    if (program.install && !reader.failed) info.indirect.push(ModuleIndirect({ name: program.atoms[usize(name)], request: request, importName: importName == NONE ? MODULE_NAMESPACE : program.atoms[usize(importName)] }));
+    i = i + 1;
+  }
+  const starCount = getCount(bytes, inout reader, 4);
+  i = 0;
+  while (i < starCount && !reader.failed) {
+    const request = getIndex(bytes, inout reader, requestCount, false);
+    if (program.install && !reader.failed) info.stars.push(request);
+    i = i + 1;
+  }
+  return root;
+}
+
 // The payload, read through once to check it (`install` false) and once
 // more to install it: a file is refused with nothing added, and the
 // install, which reads what the check accepted, cannot fail part way.
-function getProgram(inout runtime: Runtime, bytes: Slice<u8>, install: boolean): i64 {
+// What a file holds after its functions, read: which function it runs.
+// A function argument, so that a runtime loading only scripts links no
+// module reading.
+type TrailerReader = (bytes: Slice<u8>, inout reader: Reader, in program: Program, inout info: ModuleInfo) => u32;
+
+// A script's file runs its last function and holds nothing after.
+function scriptTrailer(bytes: Slice<u8>, inout reader: Reader, in program: Program, inout info: ModuleInfo): u32 {
+  return program.functionCount - 1;
+}
+
+function getProgram(inout runtime: Runtime, bytes: Slice<u8>, install: boolean, trailer: TrailerReader, inout info: ModuleInfo): i64 {
   let reader = Reader({ at: HEADER_BYTES, failed: false });
   let program = Program({ stringCount: 0, globalCount: 0, functionCount: 0, install: install, atoms: Array<u32>(), slots: Array<u16>(), base: 0, ops: opsByCode(), patches: Array<u32>() });
 
@@ -704,6 +823,9 @@ function getProgram(inout runtime: Runtime, bytes: Slice<u8>, install: boolean):
     getFunction(inout runtime, bytes, inout reader, inout program, f);
     f = f + 1;
   }
+  // A script's file runs its last function; a module's names its own.
+  let root: u32 = 0;
+  if (!reader.failed) root = trailer(bytes, inout reader, in program, inout info);
   if (reader.failed || reader.at != bytes.length) return LOAD_DAMAGED;
   if (install) {
     // Every function is installed, so each cell takes its function's
@@ -717,7 +839,7 @@ function getProgram(inout runtime: Runtime, bytes: Slice<u8>, install: boolean):
       p = p + 3;
     }
   }
-  return i64(program.base + program.functionCount - 1);
+  return i64(program.base + root);
 }
 
 // Whether the bytes start as a bytecode file does.
@@ -727,18 +849,40 @@ export function isBytecodeFile(bytes: Slice<u8>): boolean {
 
 // Load a bytecode file into the runtime: the script's function index,
 // to run as `run` runs one compiled from source, or a LOAD_ reason the
-// file was refused, with nothing added.
+// file was refused, with nothing added. A module's file is another
+// format (loadModuleProgram).
 export function loadProgram(inout runtime: Runtime, bytes: Slice<u8>): i64 {
+  let unused = emptyModuleInfo();
+  return loadFile(inout runtime, bytes, BYTECODE_FORMAT_VERSION, scriptTrailer, inout unused);
+}
+
+// Load a module's file: the module's function and what its imports and
+// exports are, as compiling it gives them, or below 0 a LOAD_ reason.
+export function loadModuleProgram(inout runtime: Runtime, bytes: Slice<u8>): CompiledModule {
+  let info = emptyModuleInfo();
+  const loaded = loadFile(inout runtime, bytes, MODULE_FORMAT_VERSION, getModuleSection, inout info);
+  if (loaded < 0) return CompiledModule({ index: i32(loaded), info: emptyModuleInfo() });
+  return CompiledModule({ index: i32(loaded), info: move info });
+}
+
+// Whether the bytes are a module's file, of the formats this engine reads.
+export function isModuleBytecode(bytes: Slice<u8>): boolean {
+  if (!isBytecodeFile(bytes) || bytes.length < HEADER_BYTES) return false;
+  let reader = Reader({ at: 4, failed: false });
+  return getU32(bytes, inout reader) == MODULE_FORMAT_VERSION;
+}
+
+function loadFile(inout runtime: Runtime, bytes: Slice<u8>, format: u32, trailer: TrailerReader, inout info: ModuleInfo): i64 {
   if (!isBytecodeFile(bytes)) return LOAD_NOT_BYTECODE;
   if (bytes.length < HEADER_BYTES) return LOAD_DAMAGED;
   let reader = Reader({ at: 4, failed: false });
-  const format = getU32(bytes, inout reader);
+  const fileFormat = getU32(bytes, inout reader);
   const instructionSet = getU32(bytes, inout reader);
   const payload = getU32(bytes, inout reader);
   const sum = getU32(bytes, inout reader);
-  if (format != BYTECODE_FORMAT_VERSION || instructionSet != INSTRUCTION_SET_VERSION) return LOAD_OTHER_VERSION;
+  if (fileFormat != format || instructionSet != INSTRUCTION_SET_VERSION) return LOAD_OTHER_VERSION;
   if (usize(payload) != bytes.length - HEADER_BYTES || checksum(bytes, HEADER_BYTES) != sum) return LOAD_DAMAGED;
-  const checked = getProgram(inout runtime, bytes, false);
+  const checked = getProgram(inout runtime, bytes, false, trailer, inout info);
   if (checked < 0) return checked;
-  return getProgram(inout runtime, bytes, true);
+  return getProgram(inout runtime, bytes, true, trailer, inout info);
 }

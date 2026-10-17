@@ -52,7 +52,7 @@ function normalizePath(in path: Array<u8>): Array<u8> {
   return joined;
 }
 
-function loadModuleFile(inout runtime: Runtime, specifier: u32, referrer: u32): LoadedSource on thread.any {
+export function loadModuleFile(inout runtime: Runtime, specifier: u32, referrer: u32): LoadedSource on thread.any {
   const written = runtime.heap.stringUtf8(specifier);
   let path = Array<u8>();
   if (referrer != 0 && (startsWith(in written, "./") || startsWith(in written, "../"))) {

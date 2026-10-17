@@ -33,7 +33,7 @@ import { installReflect } from "./builtins/reflect.zs";
 import { installCompiler, installModuleCompiler } from "./compile.zs";
 import { evaluateModule, evaluateModuleSource, installModuleSupport } from "./modules.zs";
 import { installFileLoader } from "./module_files.zs";
-import { writeProgram, loadProgram } from "./bytecode_file.zs";
+import { writeProgram, writeModule, loadProgram } from "./bytecode_file.zs";
 import { Value, undefinedValue } from "./value.zs";
 import { sliceBytes } from "./heap.zs";
 
@@ -513,6 +513,19 @@ export function compileToBytecode(inout runtime: Runtime, source: Array<u8>): Ar
   const functionIndex = runtime.compileScript(move source);
   if (functionIndex < 0) return Array<u8>();
   return writeProgram(inout runtime, u32(first), u32(functionIndex));
+}
+
+// A module's source compiled here and written as a module file
+// (docs/modules.md); empty when it does not parse or compile, or has a
+// part no file can hold. Its imports are not read: each is a file of its
+// own, source or bytecode.
+export function compileModuleToBytecode(inout runtime: Runtime, source: Array<u8>): Array<u8> {
+  installModuleCompiler(inout runtime);
+  const first = runtime.functions.length;
+  const compile = runtime.moduleCompiler;
+  let compiled = compile(inout runtime, move source);
+  if (compiled.index < 0) return Array<u8>();
+  return writeModule(inout runtime, u32(first), u32(compiled.index), in compiled.info);
 }
 
 // Load a bytecode file and run its script as evaluate runs one compiled

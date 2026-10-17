@@ -10,17 +10,17 @@ import process from "std/process";
 import fs from "std/fs";
 import { Value, isCell, asCell, cellValue, undefinedValue } from "../../engine/value.zs";
 import { thread } from "std/thread";
-import { Runtime, RunResult, truncateDouble } from "../../engine/runtime.zs";
+import { Runtime, RunResult, LoadedSource, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
-import { evaluate, compileToBytecode } from "../../engine/lib.zs";
+import { evaluate, compileToBytecode, compileModuleToBytecode } from "../../engine/lib.zs";
 import { evaluateModule, installModuleSupport } from "../../engine/modules.zs";
-import { installFileLoader } from "../../engine/module_files.zs";
-import { bytesOf } from "../../engine/heap.zs";
+import { installFileLoader, loadModuleFile } from "../../engine/module_files.zs";
+import { bytesOf, sliceBytes } from "../../engine/heap.zs";
 import { installCompiler, installModuleCompiler } from "../../engine/compile.zs";
 import { parseProgram } from "../../engine/parser.zs";
 import { compileProgram } from "../../engine/compiler.zs";
 import { bcU16, bcI16 } from "../../engine/bytecode.zs";
-import { writeProgram, loadProgram, isBytecodeFile, LOAD_OTHER_VERSION, LOAD_TOO_MANY_GLOBALS } from "../../engine/bytecode_file.zs";
+import { writeProgram, loadProgram, isBytecodeFile, isModuleBytecode, LOAD_OTHER_VERSION, LOAD_TOO_MANY_GLOBALS } from "../../engine/bytecode_file.zs";
 import { opName } from "./opnames.zs";
 import native from "./memstat.h";
 
@@ -204,6 +204,21 @@ function runViaBytecode(inout runtime: Runtime, source: Array<u8>): RunResult {
   return runBytecode(inout runtime, bytes);
 }
 
+// --via-bytecode for a module graph: each module read from its file,
+// compiled in an engine of its own, written as a module file, and loaded
+// from that.
+function loadViaBytecode(inout runtime: Runtime, specifier: u32, referrer: u32): LoadedSource on thread.any {
+  let loaded = loadModuleFile(inout runtime, specifier, referrer);
+  if (!loaded.found || isBytecodeFile(loaded.source)) return loaded;
+  let compiling = createEngine();
+  const byteCount = loaded.source.length;
+  const bytes = compileModuleToBytecode(inout compiling, sliceBytes(in loaded.source, 0, byteCount));
+  // A module that does not compile is handed on as source, to fail as
+  // it would without bytecode.
+  if (bytes.length == 0) return loaded;
+  return LoadedSource({ found: true, key: loaded.key, source: move bytes });
+}
+
 function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, viaBytecode: boolean, noCompiler: boolean, module: boolean, in includes: Array<String>): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
@@ -230,12 +245,12 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
     success(absolute) => absolute;
     failure(message) => path.copyBytes(0, path.byteLength);
   };
-  if (!noCompiler) {
-    installModuleCompiler(inout runtime);
-    installFileLoader(inout runtime);
-    installModuleSupport(inout runtime);
-    runtime.scriptKey = runtime.internUtf8(bytesOf(in located));
-  }
+  // Modules load from files, source or bytecode; compiling source is
+  // what --no-compiler leaves out.
+  if (!noCompiler) installModuleCompiler(inout runtime);
+  installFileLoader(inout runtime);
+  installModuleSupport(inout runtime);
+  runtime.scriptKey = runtime.internUtf8(bytesOf(in located));
   let outcome = RunResult({ isThrow: false, value: undefinedValue() });
   // Scripts --include names run first, in order, in the same realm.
   let i: usize = 0;
@@ -248,7 +263,9 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
     }
     i = i + 1;
   }
-  if (module) {
+  // A module's bytecode file runs as a module whatever its name.
+  if (module || isModuleBytecode(source)) {
+    if (viaBytecode) runtime.moduleLoader = loadViaBytecode;
     outcome = evaluateModule(inout runtime, bytesOf(in located));
   } else if (isBytecodeFile(source)) {
     outcome = runBytecode(inout runtime, source);
@@ -267,10 +284,15 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
 
 // `zjsz compile <in.js> -o <out.zbc>`: the source compiled in an engine
 // of its own and written as a bytecode file (docs/bytecode-files.md).
-function compileFile(in input: String, in output: String): i32 throws String {
+function compileFile(in input: String, in output: String, module: boolean): i32 throws String {
   const source = try fs.readBytes(input);
   let runtime = createEngine();
-  const bytes = compileToBytecode(inout runtime, move source);
+  let bytes = Array<u8>();
+  if (module) {
+    bytes = compileModuleToBytecode(inout runtime, move source);
+  } else {
+    bytes = compileToBytecode(inout runtime, move source);
+  }
   if (bytes.length == 0) {
     console.error("zjsz compile: the program does not parse or compile, or has a part no bytecode file can hold");
     return 1;
@@ -535,7 +557,7 @@ function main(): i32 {
   //       [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] <file>
   //       [--module] [--include <script>]...
   //   dump <file>        the bytecode the file compiles to
-  //   compile <in.js> -o <out.zbc>   a bytecode file
+  //   compile [--module] <in.js> -o <out.zbc>   a bytecode file
   // A file that starts as a bytecode file does is loaded, not compiled;
   // --via-bytecode compiles source in an engine of its own, writes it as
   // a bytecode file, and loads that (docs/bytecode-files.md); with
@@ -562,13 +584,22 @@ function main(): i32 {
   const commandLength = arguments[0].byteLength;
   const command = arguments[0].copyBytes(0, commandLength);
   if (command == "compile") {
-    if (arguments.length != 4 || arguments[2].copyBytes(0, arguments[2].byteLength) != "-o") {
-      console.error("usage: zjsz compile <in.js> -o <out.zbc>");
+    // `compile [--module] <in> -o <out>`: a module's file for --module or
+    // a .mjs input.
+    let at: usize = 1;
+    let asModule = false;
+    if (arguments.length == 5 && arguments[1].copyBytes(0, arguments[1].byteLength) == "--module") {
+      asModule = true;
+      at = 2;
+    }
+    if (arguments.length != at + 3 || arguments[at + 1].copyBytes(0, arguments[at + 1].byteLength) != "-o") {
+      console.error("usage: zjsz compile [--module] <in.js> -o <out.zbc>");
       return 2;
     }
-    const input = arguments[1].copyBytes(0, arguments[1].byteLength);
-    const output = arguments[3].copyBytes(0, arguments[3].byteLength);
-    const compiled = attempt compileFile(in input, in output);
+    const input = arguments[at].copyBytes(0, arguments[at].byteLength);
+    const output = arguments[at + 2].copyBytes(0, arguments[at + 2].byteLength);
+    if (input.byteLength >= 4 && input.copyBytes(input.byteLength - 4, input.byteLength) == ".mjs") asModule = true;
+    const compiled = attempt compileFile(in input, in output, asModule);
     return match (compiled) {
       success(code) => code;
       failure(message) => 2;

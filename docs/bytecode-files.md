@@ -104,6 +104,31 @@ Constant := u8 tag, then
 `EvalSite` writes its fields in declaration order: the names' bytes, then
 each level with its bindings.
 
+A module's file (`writeModule`, `zjsz compile --module` or a `.mjs`
+input) is format 2: the same payload, holding every function compiled
+from the module on (the module's own reserved its index first, so it is
+not last), then what the module is (docs/modules.md):
+
+```
+Module :=
+  u32 root            the module's function, a position in this file
+  u32 requestCount,  u32[requestCount]   specifiers: string indices
+  u32 importCount,   Import[importCount]
+  u32 localCount,    Export[localCount]
+  u32 indirectCount, Indirect[indirectCount]
+  u32 starCount,     u32[starCount]      request indices
+
+Import   := u32 request, u32 name (string index, 0xFFFFFFFF namespace), u32 slot
+Export   := u32 name, u32 slot
+Indirect := u32 name, u32 request, u32 importName (0xFFFFFFFF namespace)
+```
+
+`loadModuleProgram` reads it; the module graph's loader hands it to
+`addModule` as it would source, so a graph may mix source and bytecode
+modules, and a runtime with no compiler runs a graph of bytecode files.
+`import()` and `import.meta` name their module by a function constant,
+which the file relocates as it does every function constant.
+
 `INSTRUCTION_SET_VERSION` changes whenever an opcode, an operand, or an
 instruction's meaning does; a test pins it beside the opcode count, so
 adding an opcode fails that test until the version moves. A file of

@@ -168,9 +168,20 @@ any other as a path as written, normalizes `.` and `..`, and reads the
 file. node-style resolution is the embedder's. A runtime that never
 loads a file links no file access.
 
+## Bytecode files
+
+A module compiles to a module file as a script does to a bytecode file
+(docs/bytecode-files.md, format 2): its functions, which of them is the
+module's, and its requests, imports, and exports. A loader may hand back
+either source or a module file for a specifier; a module file is loaded,
+not compiled, so a runtime without the compiler runs a graph of them.
+Each module is a file of its own: compiling one does not read its
+imports. `zjsz run --via-bytecode` passes every module of a graph
+through a module file made in an engine of its own, which the
+expectation cases and the test262 runner's `--aot` use.
+
 ## Later
 
-- Bytecode files for modules: the format holds scripts only.
 - Import attributes (`with { type: "json" }`) and JSON modules: the
   parser reads and drops a second argument to `import()`.
 
@@ -188,9 +199,11 @@ loads a file links no file access.
   does not have, and 1 `Promise.withResolvers`.
 - Expectation cases `module-live-bindings`, `module-cycles`,
   `module-reexports`, `module-namespace-object`, and
-  `module-top-level-await`, recorded from node, each run twice
-  (collecting at every safe point the second time), and
-  `dynamic-import-script`, a script, three times.
+  `module-top-level-await`, recorded from node, each run three times
+  (collecting at every safe point the second, through module files the
+  third), as `dynamic-import-script`, a script, is. Under `--aot` the
+  610 module tests of `module-code`, `dynamic-import`, and `import.meta`
+  have the outcomes they have from source.
 - The Vite build of `ipodos`: its three chunks load, link, and run until
   the entry reaches `document`, which a browser provides.
 - `tests/module_test.c`: the ABI's two entries, the cache, a module from

@@ -3,7 +3,7 @@
 # (with --expose-gc), again collecting at every safe point, and again
 # compiled to a bytecode file and loaded from it, and its combined
 # output must equal <name>.expected all three times (a module,
-# <name>.mjs, the first two: bytecode files hold scripts only),
+# <name>.mjs, through module files of its graph's modules the third),
 # recorded from node --expose-gc and checked by hand. Focused regression cases for behaviour
 # the differential oracle cannot cover (where the reference is wrong).
 #
@@ -28,11 +28,7 @@ for js in "$HERE"/tests/expect/*.js "$HERE"/tests/expect/*.mjs; do
   # builtin holds unrooted across one is freed there.
   collected="$("$ZJSZ" run --expose-gc --gc-nursery 1 "$js" 2>&1)"
   # And from a bytecode file written by an engine of its own.
-  if [ "${js##*.}" = mjs ]; then
-    loaded="$actual"
-  else
-    loaded="$("$ZJSZ" run --expose-gc --via-bytecode "$js" 2>&1)"
-  fi
+  loaded="$("$ZJSZ" run --expose-gc --via-bytecode "$js" 2>&1)"
   if [ "$actual" = "$(cat "$expected")" ] && [ "$collected" = "$actual" ] && [ "$loaded" = "$actual" ]; then
     passed=$((passed+1))
   elif [ "$actual" != "$(cat "$expected")" ]; then

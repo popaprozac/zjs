@@ -5,6 +5,7 @@ import { thread } from "std/thread";
 import { replace } from "std/memory";
 import { Value, int32Value, asInt32, isCell, asCell, cellValue, undefinedValue } from "./value.zs";
 import { Runtime, RunResult, ModuleRecord, ModuleImport, ModuleExport, ModuleIndirect, ModuleInfo, CompiledModule, LoadedSource, emptyModuleInfo, appendBytes, MODULE_NAMESPACE, MODULE_NEW, MODULE_LINKED, MODULE_EVALUATING, MODULE_EVALUATED, MODULE_FAILED, MODULE_EVALUATING_ASYNC, HOST_NAMESPACE_GET, HOST_MODULE_FULFILLED, HOST_MODULE_REJECTED, HOST_IMPORT_FULFILLED, HOST_IMPORT_REJECTED, HOST_IMPORT_CONTINUE, HostFunction, PROMISE_REJECTED, ERROR_KIND_TYPE, ERROR_KIND_SYNTAX } from "./runtime.zs";
+import { isBytecodeFile, loadModuleProgram } from "./bytecode_file.zs";
 import { bytesOf, PROP_ENUMERABLE, PROP_WRITABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_NONE, FLAG_NAMESPACE } from "./heap.zs";
 
 const RESOLVE_NONE: u8 = 0;
@@ -43,8 +44,19 @@ function findModule(in runtime: Runtime, key: u32): i32 {
 // Compile `source` as the module keyed `key` and add its record: its
 // index, or below 0 with the error pending.
 function addModule(inout runtime: Runtime, key: u32, source: Array<u8>): i32 {
-  const compile = runtime.moduleCompiler;
-  let compiled = compile(inout runtime, move source);
+  // A module's file is loaded, as a script's is; source is compiled,
+  // which only a runtime with the module compiler can.
+  let compiled = CompiledModule({ index: -1, info: emptyModuleInfo() });
+  if (isBytecodeFile(source)) {
+    compiled = loadModuleProgram(inout runtime, source);
+    if (compiled.index < 0) {
+      raiseNaming(inout runtime, ERROR_KIND_SYNTAX, "bytecode: the module file '", key, "' is not one this engine reads, or is damaged");
+      return -1;
+    }
+  } else {
+    const compile = runtime.moduleCompiler;
+    compiled = compile(inout runtime, move source);
+  }
   if (compiled.index < 0) {
     const error = runtime.compileFailure(compiled.index);
     runtime.raise(error);
