@@ -723,7 +723,12 @@ export struct Lexer {
         if (this.matchByte(B_EQ)) return this.tokN(TokenKind.questionQuestionEq, start);
         return this.tokN(TokenKind.questionQuestion, start);
       }
-      if (this.matchByte(B_DOT)) return this.tokN(TokenKind.questionDot, start);
+      // `?.` is optional chaining unless a digit follows: `a?.5:b` is a
+      // conditional whose branch is `.5`.
+      if (this.peek() == B_DOT && !isDigit(this.peekAt(1))) {
+        this.advance();
+        return this.tokN(TokenKind.questionDot, start);
+      }
       return this.tok1(TokenKind.question, start);
     }
     if (c == B_BANG) {
