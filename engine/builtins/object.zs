@@ -14,7 +14,7 @@ function requireObject(inout runtime: Runtime, value: Value, in method: String):
 }
 
 // ToPropertyDescriptor: a descriptor object's fields, each optional.
-function toDescriptorInput(inout runtime: Runtime, object: Value): DescriptorInput {
+export function toDescriptorInput(inout runtime: Runtime, object: Value): DescriptorInput {
   let desc = emptyDescriptorInput();
   if (!runtime.isObjectLike(object)) {
     const message: String = "Property description must be an object";
@@ -89,7 +89,7 @@ function readField(inout runtime: Runtime, object: Value, in name: String): Valu
 }
 
 // FromPropertyDescriptor: a fresh object describing the property.
-function fromDescriptor(inout runtime: Runtime, desc: PropertyDescriptor): Value {
+export function fromDescriptor(inout runtime: Runtime, desc: PropertyDescriptor): Value {
   if (!desc.present) return undefinedValue();
   const objectProto = runtime.objectProto;
   const result = runtime.heap.allocateObject(objectProto);

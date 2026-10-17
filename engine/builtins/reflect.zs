@@ -3,6 +3,7 @@ import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull } from "../value.zs";
 import { Runtime, emptyDescriptorInput, FEATURE_REFLECT } from "../runtime.zs";
 import { PROP_METHOD, PROP_ENUMERABLE, PROP_WRITABLE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
+import { toDescriptorInput, fromDescriptor } from "./object.zs";
 
 function requireTarget(inout runtime: Runtime, value: Value, in method: String): boolean {
   if (runtime.isObjectLike(value)) return true;
@@ -141,6 +142,30 @@ function reflectDeleteProperty(inout runtime: Runtime, thisValue: Value, argsBas
   return booleanValue(runtime.deleteProperty(target, runtime.argument(argsBase, argc, 1)));
 }
 
+// [[DefineOwnProperty]]: whether it took, where Object.defineProperty
+// throws.
+function reflectDefineProperty(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const target = runtime.argument(argsBase, argc, 0);
+  const method: String = "defineProperty";
+  if (!requireTarget(inout runtime, target, in method)) return undefinedValue();
+  const key = runtime.argument(argsBase, argc, 1);
+  const desc = toDescriptorInput(inout runtime, runtime.argument(argsBase, argc, 2));
+  if (runtime.pendingThrow) return undefinedValue();
+  const defined = runtime.defineOwnProperty(target, key, desc);
+  if (runtime.pendingThrow) return undefinedValue();
+  return booleanValue(defined);
+}
+
+function reflectGetOwnPropertyDescriptor(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const target = runtime.argument(argsBase, argc, 0);
+  const method: String = "getOwnPropertyDescriptor";
+  if (!requireTarget(inout runtime, target, in method)) return undefinedValue();
+  const key = runtime.argument(argsBase, argc, 1);
+  const desc = runtime.getOwnDescriptor(target, key);
+  if (runtime.pendingThrow) return undefinedValue();
+  return fromDescriptor(inout runtime, desc);
+}
+
 function reflectIsExtensible(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const target = runtime.argument(argsBase, argc, 0);
   const method: String = "isExtensible";
@@ -173,4 +198,6 @@ export function installReflect(inout runtime: Runtime): void {
   const deletePropertyText: String = "deleteProperty"; runtime.defineMethod(reflect, in deletePropertyText, reflectDeleteProperty, 2);
   const isExtensibleText: String = "isExtensible"; runtime.defineMethod(reflect, in isExtensibleText, reflectIsExtensible, 1);
   const preventExtensionsText: String = "preventExtensions"; runtime.defineMethod(reflect, in preventExtensionsText, reflectPreventExtensions, 1);
+  const definePropertyText: String = "defineProperty"; runtime.defineMethod(reflect, in definePropertyText, reflectDefineProperty, 3);
+  const getOwnPropertyDescriptorText: String = "getOwnPropertyDescriptor"; runtime.defineMethod(reflect, in getOwnPropertyDescriptorText, reflectGetOwnPropertyDescriptor, 2);
 }
