@@ -15,7 +15,7 @@ import native from "./builtins/clock.h";
 import host from "./native/zjs_host.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -2393,6 +2393,25 @@ export struct Runtime {
   // [[GetOwnProperty]] for every value: objects (with the global object's
   // bindings and a String wrapper's characters), arrays, strings, and
   // the virtual properties of functions.
+  // A module namespace's export read through its getter's data (the
+  // holder of the binding, its slot, and the export's name, made in
+  // engine/modules.zs): the binding's value, or a ReferenceError left
+  // pending while it is uninitialized.
+  function namespaceBinding(inout this, getter: u32): Value {
+    const data = asCell(this.heap.slot(getter, 0));
+    const holder = asCell(this.heap.slot(data, 0));
+    const value = this.heap.slot(holder, u32(asInt32(this.heap.slot(data, 1))));
+    if (!isHole(value)) return value;
+    const before: String = "Cannot access '";
+    let message = bytesOf(in before);
+    appendBytes(inout message, this.heap.stringUtf8(asCell(this.heap.slot(data, 2))));
+    const after: String = "' before initialization";
+    appendBytes(inout message, bytesOf(in after));
+    const error = this.makeError(ERROR_KIND_REFERENCE, move message);
+    this.raise(error);
+    return undefinedValue();
+  }
+
   function getOwnDescriptor(inout this, object: Value, key: Value): PropertyDescriptor {
     if (!isCell(object) || asCell(object) == 0) {
       if (this.isStringValue(object)) return this.stringOwnDescriptor(asCell(object), key);
@@ -2403,7 +2422,16 @@ export struct Runtime {
     if (tag == TAG_OBJECT) {
       const atom = this.propertyKey(key);
       const own = this.ownSlotDescriptor(handle, atom);
-      if (own.present) return own;
+      if (own.present) {
+        if ((own.attr & PROP_ACCESSOR) != 0 && (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) {
+          // A module namespace's export: its binding's value, a
+          // ReferenceError while the binding is uninitialized.
+          const value = this.namespaceBinding(asCell(own.getter));
+          if (this.pendingThrow) return absentProperty();
+          return dataProperty(value, PROP_WRITABLE | PROP_ENUMERABLE);
+        }
+        return own;
+      }
       if (handle == this.globalObject) {
         const slot = this.findGlobalByAtom(atom);
         if (slot >= 0 && this.globals[usize(slot)].defined) return dataProperty(this.globals[usize(slot)].value, this.globals[usize(slot)].attr);
@@ -2538,6 +2566,17 @@ export struct Runtime {
     const atom = this.propertyKey(key);
     const isAccessorInput = desc.hasGetter || desc.hasSetter;
     const current = this.getOwnDescriptor(object, key);
+    // A module namespace's export: nothing about it changes; a definition
+    // that asks for what it already is succeeds.
+    if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0 && !this.isSymbolValue(key)) {
+      if (this.pendingThrow || !current.present) return false;
+      if (desc.hasConfigurable && desc.configurable) return false;
+      if (desc.hasEnumerable && !desc.enumerable) return false;
+      if (isAccessorInput) return false;
+      if (desc.hasWritable && !desc.writable) return false;
+      if (desc.hasValue) return this.sameValue(desc.value, current.value);
+      return true;
+    }
     // An array's length: value and writability only, with RangeError for
     // a value that is not a valid length.
     if (tag == TAG_ARRAY && atom == this.atomLength) {
@@ -2932,6 +2971,9 @@ export struct Runtime {
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
+      // A namespace answers through [[GetOwnProperty]], which reads the
+      // binding (a ReferenceError while uninitialized).
+      if ((this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) return this.getOwnDescriptor(object, key).present;
       const atom = this.propertyKey(key);
       const slot = this.heap.objectFindSlot(handle, atom);
       if (slot >= 0 && !isDeleted(this.heap.slot(handle, u32(slot)))) return true;
@@ -3254,6 +3296,20 @@ export struct Runtime {
       if (bag != 0) this.appendObjectKeys(keys, bag, false);
       const parent = this.functionProtoOf(handle);
       if (parent != this.functionProto) this.appendInheritedKeys(keys, value, parent);
+      return cellValue(keys);
+    }
+    if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) {
+      // A namespace has no prototype; each export is read for its
+      // descriptor, a binding still uninitialized a ReferenceError.
+      const names = this.ownKeys(value);
+      let n: usize = 0;
+      while (n < names.length && !this.pendingThrow) {
+        if (!this.isSymbolValue(names[n]) && this.getOwnDescriptor(value, names[n]).present) {
+          const count = this.heap.arrayLength(keys);
+          this.heap.arraySet(keys, count, names[n]);
+        }
+        n = n + 1;
+      }
       return cellValue(keys);
     }
     if (tag == TAG_OBJECT) {

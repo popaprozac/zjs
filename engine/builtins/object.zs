@@ -519,11 +519,13 @@ function objectAssign(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 }
 
 // freeze / seal / preventExtensions lock every own property to a degree.
+// SetIntegrityLevel: a property that refuses the change (a module
+// namespace's export, which stays writable) is a TypeError.
 function lockProperties(inout runtime: Runtime, target: Value, freeze: boolean): void {
   runtime.preventExtensions(target);
   const keys = runtime.ownKeys(target);
   let index: usize = 0;
-  while (index < keys.length) {
+  while (index < keys.length && !runtime.pendingThrow) {
     const key = keys[index];
     const desc = runtime.getOwnDescriptor(target, key);
     if (desc.present) {
@@ -534,7 +536,11 @@ function lockProperties(inout runtime: Runtime, target: Value, freeze: boolean):
         change.hasWritable = true;
         change.writable = false;
       }
-      runtime.defineOwnProperty(target, key, change);
+      if (!runtime.defineOwnProperty(target, key, change) && !runtime.pendingThrow) {
+        const message: String = "Cannot freeze or seal a property that cannot change";
+        const error = runtime.typeError(in message);
+        runtime.raise(error);
+      }
     }
     index = index + 1;
   }

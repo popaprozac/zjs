@@ -74,6 +74,11 @@ const ARRAY_PRESIZE: u32 = 65536;
 // Per-cell flags.
 export const FLAG_NON_EXTENSIBLE: u8 = 1;
 export const FLAG_LENGTH_READONLY: u8 = 2;
+// On an object (the same bit, which only arrays otherwise use): a module
+// namespace, whose accessors are its exports, each read as a writable,
+// enumerable data property holding the binding's value
+// (docs/modules.md).
+export const FLAG_NAMESPACE: u8 = 2;
 // A symbol cell minted as a class private name: never an own key.
 export const FLAG_PRIVATE_NAME: u8 = 4;
 // On an array (the same bit, which only symbols otherwise use): some

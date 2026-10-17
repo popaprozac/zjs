@@ -104,8 +104,17 @@ throws fails, and so does every module still evaluating with it.
 
 The namespace object has no prototype, is not extensible, carries
 `@@toStringTag` "Module", and holds the module's exports that resolve,
-in code-unit order, each read live; reading one still uninitialized is
-a ReferenceError.
+in code-unit order. Each export is a writable, enumerable,
+non-configurable data property holding the binding's value as it is
+now: reading it, asking for its descriptor, `hasOwnProperty`,
+`Object.keys`, and `for-in` all throw a ReferenceError while the binding
+is uninitialized. Nothing about an export changes: a definition that
+asks for what it already is succeeds and any other fails, `[[Set]]` and
+`delete` fail, and so does `Object.freeze`. Underneath, an export is an
+accessor whose getter holds the binding's environment and slot; a flag
+on the object (`FLAG_NAMESPACE`) makes `[[GetOwnProperty]]`,
+`[[DefineOwnProperty]]`, `hasOwnProperty`, and key enumeration present
+it as the data property, at no cost to any other object.
 
 ## The loader
 
@@ -121,11 +130,6 @@ loads a file links no file access.
 
 ## Later
 
-- The namespace as the exotic object the specification has: today each
-  export is an accessor, so `Object.getOwnPropertyDescriptor` reports a
-  getter where it should report a writable data property, and
-  `Object.keys`, `hasOwnProperty`, and `for-in` do not throw for an
-  export still uninitialized (9 test262 tests, below).
 - `import.meta`: an object per module, its `url` the module's key as a
   `file:` URL for a file.
 - Dynamic `import()`: a promise for the namespace, the module loaded,
@@ -142,11 +146,10 @@ loads a file links no file access.
   the curated subset now includes `language/module-code`, `import`, and
   `export`. Of their 318 runs, skipping top-level await and the
   proposals (import defer, attributes, text and bytes imports, source
-  phase), 309 pass; the 9 that fail are the namespace's internals,
-  above.
-- Expectation cases `module-live-bindings`, `module-cycles`, and
-  `module-reexports`, recorded from node, each run twice (collecting at
-  every safe point the second time).
+  phase), all 318 pass.
+- Expectation cases `module-live-bindings`, `module-cycles`,
+  `module-reexports`, and `module-namespace-object`, recorded from node,
+  each run twice (collecting at every safe point the second time).
 - `tests/module_test.c`: the ABI's two entries, the cache, a module from
   memory importing files, and load, link, and evaluation errors.
 - The Vite build of `ipodos`, which imports across its chunks: next.

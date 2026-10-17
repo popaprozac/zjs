@@ -3,9 +3,9 @@
 // runs a module links none of this.
 import { thread } from "std/thread";
 import { replace } from "std/memory";
-import { Value, int32Value, asInt32, isCell, asCell, cellValue, undefinedValue, isHole } from "./value.zs";
-import { Runtime, RunResult, ModuleRecord, ModuleImport, ModuleExport, ModuleIndirect, ModuleInfo, CompiledModule, LoadedSource, emptyModuleInfo, appendBytes, MODULE_NAMESPACE, MODULE_NEW, MODULE_LINKED, MODULE_EVALUATING, MODULE_EVALUATED, MODULE_FAILED, HOST_NAMESPACE_GET, ERROR_KIND_TYPE, ERROR_KIND_REFERENCE, ERROR_KIND_SYNTAX } from "./runtime.zs";
-import { bytesOf, PROP_ENUMERABLE, PROP_ACCESSOR, PROP_NONE } from "./heap.zs";
+import { Value, int32Value, asInt32, isCell, asCell, cellValue, undefinedValue } from "./value.zs";
+import { Runtime, RunResult, ModuleRecord, ModuleImport, ModuleExport, ModuleIndirect, ModuleInfo, CompiledModule, LoadedSource, emptyModuleInfo, appendBytes, MODULE_NAMESPACE, MODULE_NEW, MODULE_LINKED, MODULE_EVALUATING, MODULE_EVALUATED, MODULE_FAILED, HOST_NAMESPACE_GET, ERROR_KIND_TYPE, ERROR_KIND_SYNTAX } from "./runtime.zs";
+import { bytesOf, PROP_ENUMERABLE, PROP_ACCESSOR, PROP_NONE, FLAG_NAMESPACE } from "./heap.zs";
 
 const RESOLVE_NONE: u8 = 0;
 const RESOLVE_FOUND: u8 = 1;
@@ -218,20 +218,15 @@ function bindingHolder(inout runtime: Runtime, resolution: Resolution): u32 {
 // A namespace's getter for one export: the binding as it is now, a
 // ReferenceError while it is uninitialized.
 function namespaceGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const data = asCell(runtime.heap.slot(callee, 0));
-  const holder = asCell(runtime.heap.slot(data, 0));
-  const slot = u32(asInt32(runtime.heap.slot(data, 1)));
-  const value = runtime.heap.slot(holder, slot);
-  if (isHole(value)) {
-    raiseNaming(inout runtime, ERROR_KIND_REFERENCE, "Cannot access '", asCell(runtime.heap.slot(data, 2)), "' before initialization");
-    return undefinedValue();
-  }
-  return value;
+  return runtime.namespaceBinding(callee);
 }
 
 // The namespace object of module `m`, made the first time it is asked
 // for: its exports that resolve, in code-unit order, each read live; no
-// prototype, no new properties, and @@toStringTag "Module".
+// prototype, no new properties, and @@toStringTag "Module". Each export
+// is held as an accessor, which the runtime's internal methods present as
+// the specification's writable, enumerable, non-configurable data
+// property (FLAG_NAMESPACE).
 function namespaceOf(inout runtime: Runtime, m: u32): u32 {
   const record = usize(m);
   if (runtime.modules[record].namespace != 0) return runtime.modules[record].namespace;
@@ -282,6 +277,7 @@ function namespaceOf(inout runtime: Runtime, m: u32): u32 {
   const tagKey = runtime.heap.symbolKeyAtom(asCell(runtime.symbolToStringTag));
   runtime.heap.objectDefine(namespace, tagKey, tag, PROP_NONE);
   runtime.preventExtensions(cellValue(namespace));
+  runtime.heap.setFlags(namespace, runtime.heap.flagsOf(namespace) | FLAG_NAMESPACE);
   return namespace;
 }
 

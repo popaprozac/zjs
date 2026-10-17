@@ -1,0 +1,12 @@
+ReferenceError
+ReferenceError
+ReferenceError
+true 4
+{"value":1,"writable":true,"enumerable":true,"configurable":false}
+fixed,fn,later {"fixed":"f","later":1}
+true false
+false false
+TypeError false true false
+false false true
+true false Module
+2 fixed=string fn=function later=number
