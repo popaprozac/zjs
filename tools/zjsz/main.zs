@@ -13,7 +13,7 @@ import { thread } from "std/thread";
 import { Runtime, RunResult, truncateDouble } from "../../engine/runtime.zs";
 import { createEngine } from "../../engine/builtins.zs";
 import { evaluate, compileToBytecode } from "../../engine/lib.zs";
-import { evaluateModule } from "../../engine/modules.zs";
+import { evaluateModule, installModuleSupport } from "../../engine/modules.zs";
 import { installFileLoader } from "../../engine/module_files.zs";
 import { bytesOf } from "../../engine/heap.zs";
 import { installCompiler, installModuleCompiler } from "../../engine/compile.zs";
@@ -224,7 +224,18 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
   // Source compiled here brings the compiler (evaluate installs it); a
   // bytecode file runs with one too unless --no-compiler asks for the
   // runtime an embedder that only loads bytecode has.
-  if (!noCompiler) installCompiler(inout runtime);
+  // The file's absolute path names it: a module's key, and what a
+  // script's import() resolves against.
+  const located = match (attempt fs.realPath(path)) {
+    success(absolute) => absolute;
+    failure(message) => path.copyBytes(0, path.byteLength);
+  };
+  if (!noCompiler) {
+    installModuleCompiler(inout runtime);
+    installFileLoader(inout runtime);
+    installModuleSupport(inout runtime);
+    runtime.scriptKey = runtime.internUtf8(bytesOf(in located));
+  }
   let outcome = RunResult({ isThrow: false, value: undefinedValue() });
   // Scripts --include names run first, in order, in the same realm.
   let i: usize = 0;
@@ -238,9 +249,7 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
     i = i + 1;
   }
   if (module) {
-    installModuleCompiler(inout runtime);
-    installFileLoader(inout runtime);
-    outcome = evaluateModule(inout runtime, bytesOf(in path));
+    outcome = evaluateModule(inout runtime, bytesOf(in located));
   } else if (isBytecodeFile(source)) {
     outcome = runBytecode(inout runtime, source);
   } else if (viaBytecode) {

@@ -4,8 +4,8 @@
 import { thread } from "std/thread";
 import { replace } from "std/memory";
 import { Value, int32Value, asInt32, isCell, asCell, cellValue, undefinedValue } from "./value.zs";
-import { Runtime, RunResult, ModuleRecord, ModuleImport, ModuleExport, ModuleIndirect, ModuleInfo, CompiledModule, LoadedSource, emptyModuleInfo, appendBytes, MODULE_NAMESPACE, MODULE_NEW, MODULE_LINKED, MODULE_EVALUATING, MODULE_EVALUATED, MODULE_FAILED, HOST_NAMESPACE_GET, ERROR_KIND_TYPE, ERROR_KIND_SYNTAX } from "./runtime.zs";
-import { bytesOf, PROP_ENUMERABLE, PROP_ACCESSOR, PROP_NONE, FLAG_NAMESPACE } from "./heap.zs";
+import { Runtime, RunResult, ModuleRecord, ModuleImport, ModuleExport, ModuleIndirect, ModuleInfo, CompiledModule, LoadedSource, emptyModuleInfo, appendBytes, MODULE_NAMESPACE, MODULE_NEW, MODULE_LINKED, MODULE_EVALUATING, MODULE_EVALUATED, MODULE_FAILED, MODULE_EVALUATING_ASYNC, HOST_NAMESPACE_GET, HOST_MODULE_FULFILLED, HOST_MODULE_REJECTED, HOST_IMPORT_FULFILLED, HOST_IMPORT_REJECTED, HOST_IMPORT_CONTINUE, HostFunction, PROMISE_REJECTED, ERROR_KIND_TYPE, ERROR_KIND_SYNTAX } from "./runtime.zs";
+import { bytesOf, PROP_ENUMERABLE, PROP_WRITABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_NONE, FLAG_NAMESPACE } from "./heap.zs";
 
 const RESOLVE_NONE: u8 = 0;
 const RESOLVE_FOUND: u8 = 1;
@@ -51,7 +51,9 @@ function addModule(inout runtime: Runtime, key: u32, source: Array<u8>): i32 {
     return -1;
   }
   const info = replace(inout compiled.info, emptyModuleInfo());
-  runtime.modules.push(ModuleRecord({ key: key, info: move info, code: u32(compiled.index), generator: undefinedValue(), env: 0, requested: Array<u32>(), status: MODULE_NEW, error: undefinedValue(), namespace: 0, dfsIndex: 0, dfsAncestor: 0 }));
+  const hasAwait = runtime.functions[usize(compiled.index)].isAsync;
+  // A module is its own cycle's root until its evaluation finds one.
+  runtime.modules.push(ModuleRecord({ key: key, info: move info, code: u32(compiled.index), generator: undefinedValue(), env: 0, requested: Array<u32>(), status: MODULE_NEW, error: undefinedValue(), namespace: 0, dfsIndex: 0, dfsAncestor: 0, hasAwait: hasAwait, asyncEvaluation: false, asyncOrder: 0, pendingAsync: 0, asyncParents: Array<u32>(), cycleRoot: u32(runtime.modules.length), capability: undefinedValue(), meta: 0 }));
   return i32(runtime.modules.length - 1);
 }
 
@@ -406,9 +408,138 @@ function linkGraph(inout runtime: Runtime, root: u32): boolean {
   return ok;
 }
 
+// A shared host function, registered the first time it is needed.
+function hostOf(inout runtime: Runtime, which: usize, fn: HostFunction): void {
+  if (runtime.sharedHosts.length <= which || runtime.sharedHosts[which] == 0) runtime.registerSharedHost(which, fn);
+}
+
+// ExecuteModule for a module without top-level await: its second step.
+// A throw is left pending.
+function executeModule(inout runtime: Runtime, m: u32): void {
+  const generator = runtime.modules[usize(m)].generator;
+  runtime.generatorResume(asCell(generator), undefinedValue(), 0);
+}
+
+// ExecuteAsyncModule: the module's run starts (to its first await), and
+// its outcome reaches AsyncModuleExecutionFulfilled or ...Rejected.
+function executeAsyncModule(inout runtime: Runtime, m: u32): void {
+  hostOf(inout runtime, HOST_MODULE_FULFILLED, moduleFulfilled);
+  hostOf(inout runtime, HOST_MODULE_REJECTED, moduleRejected);
+  const generator = runtime.modules[usize(m)].generator;
+  const promise = runtime.asyncGeneratorEnqueue(asCell(generator), 0, undefinedValue());
+  runtime.pushTempRoot(promise);
+  const onFulfilled = runtime.newSharedHost(HOST_MODULE_FULFILLED, int32Value(i32(m)), 1);
+  runtime.pushTempRoot(cellValue(onFulfilled));
+  const onRejected = runtime.newSharedHost(HOST_MODULE_REJECTED, int32Value(i32(m)), 1);
+  runtime.performThen(asCell(promise), cellValue(onFulfilled), cellValue(onRejected), undefinedValue());
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+}
+
+function moduleFulfilled(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  asyncModuleFulfilled(inout runtime, u32(asInt32(runtime.heap.slot(callee, 0))));
+  return undefinedValue();
+}
+
+function moduleRejected(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  asyncModuleRejected(inout runtime, u32(asInt32(runtime.heap.slot(callee, 0))), runtime.argument(argsBase, argc, 0));
+  return undefinedValue();
+}
+
+// GatherAvailableAncestors: the modules waiting on `m` that wait on
+// nothing else now, and, through those without an await of their own,
+// theirs.
+function gatherAncestors(inout runtime: Runtime, m: u32, inout ready: Array<u32>): void {
+  let i: usize = 0;
+  while (i < runtime.modules[usize(m)].asyncParents.length) {
+    const parent = runtime.modules[usize(m)].asyncParents[i];
+    let listed = false;
+    let j: usize = 0;
+    while (j < ready.length && !listed) {
+      listed = ready[j] == parent;
+      j = j + 1;
+    }
+    const root = runtime.modules[usize(parent)].cycleRoot;
+    if (!listed && runtime.modules[usize(root)].status != MODULE_FAILED && runtime.modules[usize(parent)].pendingAsync > 0) {
+      runtime.modules[usize(parent)].pendingAsync = runtime.modules[usize(parent)].pendingAsync - 1;
+      if (runtime.modules[usize(parent)].pendingAsync == 0) {
+        ready.push(parent);
+        if (!runtime.modules[usize(parent)].hasAwait) gatherAncestors(inout runtime, parent, inout ready);
+      }
+    }
+    i = i + 1;
+  }
+}
+
+// A module's evaluation is done: its top-level promise resolves.
+function finishEvaluation(inout runtime: Runtime, m: u32): void {
+  runtime.modules[usize(m)].asyncEvaluation = false;
+  runtime.modules[usize(m)].status = MODULE_EVALUATED;
+  runtime.modules[usize(m)].generator = undefinedValue();
+  const capability = runtime.modules[usize(m)].capability;
+  if (isCell(capability)) runtime.resolvePromise(asCell(capability), undefinedValue());
+}
+
+// AsyncModuleExecutionFulfilled: the module is done, and the modules that
+// were waiting only on it run, in the order their evaluations turned
+// async.
+function asyncModuleFulfilled(inout runtime: Runtime, m: u32): void {
+  if (runtime.modules[usize(m)].status != MODULE_EVALUATING_ASYNC) return;
+  finishEvaluation(inout runtime, m);
+  let ready = Array<u32>();
+  gatherAncestors(inout runtime, m, inout ready);
+  // By asyncOrder: a module's place among those that turned async.
+  let i: usize = 1;
+  while (i < ready.length) {
+    let j = i;
+    while (j > 0 && runtime.modules[usize(ready[j - 1])].asyncOrder > runtime.modules[usize(ready[j])].asyncOrder) {
+      const held = ready[j];
+      ready[j] = ready[j - 1];
+      ready[j - 1] = held;
+      j = j - 1;
+    }
+    i = i + 1;
+  }
+  i = 0;
+  while (i < ready.length) {
+    const next = ready[i];
+    if (runtime.modules[usize(next)].status == MODULE_FAILED) {
+      // Failed meanwhile, through another module it waited on.
+    } else if (runtime.modules[usize(next)].hasAwait) {
+      executeAsyncModule(inout runtime, next);
+    } else {
+      executeModule(inout runtime, next);
+      if (runtime.pendingThrow) {
+        const error = runtime.takePending();
+        asyncModuleRejected(inout runtime, next, error);
+      } else {
+        finishEvaluation(inout runtime, next);
+      }
+    }
+    i = i + 1;
+  }
+}
+
+// AsyncModuleExecutionRejected: the module fails, every module waiting on
+// it with it, and its top-level promise rejects.
+function asyncModuleRejected(inout runtime: Runtime, m: u32, error: Value): void {
+  if (runtime.modules[usize(m)].status == MODULE_FAILED) return;
+  runtime.modules[usize(m)].status = MODULE_FAILED;
+  runtime.modules[usize(m)].error = error;
+  runtime.modules[usize(m)].generator = undefinedValue();
+  let i: usize = 0;
+  while (i < runtime.modules[usize(m)].asyncParents.length) {
+    asyncModuleRejected(inout runtime, runtime.modules[usize(m)].asyncParents[i], error);
+    i = i + 1;
+  }
+  const capability = runtime.modules[usize(m)].capability;
+  if (isCell(capability)) runtime.rejectPromise(asCell(capability), error);
+}
+
 // InnerModuleEvaluation: `m`'s requested modules, then `m`, the modules
-// of a cycle finishing together; the next DFS index. A throw is left
-// pending.
+// of a cycle finishing together; the next DFS index. A module that
+// awaits, or waits on one that does, starts its run once what it waits
+// on is done. A throw is left pending.
 function evaluateFrom(inout runtime: Runtime, m: u32, inout stack: Array<u32>, index: u32): u32 {
   const record = usize(m);
   const status = runtime.modules[record].status;
@@ -421,66 +552,220 @@ function evaluateFrom(inout runtime: Runtime, m: u32, inout stack: Array<u32>, i
   runtime.modules[record].status = MODULE_EVALUATING;
   runtime.modules[record].dfsIndex = index;
   runtime.modules[record].dfsAncestor = index;
+  runtime.modules[record].pendingAsync = 0;
   let next = index + 1;
   stack.push(m);
   let r: usize = 0;
   while (r < runtime.modules[record].requested.length) {
-    const required = runtime.modules[record].requested[r];
+    let required = runtime.modules[record].requested[r];
     next = evaluateFrom(inout runtime, required, inout stack, next);
     if (runtime.pendingThrow) return next;
-    if (runtime.modules[usize(required)].status == MODULE_EVALUATING && runtime.modules[usize(required)].dfsAncestor < runtime.modules[record].dfsAncestor) {
-      runtime.modules[record].dfsAncestor = runtime.modules[usize(required)].dfsAncestor;
+    if (runtime.modules[usize(required)].status == MODULE_EVALUATING) {
+      if (runtime.modules[usize(required)].dfsAncestor < runtime.modules[record].dfsAncestor) {
+        runtime.modules[record].dfsAncestor = runtime.modules[usize(required)].dfsAncestor;
+      }
+    } else {
+      required = runtime.modules[usize(required)].cycleRoot;
+      if (runtime.modules[usize(required)].status == MODULE_FAILED) {
+        const error = runtime.modules[usize(required)].error;
+        runtime.raise(error);
+        return next;
+      }
+    }
+    if (runtime.modules[usize(required)].asyncEvaluation) {
+      runtime.modules[record].pendingAsync = runtime.modules[record].pendingAsync + 1;
+      runtime.modules[usize(required)].asyncParents.push(m);
     }
     r = r + 1;
   }
-  const generator = runtime.modules[record].generator;
-  runtime.generatorResume(asCell(generator), undefinedValue(), 0);
-  if (runtime.pendingThrow) return next;
+  if (runtime.modules[record].pendingAsync > 0 || runtime.modules[record].hasAwait) {
+    runtime.modules[record].asyncEvaluation = true;
+    runtime.modules[record].asyncOrder = runtime.moduleAsyncOrder;
+    runtime.moduleAsyncOrder = runtime.moduleAsyncOrder + 1;
+    if (runtime.modules[record].pendingAsync == 0) executeAsyncModule(inout runtime, m);
+  } else {
+    executeModule(inout runtime, m);
+    if (runtime.pendingThrow) return next;
+  }
   if (runtime.modules[record].dfsAncestor == runtime.modules[record].dfsIndex) {
     let done = false;
     while (!done) {
       const member = stack[stack.length - 1];
       stack.pop();
-      runtime.modules[usize(member)].status = MODULE_EVALUATED;
-      runtime.modules[usize(member)].generator = undefinedValue();
+      const pending = runtime.modules[usize(member)].asyncEvaluation;
+      runtime.modules[usize(member)].status = pending ? MODULE_EVALUATING_ASYNC : MODULE_EVALUATED;
+      if (!pending) runtime.modules[usize(member)].generator = undefinedValue();
+      runtime.modules[usize(member)].cycleRoot = m;
       done = member == m;
     }
   }
   return next;
 }
 
-// Evaluate the graph from `root`: false with the error pending when a
-// module throws, and every module still evaluating fails with it.
-function evaluateGraph(inout runtime: Runtime, root: u32): boolean {
+// Evaluate(): the promise for the evaluation of `start`'s graph (from
+// its cycle's root, once it has begun), which settles when every module
+// of it, async ones included, is done.
+function evaluateRoot(inout runtime: Runtime, start: u32): Value {
+  let root = start;
+  const status = runtime.modules[usize(root)].status;
+  if (status == MODULE_EVALUATING_ASYNC || status == MODULE_EVALUATED || status == MODULE_FAILED) root = runtime.modules[usize(root)].cycleRoot;
+  const existing = runtime.modules[usize(root)].capability;
+  if (isCell(existing)) return existing;
+  const promise = runtime.newPromise();
+  runtime.modules[usize(root)].capability = promise;
   let stack = Array<u32>();
   evaluateFrom(inout runtime, root, inout stack, 0);
-  if (!runtime.pendingThrow) return true;
-  const error = runtime.pendingValue;
-  let i: usize = 0;
-  while (i < stack.length) {
-    const record = usize(stack[i]);
-    runtime.modules[record].status = MODULE_FAILED;
-    runtime.modules[record].error = error;
-    runtime.modules[record].generator = undefinedValue();
-    i = i + 1;
+  if (runtime.pendingThrow) {
+    const error = runtime.takePending();
+    let i: usize = 0;
+    while (i < stack.length) {
+      const record = usize(stack[i]);
+      runtime.modules[record].status = MODULE_FAILED;
+      runtime.modules[record].error = error;
+      runtime.modules[record].generator = undefinedValue();
+      i = i + 1;
+    }
+    runtime.rejectPromise(asCell(promise), error);
+  } else if (!runtime.modules[usize(root)].asyncEvaluation) {
+    runtime.resolvePromise(asCell(promise), undefinedValue());
   }
-  return false;
+  return promise;
 }
 
 // Load, link, and evaluate the graph from module `root`, then run the
-// jobs it queued: its namespace, or what it threw.
+// jobs it queued (an async module's run among them): its namespace, or
+// what it threw. A graph still waiting once the jobs are done (on
+// something only the host can bring) gives its namespace.
 function runModule(inout runtime: Runtime, root: i32): RunResult {
   let ok = root >= 0 && loadGraph(inout runtime, u32(root));
   ok = ok && linkGraph(inout runtime, u32(root));
-  ok = ok && evaluateGraph(inout runtime, u32(root));
   if (!ok) {
     const error = runtime.takePending();
     runtime.runJobs();
     return RunResult({ isThrow: true, value: error });
   }
+  const promise = evaluateRoot(inout runtime, u32(root));
+  runtime.pushTempRoot(promise);
   runtime.runJobs();
+  runtime.popTempRoot();
+  if (runtime.promiseState(asCell(promise)) == PROMISE_REJECTED) return RunResult({ isThrow: true, value: runtime.promiseResult(asCell(promise)) });
   const namespace = namespaceOf(inout runtime, u32(root));
   return RunResult({ isThrow: false, value: cellValue(namespace) });
+}
+
+// The module whose function is `code`.
+function moduleOfCode(in runtime: Runtime, code: i32): i32 {
+  if (code < 0) return -1;
+  let i: usize = 0;
+  while (i < runtime.modules.length) {
+    if (i32(runtime.modules[i].code) == code) return i32(i);
+    i = i + 1;
+  }
+  return -1;
+}
+
+// `import(specifier)` (docs/modules.md): the module's graph loaded at
+// once, then, as a job (ContinueDynamicImport runs from the load's
+// promise), linked and evaluated as a static import's is; the promise
+// fulfilled with its namespace once its evaluation is done, or rejected
+// with what went wrong on the way.
+function importDynamic(inout runtime: Runtime, specifier: Value, referrer: i32): Value on thread.any {
+  const promise = runtime.newPromise();
+  runtime.pushTempRoot(promise);
+  const text = runtime.toStringValue(specifier);
+  if (!runtime.pendingThrow) {
+    const atom = runtime.propertyKey(text);
+    let referrerKey = runtime.scriptKey;
+    const owner = moduleOfCode(in runtime, referrer);
+    if (owner >= 0) referrerKey = runtime.modules[usize(owner)].key;
+    const found = moduleFor(inout runtime, atom, referrerKey);
+    if (found >= 0 && loadGraph(inout runtime, u32(found))) {
+      hostOf(inout runtime, HOST_IMPORT_CONTINUE, importContinue);
+      const data = runtime.heap.allocateArray(2);
+      runtime.heap.setSlot(data, 0, promise);
+      runtime.heap.setSlot(data, 1, int32Value(found));
+      runtime.pushTempRoot(cellValue(data));
+      const loaded = runtime.newPromise();
+      runtime.pushTempRoot(loaded);
+      runtime.resolvePromise(asCell(loaded), undefinedValue());
+      const onLoaded = runtime.newSharedHost(HOST_IMPORT_CONTINUE, cellValue(data), 1);
+      runtime.performThen(asCell(loaded), cellValue(onLoaded), undefinedValue(), undefinedValue());
+      runtime.popTempRoot();
+      runtime.popTempRoot();
+    }
+  }
+  if (runtime.pendingThrow) {
+    const error = runtime.takePending();
+    runtime.rejectPromise(asCell(promise), error);
+  }
+  runtime.popTempRoot();
+  return promise;
+}
+
+// ContinueDynamicImport: link the graph, evaluate it, and settle the
+// import's promise with the evaluation's outcome.
+function importContinue(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const data = asCell(runtime.heap.slot(callee, 0));
+  const promise = runtime.heap.slot(data, 0);
+  const found = u32(asInt32(runtime.heap.slot(data, 1)));
+  if (!linkGraph(inout runtime, found)) {
+    const error = runtime.takePending();
+    runtime.rejectPromise(asCell(promise), error);
+    return undefinedValue();
+  }
+  const evaluation = evaluateRoot(inout runtime, found);
+  runtime.pushTempRoot(evaluation);
+  hostOf(inout runtime, HOST_IMPORT_FULFILLED, importFulfilled);
+  hostOf(inout runtime, HOST_IMPORT_REJECTED, importRejected);
+  const onFulfilled = runtime.newSharedHost(HOST_IMPORT_FULFILLED, cellValue(data), 1);
+  runtime.pushTempRoot(cellValue(onFulfilled));
+  const onRejected = runtime.newSharedHost(HOST_IMPORT_REJECTED, cellValue(data), 1);
+  runtime.performThen(asCell(evaluation), cellValue(onFulfilled), cellValue(onRejected), undefinedValue());
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  return undefinedValue();
+}
+
+function importFulfilled(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const data = asCell(runtime.heap.slot(callee, 0));
+  const promise = runtime.heap.slot(data, 0);
+  const namespace = namespaceOf(inout runtime, u32(asInt32(runtime.heap.slot(data, 1))));
+  runtime.resolvePromise(asCell(promise), cellValue(namespace));
+  return undefinedValue();
+}
+
+function importRejected(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const data = asCell(runtime.heap.slot(callee, 0));
+  const promise = runtime.heap.slot(data, 0);
+  runtime.rejectPromise(asCell(promise), runtime.argument(argsBase, argc, 0));
+  return undefinedValue();
+}
+
+// `import.meta`: an object of the module's own, without a prototype, its
+// `url` the module's key -- a `file:` URL for an absolute path.
+function importMeta(inout runtime: Runtime, referrer: i32): Value on thread.any {
+  const m = moduleOfCode(in runtime, referrer);
+  if (m < 0) return undefinedValue();
+  if (runtime.modules[usize(m)].meta != 0) return cellValue(runtime.modules[usize(m)].meta);
+  const meta = runtime.heap.allocateObject(0);
+  runtime.modules[usize(m)].meta = meta;
+  const key = runtime.heap.stringUtf8(runtime.modules[usize(m)].key);
+  let url = Array<u8>();
+  if (key.length > 0 && key[0] == 47) {
+    const scheme: String = "file://";
+    appendBytes(inout url, bytesOf(in scheme));
+  }
+  appendBytes(inout url, key);
+  const value = runtime.internUtf8Value(move url);
+  const urlText: String = "url";
+  runtime.heap.objectDefine(meta, runtime.atomOf(in urlText), value, PROP_ENUMERABLE | PROP_WRITABLE | PROP_CONFIGURABLE);
+  return cellValue(meta);
+}
+
+// Give the runtime `import()` and `import.meta` (docs/modules.md).
+export function installModuleSupport(inout runtime: Runtime): void {
+  runtime.dynamicImporter = importDynamic;
+  runtime.metaMaker = importMeta;
 }
 
 // The module the loader finds for `specifier`, evaluated with its graph:

@@ -1,0 +1,12 @@
+slow start
+quick runs
+slow end
+entry S Q
+object null true true true
+import() returned true
+later runs
+later 7 value
+throws boom
+again boom
+same namespace true
+await /re/ g

@@ -14,7 +14,7 @@ import { expect } from "std/test";
 import { TextBuffer } from "std/text";
 import stdlib from "stdlib.h";
 import { TokenKind, Token, tokenEof } from "./token.zs";
-import { tokenize } from "./lexer.zs";
+import { tokenize, tokenizeFrom } from "./lexer.zs";
 import { bytesOf, sliceBytes } from "./heap.zs";
 import { NodeKind, AstNode, Ast, NO_NODE, createAst } from "./ast.zs";
 
@@ -125,6 +125,12 @@ export struct Parser {
   // The labels the statement being parsed is nested in: start, length,
   // and function depth, three entries a label.
   labels: Array<u32>;
+  // A module's own code awaits (top-level await): its function compiles
+  // as an async generator (docs/modules.md).
+  topLevelAwait: boolean;
+  // How many tokens the source cut into; a template's expression parses
+  // in a window of tokens appended past it.
+  mainLimit: usize;
   // Where the source spells `arguments`, past the program's own text: the
   // name of the binding a function makes when only direct eval code in
   // it can read it.
@@ -196,6 +202,32 @@ export struct Parser {
       return false;
     }
     return true;
+  }
+
+  // `await /re/` and `yield /re/`: the source was cut into tokens before
+  // anything knew the keyword is an operator here, so a `/` after it was
+  // taken for division. The rest is cut again from the `/`, a regular
+  // expression first. (Inside a template's window the cut stands.)
+  function recutRegexAfterOperator(inout this): void {
+    const k = this.peekKind();
+    if (k != TokenKind.slash && k != TokenKind.slashEq) return;
+    if (this.tokenLimit != this.mainLimit) return;
+    const start = this.peek().start;
+    const rest = tokenizeFrom(sliceBytes(in this.source, 0, this.source.length), start);
+    let tokens = Array<Token>.withCapacity(this.pos + rest.length);
+    let i: usize = 0;
+    while (i < this.pos) {
+      tokens.push(this.tokens[i]);
+      i = i + 1;
+    }
+    i = 0;
+    while (i < rest.length) {
+      tokens.push(rest[i]);
+      i = i + 1;
+    }
+    this.tokens = move tokens;
+    this.tokenLimit = this.tokens.length;
+    this.mainLimit = this.tokenLimit;
   }
 
   function hasNewlineBetween(a: u32, b: u32): boolean {
@@ -716,6 +748,7 @@ export struct Parser {
       }
       const yielded = this.ast.newNode(NodeKind.yieldExpr, keyword.start, keywordEnd);
       this.ast.setBool(yielded, isDelegate);
+      this.recutRegexAfterOperator();
       const nextToken = this.peek();
       const next = nextToken.kind;
       const operandAllowed = isDelegate || !this.hasNewlineBetween(keywordEnd, nextToken.start);
@@ -1048,6 +1081,12 @@ export struct Parser {
       } else {
         let callee = this.parsePrimary();
         if (callee == NO_NODE) return NO_NODE;
+        // `import(...)` is a call, never a constructor: `new import(x)`
+        // is an early error, a member of it after `new` too.
+        if (this.kindOf(callee) == NodeKind.importCall) {
+          this.hadError = true;
+          return NO_NODE;
+        }
         while (true) {
           const kk = this.peekKind();
           if (kk == TokenKind.dot) {
@@ -1192,7 +1231,14 @@ export struct Parser {
     // `await expr` only inside an async body; elsewhere `await` is an
     // identifier reference.
     if (k == TokenKind.kwAwait && this.inAsync) {
+      // A keyword written with an escape is not the keyword.
+      if (this.tokenHasEscape(t)) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      if (this.functionDepth == 0) this.topLevelAwait = true;
       const keyword = this.advance();
+      this.recutRegexAfterOperator();
       const inner = this.parseUnary();
       if (inner == NO_NODE) return NO_NODE;
       const awaited = this.ast.newNode(NodeKind.awaitExpr, keyword.start, this.endOf(inner));
@@ -1206,12 +1252,17 @@ export struct Parser {
     if (k == TokenKind.kwClass) return this.parseClassExpr();
     // Dynamic `import(specifier [, options])` and `import.meta`.
     if (k == TokenKind.kwImport) {
+      if (this.tokenHasEscape(t)) {
+        this.hadError = true;
+        return NO_NODE;
+      }
       const keyword = this.advance();
       if (this.peekKind() == TokenKind.dot) {
         this.advance();
         const property = this.peek();
         const isMeta = property.length == 4 && this.sliceEquals(property.start, 4, "meta");
-        if (!isMeta) {
+        // `import.meta` is a module's alone.
+        if (!isMeta || !this.isModule) {
           this.hadError = true;
           return NO_NODE;
         }
@@ -2386,6 +2437,7 @@ export struct Parser {
         this.hadError = true;
         return NO_NODE;
       }
+      if (this.functionDepth == 0) this.topLevelAwait = true;
       this.advance();
       isAwait = true;
     }
@@ -3755,7 +3807,8 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     hadError: false,
     noIn: false,
     functionDepth: 0,
-    inAsync: false,
+    // A module's own code may await.
+    inAsync: isModule,
     isModule: isModule,
     inGenerator: false,
     strictMode: strict,
@@ -3764,6 +3817,8 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     staticBlockDepth: 0,
     argumentsName: 0,
     labels: Array<u32>(),
+    topLevelAwait: false,
+    mainLimit: tokenCount,
   });
 
   // A top-level "use strict" prologue makes the whole script strict;
@@ -3787,6 +3842,7 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     parser.ast.setChildren(body, in statements);
     const moduleFunction = parser.ast.newNode(NodeKind.functionExpr, 0, sourceLength);
     parser.ast.setNum(moduleFunction, 3.0);
+    parser.ast.setBool(moduleFunction, parser.topLevelAwait);
     parser.ast.setLeft(moduleFunction, body);
     parser.ast.setThird(program, moduleFunction);
   }

@@ -116,6 +116,46 @@ on the object (`FLAG_NAMESPACE`) makes `[[GetOwnProperty]]`,
 `[[DefineOwnProperty]]`, `hasOwnProperty`, and key enumeration present
 it as the data property, at no cost to any other object.
 
+## Top-level await
+
+A module whose own code awaits (`await`, or `for await`, outside any
+function) compiles as an async generator: its first step still links it,
+ending at `yieldLinked`, which answers as it is instead of awaiting what
+it yields, so its evaluation can start at once. Evaluation follows the
+specification's algorithm for async modules: such a module, and every
+module that waits on one, is marked as evaluating asynchronously, in the
+order that happens; a module whose async dependencies are done starts
+its run (to its first await) from `executeAsyncModule`, its outcome
+reaching `asyncModuleFulfilled`, which runs the modules waiting on it
+that wait on nothing else now, in that order, or `asyncModuleRejected`,
+which fails them all. `Evaluate()` gives a promise
+(`evaluateRoot`); `zjs_eval_module` and `zjsz` run the jobs it queues,
+and a graph that rejected reports its error.
+
+## `import()` and `import.meta`
+
+`import(specifier)` compiles to `dynamicImport`, which hands the
+specifier and the module the call is in (its function's index; a script
+has none) to the runtime's importer. The module's graph is loaded at
+once; linking and evaluation run as a job, as ContinueDynamicImport runs
+from the load's promise, so a module importing one of its own graph
+lets the current evaluation finish first. The promise fulfills with the
+namespace once evaluation is done, or rejects with what failed: the
+specifier's conversion, a module not found or not parsing, a link error,
+an evaluation error. A script's `import()` resolves against the script's
+path when the host knows it (`zjsz` sets it; `zjs_eval` has none, so a
+specifier is a path as written). Without module support installed,
+`import()` rejects with a TypeError.
+
+`import.meta` (`importMeta`) is an object of the module's own, without a
+prototype, made the first time it is read; its `url` is the module's key,
+a `file:` URL for an absolute path.
+
+`await /re/` and `yield /re/`: the source is cut into tokens before the
+parser knows the keyword is an operator, so a `/` after it was taken for
+division; the parser cuts the rest again from the `/`, a regular
+expression first.
+
 ## The loader
 
 The runtime resolves and reads modules through a hook it holds, as it
@@ -130,13 +170,9 @@ loads a file links no file access.
 
 ## Later
 
-- `import.meta`: an object per module, its `url` the module's key as a
-  `file:` URL for a file.
-- Dynamic `import()`: a promise for the namespace, the module loaded,
-  linked, and evaluated as a static one is.
-- Top-level `await`: a module's evaluation as an async function's,
-  the walk waiting on the components it reaches.
 - Bytecode files for modules: the format holds scripts only.
+- Import attributes (`with { type: "json" }`) and JSON modules: the
+  parser reads and drops a second argument to `import()`.
 
 ## Evidence
 
@@ -144,12 +180,18 @@ loads a file links no file access.
   relative and self imports resolve, with the harness as a script
   included first (`zjsz run --include harness.js --module test.js`), and
   the curated subset now includes `language/module-code`, `import`, and
-  `export`. Of their 318 runs, skipping top-level await and the
+  `export`. A script test that imports dynamically runs from beside its
+  own file, so its relative specifiers resolve. With
+  `expressions/dynamic-import` and `import.meta`, and skipping only the
   proposals (import defer, attributes, text and bytes imports, source
-  phase), all 318 pass.
+  phase), 1,592 of 1,599 runs pass: 6 need `with`, which the compiler
+  does not have, and 1 `Promise.withResolvers`.
 - Expectation cases `module-live-bindings`, `module-cycles`,
-  `module-reexports`, and `module-namespace-object`, recorded from node,
-  each run twice (collecting at every safe point the second time).
+  `module-reexports`, `module-namespace-object`, and
+  `module-top-level-await`, recorded from node, each run twice
+  (collecting at every safe point the second time), and
+  `dynamic-import-script`, a script, three times.
+- The Vite build of `ipodos`: its three chunks load, link, and run until
+  the entry reaches `document`, which a browser provides.
 - `tests/module_test.c`: the ABI's two entries, the cache, a module from
   memory importing files, and load, link, and evaluation errors.
-- The Vite build of `ipodos`, which imports across its chunks: next.

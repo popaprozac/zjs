@@ -489,6 +489,9 @@ export struct Compiler {
   // A module's body declaring its bindings: every one lives in the
   // module's environment, where other modules import it from.
   allToEnv: boolean = false;
+  // The module function the code being compiled belongs to, for
+  // `import()` and `import.meta`; below 0 outside a module.
+  moduleCode: i32 = -1;
   // A module's imports and exports as its compile finds them.
   module: ModuleInfo = emptyModuleInfo();
 
@@ -2583,7 +2586,7 @@ export struct Compiler {
   function emitClassFunction(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32, role: u32, fieldCount: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount, noModuleSteps);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount, noModuleSteps, this.moduleCode);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -3245,7 +3248,7 @@ export struct Compiler {
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0, noModuleSteps);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0, noModuleSteps, this.moduleCode);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -3711,6 +3714,23 @@ export struct Compiler {
       }
       this.nextReg = base + 1;
       return base;
+    }
+    if (k == NodeKind.importCall || k == NodeKind.importMetaExpr) {
+      // `import(specifier)`: a promise for the module's namespace, the
+      // specifier resolved against the module (or script) the call is
+      // in; `import.meta`: that module's meta object. The module is
+      // named by its function's index (docs/modules.md).
+      const referrer = this.allocReg();
+      const code = this.addConst(int32Value(this.moduleCode));
+      this.emit(instAU16(Op.loadConst, referrer, code));
+      const dst = this.allocReg();
+      if (k == NodeKind.importMetaExpr) {
+        this.emit(instAB(Op.importMeta, dst, referrer));
+        return dst;
+      }
+      const specifier = this.compileExpr(in parser, inout runtime, n.left);
+      this.emit(instABC(Op.dynamicImport, dst, specifier, referrer));
+      return dst;
     }
     if (k == NodeKind.awaitExpr) {
       // Suspend on the awaited value; the async driver resumes with the
@@ -6313,7 +6333,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32, steps: ModuleSteps): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32, steps: ModuleSteps, enclosingModule: i32): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
   // name the parser attached to a method or accessor does not.
@@ -6388,6 +6408,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   const patternNamesEnd = compiler.bindings.locals.length;
   const index = runtime.reserveFunction();
+  compiler.moduleCode = role == ROLE_MODULE ? i32(index) : enclosingModule;
   compiler.spillFrom = SPILL_FROM;
   // A module's bindings all live in its environment, its imports first.
   if (role == ROLE_MODULE) {
@@ -6606,7 +6627,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
         const nothing = compiler.allocReg();
         compiler.emit(instA(Op.loadUndefined, nothing));
         const sent = compiler.allocReg();
-        compiler.emit(instAB(Op.yieldOp, sent, nothing));
+        compiler.emit(instAB(Op.yieldLinked, sent, nothing));
         compiler.resetTemps();
       }
       b = 0;
@@ -7780,7 +7801,7 @@ export function compileModule(in parser: Parser, root: u32, inout runtime: Runti
   if (moduleFunction == NO_NODE) return CompiledModule({ index: -1, info: emptyModuleInfo() });
   runtime.globalsFull = false;
   let scopes = Array<Scope>();
-  let compiled = compileFunction(in parser, inout runtime, moduleFunction, in scopes, newBindings(Array<Local>()), false, 0, false, -1, -1, true, 0, 0, 0, ROLE_MODULE, 0, moduleSteps);
+  let compiled = compileFunction(in parser, inout runtime, moduleFunction, in scopes, newBindings(Array<Local>()), false, 0, false, -1, -1, true, 0, 0, 0, ROLE_MODULE, 0, moduleSteps, -1);
   if (runtime.globalsFull) return CompiledModule({ index: -1, info: emptyModuleInfo() });
   const info = replace(inout compiled.module, emptyModuleInfo());
   return CompiledModule({ index: compiled.index, info: move info });

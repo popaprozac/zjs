@@ -82,7 +82,7 @@ export function opName(op: Op): String {
     buildArguments => "buildArguments";
     buildRestArgs => "buildRestArgs";
     importBind => "importBind";
-    exportBind => "exportBind";
+    yieldLinked => "yieldLinked";
     dynamicImport => "dynamicImport";
     importMeta => "importMeta";
     awaitOp => "awaitOp";

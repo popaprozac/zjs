@@ -106,6 +106,15 @@ export const HOST_ELEMENT_REJECTED: usize = 9;
 export const HOST_BOUND_TRAMPOLINE: usize = 10;
 // A module namespace's getter for one export (engine/modules.zs).
 export const HOST_NAMESPACE_GET: usize = 11;
+// An async module's run settled (fulfilled, rejected), and a dynamic
+// import's evaluation settled (engine/modules.zs).
+export const HOST_MODULE_FULFILLED: usize = 12;
+export const HOST_MODULE_REJECTED: usize = 13;
+export const HOST_IMPORT_FULFILLED: usize = 14;
+export const HOST_IMPORT_REJECTED: usize = 15;
+// A dynamic import's link and evaluation, run as a job once its graph
+// has loaded.
+export const HOST_IMPORT_CONTINUE: usize = 16;
 
 // What a function's [[Prototype]] chain answered to a [[Set]].
 // How far past an array's slots a write may land and still grow them
@@ -297,11 +306,22 @@ export struct LoadedSource {
 // (an atom, 0 for none) and read the module it names.
 export type ModuleLoader = (inout runtime: Runtime, specifier: u32, referrer: u32) => LoadedSource on thread.any;
 
+// `import(specifier)` in the code of the module whose function is
+// `referrer` (below 0: a script): a promise for the module's namespace.
+export type DynamicImporter = (inout runtime: Runtime, specifier: Value, referrer: i32) => Value on thread.any;
+
+// `import.meta` of the module whose function is `referrer`.
+export type ImportMetaMaker = (inout runtime: Runtime, referrer: i32) => Value on thread.any;
+
 export const MODULE_NEW: u8 = 0;
 export const MODULE_LINKED: u8 = 1;
 export const MODULE_EVALUATING: u8 = 2;
 export const MODULE_EVALUATED: u8 = 3;
+// Evaluated with an error, which every later import throws again.
 export const MODULE_FAILED: u8 = 4;
+// Its own run, or one it waits on, is an async (top-level await) one
+// still under way.
+export const MODULE_EVALUATING_ASYNC: u8 = 5;
 
 export struct ModuleRecord {
   key: u32;
@@ -318,6 +338,20 @@ export struct ModuleRecord {
   namespace: u32;
   dfsIndex: u32;
   dfsAncestor: u32;
+  // Top-level await: whether the module's function is async, whether its
+  // evaluation is async (it awaits, or waits on a module that does) and
+  // its place in the order those began, how many async modules it still
+  // waits on, the modules waiting on it, the root of its cycle, and the
+  // promise an evaluation from it settles.
+  hasAwait: boolean;
+  asyncEvaluation: boolean;
+  asyncOrder: u32;
+  pendingAsync: u32;
+  asyncParents: Array<u32>;
+  cycleRoot: u32;
+  capability: Value;
+  // Its `import.meta`, made the first time it is read.
+  meta: u32;
 }
 
 function noModuleCompiler(inout runtime: Runtime, source: Array<u8>): CompiledModule on thread.any {
@@ -326,6 +360,19 @@ function noModuleCompiler(inout runtime: Runtime, source: Array<u8>): CompiledMo
 
 function noModuleLoader(inout runtime: Runtime, specifier: u32, referrer: u32): LoadedSource on thread.any {
   return LoadedSource({ found: false, key: 0, source: Array<u8>() });
+}
+
+// A runtime without module support: `import()` rejects.
+function noDynamicImporter(inout runtime: Runtime, specifier: Value, referrer: i32): Value on thread.any {
+  const promise = runtime.newPromise();
+  const message: String = "import() is not supported: the context has no module loader";
+  const error = runtime.typeError(in message);
+  runtime.rejectPromise(asCell(promise), error);
+  return promise;
+}
+
+function noImportMeta(inout runtime: Runtime, referrer: i32): Value on thread.any {
+  return undefinedValue();
 }
 
 // The compilers a runtime has until installCompiler gives it the front
@@ -579,6 +626,13 @@ export struct Runtime {
   // How modules are found: none until an embedder or the file loader
   // sets one (docs/modules.md).
   moduleLoader: ModuleLoader = noModuleLoader;
+  dynamicImporter: DynamicImporter = noDynamicImporter;
+  metaMaker: ImportMetaMaker = noImportMeta;
+  // The key `import()` in a script resolves against: the script's path
+  // where the host knows it (zjsz), else none (0).
+  scriptKey: u32 = 0;
+  // How many module evaluations have turned async: their order.
+  moduleAsyncOrder: u32 = 0;
   modules: Array<ModuleRecord> = Array<ModuleRecord>();
   // A compile asked for a global slot past the last (globalSlotAtom).
   globalsFull: boolean = false;
@@ -5311,6 +5365,8 @@ export struct Runtime {
   // What the module records hold: their keys and names, and the
   // generator, environment, namespace, and error of each.
   function markModules(inout this): void {
+    const scriptKey = this.scriptKey;
+    this.heap.markHandle(scriptKey);
     let m: usize = 0;
     while (m < this.modules.length) {
       const key = this.modules[m].key;
@@ -5323,6 +5379,10 @@ export struct Runtime {
       this.heap.markValue(error);
       const namespace = this.modules[m].namespace;
       this.heap.markHandle(namespace);
+      const capability = this.modules[m].capability;
+      this.heap.markValue(capability);
+      const meta = this.modules[m].meta;
+      this.heap.markHandle(meta);
       let i: usize = 0;
       while (i < this.modules[m].info.requests.length) {
         const request = this.modules[m].info.requests[i];
@@ -6907,6 +6967,35 @@ export struct Runtime {
           }
           returned = true;
         }
+      }
+      yieldLinked => {
+        // A module's link step is done (docs/modules.md): the frame
+        // suspends as at a yield, but what it yields answers as it is,
+        // with no await even in an async (top-level await) module, so
+        // its evaluation later starts at once.
+        this.suspendGenerator(frameIndex, ip, inst.a);
+        const linkedGen = this.frames[frameIndex].generator;
+        const linkedRecord = this.generatorRecord(linkedGen);
+        this.heap.setSlot(linkedRecord, 9, int32Value(2));
+        const frame = this.popFrame();
+        const produced = this.reg(base, inst.b);
+        if (this.frameCount <= entryDepth) {
+          result = produced;
+        } else {
+          const callerBase = this.frames[usize(this.frameCount - 1)].regsBase;
+          this.setReg(callerBase, frame.returnDst, produced);
+        }
+        returned = true;
+      }
+      dynamicImport => {
+        const importer = this.dynamicImporter;
+        const promise = importer(inout this, this.reg(base, inst.b), asInt32(this.reg(base, inst.c)));
+        this.setReg(base, inst.a, promise);
+      }
+      importMeta => {
+        const maker = this.metaMaker;
+        const meta = maker(inout this, asInt32(this.reg(base, inst.b)));
+        this.setReg(base, inst.a, meta);
       }
       iterGetAsync => {
         const iterable = this.reg(base, inst.b);

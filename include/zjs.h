@@ -375,7 +375,12 @@ unsigned char* zjs_compile_to_bytecode(ZjsContext* ctx, const char* source, size
  * module's binding as it is now, so a cycle that reaches a `let` or
  * `const` before its module has run it throws a ReferenceError, and a
  * function declaration is callable from any module of the graph
- * before its own module runs.
+ * before its own module runs. A module with top-level await finishes
+ * as the microtask queue drains, before the call returns, unless it
+ * waits on something only the host brings (a timer, I/O). import() in
+ * the module resolves against the module's path; import() in a script
+ * evaluated afterwards in this context resolves against the working
+ * directory.
  *
  * Bare specifiers (`import "lodash"`) are treated as literal paths;
  * package.json / node_modules resolution is not built in. Embedders

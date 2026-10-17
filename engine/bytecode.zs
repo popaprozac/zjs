@@ -104,7 +104,9 @@ export enum Op {
   buildArguments,
   buildRestArgs,
   importBind,
-  exportBind,
+  // A module's link step ending: a yield whose value answers as it is,
+  // with no await even in an async (top-level await) module.
+  yieldLinked,
   dynamicImport,
   importMeta,
   awaitOp,
@@ -424,7 +426,7 @@ export function opCode(op: Op): i32 {
     buildArguments => 75;
     buildRestArgs => 76;
     importBind => 77;
-    exportBind => 78;
+    yieldLinked => 78;
     dynamicImport => 79;
     importMeta => 80;
     awaitOp => 81;
@@ -630,7 +632,7 @@ export function opsByCode(): Array<Op> {
   ops.push(Op.buildArguments);
   ops.push(Op.buildRestArgs);
   ops.push(Op.importBind);
-  ops.push(Op.exportBind);
+  ops.push(Op.yieldLinked);
   ops.push(Op.dynamicImport);
   ops.push(Op.importMeta);
   ops.push(Op.awaitOp);
@@ -758,7 +760,7 @@ export function opsByCode(): Array<Op> {
 // operands, and what each does. Moves whenever any of them changes, so a
 // file from another engine is refused rather than misread; the test
 // below pins it beside the opcode count, which a new opcode changes.
-export const INSTRUCTION_SET_VERSION: u32 = 2;
+export const INSTRUCTION_SET_VERSION: u32 = 3;
 
 // One property access site's inline cache, kept per property name of a
 // function: the receiver's hidden class and where the property was
@@ -924,7 +926,7 @@ test "the instruction set version moves with the opcodes" {
   // A new opcode lands here first: move INSTRUCTION_SET_VERSION with it.
   const ops = opsByCode();
   expect(ops.length).toEqual(199);
-  expect(INSTRUCTION_SET_VERSION).toEqual(2);
+  expect(INSTRUCTION_SET_VERSION).toEqual(3);
   let code: usize = 0;
   while (code < ops.length) {
     expect(opCode(ops[code])).toEqual(i32(code));

@@ -354,7 +354,14 @@ def assemble(test262_root, test_src, meta, test_path, *, strict_mode: bool):
         return build_source(test262_root, "", meta, strict_mode=False), str(test_path)
     return build_source(test262_root, test_src, meta, strict_mode=strict_mode), None
 
-def run_one(zjs_bin, source, timeout_s, aot=False, module_path=None):
+def script_directory(meta, test_path):
+    """Where a script test runs from: beside its own file when it imports
+    dynamically, so that its relative specifiers resolve; else anywhere."""
+    if "dynamic-import" in set(meta.get("features", [])):
+        return os.path.dirname(str(test_path))
+    return None
+
+def run_one(zjs_bin, source, timeout_s, aot=False, module_path=None, script_dir=None):
     """Run zjs on the given source. Returns (exit_code, stderr_text, stdout_text).
 
     In aot mode: compile the source to a .zbc bytecode file first, then
@@ -370,7 +377,8 @@ def run_one(zjs_bin, source, timeout_s, aot=False, module_path=None):
     # CRLF sources the test never contained (string line-continuations
     # `\<LF>` became `\<CR><LF>` and failed to parse).
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
-                                     encoding="utf-8", newline="") as f:
+                                     encoding="utf-8", newline="",
+                                     dir=script_dir, prefix=".zjs-") as f:
         f.write(source)
         path = f.name
     zbc_path = path + ".zbc"
@@ -712,7 +720,8 @@ def main():
             full, module_path = assemble(args.test262, src, meta, abs_path,
                                          strict_mode=(mode == "strict"))
             exit_code, stderr, stdout = run_one(ZJS_BIN, full, args.timeout, aot=args.aot,
-                                                module_path=module_path)
+                                                module_path=module_path,
+                                                script_dir=script_directory(meta, abs_path))
             v, r = classify(meta, exit_code, stderr, stdout)
             if v != "pass":
                 verdict = v

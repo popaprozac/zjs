@@ -911,6 +911,22 @@ export function tokenize(source: Array<u8>): Array<Token> {
   return tokens;
 }
 
+// The tokens of `source` from byte `start` on, the first read where a
+// regular expression may begin: the parser's second cut after an `await`
+// or `yield` it has found to be an operator (expectRegexAfter cannot tell
+// them from identifiers).
+export function tokenizeFrom(source: Array<u8>, start: u32): Array<Token> {
+  let lexer = createLexer(move source);
+  lexer.pos = usize(start);
+  let tokens = Array<Token>();
+  while (true) {
+    const token = lexer.nextToken();
+    tokens.push(token);
+    if (token.kind == TokenKind.eof) return tokens;
+  }
+  return tokens;
+}
+
 // Source given as text, for tests and tools that hold a String.
 export function tokenizeText(source: String): Array<Token> {
   return tokenize(bytesOf(in source));

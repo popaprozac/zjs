@@ -31,7 +31,7 @@ import { installCollections } from "./builtins/collections.zs";
 import { installPromise } from "./builtins/promise.zs";
 import { installReflect } from "./builtins/reflect.zs";
 import { installCompiler, installModuleCompiler } from "./compile.zs";
-import { evaluateModule, evaluateModuleSource } from "./modules.zs";
+import { evaluateModule, evaluateModuleSource, installModuleSupport } from "./modules.zs";
 import { installFileLoader } from "./module_files.zs";
 import { writeProgram, loadProgram } from "./bytecode_file.zs";
 import { Value, undefinedValue } from "./value.zs";
@@ -72,6 +72,7 @@ export struct ContextState {
     this.evalCount = this.evalCount + 1;
     installModuleCompiler(inout this.runtime);
     installFileLoader(inout this.runtime);
+    installModuleSupport(inout this.runtime);
     const outcome = evaluateModule(inout this.runtime, move path);
     this.interrupted = this.runtime.endTermination();
     this.hadError = outcome.isThrow || this.interrupted;
@@ -82,6 +83,7 @@ export struct ContextState {
     this.evalCount = this.evalCount + 1;
     installModuleCompiler(inout this.runtime);
     installFileLoader(inout this.runtime);
+    installModuleSupport(inout this.runtime);
     const outcome = evaluateModuleSource(inout this.runtime, move key, move source);
     this.interrupted = this.runtime.endTermination();
     this.hadError = outcome.isThrow || this.interrupted;

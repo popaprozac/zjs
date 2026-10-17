@@ -158,8 +158,8 @@ rewriting the generated C by hand, was slower on Apple silicon
   a lifecycle test (1,000 create/free cycles with no growth, free after
   admission, shutdown on a worker). ES modules through
   `zjs_eval_module` and `zjs_eval_module_source`, with the
-  specification's live bindings, linking, and cycles (docs/modules.md);
-  top-level await, dynamic `import()`, and `import.meta` are not yet.
+  specification's live bindings, linking, cycles, top-level await,
+  dynamic `import()`, and `import.meta` (docs/modules.md).
 
 ## 4. JIT
 

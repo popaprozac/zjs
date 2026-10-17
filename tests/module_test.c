@@ -1,6 +1,7 @@
 /* ES modules through the public ABI (zjs.h): a module graph read from
    files, a module from memory importing those files, the cache that
-   keeps each module evaluated once, and the errors a graph reports.
+   keeps each module evaluated once, top-level await and import()
+   settled before the call returns, and the errors a graph reports.
    Each check evaluates a script that throws when its expectation fails.
    The module files are written to the directory given as argv[1]. */
 #include <stdio.h>
@@ -58,6 +59,11 @@ int main(int argc, char **argv) {
   write_file("missing.mjs", "import { x } from './nowhere.mjs';\nglobalThis.missingRan = true;\n");
   write_file("unexported.mjs", "import { nothing } from './counter.mjs';\nglobalThis.unexportedRan = true;\n");
   write_file("throws.mjs", "globalThis.throwsRuns = (globalThis.throwsRuns || 0) + 1;\nthrow new RangeError('expected');\n");
+  write_file("awaits.mjs",
+    "import { count } from './counter.mjs';\n"
+    "const later = await import('./later.mjs');\n"
+    "globalThis.awaited = [count, later.value, import.meta.url.endsWith('/awaits.mjs')];\n");
+  write_file("later.mjs", "await null;\nexport const value = 'later';\n");
 
   ZjsContext *ctx = zjs_new_context();
   zjs_eval_module(ctx, path_of("main.mjs"));
@@ -78,6 +84,11 @@ int main(int argc, char **argv) {
   zjs_eval_module_source(ctx, source, strlen(source), virtual_path);
   if (zjs_had_error(ctx)) fail("the module from memory threw");
   check(ctx, "if (fromMemory !== 3 || counterRuns !== 1) throw new Error('memory');", "a module from memory");
+
+  /* Top-level await and import() finish before the call returns. */
+  zjs_eval_module(ctx, path_of("awaits.mjs"));
+  if (zjs_had_error(ctx)) fail("awaits.mjs threw");
+  check(ctx, "if (awaited[0] !== 3 || awaited[1] !== 'later' || awaited[2] !== true) throw new Error('awaited');", "top-level await and import()");
 
   /* A graph that cannot load or link runs nothing. */
   zjs_eval_module(ctx, path_of("missing.mjs"));
