@@ -1,0 +1,10 @@
+setter 5 on target
+foo TypeError
+{"value":3,"writable":true,"enumerable":true,"configurable":true}
+setter 5 on instance
+onlyGet TypeError
+2
+9
+own,foo,baz,fresh
+proto setter 2
+3

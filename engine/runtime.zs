@@ -2150,6 +2150,38 @@ export struct Runtime {
   // an unextensible target rejects the write, and the caller decides
   // whether that is a TypeError (strict code) or silence. Writes to
   // primitives are dropped.
+  // `super[key] = value`: [[Set]] from the home object's [[Prototype]]
+  // (`first`) with `this` as the receiver. A setter on the way runs; a
+  // read-only property or a setterless accessor refuses; otherwise the
+  // receiver's own property is written, an accessor or a read-only one
+  // refusing, or made.
+  function superSet(inout this, first: u32, key: Value, value: Value, receiver: Value): boolean {
+    const atom = this.propertyKey(key);
+    if (first != 0) {
+      const step = this.setThroughChain(first, atom, value, receiver);
+      if (this.pendingThrow) return false;
+      if (step == SET_DONE) return true;
+      if (step == SET_REFUSED) return false;
+    }
+    if (!this.isObjectLike(receiver)) return false;
+    const existing = this.getOwnDescriptor(receiver, key);
+    if (this.pendingThrow) return false;
+    let change = emptyDescriptorInput();
+    change.hasValue = true;
+    change.value = value;
+    if (existing.present) {
+      if ((existing.attr & PROP_ACCESSOR) != 0 || (existing.attr & PROP_WRITABLE) == 0) return false;
+      return this.defineOwnProperty(receiver, key, change);
+    }
+    change.hasWritable = true;
+    change.writable = true;
+    change.hasEnumerable = true;
+    change.enumerable = true;
+    change.hasConfigurable = true;
+    change.configurable = true;
+    return this.defineOwnProperty(receiver, key, change);
+  }
+
   function setProperty(inout this, object: Value, key: Value, value: Value): boolean {
     if (!isCell(object) || asCell(object) == 0) return true;
     const handle = asCell(object);
@@ -7242,7 +7274,10 @@ export struct Runtime {
         const key = this.reg(base, inst.a);
         const value = this.reg(base, inst.b);
         const receiver = this.hostThis;
-        const stored = this.setProperty(receiver, key, value);
+        const callee = this.frames[frameIndex].callee;
+        const atomHome = this.atomHome;
+        const home = isCell(callee) && asCell(callee) != 0 ? this.functionHidden(asCell(callee), atomHome) : undefinedValue();
+        const stored = this.isObjectLike(home) ? this.superSet(this.protoOfValue(home), key, value, receiver) : this.setProperty(receiver, key, value);
         if (this.pendingThrow) {
           // The throw stays pending for the loop to take.
         } else if (!stored) {
@@ -7493,6 +7528,10 @@ export struct Runtime {
             this.defineOwnAttr(ctorHandle, atomPrototype, proto, PROP_NONE);
             const atomConstructor = this.atomConstructor;
             this.heap.objectDefine(protoHandle, atomConstructor, ctor, PROP_METHOD);
+            // The constructor's home object, for `super.x` in it and in
+            // the instance fields it initializes, is the prototype.
+            const atomHome = this.atomHome;
+            this.setFunctionHidden(ctorHandle, atomHome, proto);
           }
         } else if (op == Op.defineMethod || op == Op.defineMethodComputed) {
           // Methods are writable and configurable but not enumerable, and
