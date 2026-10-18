@@ -406,6 +406,24 @@ export struct Parser {
   // Statements
   // ======================================================================
 
+  // A statement where only a Statement may stand, not a declaration: the
+  // body of `if`, a loop, `with`, a label. There a sloppy `let` is the
+  // identifier, an expression statement (`let` then a line break and
+  // `{}` is `let;` and a block), except that one may not begin `let [`.
+  function parseBodyStatement(inout this): u32 {
+    if (this.peekKind() == TokenKind.kwLet && !this.strictMode && !this.tokenHasEscape(this.peek())) {
+      if (this.peekKind2() == TokenKind.lBracket) {
+        this.hadError = true;
+        return NO_NODE;
+      }
+      const expr = this.parseExpression();
+      if (expr == NO_NODE) return NO_NODE;
+      this.matchTerminator();
+      return expr;
+    }
+    return this.parseStatement();
+  }
+
   function parseStatement(inout this): u32 {
     const k = this.peekKind();
 
@@ -464,7 +482,7 @@ export struct Parser {
       this.labels.push(id.start);
       this.labels.push(id.length);
       this.labels.push(this.functionDepth);
-      const body = this.parseStatement();
+      const body = this.parseBodyStatement();
       while (this.labels.length > depth) { this.labels.pop(); }
       if (body == NO_NODE) return NO_NODE;
       if (this.isDisallowedStatementBody(body)) {
@@ -573,7 +591,7 @@ export struct Parser {
     const condition = this.parseExpression();
     if (condition == NO_NODE) return NO_NODE;
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
-    const thenStatement = this.parseStatement();
+    const thenStatement = this.parseBodyStatement();
     if (thenStatement == NO_NODE) return NO_NODE;
     if (this.isDisallowedStatementBody(thenStatement)) {
       this.hadError = true;
@@ -582,7 +600,7 @@ export struct Parser {
     let end = this.endOf(thenStatement);
     let elseStatement: u32 = NO_NODE;
     if (this.matchKind(TokenKind.kwElse)) {
-      elseStatement = this.parseStatement();
+      elseStatement = this.parseBodyStatement();
       if (elseStatement == NO_NODE) return NO_NODE;
       if (this.isDisallowedStatementBody(elseStatement)) {
         this.hadError = true;
@@ -627,7 +645,7 @@ export struct Parser {
     const condition = this.parseExpression();
     if (condition == NO_NODE) return NO_NODE;
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
-    const body = this.parseStatement();
+    const body = this.parseBodyStatement();
     if (body == NO_NODE) return NO_NODE;
     if (this.isDisallowedStatementBody(body)) {
       this.hadError = true;
@@ -649,7 +667,7 @@ export struct Parser {
     const object = this.parseExpression();
     if (object == NO_NODE) return NO_NODE;
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
-    const body = this.parseStatement();
+    const body = this.parseBodyStatement();
     if (body == NO_NODE) return NO_NODE;
     if (this.isDisallowedStatementBody(body)) {
       this.hadError = true;
@@ -663,7 +681,7 @@ export struct Parser {
 
   function parseDoWhile(inout this): u32 {
     const keyword = this.advance();
-    const body = this.parseStatement();
+    const body = this.parseBodyStatement();
     if (body == NO_NODE) return NO_NODE;
     if (this.isDisallowedStatementBody(body)) {
       this.hadError = true;
@@ -2486,7 +2504,7 @@ export struct Parser {
       if (update == NO_NODE) return NO_NODE;
     }
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
-    const body = this.parseStatement();
+    const body = this.parseBodyStatement();
     if (body == NO_NODE) return NO_NODE;
     if (this.isDisallowedStatementBody(body)) {
       this.hadError = true;
@@ -2545,7 +2563,7 @@ export struct Parser {
     }
     if (iterated == NO_NODE) return NO_NODE;
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
-    const body = this.parseStatement();
+    const body = this.parseBodyStatement();
     if (body == NO_NODE) return NO_NODE;
     if (this.isDisallowedStatementBody(body)) {
       this.hadError = true;
