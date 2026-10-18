@@ -532,20 +532,22 @@ function asyncModuleFulfilled(inout runtime: Runtime, m: u32): void {
   }
 }
 
-// AsyncModuleExecutionRejected: the module fails, every module waiting on
-// it with it, and its top-level promise rejects.
+// AsyncModuleExecutionRejected: the module fails, its top-level promise
+// rejects, and then every module waiting on it fails with it: the
+// module's own promise first, the order the specification now has
+// (test262's top-level-await/rejection-order).
 function asyncModuleRejected(inout runtime: Runtime, m: u32, error: Value): void {
   if (runtime.modules[usize(m)].status == MODULE_FAILED) return;
   runtime.modules[usize(m)].status = MODULE_FAILED;
   runtime.modules[usize(m)].error = error;
   runtime.modules[usize(m)].generator = undefinedValue();
+  const capability = runtime.modules[usize(m)].capability;
+  if (isCell(capability)) runtime.rejectPromise(asCell(capability), error);
   let i: usize = 0;
   while (i < runtime.modules[usize(m)].asyncParents.length) {
     asyncModuleRejected(inout runtime, runtime.modules[usize(m)].asyncParents[i], error);
     i = i + 1;
   }
-  const capability = runtime.modules[usize(m)].capability;
-  if (isCell(capability)) runtime.rejectPromise(asCell(capability), error);
 }
 
 // InnerModuleEvaluation: `m`'s requested modules, then `m`, the modules
