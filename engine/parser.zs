@@ -125,6 +125,9 @@ export struct Parser {
   // The labels the statement being parsed is nested in: start, length,
   // and function depth, three entries a label.
   labels: Array<u32>;
+  // The source has a `with` statement somewhere: the compiler looks for
+  // one in a function only then.
+  sawWith: boolean;
   // A module's own code awaits (top-level await): its function compiles
   // as an async generator (docs/modules.md).
   topLevelAwait: boolean;
@@ -673,6 +676,7 @@ export struct Parser {
       this.hadError = true;
       return NO_NODE;
     }
+    this.sawWith = true;
     const statement = this.ast.newNode(NodeKind.withStmt, keyword.start, this.endOf(body));
     this.ast.setLeft(statement, object);
     this.ast.setRight(statement, body);
@@ -3472,7 +3476,11 @@ export struct Parser {
     let parent: u32 = NO_NODE;
     if (this.peekKind() == TokenKind.kwExtends) {
       this.advance();
+      // The heritage is strict code, as the whole class is.
+      const savedStrict = this.strictMode;
+      this.strictMode = true;
       parent = this.parseCallMember();
+      this.strictMode = savedStrict;
       if (parent == NO_NODE) return NO_NODE;
     }
     const elements = this.parseClassBody(parent != NO_NODE);
@@ -3496,7 +3504,11 @@ export struct Parser {
     let parent: u32 = NO_NODE;
     if (this.peekKind() == TokenKind.kwExtends) {
       this.advance();
+      // The heritage is strict code, as the whole class is.
+      const savedStrict = this.strictMode;
+      this.strictMode = true;
       parent = this.parseCallMember();
+      this.strictMode = savedStrict;
       if (parent == NO_NODE) return NO_NODE;
     }
     const elements = this.parseClassBody(parent != NO_NODE);
@@ -3835,6 +3847,7 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     staticBlockDepth: 0,
     argumentsName: 0,
     labels: Array<u32>(),
+    sawWith: false,
     topLevelAwait: false,
     mainLimit: tokenCount,
   });

@@ -292,6 +292,38 @@ function bindingHash(in parser: Parser, start: u32, length: u32): u32 {
 
 // An enclosing function's bindings, as seen from a nested one: the
 // captured ones are reachable through the environment chain.
+// A `with` statement whose body is being compiled: its object, in the
+// function's environment at `slot`, is looked up first by every name
+// bound before the body opened (its binding at an index below `mark` in
+// the function's bindings), or bound outside the function, or nowhere.
+struct WithRef {
+  mark: usize;
+  slot: i32;
+}
+
+function copyWithRefs(refs: Slice<WithRef>): Array<WithRef> {
+  let copied = Array<WithRef>.withCapacity(refs.length);
+  let i: usize = 0;
+  while (i < refs.length) {
+    copied.push(WithRef({ mark: refs[i].mark, slot: refs[i].slot }));
+    i = i + 1;
+  }
+  return copied;
+}
+
+// A name's lookup in an object before its static binding: a `with`
+// statement's (with), or a sloppy direct eval's var object; packed is
+// hops << 8 | slot.
+struct DynamicRef {
+  packed: u32;
+  with: boolean;
+}
+
+const DYNAMIC_LOAD: u32 = 0;
+const DYNAMIC_STORE: u32 = 1;
+const DYNAMIC_CALLEE: u32 = 2;
+const DYNAMIC_DELETE: u32 = 3;
+
 struct Scope {
   bindings: Bindings;
   hasEnv: boolean;
@@ -306,6 +338,9 @@ struct Scope {
   // The environment slot of the function's eval var object (see
   // Compiler.varSlot); -1 when it has none.
   varSlot: i32;
+  // The `with` statements the function was in the body of, innermost
+  // last.
+  withs: Array<WithRef>;
 }
 
 // Where an identifier resolved outside the current function.
@@ -492,6 +527,11 @@ export struct Compiler {
   // The module function the code being compiled belongs to, for
   // `import()` and `import.meta`; below 0 outside a module.
   moduleCode: i32 = -1;
+  // The `with` statements whose bodies are being compiled, innermost
+  // last, and whether any enclosing function was in one when this one
+  // was made.
+  withs: Array<WithRef> = Array<WithRef>();
+  outerWiths: boolean = false;
   // A module's imports and exports as its compile finds them.
   module: ModuleInfo = emptyModuleInfo();
 
@@ -1613,7 +1653,7 @@ export struct Compiler {
     const local = this.findLocal(in parser, n.nameStart, n.nameLength);
     if (local < 0) return -1;
     const index = usize(local);
-    if (this.bindings.locals[index].envSlot >= 0 || this.mustCheck(index)) return -1;
+    if (this.bindings.locals[index].envSlot >= 0 || this.mustCheck(index) || this.localShadowed(index)) return -1;
     return i32(this.bindings.locals[index].reg);
   }
 
@@ -1627,7 +1667,7 @@ export struct Compiler {
     const local = this.findLocal(in parser, n.nameStart, n.nameLength);
     if (local < 0) return -1;
     const index = usize(local);
-    if (this.bindings.locals[index].envSlot >= 0 || this.mustCheck(index) || this.bindings.locals[index].isConst) return -1;
+    if (this.bindings.locals[index].envSlot >= 0 || this.mustCheck(index) || this.bindings.locals[index].isConst || this.localShadowed(index)) return -1;
     return i32(this.bindings.locals[index].reg);
   }
 
@@ -1806,6 +1846,8 @@ export struct Compiler {
   // The declaration a call through the binding `name` inlines, or
   // NO_NODE: the nearest binding of the name decides, here or outside.
   function findInline(inout this, in parser: Parser, nameStart: u32, nameLength: u32): u32 {
+    // A `with` object may hold the name instead.
+    if (this.withShadows(in parser, nameStart, nameLength)) return NO_NODE;
     const local = this.findLocal(in parser, nameStart, nameLength);
     if (local >= 0) return this.bindings.locals[usize(local)].inlineFunction;
     let level: usize = this.outerScopes.length;
@@ -1897,46 +1939,110 @@ export struct Compiler {
     return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false, quiet: false });
   }
 
-  // The eval var objects a name bound nowhere in this function is looked
-  // up in before its static binding, innermost first: this function's,
-  // then each enclosing function's out to the one that binds the name.
-  // Each as its hops and slot, packed hops << 8 | slot.
-  function evalVarRefs(inout this, in parser: Parser, nameStart: u32, nameLength: u32): Array<u32> {
-    let refs = Array<u32>();
-    if (this.varSlot >= 0) refs.push((this.openEnvs << 8) | u32(this.varSlot));
+  // The objects a name is looked up in before its static binding,
+  // innermost first: the `with` objects whose bodies the reference is in
+  // and the name was bound before (or outside the function, or nowhere),
+  // and the eval var objects of the functions out to the one that binds
+  // it -- each function's withs, then its var object.
+  function dynamicRefs(inout this, in parser: Parser, nameStart: u32, nameLength: u32): Array<DynamicRef> {
+    let refs = Array<DynamicRef>();
+    const local = this.findLocal(in parser, nameStart, nameLength);
+    let w = this.withs.length;
+    while (w > 0) {
+      w = w - 1;
+      if (local < 0 || usize(local) < this.withs[w].mark) refs.push(DynamicRef({ packed: (this.openEnvs << 8) | u32(this.withs[w].slot), with: true }));
+    }
+    if (local >= 0) return refs;
+    if (this.varSlot >= 0) refs.push(DynamicRef({ packed: (this.openEnvs << 8) | u32(this.varSlot), with: false }));
     let hops: u32 = this.openEnvs;
     if (this.hasEnv) hops = hops + 1;
     let level: usize = this.outerScopes.length;
     while (level > 0) {
       level = level - 1;
-      if (this.outerScopes[level].bindings.find(in parser, nameStart, nameLength) >= 0) return refs;
+      const found = this.outerScopes[level].bindings.find(in parser, nameStart, nameLength);
+      const at = hops + this.outerScopes[level].openEnvs;
+      let o = this.outerScopes[level].withs.length;
+      while (o > 0) {
+        o = o - 1;
+        if (found < 0 || usize(found) < this.outerScopes[level].withs[o].mark) {
+          refs.push(DynamicRef({ packed: (at << 8) | u32(this.outerScopes[level].withs[o].slot), with: true }));
+          if (level < this.minOuterScope) this.minOuterScope = level;
+        }
+      }
+      if (found >= 0) return refs;
       const slot = this.outerScopes[level].varSlot;
       if (slot >= 0) {
-        refs.push(((hops + this.outerScopes[level].openEnvs) << 8) | u32(slot));
+        refs.push(DynamicRef({ packed: (at << 8) | u32(slot), with: false }));
         if (level < this.minOuterScope) this.minOuterScope = level;
       }
-      hops = hops + this.outerScopes[level].openEnvs;
+      hops = at;
       if (this.outerScopes[level].hasEnv) hops = hops + 1;
     }
     return refs;
   }
 
-  // Look a name up in the eval var objects around it (loadEvalVar into
-  // `reg`, or storeEvalVar from it): each lookup that finds the binding
-  // jumps past the static access emitted next, by the jumps returned.
-  function emitEvalVarAccess(inout this, in parser: Parser, inout runtime: Runtime, nameStart: u32, nameLength: u32, op: Op, reg: u8): Array<u32> {
+  // Whether a `with` object may hold the name where it is read.
+  function withShadows(inout this, in parser: Parser, nameStart: u32, nameLength: u32): boolean {
+    if (this.withs.length == 0 && !this.outerWiths) return false;
+    const refs = this.dynamicRefs(in parser, nameStart, nameLength);
+    let i: usize = 0;
+    while (i < refs.length) {
+      if (refs[i].with) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // Whether a local is bound before a `with` body being compiled opened,
+  // so that the with object comes first.
+  function localShadowed(index: usize): boolean {
+    let w: usize = 0;
+    while (w < this.withs.length) {
+      if (index < this.withs[w].mark) return true;
+      w = w + 1;
+    }
+    return false;
+  }
+
+  // Look a name up in the objects around it (dynamicRefs): each lookup
+  // that finds the binding reads (into `reg`), writes (from it), takes it
+  // as a callee with the object as receiver, or deletes it, and jumps past
+  // the static access emitted next, by the jumps returned.
+  function emitDynamicAccess(inout this, in parser: Parser, inout runtime: Runtime, nameStart: u32, nameLength: u32, mode: u32, reg: u8): Array<u32> {
     let jumps = Array<u32>();
-    const refs = this.evalVarRefs(in parser, nameStart, nameLength);
+    if (this.withs.length == 0 && !this.outerWiths && this.varSlot < 0 && !this.anyOuterVarSlot()) return jumps;
+    const refs = this.dynamicRefs(in parser, nameStart, nameLength);
     if (refs.length == 0) return jumps;
     const named = this.nameConstOf(in parser, inout runtime, nameStart, nameLength);
     let i: usize = 0;
     while (i < refs.length) {
-      this.emit(instABC(op, reg, u8(refs[i] >> 8), u8(refs[i] & 0xFF)));
-      this.emit(instAU16(Op.halt, 0, named));
-      jumps.push(this.emit(instAI16(Op.halt, 0, 0)));
+      let op = Op.halt;
+      if (refs[i].with) {
+        if (mode == DYNAMIC_LOAD) op = Op.loadWithVar;
+        if (mode == DYNAMIC_STORE) op = Op.storeWithVar;
+        if (mode == DYNAMIC_CALLEE) op = Op.loadWithCallee;
+        if (mode == DYNAMIC_DELETE) op = Op.deleteWithVar;
+      } else {
+        if (mode == DYNAMIC_LOAD || mode == DYNAMIC_CALLEE) op = Op.loadEvalVar;
+        if (mode == DYNAMIC_STORE) op = Op.storeEvalVar;
+      }
+      if (op != Op.halt) {
+        this.emit(instABC(op, reg, u8(refs[i].packed >> 8), u8(refs[i].packed & 0xFF)));
+        this.emit(instAU16(Op.halt, this.strict ? 1 : 0, named));
+        jumps.push(this.emit(instAI16(Op.halt, 0, 0)));
+      }
       i = i + 1;
     }
     return jumps;
+  }
+
+  function anyOuterVarSlot(): boolean {
+    let level: usize = 0;
+    while (level < this.outerScopes.length) {
+      if (this.outerScopes[level].varSlot >= 0) return true;
+      level = level + 1;
+    }
+    return false;
   }
 
   function patchJumps(inout this, in jumps: Array<u32>): void {
@@ -2586,7 +2692,7 @@ export struct Compiler {
   function emitClassFunction(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32, role: u32, fieldCount: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount, noModuleSteps, this.moduleCode);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, role, fieldCount, noModuleSteps, this.moduleCode, in this.withs);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -2750,6 +2856,7 @@ export struct Compiler {
   // without a check -- captured, here or outside, initialized, not
   // constant -- as hops << 8 | slot; -1 otherwise.
   function envPlace(inout this, in parser: Parser, nameStart: u32, nameLength: u32): i32 {
+    if (this.withShadows(in parser, nameStart, nameLength)) return -1;
     const local = this.findLocal(in parser, nameStart, nameLength);
     if (local >= 0) {
       const index = usize(local);
@@ -2758,21 +2865,77 @@ export struct Compiler {
       return i32(this.openEnvs - this.bindings.locals[index].envDepth) << 8 | slot;
     }
     // A binding a sloppy direct eval may have added comes first.
-    const refs = this.evalVarRefs(in parser, nameStart, nameLength);
+    const refs = this.dynamicRefs(in parser, nameStart, nameLength);
     if (refs.length > 0) return -1;
     const outer = this.findOuter(in parser, nameStart, nameLength);
     if (!outer.found || outer.slot < 0 || outer.slot > 255 || outer.needsCheck || outer.isConst) return -1;
     return i32(outer.hops) << 8 | outer.slot;
   }
 
+  // A read-modify-write of a name a `with` object may hold (`x += 1`,
+  // `x++`, `x ||= y`) resolves the name once: the read leaves the object
+  // it found, or undefined, in the register after the value's, which
+  // the write goes back through (storeThroughHolder).
+  function loadWithHolder(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode): u8 {
+    const current = this.allocReg();
+    const holder = this.allocReg();
+    this.emit(instA(Op.loadUndefined, holder));
+    this.emitIdentLoad(in parser, inout runtime, target, current, DYNAMIC_CALLEE);
+    return current;
+  }
+
+  function storeThroughHolder(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode, value: u8, holder: u8): void {
+    const named = this.nameConstOf(in parser, inout runtime, target.nameStart, target.nameLength);
+    this.emit(instAB(Op.storeWithHolder, value, holder));
+    this.emit(instAU16(Op.halt, this.strict ? 1 : 0, named));
+    let jumps = Array<u32>();
+    jumps.push(this.emit(instAI16(Op.halt, 0, 0)));
+    this.storeIdent(in parser, inout runtime, target, value);
+    this.patchJumps(in jumps);
+  }
+
+  // Read a name into `dst`: from the objects around it first (a `with`
+  // object, an eval var object; DYNAMIC_CALLEE also writes a `with`
+  // object to dst + 1 as the receiver), else from its binding -- this
+  // function's, an enclosing one's, or a global.
+  function emitIdentLoad(inout this, in parser: Parser, inout runtime: Runtime, n: AstNode, dst: u8, mode: u32): void {
+    const jumps = this.emitDynamicAccess(in parser, inout runtime, n.nameStart, n.nameLength, mode, dst);
+    const local = this.findLocal(in parser, n.nameStart, n.nameLength);
+    if (local >= 0) {
+      this.loadLocal(usize(local), dst);
+      this.patchJumps(in jumps);
+      return;
+    }
+    const outer = this.findOuter(in parser, n.nameStart, n.nameLength);
+    if (outer.found) {
+      if (outer.slot < 0) {
+        // The capture scan should have moved it into an environment.
+        this.hadError = true;
+        return;
+      }
+      this.emit(this.envSlotInst(outer.imported ? Op.importBind : Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
+      if (outer.needsCheck) {
+        const named = this.nameConstOf(in parser, inout runtime, n.nameStart, n.nameLength);
+        this.emit(instAU16(Op.throwIfHole, dst, named));
+      }
+    } else if (n.nameLength == 9 && parser.sliceEquals(n.nameStart, 9, "undefined")) {
+      // The global `undefined` can be neither written nor deleted.
+      this.emit(instA(Op.loadUndefined, dst));
+    } else {
+      const slot = runtime.globalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
+      this.emit(instAU16(Op.loadGlobal, dst, slot));
+    }
+    this.patchJumps(in jumps);
+  }
+
   function storeIdent(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode, value: u8): void {
+    const jumps = this.emitDynamicAccess(in parser, inout runtime, target.nameStart, target.nameLength, DYNAMIC_STORE, value);
     const local = this.findLocal(in parser, target.nameStart, target.nameLength);
     if (local >= 0) {
       this.storeLocal(usize(local), value);
-      return;
+    } else {
+      this.storeOuter(in parser, inout runtime, target, value);
     }
-    const jumps = this.emitEvalVarAccess(in parser, inout runtime, target.nameStart, target.nameLength, Op.storeEvalVar, value);
-    this.storeOuter(in parser, inout runtime, target, value);
     this.patchJumps(in jumps);
   }
 
@@ -3248,7 +3411,7 @@ export struct Compiler {
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
-    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0, noModuleSteps, this.moduleCode);
+    const compiled = compileFunction(in parser, inout runtime, node, in this.outerScopes, this.bindings, hasEnv, this.openEnvs, this.isArrow, this.thisEnvSlot, this.varSlot, strict, nameStart, nameLength, namePrefix, 0, 0, noModuleSteps, this.moduleCode, in this.withs);
     if (compiled.index < 0) {
       this.hadError = true;
       return;
@@ -3551,33 +3714,8 @@ export struct Compiler {
       return dst;
     }
     if (k == NodeKind.identExpr) {
-      const local = this.findLocal(in parser, n.nameStart, n.nameLength);
       const dst = hintReg >= 0 ? u8(hintReg) : this.allocReg();
-      if (local >= 0) {
-        this.loadLocal(usize(local), dst);
-        return dst;
-      }
-      const jumps = this.emitEvalVarAccess(in parser, inout runtime, n.nameStart, n.nameLength, Op.loadEvalVar, dst);
-      const outer = this.findOuter(in parser, n.nameStart, n.nameLength);
-      if (outer.found) {
-        if (outer.slot < 0) {
-          // The capture scan should have moved it into an environment.
-          this.hadError = true;
-          return dst;
-        }
-        this.emit(this.envSlotInst(outer.imported ? Op.importBind : Op.loadEnvSlot, dst, outer.hops, i32(outer.slot)));
-        if (outer.needsCheck) {
-          const named = this.nameConstOf(in parser, inout runtime, n.nameStart, n.nameLength);
-          this.emit(instAU16(Op.throwIfHole, dst, named));
-        }
-      } else if (n.nameLength == 9 && parser.sliceEquals(n.nameStart, 9, "undefined")) {
-        // The global `undefined` can be neither written nor deleted.
-        this.emit(instA(Op.loadUndefined, dst));
-      } else {
-        const slot = runtime.globalSlotBytes(globalNameBytes(in parser, n.nameStart, n.nameLength));
-        this.emit(instAU16(Op.loadGlobal, dst, slot));
-      }
-      this.patchJumps(in jumps);
+      this.emitIdentLoad(in parser, inout runtime, n, dst, DYNAMIC_LOAD);
       return dst;
     }
     if (k == NodeKind.templatePartExpr) {
@@ -4363,7 +4501,13 @@ export struct Compiler {
       }
       // ToNumeric(old) is `old - 0` for the numbers and strings the engine
       // has; a postfix expression's value is that numeric old value.
-      const loaded = this.compileExpr(in parser, inout runtime, n.left);
+      const shadowed = this.withShadows(in parser, target.nameStart, target.nameLength);
+      let loaded: u8 = 0;
+      if (shadowed) {
+        loaded = this.loadWithHolder(in parser, inout runtime, target);
+      } else {
+        loaded = this.compileExpr(in parser, inout runtime, n.left);
+      }
       const zero = this.allocReg();
       this.emit(instAI16(Op.loadInt, zero, 0));
       const old = this.allocReg();
@@ -4372,7 +4516,11 @@ export struct Compiler {
       this.emit(instAI16(Op.loadInt, one, 1));
       const updated = this.allocReg();
       this.emit(instABC(n.op == TokenKind.plusPlus ? Op.add : Op.sub, updated, old, one));
-      this.storeIdent(in parser, inout runtime, target, updated);
+      if (shadowed) {
+        this.storeThroughHolder(in parser, inout runtime, target, updated, loaded + 1);
+      } else {
+        this.storeIdent(in parser, inout runtime, target, updated);
+      }
       return k == NodeKind.postfix ? old : updated;
     }
     if (k == NodeKind.unary && n.op == TokenKind.kwDelete) {
@@ -4394,9 +4542,12 @@ export struct Compiler {
         this.emit(instABC(Op.deleteElem, dst, object, key));
         return dst;
       }
-      // A binding cannot be deleted; anything else evaluates and yields true.
+      // A binding cannot be deleted, but a `with` object's property can;
+      // anything else evaluates and yields true.
       if (target.kind == NodeKind.identExpr) {
+        const jumps = this.emitDynamicAccess(in parser, inout runtime, target.nameStart, target.nameLength, DYNAMIC_DELETE, dst);
         this.emit(instA(Op.loadFalse, dst));
+        this.patchJumps(in jumps);
         return dst;
       }
       this.compileExpr(in parser, inout runtime, operandNode);
@@ -4418,7 +4569,7 @@ export struct Compiler {
               && !this.findOuter(in parser, target.nameStart, target.nameLength).found) {
             const slot = runtime.globalSlotBytes(globalNameBytes(in parser, target.nameStart, target.nameLength));
             const src = this.allocReg();
-            const jumps = this.emitEvalVarAccess(in parser, inout runtime, target.nameStart, target.nameLength, Op.loadEvalVar, src);
+            const jumps = this.emitDynamicAccess(in parser, inout runtime, target.nameStart, target.nameLength, DYNAMIC_LOAD, src);
             this.emit(instAU16(Op.loadGlobalOrUndefined, src, slot));
             this.patchJumps(in jumps);
             const dst = this.allocReg();
@@ -4468,13 +4619,23 @@ export struct Compiler {
       if (n.op == TokenKind.pipePipeEq) jumpOp = Op.jmpIfTrue;
       if (n.op == TokenKind.questionQuestionEq) jumpOp = Op.jmpIfNotNullish;
       if (target.kind == NodeKind.identExpr) {
-        const current = this.compileExpr(in parser, inout runtime, n.left);
+        const shadowed = this.withShadows(in parser, target.nameStart, target.nameLength);
+        let current: u8 = 0;
+        if (shadowed) {
+          current = this.loadWithHolder(in parser, inout runtime, target);
+        } else {
+          current = this.compileExpr(in parser, inout runtime, n.left);
+        }
         const dst = this.allocReg();
         this.emit(instAB(Op.mov, dst, current));
         const skip = this.emit(instAI16(jumpOp, dst, 0));
         const value = this.compileExpr(in parser, inout runtime, n.right);
         this.emit(instAB(Op.mov, dst, value));
-        this.storeIdent(in parser, inout runtime, target, dst);
+        if (shadowed) {
+          this.storeThroughHolder(in parser, inout runtime, target, dst, current + 1);
+        } else {
+          this.storeIdent(in parser, inout runtime, target, dst);
+        }
         this.patchJump(skip);
         return dst;
       }
@@ -4556,7 +4717,13 @@ export struct Compiler {
           }
           // Compound assignment: current value, operator, right operand,
           // the right read in place (the operator follows at once).
-          const current = this.compileExpr(in parser, inout runtime, n.left);
+          const shadowed = this.withShadows(in parser, target.nameStart, target.nameLength);
+          let current: u8 = 0;
+          if (shadowed) {
+            current = this.loadWithHolder(in parser, inout runtime, target);
+          } else {
+            current = this.compileExpr(in parser, inout runtime, n.left);
+          }
           const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
           const op = compoundOp(n.op);
           if (op == Op.halt) {
@@ -4565,6 +4732,10 @@ export struct Compiler {
           }
           value = this.allocReg();
           this.emit(instABC(op, value, current, right));
+          if (shadowed) {
+            this.storeThroughHolder(in parser, inout runtime, target, value, current + 1);
+            return value;
+          }
         }
         this.storeIdent(in parser, inout runtime, target, value);
         return value;
@@ -4773,6 +4944,34 @@ export struct Compiler {
       while (j < argCount) {
         if (mayAssign(in parser, parser.ast.child(node, j))) assignFree = false;
         j = j + 1;
+      }
+      // A name a `with` object may hold: called with the object as its
+      // receiver when it does.
+      if (callee.kind == NodeKind.identExpr && this.withShadows(in parser, callee.nameStart, callee.nameLength)) {
+        const base = this.allocReg();
+        const receiver = this.allocReg();
+        let slot: u32 = 0;
+        while (slot < argCount) {
+          this.allocReg();
+          slot = slot + 1;
+        }
+        this.emit(instA(Op.loadUndefined, receiver));
+        this.emitIdentLoad(in parser, inout runtime, callee, base, DYNAMIC_CALLEE);
+        this.nextReg = base + u8(2 + argCount);
+        let w: u32 = 0;
+        while (w < argCount) {
+          const argument = parser.ast.child(node, w);
+          const target = base + u8(2 + w);
+          this.targetReg = i32(target);
+          const argReg = this.compileExpr(in parser, inout runtime, argument);
+          if (argReg != target) this.emit(instAB(Op.mov, target, argReg));
+          this.nextReg = base + u8(2 + argCount);
+          w = w + 1;
+        }
+        const result = hintReg >= 0 ? u8(hintReg) : base;
+        this.emit(instABCD(Op.methodInvoke, result, base, receiver, u8(argCount)));
+        this.nextReg = base + 1;
+        return result;
       }
       const localCallee = this.operandLocalReg(in parser, n.left);
       if (localCallee >= 0 && assignFree) {
@@ -5422,18 +5621,25 @@ export struct Compiler {
           if (decl.left != NO_NODE) {
             this.nameNext(decl.nameStart, decl.nameLength, 0);
             const index = usize(local);
-            if (this.bindings.locals[index].envSlot < 0 && !this.mustCheck(index) && !this.bindings.locals[index].isConst) {
+            // Inside a `with` body the initializer assigns through the
+            // object when it has the name.
+            const shadowed = this.localShadowed(index);
+            if (this.bindings.locals[index].envSlot < 0 && !this.mustCheck(index) && !this.bindings.locals[index].isConst && !shadowed) {
               this.targetReg = i32(this.bindings.locals[index].reg);
             }
             // A binding in the environment is stored at once: its
             // initializer is read in place.
             let value: u8 = 0;
-            if (this.bindings.locals[index].envSlot >= 0) {
+            if (this.bindings.locals[index].envSlot >= 0 && !shadowed) {
               value = this.compileOperand(in parser, inout runtime, decl.left, NO_NODE);
             } else {
               value = this.compileExpr(in parser, inout runtime, decl.left);
             }
-            this.storeLocal(index, value);
+            if (shadowed) {
+              this.storeIdent(in parser, inout runtime, decl, value);
+            } else {
+              this.storeLocal(index, value);
+            }
           }
         } else if (n.op == TokenKind.kwVar) {
           // Script-mode `var` is a global binding.
@@ -5441,7 +5647,9 @@ export struct Compiler {
           if (decl.left != NO_NODE) {
             this.nameNext(decl.nameStart, decl.nameLength, 0);
             const value = this.compileExpr(in parser, inout runtime, decl.left);
+            const jumps = this.emitDynamicAccess(in parser, inout runtime, decl.nameStart, decl.nameLength, DYNAMIC_STORE, value);
             this.emit(instAU16(Op.defineGlobal, value, slot));
+            this.patchJumps(in jumps);
           } else {
             const undefinedReg = this.allocReg();
             this.emit(instA(Op.loadUndefined, undefinedReg));
@@ -5804,6 +6012,25 @@ export struct Compiler {
       if (scoped) this.closeScope(in mark);
       return;
     }
+    if (k == NodeKind.withStmt) {
+      // `with (object) body`: the object, ToObject'd, goes to a slot of
+      // the function's environment, and every name in the body bound
+      // before it opened (or outside the function, or nowhere) is looked
+      // up in it first (dynamicRefs) -- the body's own functions' names
+      // too, through their outer scopes.
+      const value = this.compileExpr(in parser, inout runtime, n.left);
+      const object = this.allocReg();
+      this.emit(instAB(Op.withObject, object, value));
+      this.resetCompletion();
+      const slot = i32(this.envSize);
+      this.envSize = this.envSize + 1;
+      this.emit(this.envSlotInst(Op.storeEnvSlot, object, u8(this.openEnvs), slot));
+      this.resetTemps();
+      this.withs.push(WithRef({ mark: this.bindings.locals.length, slot: slot }));
+      this.compileStmt(in parser, inout runtime, n.right);
+      const left = this.withs.pop();
+      return;
+    }
     if (isStatementKind(k)) {
       // Not yet ported.
       this.hadError = true;
@@ -6131,9 +6358,27 @@ function mayAssign(in parser: Parser, node: u32): boolean {
   return false;
 }
 
+// Whether `node` holds a `with` statement of its own function's code:
+// functions and classes inside it are code of their own.
+function containsWith(in parser: Parser, node: u32): boolean {
+  if (node == NO_NODE) return false;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.withStmt) return true;
+  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.arrowFunc || k == NodeKind.methodDef
+      || k == NodeKind.classDecl || k == NodeKind.classExpr || k == NodeKind.staticBlock) return false;
+  if (containsWith(in parser, n.left) || containsWith(in parser, n.right) || containsWith(in parser, n.third)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (containsWith(in parser, parser.ast.child(node, i))) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
 // Kinds that are statements but not yet compiled.
 function isStatementKind(k: NodeKind): boolean {
-  return k == NodeKind.withStmt || k == NodeKind.importDecl || k == NodeKind.exportDecl;
+  return k == NodeKind.importDecl || k == NodeKind.exportDecl;
 }
 
 function compoundOp(kind: TokenKind): Op {
@@ -6338,7 +6583,7 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
-function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32, steps: ModuleSteps, enclosingModule: i32): CompiledFunction {
+function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32, steps: ModuleSteps, enclosingModule: i32, in enclosingWiths: Array<WithRef>): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
   // name the parser attached to a method or accessor does not.
@@ -6347,12 +6592,15 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // each its bindings by reference, with what the function was when this
   // one was made in it.
   let scopes = Array<Scope>.withCapacity(enclosingScopes.length + 1);
+  let inWiths = false;
   let i: usize = 0;
   while (i < enclosingScopes.length) {
-    scopes.push(Scope({ bindings: enclosingScopes[i].bindings, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs, isArrow: enclosingScopes[i].isArrow, thisSlot: enclosingScopes[i].thisSlot, varSlot: enclosingScopes[i].varSlot }));
+    scopes.push(Scope({ bindings: enclosingScopes[i].bindings, hasEnv: enclosingScopes[i].hasEnv, openEnvs: enclosingScopes[i].openEnvs, isArrow: enclosingScopes[i].isArrow, thisSlot: enclosingScopes[i].thisSlot, varSlot: enclosingScopes[i].varSlot, withs: copyWithRefs(enclosingScopes[i].withs) }));
+    if (enclosingScopes[i].withs.length > 0) inWiths = true;
     i = i + 1;
   }
-  scopes.push(Scope({ bindings: enclosingBindings, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs, isArrow: enclosingIsArrow, thisSlot: enclosingThisSlot, varSlot: enclosingVarSlot }));
+  scopes.push(Scope({ bindings: enclosingBindings, hasEnv: enclosingHasEnv, openEnvs: enclosingOpenEnvs, isArrow: enclosingIsArrow, thisSlot: enclosingThisSlot, varSlot: enclosingVarSlot, withs: copyWithRefs(enclosingWiths) }));
+  if (enclosingWiths.length > 0) inWiths = true;
   const scopeCount = scopes.length;
   const failed = CompiledFunction({ index: -1, minOuterScope: scopeCount });
   let compiler = Compiler({
@@ -6414,6 +6662,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   const patternNamesEnd = compiler.bindings.locals.length;
   const index = runtime.reserveFunction();
   compiler.moduleCode = role == ROLE_MODULE ? i32(index) : enclosingModule;
+  compiler.outerWiths = inWiths;
   compiler.spillFrom = SPILL_FROM;
   // A module's bindings all live in its environment, its imports first.
   if (role == ROLE_MODULE) {
@@ -6454,11 +6703,10 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // A body that may spill keeps an environment, its size patched in once
   // the body has compiled.
   const spilling = role == ROLE_MODULE || (n.left != NO_NODE && compiler.bodyMaySpill(in parser, n.left));
-  if (spilling) {
-    compiler.hasEnv = true;
-  } else {
-    compiler.spillFrom = 0;
-  }
+  // A `with` statement's object lives in the function's environment.
+  const withBody = parser.sawWith && n.left != NO_NODE && containsWith(in parser, n.left);
+  if (spilling || withBody) compiler.hasEnv = true;
+  if (!spilling) compiler.spillFrom = 0;
   // With a default anywhere in the list, the parameters bind in order:
   // each is a hole until its own turn, so a default that reads a later
   // parameter (or its own) throws. A named parameter's binding then
@@ -6496,7 +6744,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // The environment first, then the captured parameters into it (in
   // order, later, when the list has expressions).
   if (compiler.hasEnv) {
-    if (spilling) compiler.envAt = i32(compiler.code.length);
+    if (spilling || withBody) compiler.envAt = i32(compiler.code.length);
     compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
     p = 0;
     while (p < paramCount) {
@@ -7806,7 +8054,8 @@ export function compileModule(in parser: Parser, root: u32, inout runtime: Runti
   if (moduleFunction == NO_NODE) return CompiledModule({ index: -1, info: emptyModuleInfo() });
   runtime.globalsFull = false;
   let scopes = Array<Scope>();
-  let compiled = compileFunction(in parser, inout runtime, moduleFunction, in scopes, newBindings(Array<Local>()), false, 0, false, -1, -1, true, 0, 0, 0, ROLE_MODULE, 0, moduleSteps, -1);
+  const noWiths = Array<WithRef>();
+  let compiled = compileFunction(in parser, inout runtime, moduleFunction, in scopes, newBindings(Array<Local>()), false, 0, false, -1, -1, true, 0, 0, 0, ROLE_MODULE, 0, moduleSteps, -1, in noWiths);
   if (runtime.globalsFull) return CompiledModule({ index: -1, info: emptyModuleInfo() });
   const info = replace(inout compiled.module, emptyModuleInfo());
   return CompiledModule({ index: compiled.index, info: move info });
@@ -7841,6 +8090,11 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
   if (spilling) {
     compiler.hasEnv = true;
     compiler.spillFrom = SPILL_FROM;
+    compiler.envAt = i32(compiler.code.length);
+  }
+  // A `with` statement's object lives in the script's environment.
+  if (parser.sawWith && containsWith(in parser, root)) {
+    compiler.hasEnv = true;
     compiler.envAt = i32(compiler.code.length);
   }
   if (compiler.hasEnv) compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));
@@ -7917,7 +8171,7 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
     const thisSlot = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].thisSlot;
     const varSlot = runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].varSlot;
     if (varSlot >= 0) varLevel = i32(level);
-    scopes.push(Scope({ bindings: newBindings(move names), hasEnv: hasEnv, openEnvs: openEnvs, isArrow: isArrow, thisSlot: thisSlot, varSlot: varSlot }));
+    scopes.push(Scope({ bindings: newBindings(move names), hasEnv: hasEnv, openEnvs: openEnvs, isArrow: isArrow, thisSlot: thisSlot, varSlot: varSlot, withs: Array<WithRef>() }));
     level = level + 1;
   }
   const scopeCount = scopes.length;
@@ -7959,6 +8213,10 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
   if (spilling) {
     compiler.hasEnv = true;
     compiler.spillFrom = SPILL_FROM;
+    compiler.envAt = i32(compiler.code.length);
+  }
+  if (parser.sawWith && containsWith(in parser, root)) {
+    compiler.hasEnv = true;
     compiler.envAt = i32(compiler.code.length);
   }
   if (compiler.hasEnv) compiler.emit(instU16(Op.newEnv, u16(compiler.envSize)));

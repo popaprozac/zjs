@@ -2447,6 +2447,49 @@ export struct Runtime {
   // [[GetOwnProperty]] for every value: objects (with the global object's
   // bindings and a String wrapper's characters), arrays, strings, and
   // the virtual properties of functions.
+  // An object environment's HasBinding for `with`: the object has the
+  // name, and its @@unscopables, if an object, does not hide it. A throw
+  // (a getter, a proxy-less trap of the engine's) is left pending.
+  function withHasBinding(inout this, object: Value, key: Value): boolean {
+    if (!this.isObjectLike(object)) return false;
+    if (!this.hasProperty(object, key)) return false;
+    if (this.pendingThrow) return false;
+    const unscopables = this.getProperty(object, this.symbolUnscopables);
+    if (this.pendingThrow) return false;
+    if (!this.isObjectLike(unscopables)) return true;
+    const hidden = this.getProperty(unscopables, key);
+    if (this.pendingThrow) return false;
+    return !this.toBooleanValue(hidden);
+  }
+
+  // GetBindingValue's and SetMutableBinding's check in strict code
+  // (`strict` 1): the property may have gone since HasBinding found it
+  // (an @@unscopables getter deleted it), a ReferenceError then. A throw
+  // is left pending, and the answer is true so that the access is done.
+  function withStillBound(inout this, object: Value, key: Value, strict: u8): boolean {
+    if (strict == 0 || this.pendingThrow) return !this.pendingThrow;
+    if (this.hasProperty(object, key)) return true;
+    if (this.pendingThrow) return true;
+    let message = this.heap.stringUtf8(asCell(this.toStringValue(key)));
+    const notDefined: String = " is not defined";
+    appendBytes(inout message, bytesOf(in notDefined));
+    const error = this.makeError(ERROR_KIND_REFERENCE, move message);
+    this.raise(error);
+    return true;
+  }
+
+  // A `with` binding's write: refused silently in sloppy code, a
+  // TypeError in strict.
+  function withSet(inout this, object: Value, key: Value, value: Value, strict: u8): void {
+    if (this.pendingThrow) return;
+    const stored = this.setProperty(object, key, value);
+    if (!stored && strict != 0 && !this.pendingThrow) {
+      const message: String = "Cannot assign to read only property";
+      const error = this.typeError(in message);
+      this.raise(error);
+    }
+  }
+
   // The module function an `import()` or `import.meta` names (its
   // operand, a function value; undefined in a script): its index, or -1.
   function referrerCode(value: Value): i32 {
@@ -7518,6 +7561,69 @@ export struct Runtime {
             this.heap.setSlot(holder, u32(own), value);
             ip = usize(i64(ip) + i64(jumpOffset(skip)));
           }
+        }
+      }
+      withObject => {
+        const made = this.toObjectValue(this.reg(base, inst.b));
+        this.setReg(base, inst.a, made);
+      }
+      loadWithVar => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        const skip = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + 1];
+        ip = ip + 2;
+        const object = this.heap.slot(this.envOut(frameIndex, inst.b), u32(inst.c));
+        const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+        if (this.withHasBinding(object, key) && this.withStillBound(object, key, named.a)) {
+          const value = this.getProperty(object, key);
+          this.setReg(base, inst.a, value);
+          ip = usize(i64(ip) + i64(jumpOffset(skip)));
+        }
+      }
+      storeWithVar => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        const skip = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + 1];
+        ip = ip + 2;
+        const object = this.heap.slot(this.envOut(frameIndex, inst.b), u32(inst.c));
+        const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+        if (this.withHasBinding(object, key) && this.withStillBound(object, key, named.a)) {
+          this.withSet(object, key, this.reg(base, inst.a), named.a);
+          ip = usize(i64(ip) + i64(jumpOffset(skip)));
+        }
+      }
+      storeWithHolder => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        const skip = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + 1];
+        ip = ip + 2;
+        const holder = this.reg(base, inst.b);
+        if (this.isObjectLike(holder)) {
+          const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+          if (this.withStillBound(holder, key, named.a)) this.withSet(holder, key, this.reg(base, inst.a), named.a);
+          ip = usize(i64(ip) + i64(jumpOffset(skip)));
+        }
+      }
+      loadWithCallee => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        const skip = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + 1];
+        ip = ip + 2;
+        const object = this.heap.slot(this.envOut(frameIndex, inst.b), u32(inst.c));
+        const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+        if (this.withHasBinding(object, key) && this.withStillBound(object, key, named.a)) {
+          const value = this.getProperty(object, key);
+          this.setReg(base, inst.a, value);
+          this.setReg(base, inst.a + 1, object);
+          ip = usize(i64(ip) + i64(jumpOffset(skip)));
+        }
+      }
+      deleteWithVar => {
+        const named = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip];
+        const skip = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + 1];
+        ip = ip + 2;
+        const object = this.heap.slot(this.envOut(frameIndex, inst.b), u32(inst.c));
+        const key = this.functions[usize(fi)].constants[usize(bcU16(named))];
+        if (this.withHasBinding(object, key)) {
+          const deleted = this.deleteProperty(object, key);
+          this.setReg(base, inst.a, booleanValue(deleted));
+          ip = usize(i64(ip) + i64(jumpOffset(skip)));
         }
       }
       declareEvalVar => {

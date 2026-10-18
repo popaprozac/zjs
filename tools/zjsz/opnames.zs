@@ -193,6 +193,12 @@ export function opName(op: Op): String {
     directEval => "directEval";
     loadEvalVar => "loadEvalVar";
     storeEvalVar => "storeEvalVar";
+    withObject => "withObject";
+    loadWithVar => "loadWithVar";
+    storeWithVar => "storeWithVar";
+    loadWithCallee => "loadWithCallee";
+    deleteWithVar => "deleteWithVar";
+    storeWithHolder => "storeWithHolder";
     declareEvalVar => "declareEvalVar";
     toStringOp => "toStringOp";
     concatN => "concatN";

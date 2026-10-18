@@ -200,8 +200,8 @@ expectation cases and the test262 runner's `--aot` use.
   own file, so its relative specifiers resolve. With
   `expressions/dynamic-import` and `import.meta`, and skipping only the
   proposals (import defer, attributes, text and bytes imports, source
-  phase), 1,592 of 1,599 runs pass: 6 need `with`, which the compiler
-  does not have, and 1 `Promise.withResolvers`.
+  phase), 1,598 of 1,599 runs pass; the one left needs
+  `Promise.withResolvers`.
 - Expectation cases `module-live-bindings`, `module-cycles`,
   `module-reexports`, `module-namespace-object`, and
   `module-top-level-await`, recorded from node, each run three times

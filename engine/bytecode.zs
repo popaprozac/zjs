@@ -273,6 +273,25 @@ export enum Op {
   // declaredGlobals) become defined: the start of the code, where
   // GlobalDeclarationInstantiation makes them, not its compile.
   declareGlobals,
+  // `with (b)`: a = ToObject(b), a TypeError for null and undefined.
+  withObject,
+  // A name inside a `with` body is looked up in its object first: the
+  // object in b hops, slot c, of the environment chain, the name the
+  // constant in the next word's bc, and the word after it a jump past
+  // the static access that follows, taken when the object has the name
+  // and @@unscopables does not hide it. loadWithVar: a = the property.
+  // storeWithVar: the property set to a. loadWithCallee: a = the
+  // property, a + 1 = the object, the call's receiver. deleteWithVar:
+  // a = whether the property was deleted. The name word's a is 1 in
+  // strict code, where a property gone since the lookup is a
+  // ReferenceError. storeWithHolder: a read-modify-write's write, to the
+  // object its read found (b, a register: undefined when none did) --
+  // the property set to a and the jump taken when b holds one.
+  loadWithVar,
+  storeWithVar,
+  loadWithCallee,
+  deleteWithVar,
+  storeWithHolder,
 }
 
 export struct Inst {
@@ -547,6 +566,12 @@ export function opCode(op: Op): i32 {
     loadElemProp => 196;
     loadElemImm => 197;
     declareGlobals => 198;
+    withObject => 199;
+    loadWithVar => 200;
+    storeWithVar => 201;
+    loadWithCallee => 202;
+    deleteWithVar => 203;
+    storeWithHolder => 204;
   };
 }
 
@@ -753,6 +778,12 @@ export function opsByCode(): Array<Op> {
   ops.push(Op.loadElemProp);
   ops.push(Op.loadElemImm);
   ops.push(Op.declareGlobals);
+  ops.push(Op.withObject);
+  ops.push(Op.loadWithVar);
+  ops.push(Op.storeWithVar);
+  ops.push(Op.loadWithCallee);
+  ops.push(Op.deleteWithVar);
+  ops.push(Op.storeWithHolder);
   return ops;
 }
 
@@ -760,7 +791,7 @@ export function opsByCode(): Array<Op> {
 // operands, and what each does. Moves whenever any of them changes, so a
 // file from another engine is refused rather than misread; the test
 // below pins it beside the opcode count, which a new opcode changes.
-export const INSTRUCTION_SET_VERSION: u32 = 3;
+export const INSTRUCTION_SET_VERSION: u32 = 4;
 
 // One property access site's inline cache, kept per property name of a
 // function: the receiver's hidden class and where the property was
@@ -925,8 +956,8 @@ test "u16 and i16 operands round-trip through b and c" {
 test "the instruction set version moves with the opcodes" {
   // A new opcode lands here first: move INSTRUCTION_SET_VERSION with it.
   const ops = opsByCode();
-  expect(ops.length).toEqual(199);
-  expect(INSTRUCTION_SET_VERSION).toEqual(3);
+  expect(ops.length).toEqual(205);
+  expect(INSTRUCTION_SET_VERSION).toEqual(4);
   let code: usize = 0;
   while (code < ops.length) {
     expect(opCode(ops[code])).toEqual(i32(code));
