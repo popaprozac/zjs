@@ -132,8 +132,10 @@ export struct Parser {
   // as an async generator (docs/modules.md).
   topLevelAwait: boolean;
   // How many tokens the source cut into; a template's expression parses
-  // in a window of tokens appended past it.
+  // in a window of tokens appended past it, cut from the source up to
+  // windowEnd (the source's end outside one).
   mainLimit: usize;
+  windowEnd: u32;
   // Where the source spells `arguments`, past the program's own text: the
   // name of the binding a function makes when only direct eval code in
   // it can read it.
@@ -210,13 +212,14 @@ export struct Parser {
   // `await /re/` and `yield /re/`: the source was cut into tokens before
   // anything knew the keyword is an operator here, so a `/` after it was
   // taken for division. The rest is cut again from the `/`, a regular
-  // expression first. (Inside a template's window the cut stands.)
+  // expression first -- the rest of the source, or inside a template's
+  // `${}` the rest of its window.
   function recutRegexAfterOperator(inout this): void {
     const k = this.peekKind();
     if (k != TokenKind.slash && k != TokenKind.slashEq) return;
-    if (this.tokenLimit != this.mainLimit) return;
+    const inMain = this.tokenLimit == this.mainLimit;
     const start = this.peek().start;
-    const rest = tokenizeFrom(sliceBytes(in this.source, 0, this.source.length), start);
+    const rest = tokenizeFrom(sliceBytes(in this.source, 0, usize(this.windowEnd)), start);
     let tokens = Array<Token>.withCapacity(this.pos + rest.length);
     let i: usize = 0;
     while (i < this.pos) {
@@ -230,7 +233,7 @@ export struct Parser {
     }
     this.tokens = move tokens;
     this.tokenLimit = this.tokens.length;
-    this.mainLimit = this.tokenLimit;
+    if (inMain) this.mainLimit = this.tokenLimit;
   }
 
   function hasNewlineBetween(a: u32, b: u32): boolean {
@@ -2862,6 +2865,8 @@ export struct Parser {
     const savedPos = this.pos;
     const savedLimit = this.tokenLimit;
     const savedNoIn = this.noIn;
+    const savedEnd = this.windowEnd;
+    this.windowEnd = end;
     // Append the slice's tokens, shifted to absolute offsets, and parse
     // within that window. The appended tokens stay behind harmlessly.
     const base = this.tokens.length;
@@ -2878,6 +2883,7 @@ export struct Parser {
     this.pos = savedPos;
     this.tokenLimit = savedLimit;
     this.noIn = savedNoIn;
+    this.windowEnd = savedEnd;
     return expr;
   }
 
@@ -3850,6 +3856,7 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     sawWith: false,
     topLevelAwait: false,
     mainLimit: tokenCount,
+    windowEnd: sourceLength,
   });
 
   // A top-level "use strict" prologue makes the whole script strict;

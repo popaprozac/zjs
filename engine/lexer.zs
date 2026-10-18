@@ -590,6 +590,25 @@ export struct Lexer {
     return this.tokN(TokenKind.invalid, start);
   }
 
+  // Whether the word just before the cursor (past spaces) is a keyword
+  // after which an expression begins, so that a `/` opens a regular
+  // expression: not a property name (`o.in / 2`).
+  function operatorWordBefore(): boolean {
+    let end = this.pos;
+    while (end > 0 && (this.source[end - 1] == B_SPACE || this.source[end - 1] == B_TAB || this.source[end - 1] == B_LF || this.source[end - 1] == B_CR)) { end = end - 1; }
+    let start = end;
+    while (start > 0 && isIdPart(this.source[start - 1])) { start = start - 1; }
+    if (start == end || (start > 0 && this.source[start - 1] == B_DOT)) return false;
+    const length = end - start;
+    if (length == 5) return matchesKeyword(in this.source, start, length, "await") || matchesKeyword(in this.source, start, length, "yield") || matchesKeyword(in this.source, start, length, "throw");
+    if (length == 6) return matchesKeyword(in this.source, start, length, "typeof") || matchesKeyword(in this.source, start, length, "delete") || matchesKeyword(in this.source, start, length, "return");
+    if (length == 4) return matchesKeyword(in this.source, start, length, "void") || matchesKeyword(in this.source, start, length, "case") || matchesKeyword(in this.source, start, length, "else");
+    if (length == 3) return matchesKeyword(in this.source, start, length, "new");
+    if (length == 2) return matchesKeyword(in this.source, start, length, "in") || matchesKeyword(in this.source, start, length, "do");
+    if (length == 10) return matchesKeyword(in this.source, start, length, "instanceof");
+    return false;
+  }
+
   function scanTemplateSubstitution(inout this): boolean {
     let depth: u32 = 1;
     // Last significant byte consumed: decides whether `/` opens a regex
@@ -624,11 +643,15 @@ export struct Lexer {
           }
           continue;
         }
-        const isValueEnd =
+        const isWordEnd =
           (prevSig >= B_a && prevSig <= B_z)
           || (prevSig >= B_UPPER_A && prevSig <= B_UPPER_Z)
           || (prevSig >= B_0 && prevSig <= B_9)
-          || prevSig == B_UNDERSCORE || prevSig == B_DOLLAR
+          || prevSig == B_UNDERSCORE || prevSig == B_DOLLAR;
+        // A word ends a value unless it is a keyword an expression
+        // follows: `${await /re/}`, `${typeof /re/}`.
+        const isValueEnd =
+          (isWordEnd && !this.operatorWordBefore())
           || prevSig == B_RPAREN || prevSig == B_RBRACKET
           || prevSig == B_SQUOTE || prevSig == B_DQUOTE
           || prevSig == B_BACKTICK || prevSig == B_RBRACE
