@@ -1,0 +1,24 @@
+set
+param
+2
+0,1
+{"value":2,"writable":true,"enumerable":false,"configurable":true}
+true
+true
+false
+false
+false
+{"0":"set","1":"param"}
+[object Arguments]
+true
+set,param
+{"value":"set","writable":true,"enumerable":true,"configurable":true}
+1,1
+strict callee TypeError
+2
+1|1
+1
+defined,defined
+second
+1,4
+true

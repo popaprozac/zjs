@@ -158,6 +158,7 @@ export function installIteration(inout runtime: Runtime): void {
   const valuesText: String = "values";
   const valuesFn = runtime.defineMethod(arrayProto, in valuesText, arrayValues, 0);
   runtime.heap.objectDefine(arrayProto, iteratorKey, cellValue(valuesFn), PROP_METHOD);
+  runtime.arrayValuesFn = valuesFn;
   const keysText: String = "keys";
   runtime.defineMethod(arrayProto, in keysText, arrayKeys, 0);
   const entriesText: String = "entries";

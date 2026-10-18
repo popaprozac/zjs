@@ -6700,6 +6700,24 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   compiler.scanParameterCaptures(in parser, node, patternNamesEnd);
   if (n.left != NO_NODE) compiler.scanCaptures(in parser, n.left);
+  // A sloppy function with simple parameters that reads `arguments` has a
+  // mapped arguments object, whose elements are its parameters: they live
+  // in the environment, where the object reads and writes them.
+  const mappedArguments = argumentsIndex >= 0 && !compiler.strict && simpleParameters(in parser, node);
+  if (mappedArguments) {
+    p = 0;
+    while (p < paramCount) {
+      const param = compiler.bindings.locals[usize(p)];
+      if (param.nameLength > 0 && param.envSlot < 0) {
+        const envSlot = i32(compiler.envSize);
+        compiler.bindings.locals[usize(p)].envSlot = envSlot;
+        compiler.capturedNames.push(Local({ nameStart: param.nameStart, nameLength: param.nameLength, reg: 0, envSlot: envSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+        compiler.envSize = compiler.envSize + 1;
+      }
+      p = p + 1;
+    }
+    compiler.hasEnv = true;
+  }
   // A body that may spill keeps an environment, its size patched in once
   // the body has compiled.
   const spilling = role == ROLE_MODULE || (n.left != NO_NODE && compiler.bodyMaySpill(in parser, n.left));
@@ -6771,7 +6789,30 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   if (argumentsIndex >= 0) {
     const built = compiler.allocReg();
-    compiler.emit(instA(Op.buildArguments, built));
+    if (mappedArguments) {
+      // Each parameter's slot follows, in a word of its own; a name a
+      // later parameter repeats maps nothing.
+      compiler.emit(instABC(Op.buildArguments, built, u8(paramCount), 1));
+      p = 0;
+      while (p < paramCount) {
+        const local = compiler.bindings.locals[usize(p)];
+        let repeated = false;
+        let later = p + 1;
+        while (later < paramCount && !repeated) {
+          const other = compiler.bindings.locals[usize(later)];
+          repeated = other.nameLength == local.nameLength && parser.slicesEqual(other.nameStart, other.nameLength, local.nameStart, local.nameLength);
+          later = later + 1;
+        }
+        if (repeated || local.envSlot < 0) {
+          compiler.emit(instAU16(Op.halt, 0, 0));
+        } else {
+          compiler.emit(instAU16(Op.halt, 1, u16(local.envSlot)));
+        }
+        p = p + 1;
+      }
+    } else {
+      compiler.emit(instABC(Op.buildArguments, built, 0, 0));
+    }
     compiler.storeLocal(usize(argumentsIndex), built);
     compiler.resetTemps();
   }
@@ -7793,6 +7834,20 @@ function chainHasOptional(in parser: Parser, node: u32): boolean {
     current = n.left;
   }
   return false;
+}
+
+// Whether a parameter list is simple: names alone, no default, rest,
+// or pattern.
+function simpleParameters(in parser: Parser, fn: u32): boolean {
+  const n = parser.ast.node(fn);
+  let p: u32 = 0;
+  while (p < n.childrenCount) {
+    const paramIndex = parser.ast.child(fn, p);
+    const param = parser.ast.node(paramIndex);
+    if (param.kind != NodeKind.identExpr || param.nameLength == 0 || param.right != NO_NODE || parameterPattern(in parser, paramIndex) != NO_NODE) return false;
+    p = p + 1;
+  }
+  return true;
 }
 
 // The position of the first `arguments` read in a body, looking into

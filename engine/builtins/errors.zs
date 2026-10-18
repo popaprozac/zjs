@@ -123,7 +123,9 @@ function objectToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   } else if (runtime.isCallable(thisValue)) {
     tag = "Function";
   } else if (isCell(thisValue) && asCell(thisValue) != 0 && runtime.heap.isArray(asCell(thisValue))) {
-    tag = runtime.isArgumentsObject(asCell(thisValue)) ? "Arguments" : "Array";
+    tag = "Array";
+  } else if (isCell(thisValue) && asCell(thisValue) != 0 && runtime.isArgumentsObject(asCell(thisValue))) {
+    tag = "Arguments";
   } else if (runtime.isStringValue(thisValue)) {
     tag = "String";
   } else if (isNumber(thisValue)) {

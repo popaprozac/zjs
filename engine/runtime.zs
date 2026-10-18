@@ -115,6 +115,10 @@ export const HOST_IMPORT_REJECTED: usize = 15;
 // A dynamic import's link and evaluation, run as a job once its graph
 // has loaded.
 export const HOST_IMPORT_CONTINUE: usize = 16;
+// A mapped arguments object's element for a parameter: read and written
+// through the parameter's environment slot.
+export const HOST_ARGUMENTS_GET: usize = 17;
+export const HOST_ARGUMENTS_SET: usize = 18;
 
 // What a function's [[Prototype]] chain answered to a [[Set]].
 // How far past an array's slots a write may land and still grow them
@@ -633,6 +637,11 @@ export struct Runtime {
   scriptKey: u32 = 0;
   // How many module evaluations have turned async: their order.
   moduleAsyncOrder: u32 = 0;
+  // %Array.prototype.values%, an arguments object's @@iterator (0 until
+  // the iteration builtins install it), and %ThrowTypeError%, a strict
+  // arguments object's `callee` (made the first time one is).
+  arrayValuesFn: u32 = 0;
+  throwTypeErrorFn: u32 = 0;
   modules: Array<ModuleRecord> = Array<ModuleRecord>();
   // A compile asked for a global slot past the last (globalSlotAtom).
   globalsFull: boolean = false;
@@ -2497,6 +2506,125 @@ export struct Runtime {
     return i32(this.heap.functionIndex(asCell(value)));
   }
 
+  // Whether an accessor's getter is a mapped arguments element's.
+  function isMappedGetter(getter: Value): boolean {
+    if (!isCell(getter) || asCell(getter) == 0 || !this.heap.isHostFunction(asCell(getter))) return false;
+    return this.sharedHosts.length > HOST_ARGUMENTS_GET && this.heap.hostFunctionId(asCell(getter)) == this.sharedHosts[HOST_ARGUMENTS_GET];
+  }
+
+  function mappedArgumentValue(getter: Value): Value {
+    const data = asCell(this.heap.slot(asCell(getter), 0));
+    return this.heap.slot(asCell(this.heap.slot(data, 0)), u32(asInt32(this.heap.slot(data, 1))));
+  }
+
+  // [[DefineOwnProperty]] of a mapped arguments element (an accessor
+  // whose getter is isMappedGetter's), as the element it presents: a
+  // value is written to the parameter too; an accessor, or making it
+  // read-only, ends the mapping, the property then an ordinary one.
+  function defineMappedArgument(inout this, handle: u32, atom: u32, current: PropertyDescriptor, desc: DescriptorInput): boolean {
+    if (!this.descriptorCompatible(cellValue(handle), current, desc)) return false;
+    const slot = this.heap.objectFindSlot(handle, atom);
+    const accessor = this.heap.slot(handle, u32(slot));
+    const kept = current.attr & (PROP_ENUMERABLE | PROP_CONFIGURABLE);
+    let attr = kept;
+    if (desc.hasEnumerable) attr = desc.enumerable ? attr | PROP_ENUMERABLE : attr & PROP_CONFIGURABLE;
+    if (desc.hasConfigurable) attr = desc.configurable ? attr | PROP_CONFIGURABLE : attr & PROP_ENUMERABLE;
+    if (desc.hasGetter || desc.hasSetter) {
+      const getter = desc.hasGetter ? desc.getter : undefinedValue();
+      const setter = desc.hasSetter ? desc.setter : undefinedValue();
+      const made = this.heap.allocateAccessor(getter, setter);
+      this.heap.objectDefine(handle, atom, cellValue(made), attr | PROP_ACCESSOR);
+      return true;
+    }
+    const getter = this.heap.slot(asCell(accessor), 0);
+    let value = this.mappedArgumentValue(getter);
+    if (desc.hasValue) {
+      value = desc.value;
+      const data = asCell(this.heap.slot(asCell(getter), 0));
+      this.heap.setSlot(asCell(this.heap.slot(data, 0)), u32(asInt32(this.heap.slot(data, 1))), value);
+    }
+    if (desc.hasWritable && !desc.writable) {
+      this.heap.objectDefine(handle, atom, value, attr);
+      return true;
+    }
+    this.heap.objectDefine(handle, atom, accessor, attr | PROP_ACCESSOR);
+    return true;
+  }
+
+  // An arguments object (CreateMappedArgumentsObject and
+  // CreateUnmappedArgumentsObject): an ordinary object of the frame's
+  // arguments, their `length`, %Array.prototype.values% as @@iterator,
+  // and `callee` -- the function for a mapped one, %ThrowTypeError% for
+  // an unmapped one. A mapped one's first elements, one a parameter, are
+  // read and written through the parameter's slot in `env`; `slots`
+  // gives each such parameter's slot, or -1 where the element is not
+  // mapped (a name a later parameter repeats).
+  function makeArguments(inout this, frameIndex: usize, mapped: boolean, env: u32, in slots: Array<i32>): Value {
+    const argsBase = this.frames[frameIndex].argsBase;
+    const argc = this.frames[frameIndex].argc;
+    const objectProto = this.objectProto;
+    const object = this.heap.allocateObject(objectProto);
+    this.pushTempRoot(cellValue(object));
+    const marker = this.atomArgumentsMarker;
+    this.heap.objectDefine(object, marker, booleanValue(true), PROP_NONE);
+    let index: u32 = 0;
+    while (index < argc) {
+      const passed = this.stackAt(usize(argsBase + index));
+      const key = this.propertyKey(int32Value(i32(index)));
+      if (mapped && usize(index) < slots.length && slots[usize(index)] >= 0) {
+        const data = this.heap.allocateArray(2);
+        this.heap.setSlot(data, 0, cellValue(env));
+        this.heap.setSlot(data, 1, int32Value(slots[usize(index)]));
+        this.pushTempRoot(cellValue(data));
+        const getter = this.newSharedHost(HOST_ARGUMENTS_GET, cellValue(data), 0);
+        this.pushTempRoot(cellValue(getter));
+        const setter = this.newSharedHost(HOST_ARGUMENTS_SET, cellValue(data), 1);
+        const accessor = this.heap.allocateAccessor(cellValue(getter), cellValue(setter));
+        this.heap.objectDefine(object, key, cellValue(accessor), PROP_ENUMERABLE | PROP_CONFIGURABLE | PROP_ACCESSOR);
+        this.popTempRoot();
+        this.popTempRoot();
+      } else {
+        this.heap.objectDefine(object, key, passed, PROP_DEFAULT);
+      }
+      index = index + 1;
+    }
+    const atomLength = this.atomLength;
+    this.heap.objectDefine(object, atomLength, int32Value(i32(argc)), PROP_WRITABLE | PROP_CONFIGURABLE);
+    if (this.arrayValuesFn != 0) {
+      const iteratorKey = this.propertyKey(this.symbolIterator);
+      this.heap.objectDefine(object, iteratorKey, cellValue(this.arrayValuesFn), PROP_WRITABLE | PROP_CONFIGURABLE);
+    }
+    const calleeText: String = "callee";
+    const calleeKey = this.atomOf(in calleeText);
+    if (mapped) {
+      this.heap.objectDefine(object, calleeKey, this.frames[frameIndex].callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+    } else {
+      const thrower = this.throwTypeError();
+      const accessor = this.heap.allocateAccessor(cellValue(thrower), cellValue(thrower));
+      this.heap.objectDefine(object, calleeKey, cellValue(accessor), PROP_ACCESSOR);
+    }
+    this.popTempRoot();
+    return cellValue(object);
+  }
+
+  // %ThrowTypeError%, made once: frozen, no name, length 0.
+  function throwTypeError(inout this): u32 {
+    if (this.throwTypeErrorFn != 0) return this.throwTypeErrorFn;
+    const made = this.defineHostFunctionBytes(throwTypeErrorFunction, undefinedValue(), 0, Array<u8>());
+    this.throwTypeErrorFn = made;
+    const lengthKey = cellValue(this.atomLength);
+    let locked = emptyDescriptorInput();
+    locked.hasConfigurable = true;
+    locked.configurable = false;
+    locked.hasWritable = true;
+    locked.writable = false;
+    const lockedLength = this.defineOwnProperty(cellValue(made), lengthKey, locked);
+    const nameText: String = "name";
+    const lockedName = this.defineOwnProperty(cellValue(made), cellValue(this.atomOf(in nameText)), locked);
+    this.preventExtensions(cellValue(made));
+    return made;
+  }
+
   // A module namespace's export read through its getter's data (the
   // holder of the binding, its slot, and the export's name, made in
   // engine/modules.zs): the binding's value, or a ReferenceError left
@@ -2533,6 +2661,12 @@ export struct Runtime {
           const value = this.namespaceBinding(asCell(own.getter));
           if (this.pendingThrow) return absentProperty();
           return dataProperty(value, PROP_WRITABLE | PROP_ENUMERABLE);
+        }
+        if ((own.attr & PROP_ACCESSOR) != 0 && this.isMappedGetter(own.getter)) {
+          // A mapped arguments element: a writable data property holding
+          // its parameter's value.
+          const held = this.mappedArgumentValue(own.getter);
+          return dataProperty(held, PROP_WRITABLE | (own.attr & (PROP_ENUMERABLE | PROP_CONFIGURABLE)));
         }
         return own;
       }
@@ -2670,6 +2804,13 @@ export struct Runtime {
     const atom = this.propertyKey(key);
     const isAccessorInput = desc.hasGetter || desc.hasSetter;
     const current = this.getOwnDescriptor(object, key);
+    if (tag == TAG_OBJECT && current.present && (current.attr & PROP_ACCESSOR) == 0 && (current.attr & PROP_WRITABLE) != 0) {
+      const mappedSlot = this.heap.objectFindSlot(handle, atom);
+      if (mappedSlot >= 0 && (this.heap.attrOf(handle, u32(mappedSlot)) & PROP_ACCESSOR) != 0) {
+        const held = this.heap.slot(handle, u32(mappedSlot));
+        if (this.isMappedGetter(this.heap.slot(asCell(held), 0))) return this.defineMappedArgument(handle, atom, current, desc);
+      }
+    }
     // A module namespace's export: nothing about it changes; a definition
     // that asks for what it already is succeeds.
     if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0 && !this.isSymbolValue(key)) {
@@ -3279,12 +3420,11 @@ export struct Runtime {
     return true;
   }
 
-  // Whether an array cell was built as a function's arguments object.
+  // Whether an object is an arguments object (it carries the hidden
+  // marker makeArguments gives it).
   function isArgumentsObject(handle: u32): boolean {
-    if (!this.heap.isArray(handle)) return false;
-    const bag = this.heap.linkOf(handle);
-    if (bag == 0) return false;
-    return this.heap.objectFindSlot(bag, this.atomArgumentsMarker) >= 0;
+    if (!this.heap.isObject(handle)) return false;
+    return this.heap.objectFindSlot(handle, this.atomArgumentsMarker) >= 0;
   }
 
   // Whether an atom is one of the engine's hidden keys.
@@ -5409,6 +5549,12 @@ export struct Runtime {
       this.heap.markHandle(nameAtom);
       index = index + 1;
     }
+    // Intrinsics held only here: %ThrowTypeError% and, once a program
+    // has replaced Array.prototype.values, the one arguments objects use.
+    const throwTypeErrorFn = this.throwTypeErrorFn;
+    this.heap.markHandle(throwTypeErrorFn);
+    const arrayValuesFn = this.arrayValuesFn;
+    this.heap.markHandle(arrayValuesFn);
     this.markModules();
   }
 
@@ -7369,21 +7515,21 @@ export struct Runtime {
         this.setReg(base, inst.c, booleanValue(true));
       }
       buildArguments => {
-        // The frame's actual arguments as an array, marked so that
-        // Object.prototype.toString reports Arguments.
-        const argsBase = this.frames[frameIndex].argsBase;
-        const argc = this.frames[frameIndex].argc;
-        const array = this.heap.allocateArray(argc);
-        let index: u32 = 0;
-        while (index < argc) {
-          const passed = this.stackAt(usize(argsBase + index));
-          this.heap.setSlot(array, index, passed);
-          index = index + 1;
+        // The frame's arguments object: mapped when c is 1, its first b
+        // elements then the parameters whose environment slots follow,
+        // one word each (bc), a of 0 marking an element not mapped.
+        const mapped = inst.c == 1;
+        const count = usize(inst.b);
+        let slots = Array<i32>.withCapacity(count);
+        let w: usize = 0;
+        while (w < count) {
+          const word = this.codeSegment[usize(this.functions[usize(fi)].codeStart) + ip + w];
+          slots.push(word.a == 0 ? -1 : i32(bcU16(word)));
+          w = w + 1;
         }
-        const bag = this.arrayBag(array);
-        const marker = this.atomArgumentsMarker;
-        this.heap.objectDefine(bag, marker, booleanValue(true), PROP_NONE);
-        this.setReg(base, inst.a, cellValue(array));
+        ip = ip + count;
+        const made = this.makeArguments(frameIndex, mapped, this.frames[frameIndex].env, in slots);
+        this.setReg(base, inst.a, made);
       }
       buildRestArgs => {
         // The actual arguments past the first b, as an array.
@@ -9641,6 +9787,8 @@ export function createRuntime(): Runtime {
   runtime.codeSegment.push(instA(Op.loadUndefined, 0));
   runtime.codeSegment.push(instA(Op.returnOp, 0));
   runtime.installIntrinsics();
+  runtime.registerSharedHost(HOST_ARGUMENTS_GET, mappedArgumentGet);
+  runtime.registerSharedHost(HOST_ARGUMENTS_SET, mappedArgumentSet);
   runtime.registerSharedHost(HOST_PROMISE_RESOLVE, promiseResolveFunction);
   runtime.registerSharedHost(HOST_PROMISE_REJECT, promiseRejectFunction);
   runtime.registerSharedHost(HOST_ASYNC_FROM_SYNC_UNWRAP, asyncFromSyncUnwrap);
@@ -10403,6 +10551,27 @@ test "display decoding replaces each maximal invalid subpart with U+FFFD" {
 // are ignored. `callee`'s bound data is the shared [promise, resolved].
 // %Function.prototype% called: any arguments, undefined back.
 function functionPrototypeCall(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return undefinedValue();
+}
+
+// A mapped arguments element's getter and setter: the parameter's
+// environment and slot are the function's data.
+function mappedArgumentGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const data = asCell(runtime.heap.slot(callee, 0));
+  return runtime.heap.slot(asCell(runtime.heap.slot(data, 0)), u32(asInt32(runtime.heap.slot(data, 1))));
+}
+
+function mappedArgumentSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const data = asCell(runtime.heap.slot(callee, 0));
+  runtime.heap.setSlot(asCell(runtime.heap.slot(data, 0)), u32(asInt32(runtime.heap.slot(data, 1))), runtime.argument(argsBase, argc, 0));
+  return undefinedValue();
+}
+
+// %ThrowTypeError%: a strict arguments object's `callee`, got or set.
+function throwTypeErrorFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const message: String = "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them";
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
   return undefinedValue();
 }
 
