@@ -7114,7 +7114,12 @@ export struct Runtime {
       }
       loadGlobalOrUndefined => {
         const slot = usize(bcU16(inst));
-        const operand4 = this.globals[slot].defined ? this.globals[slot].value : undefinedValue();
+        let operand4 = undefinedValue();
+        if (this.globals[slot].defined) {
+          operand4 = this.globals[slot].value;
+        } else {
+          operand4 = this.loadGlobalSlow(slot, true);
+        }
         this.setReg(base, inst.a, operand4);
       }
       generatorStart => {
@@ -8223,29 +8228,24 @@ export struct Runtime {
             // Sloppy code's write to a read-only global (NaN, Infinity,
             // undefined) leaves it as it was.
             const slot = usize(bcU16(inst));
-            if (!this.globals[slot].defined || (this.globals[slot].attr & PROP_WRITABLE) != 0) {
+            if (!this.globals[slot].defined) {
+              this.storeGlobalSlow(slot, this.reg(base, inst.a));
+            } else if ((this.globals[slot].attr & PROP_WRITABLE) != 0) {
               this.globals[slot].value = this.reg(base, inst.a);
-              this.globals[slot].defined = true;
             }
           }
           loadGlobal => {
             const slot = usize(bcU16(inst));
             if (!this.globals[slot].defined) {
-              // A property set on the global object counts as a global.
-              const atom = this.globals[slot].atom;
-              const globalObject = this.globalObject;
-              const own = this.heap.objectFindSlot(globalObject, atom);
-              if (own >= 0 && !isDeleted(this.heap.slot(globalObject, u32(own)))) {
-                const operand3 = this.heap.slot(globalObject, u32(own));
-                this.setReg(base, inst.a, operand3);
-              } else {
-                let message = this.heap.stringUtf8(atom);
-                const notDefined: String = " is not defined";
-                appendBytes(inout message, bytesOf(in notDefined));
-                thrown = this.makeError(ERROR_KIND_REFERENCE, move message);
+              // A name no declaration made: the global object's property,
+              // its own or inherited, or a ReferenceError.
+              const found = this.loadGlobalSlow(slot, false);
+              if (this.pendingThrow) {
+                thrown = this.takePending();
                 throwing = true;
                 break;
               }
+              this.setReg(base, inst.a, found);
             } else {
               const operand3 = this.globals[slot].value;
               this.setReg(base, inst.a, operand3);
@@ -9695,6 +9695,45 @@ export struct Runtime {
     }
     this.lastResult = result;
     return RunResult({ isThrow: false, value: result });
+  }
+
+  // A global name no declaration made (its slot not defined): the global
+  // object's property, its own or inherited (Object.prototype's
+  // `toString`), read as [[Get]] reads it, so an accessor runs; absent, a
+  // ReferenceError left pending, or undefined for `typeof`.
+  function loadGlobalSlow(inout this, slot: usize, orUndefined: boolean): Value {
+    const key = cellValue(this.globals[slot].atom);
+    const globalObject = cellValue(this.globalObject);
+    if (!this.hasProperty(globalObject, key)) {
+      if (this.pendingThrow || orUndefined) return undefinedValue();
+      let message = this.heap.stringUtf8(this.globals[slot].atom);
+      const notDefined: String = " is not defined";
+      appendBytes(inout message, bytesOf(in notDefined));
+      const error = this.makeError(ERROR_KIND_REFERENCE, move message);
+      this.raise(error);
+      return undefinedValue();
+    }
+    return this.getProperty(globalObject, key);
+  }
+
+  // Sloppy code's write to a global name no declaration made: through the
+  // global object's own property where it has one, or a setter on its
+  // [[Prototype]] chain (a read-only property there refuses it); else the
+  // name becomes a global.
+  function storeGlobalSlow(inout this, slot: usize, value: Value): void {
+    const atom = this.globals[slot].atom;
+    const handle = this.globalObject;
+    if (this.heap.objectFindSlot(handle, atom) >= 0) {
+      const stored = this.setProperty(cellValue(handle), cellValue(atom), value);
+      return;
+    }
+    const proto = this.heap.objectProto(handle);
+    if (proto != 0) {
+      const step = this.setThroughChain(proto, atom, value, cellValue(handle));
+      if (this.pendingThrow || step == SET_DONE || step == SET_REFUSED) return;
+    }
+    this.globals[slot].value = value;
+    this.globals[slot].defined = true;
   }
 
   // Strict code's assignment to a name bound nowhere but, perhaps, in
