@@ -306,6 +306,10 @@ export struct Lexer {
   function nextToken(inout this): Token {
     const token = this.nextTokenInner();
     this.expectRegex = expectRegexAfter(token.kind);
+    // A name after `.` or `?.` is a property's, a keyword's spelling or
+    // not (`o.in / 2`): a value, so a `/` after it divides.
+    const afterDot = this.prevKind == TokenKind.dot || this.prevKind == TokenKind.questionDot;
+    if (afterDot && token.kind != TokenKind.lParen && token.kind != TokenKind.lBracket) this.expectRegex = false;
     this.prevKind = token.kind;
     return token;
   }
