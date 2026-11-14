@@ -231,6 +231,7 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
   if (gcNursery >= 0) runtime.heap.nurseryCells = u32(gcNursery);
   runtime.heap.collectThreshold = runtime.heap.nurseryCells == 0 ? runtime.heap.majorThreshold : runtime.heap.nurseryCells;
   runtime.gcTiming = gcStats;
+  runtime.heap.phaseTiming = gcStats;
   installConsole(inout runtime);
   if (exposeGc) {
     const gcText: String = "gc";
@@ -440,6 +441,24 @@ function reportGcStats(in runtime: Runtime): void {
   appendDecimal(inout line, u32(truncateDouble(runtime.heap.bytesInUse() / 1024.0)));
   line.push(10);
   writeError(in line);
+  let phases = Array<u8>();
+  appendText(inout phases, "zjsz-gc-phases-us:");
+  let phase: usize = 0;
+  while (phase < 11) {
+    phases.push(32);
+    appendDecimal(inout phases, microseconds(runtime.heap.phaseNs[phase]));
+    phase = phase + 1;
+  }
+  appendText(inout phases, " minors ");
+  appendDecimal(inout phases, runtime.heap.minorCollections);
+  appendText(inout phases, " young-seen ");
+  appendDecimal(inout phases, clampCount(runtime.heap.youngSeen));
+  appendText(inout phases, " young-survived ");
+  appendDecimal(inout phases, clampCount(runtime.heap.youngSurvived));
+  appendText(inout phases, " remembered ");
+  appendDecimal(inout phases, clampCount(runtime.heap.rememberedSeen));
+  phases.push(10);
+  writeError(in phases);
 }
 
 // Storage figures after a run and before anything is torn down, on

@@ -27,6 +27,7 @@
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, isAsciiBytes, isNarrowUnits, unitsToLatin1 } from "./text.zs";
 import { expect } from "std/test";
 import { replace } from "std/memory";
+import native from "./builtins/clock.h";
 import { Value, undefinedValue, deletedValue, isDeleted, cellValue, asCell, isCell, int32Value, asInt32, isInt32, isNumber, asDouble } from "./value.zs";
 
 // Tags mirror the reference engine (src/value.zc) so the two implementations
@@ -372,6 +373,12 @@ export struct Heap {
   // dead atoms, freed once the runtime has dropped them from its table.
   deadYoung: Array<u32>;
   deadAtoms: Array<u32>;
+  // Young cells that own something outside the arenas (a string's
+  // buffer, a table, a dictionary, element attributes) or are atoms: the
+  // only dead cells a minor sweep has to do anything for.
+  youngOwners: Array<u32>;
+  // A minor sweep's scratch: where in the free list its survivors were.
+  youngGaps: Array<u32>;
   tailBase: usize;
   byteTailBase: usize;
   // Set while a minor collection marks.
@@ -389,6 +396,27 @@ export struct Heap {
   majorCells: u32;
   majorSlots: usize;
   minorCollections: u32;
+  // Set by a minor collection most of whose young cells survived: while
+  // that is so, tracing the young only finds what a full collection will
+  // trace again, so this many of the next young generations are made old
+  // as they stand, untraced (promoteYoung), before one is traced again to
+  // see whether it still holds.
+  tenureSkips: u32;
+  tenured: u32;
+  // Measurement only: nanoseconds per collector phase, and young cells
+  // seen, survived, and remembered holders traced by minor collections.
+  phaseTiming: boolean;
+  phaseNs: Array<f64>;
+  youngSeen: f64;
+  youngSurvived: f64;
+  rememberedSeen: f64;
+
+  function stamp(inout this, phase: usize, since: f64): f64 {
+    if (!this.phaseTiming) return 0.0;
+    const now = native.zjs_clock_mono_ns();
+    this.phaseNs[phase] = this.phaseNs[phase] + (now - since);
+    return now;
+  }
 
   // These are methods rather than free functions for a concrete reason.
   // Z rejects `inout` on a place expression -- `allocate(inout
@@ -624,6 +652,7 @@ export struct Heap {
   // into a second arena, which the allocator would keep resident after
   // the first was freed.
   function sweep(inout this): void {
+    let clock = this.stamp(11, 0.0);
     const count = u32(this.headerCount);
     const liveSlots = this.markedSlots;
     const survivors = this.markedCells;
@@ -655,16 +684,15 @@ export struct Heap {
     // lets a later sweep cut it back. Each survivor's slot range is
     // counted into its bucket of the arena for the slide.
     const listBelow: u32 = cutting ? top : count;
+    // The free list is made again from the table: a minor sweep leaves a
+    // dead cell's header as it was, so only the marks say what is free.
+    this.freeHandleCount = 0;
     let handle: u32 = count - 1;
     while (handle >= 1) {
       const header = this.cellHeader(handle);
       const tag = header.tag;
-      if (tag == TAG_FREE) {
-        handle = handle - 1;
-        continue;
-      }
-      if (!header.marked) {
-        this.releaseCell(handle, tag);
+      if (tag == TAG_FREE || !header.marked) {
+        if (tag != TAG_FREE) this.releaseCell(handle, tag);
         // A cell above the highest survivor is cut off with the table,
         // not listed.
         if (handle < listBelow) this.listFree(handle);
@@ -682,9 +710,12 @@ export struct Heap {
       handle = handle - 1;
     }
     if (cutting) this.trimHandleTable(top);
+    clock = this.stamp(8, clock);
     this.slideSlots(inout counts, inout order, ranges);
+    clock = this.stamp(9, clock);
     this.smallLiveBytes = liveBytes;
     if (compactBytes) this.smallLiveBytes = this.slideBytes(inout counts, inout order);
+    clock = this.stamp(10, clock);
     // The scratch is kept for the next collection unless a burst grew it
     // far past what the heap needs.
     if (counts.capacity <= (this.slots.length >> usize(SLIDE_SLOT_SHIFT)) * 4 + LOG_RETAIN_ENTRIES) {
@@ -701,6 +732,7 @@ export struct Heap {
     this.collectThreshold = this.nurseryCells == 0 ? nextThreshold : this.nurseryCells;
     this.majorCells = survivors;
     this.majorSlots = liveSlots;
+    this.tenureSkips = 0;
     this.promotedCells = 0;
     this.promotedSlots = 0;
     this.endCycle();
@@ -861,12 +893,26 @@ export struct Heap {
     if (this.deadYoung.capacity > usize(this.nurseryCells) + LOG_RETAIN_ENTRIES) {
       const unusedDead = replace(inout this.deadYoung, Array<u32>());
     }
+    if (this.youngGaps.capacity > LOG_RETAIN_ENTRIES) {
+      const unusedGaps = replace(inout this.youngGaps, Array<u32>());
+    }
+    if (this.youngOwners.capacity > LOG_RETAIN_ENTRIES) {
+      const unusedOwners = replace(inout this.youngOwners, Array<u32>());
+    } else {
+      this.youngOwners.clear();
+    }
     this.minorCollection = false;
     this.tailBase = this.slots.length;
     this.byteTailBase = this.smallBytes.length;
     this.cycleFreeCount = this.freeHandleCount;
     this.cycleExtent = this.headerCount;
     this.collections = this.collections + 1;
+  }
+
+  // A cell has come to own something a sweep must give back, or become
+  // an atom: listed while it is young.
+  function ownYoung(inout this, handle: u32): void {
+    if (!this.cellHeader(handle).marked) this.youngOwners.push(handle);
   }
 
   // Give back what a dead cell owns outside its slots, and free its
@@ -954,33 +1000,53 @@ export struct Heap {
     // The young cells, as youngHandle names them, written out.
     const fromList = this.cycleFreeCount - this.freeHandleCount;
     const young = fromList + this.headerCount - this.cycleExtent;
+    const listTop = this.cycleFreeCount;
+    // The dead that own something give it back; a dead atom waits, its
+    // header as it was, until the runtime has taken it out of its table
+    // (see finishMinor), listed once however often it is listed here: a
+    // string has no slots to have moved, so `remembered` can say so.
+    let owner: usize = 0;
+    while (owner < this.youngOwners.length) {
+      const owning = this.youngOwners[owner];
+      owner = owner + 1;
+      const header = this.cellHeader(owning);
+      if (header.marked || header.tag == TAG_FREE) continue;
+      if (header.tag == TAG_STRING && (header.flags & FLAG_INTERNED) != 0) {
+        if (!header.remembered) {
+          this.headers[usize(owning)].remembered = true;
+          this.deadAtoms.push(owning);
+        }
+        continue;
+      }
+      this.releaseCell(owning, header.tag);
+    }
+    this.youngGaps.clear();
     let at: usize = 0;
     while (at < young) {
       let handle: u32 = 0;
       if (at < fromList) {
-        handle = this.freeHandles[this.cycleFreeCount - 1 - at];
+        // A dead cell that came off the free list is still written
+        // there, above the list's top, and its header stays as it is
+        // until the handle is taken again: nothing is done for it. On to
+        // the next survivor, whose place in the list is a gap.
+        while (at < fromList) {
+          handle = unsafe { select this.freeHandles.uncheckedAt(listTop - 1 - at); };
+          if (this.cellHeader(handle).marked) break;
+          at = at + 1;
+        }
+        if (at == fromList) continue;
+        this.youngGaps.push(u32(listTop - 1 - at));
       } else {
         handle = u32(this.cycleExtent + at - fromList);
+        if (!this.cellHeader(handle).marked) {
+          this.deadYoung.push(handle);
+          at = at + 1;
+          continue;
+        }
       }
       at = at + 1;
       const header = this.cellHeader(handle);
       const tag = header.tag;
-      if (!header.marked) {
-        // An atom stays until the runtime has taken it out of its table
-        // (see finishMinor); its hash is kept in its header.
-        if (tag == TAG_STRING && (header.flags & FLAG_INTERNED) != 0) {
-          this.deadAtoms.push(handle);
-          continue;
-        }
-        // Most cells own nothing outside the heap.
-        if ((tag == TAG_OBJECT && (header.payload & DICT_BIT) != 0) || (tag == TAG_STRING && (header.payload & ARENA_BIT) == 0) || tag == TAG_TABLE || (tag == TAG_ARRAY && (header.flags & FLAG_ELEMENT_ATTRS) != 0)) {
-          this.releaseCell(handle, tag);
-        } else {
-          this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, remembered: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
-        }
-        this.deadYoung.push(handle);
-        continue;
-      }
       // A survivor's slots are where it was allocated unless growSlots
       // moved them, and then the log has them.
       const moved = header.remembered;
@@ -1038,7 +1104,26 @@ export struct Heap {
       cursor = this.slideGrown(grown, cursor);
       grown = grown + 1;
     }
-    // The dead listed free, as listFree would, in one loop.
+    // The list's top goes back up over the dead, less one place per
+    // survivor: each handle that would be left above the new top fills a
+    // gap below it. The gaps are listed from the highest down.
+    const gaps = this.youngGaps.length;
+    const newTop = listTop - gaps;
+    let high: usize = 0;
+    let low = gaps;
+    let position = listTop;
+    while (position > newTop) {
+      position = position - 1;
+      if (high < gaps && usize(this.youngGaps[high]) == position) {
+        high = high + 1;
+        continue;
+      }
+      low = low - 1;
+      this.freeHandles[usize(this.youngGaps[low])] = this.freeHandles[position];
+    }
+    this.freeHandleCount = newTop;
+    // The dead from past the table's old extent listed free, as listFree
+    // would, in one loop.
     at = 0;
     while (at < this.deadYoung.length) {
       const dead = this.deadYoung[at];
@@ -1056,6 +1141,9 @@ export struct Heap {
     while (this.smallBytes.length > byteCursor) {
       const dropped = this.smallBytes.pop();
     }
+    this.youngSeen = this.youngSeen + f64(young);
+    this.youngSurvived = this.youngSurvived + f64(this.markedCells);
+    this.rememberedSeen = this.rememberedSeen + f64(this.rememberedCells.length) + f64(this.rememberedSlots.length);
     this.smallLiveBytes = this.smallLiveBytes + survivorBytes;
     this.promotedCells = this.promotedCells + this.markedCells;
     this.promotedSlots = this.promotedSlots + this.markedSlots;
@@ -1064,7 +1152,44 @@ export struct Heap {
     this.slotsAfterSweep = this.slots.length;
     this.allocatedSinceCollect = 0;
     this.collectThreshold = this.nurseryCells;
+    if (young >= TENURE_SAMPLE && usize(this.markedCells) * 100 >= young * TENURE_PERCENT) this.tenureSkips = TENURE_SKIPS;
     this.minorCollections = this.minorCollections + 1;
+  }
+
+  // In place of a minor collection while most young cells survive one
+  // (tenureSkips): every young cell is made old where it is, traced by
+  // no one. The dead among them, their slots, and their bytes wait for
+  // the full collection, which the count of cells promoted brings on.
+  function promoteYoung(inout this): void {
+    const fromList = this.cycleFreeCount - this.freeHandleCount;
+    const young = fromList + this.headerCount - this.cycleExtent;
+    let at: usize = 0;
+    while (at < young) {
+      let handle: u32 = 0;
+      if (at < fromList) {
+        handle = this.freeHandles[this.cycleFreeCount - 1 - at];
+      } else {
+        handle = u32(this.cycleExtent + at - fromList);
+      }
+      this.headers[usize(handle)].marked = true;
+      this.headers[usize(handle)].remembered = false;
+      at = at + 1;
+    }
+    let cycleSlots: usize = 0;
+    if (this.slots.length > this.slotsAfterSweep) cycleSlots = this.slots.length - this.slotsAfterSweep;
+    this.smallLiveBytes = this.smallLiveBytes + (this.smallBytes.length - this.byteTailBase);
+    this.promotedCells = this.promotedCells + u32(young);
+    this.promotedSlots = this.promotedSlots + cycleSlots;
+    this.cellsBeforeCycle = this.cellsBeforeCycle + f64(this.allocatedSinceCollect);
+    this.slotsBeforeCycle = this.slotsBeforeCycle + f64(cycleSlots);
+    this.slotsAfterSweep = this.slots.length;
+    this.allocatedSinceCollect = 0;
+    this.collectThreshold = this.nurseryCells;
+    this.tenureSkips = this.tenureSkips - 1;
+    this.tenured = this.tenured + 1;
+    this.deadAtoms.clear();
+    this.endCycle();
+    this.collections = this.collections - 1;
   }
 
   // After the runtime has dropped the dead atoms from its table: they are
@@ -1074,7 +1199,6 @@ export struct Heap {
     while (at < this.deadAtoms.length) {
       const dead = this.deadAtoms[at];
       this.releaseCell(dead, TAG_STRING);
-      this.listFree(dead);
       at = at + 1;
     }
     this.endCycle();
@@ -1623,6 +1747,7 @@ export struct Heap {
       clear = clear + 1;
     }
     this.headers[usize(handle)].payload = DICT_BIT | dictionary;
+    this.ownYoung(handle);
     this.dictionaryRehash(handle, dictionary);
     return dictionary;
   }
@@ -1679,6 +1804,7 @@ export struct Heap {
       this.tables.push(move fresh);
     }
     const handle = this.allocate(TAG_TABLE, 0);
+    this.youngOwners.push(handle);
     this.headers[usize(handle)].payload = table;
     return handle;
   }
@@ -2452,6 +2578,7 @@ export struct Heap {
   // `stringIndex`, whose count already includes it.
   function allocateStringOver(inout this, stringIndex: u32, byteCount: u32, wide: boolean): u32 {
     const handle = this.allocate(TAG_STRING, 0);
+    this.youngOwners.push(handle);
     this.headers[usize(handle)].payload = stringIndex;
     this.headers[usize(handle)].slotStart = byteCount;
     if (wide) this.setFlags(handle, FLAG_WIDE);
@@ -3176,6 +3303,7 @@ export struct Heap {
       entry = this.elementAttrs.length - 1;
     }
     this.headers[usize(handle)].flags = this.cellHeader(handle).flags | FLAG_ELEMENT_ATTRS;
+    this.ownYoung(handle);
     this.rebuildElementAttrIndex();
     return i32(entry);
   }
@@ -3253,7 +3381,7 @@ export struct Heap {
   // from the table with everything above the highest survivor.
   function isReleased(handle: u32): boolean {
     if (usize(handle) >= this.headerCount) return true;
-    return this.cellHeader(handle).tag == TAG_FREE;
+    return this.cellHeader(handle).tag == TAG_FREE || !this.cellHeader(handle).marked;
   }
 
   // One past the highest handle the table holds.
@@ -3502,6 +3630,8 @@ export function createHeap(): Heap {
     parent: 0, transitionName: 0, transitionSlot: 0, propCount: 0, slotAttrs: Array<u8>(),
     transitionNames: Array<u32>(), transitionAttrs: Array<u8>(), transitionChildren: Array<u32>(),
   }));
+  let phaseNs = Array<f64>();
+  phaseNs.appendRepeated(0.0, 12);
   return Heap({
     headers: move headers, slots: Array<Value>(), slideCounts: Array<u32>(), slideOrder: Array<u32>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
@@ -3511,8 +3641,9 @@ export function createHeap(): Heap {
     dictionaries: Array<Dictionary>(), freeDictionaries: Array<u32>(), freeDictionaryCount: 0, dictThreshold: DICT_THRESHOLD, indexKeysDefined: false,
     markStack: Array<u32>(), markCount: 0,
     allocatedSinceCollect: 0, collectThreshold: NURSERY_CELLS, collections: 0, collectFloor: COLLECT_FLOOR, collectGrowthPercent: COLLECT_GROWTH_PERCENT,
-    cycleFreeCount: 0, cycleExtent: 1, growLog: Array<u64>(), rememberedCells: Array<u32>(), rememberedSlots: Array<u64>(), deadYoung: Array<u32>(), deadAtoms: Array<u32>(), tailBase: 0, byteTailBase: 0, minorCollection: false, nurseryCells: NURSERY_CELLS,
-    promotedCells: 0, promotedSlots: 0, majorThreshold: COLLECT_FLOOR, majorCells: 0, majorSlots: 0, minorCollections: 0,
+    cycleFreeCount: 0, cycleExtent: 1, growLog: Array<u64>(), rememberedCells: Array<u32>(), rememberedSlots: Array<u64>(), deadYoung: Array<u32>(), deadAtoms: Array<u32>(), youngOwners: Array<u32>(), youngGaps: Array<u32>(), tailBase: 0, byteTailBase: 0, minorCollection: false, nurseryCells: NURSERY_CELLS,
+    promotedCells: 0, promotedSlots: 0, majorThreshold: COLLECT_FLOOR, majorCells: 0, majorSlots: 0, minorCollections: 0, tenureSkips: 0, tenured: 0,
+    phaseTiming: false, phaseNs: move phaseNs, youngSeen: 0.0, youngSurvived: 0.0, rememberedSeen: 0.0,
   });
 }
 
@@ -3531,6 +3662,11 @@ const COLLECT_FLOOR: u32 = 4096;
 const COLLECT_GROWTH_PERCENT: u32 = 200;
 // Allocations between minor collections.
 const NURSERY_CELLS: u32 = 16384;
+// A minor collection of at least this many young cells that kept this
+// share of them turns the young generation off until the next full one.
+const TENURE_SAMPLE: usize = 1024;
+const TENURE_PERCENT: usize = 60;
+const TENURE_SKIPS: u32 = 7;
 // Entries the collector's lists keep room for between collections.
 const LOG_RETAIN_ENTRIES: usize = 65536;
 // A cell with this many slots, or a table with this many entries, is

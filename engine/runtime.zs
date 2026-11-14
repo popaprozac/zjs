@@ -672,6 +672,12 @@ export struct Runtime {
   // Collection timing, off unless the host turns it on: each pause in
   // nanoseconds, in order. Nothing is read from the clock otherwise.
   gcTiming: boolean;
+  // The first function and hidden class a collection has not yet traced:
+  // everything the earlier ones name was marked then and is old, so a
+  // minor collection's roots start here. Installing a function, or
+  // writing one's constants, lowers the function mark.
+  rootFunctionsFrom: usize;
+  rootClassesFrom: usize;
   gcPauses: Array<f64>;
   // Whether the async body last resumed finished, beside the value it
   // handed back (see resumeResult).
@@ -731,6 +737,7 @@ export struct Runtime {
       nameSlot = nameSlot + 1;
     }
     this.functions[usize(index)] = move installed;
+    if (usize(index) < this.rootFunctionsFrom) this.rootFunctionsFrom = usize(index);
   }
 
   // --- Inline caches ---
@@ -1157,6 +1164,7 @@ export struct Runtime {
     let flags = this.heap.flagsOf(handle) | FLAG_INTERNED;
     if (this.indexNameValue(handle) >= 0) flags = flags | FLAG_INDEX_KEY;
     this.heap.setFlags(handle, flags);
+    this.heap.ownYoung(handle);
   }
 
   // A string that names an array index, the canonical decimal of an
@@ -5259,6 +5267,10 @@ export struct Runtime {
   // local.
   function collectGarbage(inout this): void {
     const full = this.heap.majorDue();
+    if (!full && this.heap.tenureSkips > 0) {
+      this.heap.promoteYoung();
+      return;
+    }
     this.collectTimed(full);
   }
 
@@ -5275,30 +5287,31 @@ export struct Runtime {
   }
 
   function collectNow(inout this, full: boolean): void {
+    let clock = this.heap.stamp(11, 0.0);
     if (full) {
       this.heap.beginMajor();
+      clock = this.heap.stamp(4, clock);
     } else {
       this.heap.beginMinor();
     }
     this.markRoots();
     if (!full) {
-      // The old cells given young ones since the last collection are
-      // roots too. The atoms interned since then that nothing reached
-      // leave the table before their cells are freed.
+      clock = this.heap.stamp(0, clock);
       this.heap.traceRemembered();
+      clock = this.heap.stamp(1, clock);
       this.heap.sweepYoung();
+      clock = this.heap.stamp(2, clock);
       this.dropDeadAtoms();
       this.heap.finishMinor();
+      clock = this.heap.stamp(3, clock);
       return;
     }
-    // Weak collections: values reached through marked keys, to a
-    // fixpoint, then the entries of dead keys dropped -- before the
-    // atom rebuild, since such values can hold interned strings.
+    clock = this.heap.stamp(5, clock);
     this.heap.markEphemerons();
     this.heap.clearDeadWeakEntries();
-    // The atom table is weak: an interned string nothing else reaches is
-    // dropped, and the table is rebuilt from the survivors.
+    clock = this.heap.stamp(6, clock);
     this.rebuildAtoms();
+    clock = this.heap.stamp(7, clock);
     this.heap.sweep();
   }
 
@@ -5524,14 +5537,14 @@ export struct Runtime {
     this.heap.markHandle(atomResolve);
     // Names that hidden classes carry: a class is never freed, so the
     // atoms it names live as long as the runtime.
-    index = 1;
+    index = this.heap.minorCollection ? this.rootClassesFrom : 1;
     while (index < this.heap.classes.length) {
       const name = this.heap.classes[index].transitionName;
       this.heap.markHandle(name);
       index = index + 1;
     }
     // Function values, strings, and property names held by compiled code.
-    index = 0;
+    index = this.heap.minorCollection ? this.rootFunctionsFrom : 0;
     while (index < this.functions.length) {
       let c: usize = 0;
       while (c < this.functions[index].constants.length) {
@@ -5556,6 +5569,8 @@ export struct Runtime {
     const arrayValuesFn = this.arrayValuesFn;
     this.heap.markHandle(arrayValuesFn);
     this.markModules();
+    this.rootFunctionsFrom = this.functions.length;
+    this.rootClassesFrom = this.heap.classes.length;
   }
 
   // What the module records hold: their keys and names, and the
@@ -9818,7 +9833,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, gcPauses: Array<f64>(), resumeDone: false,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

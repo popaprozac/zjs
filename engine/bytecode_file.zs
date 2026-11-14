@@ -836,6 +836,7 @@ function getProgram(inout runtime: Runtime, bytes: Slice<u8>, install: boolean, 
       const constant = usize(program.patches[p + 1]);
       const target = program.patches[p + 2];
       runtime.functions[owner].constants[constant] = runtime.functionValue(target);
+      if (owner < runtime.rootFunctionsFrom) runtime.rootFunctionsFrom = owner;
       p = p + 3;
     }
   }

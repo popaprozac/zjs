@@ -52,7 +52,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`) |
-| Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done |
+| Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp, arrays done |
@@ -163,6 +163,24 @@ instead of copying to a fresh range and abandoning the old; an array's
 new capacity is filled with holes as it is pushed. A push loop now
 copies nothing: arrays -5.7% over 8 placements, the rest within 1%;
 arrays' peak memory 56 -> 36 MB.
+Minor collections that cost what survives (2026-11-13, `bench/gc`). A
+phase profile showed a minor collection spending 2.4 ns on every young
+cell whatever survived, 95% of its time where little did, and scanning
+every function's constants and every hidden class's name as roots (43 us
+a collection on a program of 4,000 functions). Now its sweep leaves the
+dead young cells alone: the free list's top moves back up over their
+handles, the survivors' places in it are repaired, and the young cells
+that own storage outside the arenas or are atoms are listed when they
+come to, so only those are visited (0.47 ns a young cell). Its roots
+skip the functions and hidden classes an earlier collection traced.
+And when 60% of a young generation survives, the next seven are made
+old untraced and the eighth is traced to see whether it still holds.
+Together, cycles less startup over 32 workloads
+(`bench/gc/results/final-incremental.json`): geometric mean -5.7%, fifo
+-18%, the large heap -10.5%, the 4,000-function program -11%, closures
+-9%, allocation -7.5%; over 8 placements allocation -7.6%, closures
+-5.7%, no kernel slower beyond +0.4%; `__text` +1.3 KB; test262
+unchanged.
 Left: every allocation pushes its slots one call at a time (Z has no
 bulk append); growth that does not move (Z upstream: reserved address
 space or remapping); cell headers are 20 bytes.
@@ -621,6 +639,16 @@ profile through `z build` (or a build step compiling the emitted C).
 5. Precompiled bytecode and the runtime without a compiler
 
 ## Tried and not kept
+
+- Collector settings and trims (2026-11-13, `bench/gc/results`). Other
+  nursery sizes: 4K +1.2%, 8K +0.2%, 32K +0.7%, 64K +1.7% against 16K.
+  Other growth multiples: 100% costs 2% for 15 to 30% less memory on
+  old-garbage workloads, 50% costs 13.6%; 200% stays the default.
+  Skipping minor collections until the next full one while most cells
+  survive: frames +10.6% and half again the memory; making the young old
+  untraced, sampled, replaced it. Strings marked without queueing and
+  dead cells left unwritten by the full sweep: the sweep 25% faster,
+  the slide 50% slower, level.
 
 - The interrupt poll's countdown (zjs_set_interrupt_handler) kept in a
   dispatch-loop local, which took the handlers' ninth argument register,

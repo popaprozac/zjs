@@ -420,6 +420,15 @@ keeping 400,000 records alive under steady churn, peak resident memory
 went from 247 to 117 MB and the 95th-percentile pause from 20 ms to under
 0.2 ms. `gc()` always collects fully.
 
+A minor collection costs what survives it (2026-11-13). Its sweep leaves
+the dead young cells alone: the free list's top moves back up over the
+handles they took, the survivors' places in it are repaired, and the few
+young cells that own storage outside the arenas, or are atoms, are
+listed when they come to, so only those are visited. Its roots skip the
+functions and hidden classes an earlier collection traced. When 60% or
+more of a young generation survives, the next seven are made old
+untraced and the eighth is traced to see whether that still holds.
+
 Places the corpus deliberately steps around, where the reference is wrong and
 the Z engine follows the specification: a property write to `undefined`
 throws a TypeError (the reference drops it); `Error.prototype.message` is
@@ -679,7 +688,8 @@ Z_BIN=<native z> ./probes/native/run.sh   # programs Stage 0 accepts that a nati
                                   #   weak entries cleared, ephemeron passes
                                   # --gc-stats: times every collection; prints their
                                   #   count, total, pause percentiles, cells and
-                                  #   slots allocated, engine storage in use
+                                  #   slots allocated, engine storage in use, and
+                                  #   the time in each of the collector's phases
                                   # --mem-stats: storage alive, in use, and held by
                                   #   capacity; the allocator's in use and reserved;
                                   #   resident and footprint now, and resident peak
