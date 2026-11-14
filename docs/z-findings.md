@@ -2269,6 +2269,39 @@ function, an import under another name, and an imported struct whose default
 calls a function of its own module); probe
 `native/imported-call-in-field-default`.
 
+## G63 — Native compiler: an unsafe expression as an assignment's value
+
+**Status:** `consumer-verified` — z-lang `f9ef0733` (the pin; merged to
+z-lang `main` as `8097a3f1`, the same tree) · **Size:** small · **Confirmed:**
+native compiler bootstrapped from `17662184`; Stage 0 accepts ·
+**Blocked:** the native build of the engine, from the collector's young
+sweep, until the pin moved
+
+```
+internal compiler error: native lowering: engine/heap.zs: method
+Heap.sweepYoung: native lowering does not support unsafeExpression
+expression at 1453:20 yet while lowering statement at 1445:5
+```
+
+The sweep reads the free list unchecked into a variable declared before its
+loop: `handle = unsafe { select this.freeHandles.uncheckedAt(index); };`.
+The native compiler lowered an unsafe expression's selected value where it
+initializes a binding and where it is returned, the two shapes the engine
+had used, and its lowerability check passes any unsafe expression that is
+the root of its tree; an assignment's value is lowered in a branch of its
+own, which did not take the case. Implemented: that branch lowers the
+selected value as the other two do, for an assigned type that needs no
+cleanup; one that needs cleanup is refused with a message to bind the value
+first. z-lang's `unchecked-access` fixture assigns a selected value to a
+local and to a field; probe `native/unsafe-expression-as-assigned-value`.
+
+At the pin (2026-11-13): the native compiler reaches its fixed point, and
+the engine builds natively and passes every gate (the build script end to
+end, the unit tests, 18 of 18 native probes), test262 the same as the
+Stage 0 build's (55,610 tests). The eight commits between the old pin and
+the fix change nothing Stage 0 emits for the engine: its `zjsz` is the
+same file, byte for byte, at both pins.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic
