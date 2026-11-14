@@ -18,11 +18,12 @@
 // Collection is mark-sweep with stable handles, in two generations (see
 // Generations below). Marking walks from the roots the runtime supplies;
 // a full collection's sweep frees dead headers onto a free list for reuse
-// and compacts every live cell's slots into a fresh arena, so an object
-// that outgrew its range leaves no permanent hole; a minor collection
-// does the same for the cells allocated since the last collection only.
-// Nothing outside the heap has to be updated: a handle never changes,
-// only the slot range behind it.
+// and slides every live cell's slots down the arena, so an object that
+// outgrew its range leaves no permanent hole; a minor collection does the
+// same for the cells allocated since the last collection only. A full
+// collection runs in slices between minor collections (see Full
+// collections). Nothing outside the heap has to be updated: a handle
+// never changes, only the slot range behind it.
 
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, isAsciiBytes, isNarrowUnits, unitsToLatin1 } from "./text.zs";
 import { expect } from "std/test";
@@ -108,10 +109,32 @@ export const FLAG_LEAF: u8 = 16;
 // when it is interned: the key it makes names an element.
 export const FLAG_INDEX_KEY: u8 = 128;
 
+// A cell's mark: 0 while it is young; MARK_OLD once it has survived a
+// collection; MARK_LIVE (old and reached) while a full collection that has
+// found it is under way (see Generations and Full collections).
+const MARK_OLD: u8 = 1;
+const MARK_REACHED: u8 = 2;
+const MARK_LIVE: u8 = 3;
+
+// Where a full collection stands (see Full collections).
+const PHASE_IDLE: u8 = 0;
+const PHASE_MARK: u8 = 1;
+const PHASE_SWEEP: u8 = 2;
+const PHASE_PLACE: u8 = 3;
+const PHASE_MOVE: u8 = 4;
+// What a slice of the sweep and of the slide does for each unit of
+// marking a slice is allowed: a header walked and a range moved cost a
+// fraction of a cell traced.
+// The most steps a full collection's marking is spread over.
+const MARK_STEPS: u64 = 64;
+const FINISH_STEPS: usize = 16;
+const SWEEP_PER_MARK: usize = 8;
+const MOVE_PER_MARK: usize = 2;
+const ALL_HANDLES: u32 = 0xFFFF_FFFF;
+
 struct CellHeader {
   tag: u8;
-  // Between collections, whether the cell is old (see Generations).
-  marked: boolean;
+  mark: u8;
   // FLAG_* bits: extensibility, an array's read-only length.
   flags: u8;
   // An old cell's: whether it is in the remembered set. A young cell's:
@@ -231,10 +254,10 @@ struct ElementAttrs {
 export struct Heap {
   headers: Array<CellHeader>;
   slots: Array<Value>;
-  // A full collection's sorting scratch (see slideSlots), kept between
+  // The small strings' sorting scratch (see slideBytes), kept between
   // collections.
   slideCounts: Array<u32>;
-  slideOrder: Array<u32>;
+  slideOrder: Array<u64>;
   // Element attribute tables for the arrays that have any, and an
   // open-addressed index from array handle to entry (entry + 1, 0 empty).
   elementAttrs: Array<ElementAttrs>;
@@ -333,13 +356,12 @@ export struct Heap {
   //
   // Most cells die young, so most collections look only at the cells
   // allocated since the last one. A cell is young until it survives a
-  // collection, then old. The mark bit says which between collections:
-  // a sweep leaves its survivors marked, and a new cell starts unmarked.
-  // A minor collection marks from the roots as a full one does, and
-  // stops at any marked cell, so it traces only young cells; its sweep
-  // walks the young cells' log instead of the whole table, frees the
-  // unmarked ones, and leaves the survivors marked, old. A full
-  // collection clears every mark first.
+  // collection, then old. Its mark says which: a new cell starts
+  // unmarked, and a sweep leaves its survivors marked. A minor
+  // collection marks from the roots and stops at any marked cell, so it
+  // traces only young cells; its sweep walks the young cells instead of
+  // the whole table, frees the unmarked ones, and leaves the survivors
+  // marked, old.
   //
   // An old cell that comes to hold a young one, which only a store can
   // bring about (setSlot, setLink, setObjectProto, a table's keys and
@@ -403,6 +425,81 @@ export struct Heap {
   // see whether it still holds.
   tenureSkips: u32;
   tenured: u32;
+
+  // --- Full collections ---
+  //
+  // A full collection is spread over the collections that follow its
+  // start, a slice after each (`phase` says of what), so the program
+  // never waits for more than a slice.
+  //
+  // Marking. While it lasts a cell's mark also says whether the
+  // collection has reached it. The old cells start unreached, as the
+  // last sweep left them. The roots' are queued when the collection
+  // begins, with every root, and again at each minor collection; a cell
+  // made old meanwhile is reached; and an old cell stored into an old
+  // one is queued by the write barrier's slow half, so a cell already
+  // traced never comes to hold one that is not reached. A slice follows
+  // a minor collection, so its roots have just been scanned and no young
+  // cell exists: when nothing is queued, every cell not reached is dead
+  // (endMark).
+  //
+  // The sweep walks the table from the top down, freeing the old cells
+  // not reached and leaving the reached ones old again. A cell made old
+  // meanwhile at a handle the walk has yet to come to is marked reached,
+  // so the walk keeps it (`liveBelow`).
+  //
+  // The slide closes the holes the dead left in the slot arena, moving
+  // the old cells' ranges down in arena order: the sweep counts each
+  // survivor's range into its bucket of the arena, a walk of the table
+  // places each in its bucket's part of the order (placeSlice), and the
+  // ranges move bucket by bucket (moveSlice). A handle never changes, so
+  // nothing outside the heap is told a range has moved. A range settled
+  // while this goes on -- a cell made old, an old cell grown -- lies
+  // above the ones sorted, is listed (`laterRanges`), and moves after
+  // them; the arena is cut back when the slide has caught up, right
+  // after a minor collection, with nothing young above.
+  //
+  // gc(), a heap with no young generation, and a heap small enough for
+  // one slice to mark collect whole (beginWhole, finishWhole): the same
+  // phases one after another in one step, the young cells traced beside
+  // the old, and exact about them, where a collection spread over steps
+  // holds the cells made old during it until the next.
+  phase: u8;
+  // Set while a whole collection marks.
+  whole: boolean;
+  // A cell made old at a handle below this is marked reached.
+  liveBelow: u32;
+  greyStack: Array<u32>;
+  greyCount: usize;
+  // Cells, slots, and small strings' bytes the collection has reached.
+  reachedCells: u32;
+  reachedSlots: usize;
+  reachedBytes: usize;
+  // Cells promoted when the collection under way began: the ones made
+  // old since are all reached, alive or not.
+  promotedAtStart: u32;
+  // The least a slice of this collection's marking does (markBudget).
+  markPace: u64;
+  // The sweep's next handle, less one.
+  sweepCursor: u32;
+  // The slide: the arena's length when the marking ended, below which
+  // the ranges are sorted; how many of them the sweep counted; the next
+  // handle to place; the next entry of the order to move; the arena
+  // position the next range moves to; and the ranges settled above the
+  // limit since (the start in the high word, the handle in the low one),
+  // with the next of those to move.
+  slideLimit: usize;
+  slideRanges: usize;
+  placeCursor: u32;
+  placeEnd: usize;
+  moveIndex: usize;
+  slideCursor: usize;
+  laterRanges: Array<u64>;
+  laterRead: usize;
+  // The most one slice traces: cells, plus an eighth of their slots and a
+  // quarter of a table's entries. 0 for no bound.
+  sliceWork: u32;
+  fullCollections: u32;
   // Measurement only: nanoseconds per collector phase, and young cells
   // seen, survived, and remembered holders traced by minor collections.
   phaseTiming: boolean;
@@ -431,7 +528,7 @@ export struct Heap {
     this.allocatedSinceCollect = this.allocatedSinceCollect + 1;
     const header = CellHeader({
       tag: tag,
-      marked: false,
+      mark: 0,
       flags: 0,
       remembered: false,
       slotStart: start,
@@ -466,32 +563,51 @@ export struct Heap {
 
   // --- Collection ---
   //
-  // The runtime starts a collection with `beginMajor` or `beginMinor`,
-  // marks its roots with `markValue`, and ends it with `sweep` or
-  // `sweepYoung`.
+  // The runtime marks its roots with `markValue` after `beginMinor` (a
+  // step: a minor collection, then a slice of the full one under way) or
+  // `beginWhole` (everything at once), and ends with `sweepYoung` or
+  // `sweep`.
 
-  // Whether the next collection should be a full one: the old cells
-  // have grown past the policy's bound, or there is no young generation.
+  // Whether the old cells have grown past the policy's bound, so a full
+  // collection should begin, or there is no young generation.
   function majorDue(): boolean {
     return this.nurseryCells == 0 || this.promotedCells >= this.majorThreshold;
   }
 
-  // A full collection starts from no marks: every cell, old or young, is
-  // unmarked until reached, and the remembered set, which only a minor
-  // collection reads, is emptied.
-  function beginMajor(inout this): void {
-    let handle: usize = 1;
-    while (handle < this.headerCount) {
-      this.headers[handle].marked = false;
-      this.headers[handle].remembered = false;
-      handle = handle + 1;
-    }
-    this.rememberedCells.clear();
-    this.rememberedSlots.clear();
-    this.minorCollection = false;
-    this.markedCells = 0;
-    this.markedSlots = 0;
-    this.weakVisits = 0;
+  // Whether the whole heap can be marked within one slice's bound. A
+  // full collection that is due then is taken whole, in the step that
+  // would have begun it: no longer a pause than a slice, and exact about
+  // the young cells, which a collection spread over steps holds until
+  // the next.
+  function wholeFits(): boolean {
+    if (this.sliceWork == 0) return true;
+    // What the last full collection kept, what has been promoted since,
+    // and the young cells, all of which may be alive.
+    const work = u64(this.majorCells) + u64(this.promotedCells) + u64(this.allocatedSinceCollect) + u64((this.majorSlots + this.promotedSlots) >> 3);
+    return work <= u64(this.sliceWork);
+  }
+
+  function collecting(): boolean {
+    return this.phase != PHASE_IDLE;
+  }
+
+  function marking(): boolean {
+    return this.phase == PHASE_MARK;
+  }
+
+  // A full collection begins. Every old cell is unreached: the last
+  // sweep left it so.
+  function beginCycle(inout this): void {
+    this.phase = PHASE_MARK;
+    this.liveBelow = ALL_HANDLES;
+    this.reachedCells = 0;
+    this.reachedSlots = 0;
+    this.reachedBytes = 0;
+    this.promotedAtStart = this.promotedCells;
+    // Every old cell may be alive: what the last full collection kept,
+    // and what has been made old since.
+    const work = u64(this.majorCells) + u64(this.promotedCells) + u64((this.majorSlots + this.promotedSlots) >> 3);
+    this.markPace = work / MARK_STEPS;
   }
 
   function beginMinor(inout this): void {
@@ -501,11 +617,31 @@ export struct Heap {
     this.weakVisits = 0;
   }
 
+  // The whole heap at once: the marking under way, or a collection begun
+  // here, taken to its end with the young cells traced beside the old.
+  // (The runtime ends a sweep or a slide under way first.)
+  function beginWhole(inout this): void {
+    if (this.phase == PHASE_IDLE) this.beginCycle();
+    this.minorCollection = false;
+    this.whole = true;
+    this.markedCells = 0;
+    this.markedSlots = 0;
+    this.weakVisits = 0;
+  }
+
   // The write barrier's slow half: `holder` is old and has just been
   // given a reference to `target`; when that is young and the holder not
   // yet listed, it is listed. Stores into young cells never get here.
+  // An old target is of no account to a minor collection, but while a
+  // full one marks it is queued, reached, whether or not the holder has
+  // been traced yet.
   function remember(inout this, holder: u32, target: u32): void {
-    if (this.cellHeader(holder).remembered || this.cellHeader(target).marked) return;
+    const mark = this.cellHeader(target).mark;
+    if (mark != 0) {
+      if (mark == MARK_OLD && this.phase == PHASE_MARK) this.shade(target);
+      return;
+    }
+    if (this.cellHeader(holder).remembered) return;
     this.headers[usize(holder)].remembered = true;
     this.rememberedCells.push(holder);
   }
@@ -518,7 +654,13 @@ export struct Heap {
   function rememberStore(inout this, holder: u32, index: u32, value: Value): void {
     if (!isCell(value)) return;
     const target = asCell(value);
-    if (this.cellHeader(holder).remembered || this.cellHeader(target).marked) return;
+    const mark = this.cellHeader(target).mark;
+    if (mark != 0) {
+      // As in `remember`; a weak array holds nothing.
+      if (mark == MARK_OLD && this.phase == PHASE_MARK && this.cellHeader(holder).tag != TAG_WEAK_ARRAY) this.shade(target);
+      return;
+    }
+    if (this.cellHeader(holder).remembered) return;
     let size = usize(this.cellHeader(holder).slotCount);
     if (this.cellHeader(holder).tag == TAG_TABLE) size = this.tables[usize(this.cellHeader(holder).payload)].keys.length;
     if (size >= LARGE_CELL_SLOTS && this.rememberedSlots.length < REMEMBERED_SLOTS_LIMIT) {
@@ -535,7 +677,7 @@ export struct Heap {
     let at: usize = 0;
     while (at < this.rememberedCells.length) {
       const holder = this.rememberedCells[at];
-      this.traceCell(holder);
+      this.traceCell(holder, true, false);
       this.drainMarks();
       at = at + 1;
     }
@@ -548,13 +690,14 @@ export struct Heap {
         const table = usize(this.cellHeader(holder).payload);
         if (usize(index) < this.tables[table].keys.length) {
           const key = this.tables[table].keys[usize(index)];
-          this.markValue(key);
+          this.markYoungValue(key);
           const value = this.tables[table].values[usize(index)];
-          this.markValue(value);
+          this.markYoungValue(value);
         }
-      } else if (index < this.cellHeader(holder).slotCount) {
+      } else if (index < this.cellHeader(holder).slotCount && (this.minorCollection || this.cellHeader(holder).tag != TAG_WEAK_ARRAY)) {
+        // (A whole collection reaches nothing through a weak array.)
         const value = this.slot(holder, index);
-        this.markValue(value);
+        this.markYoungValue(value);
       }
       at = at + 1;
     }
@@ -565,67 +708,159 @@ export struct Heap {
     this.markHandle(asCell(value));
   }
 
+  // A root. A young cell is marked, and what it reaches traced; an old
+  // one the full collection under way has not reached is queued for it.
   function markHandle(inout this, handle: u32): void {
     if (handle == 0) return;
-    if (this.cellHeader(handle).marked) return;
-    this.headers[usize(handle)].marked = true;
-    if (this.markCount < this.markStack.length) {
-      this.markStack[this.markCount] = handle;
-    } else {
-      this.markStack.push(handle);
+    const mark = this.cellHeader(handle).mark;
+    if (mark == 0) {
+      this.markYoung(handle);
+    } else if (mark == MARK_OLD && this.phase == PHASE_MARK) {
+      this.shade(handle);
     }
-    this.markCount = this.markCount + 1;
+  }
+
+  // A young cell found alive: old from here on -- and reached, while a
+  // full collection marks or its sweep has yet to pass the handle -- and
+  // what it refers to traced.
+  function markYoung(inout this, handle: u32): void {
+    this.headers[usize(handle)].mark = handle < this.liveBelow ? MARK_LIVE : MARK_OLD;
+    this.pushMark(handle);
     this.drainMarks();
   }
 
-  // Trace every marked cell's references until the worklist is empty.
+  function markYoungValue(inout this, value: Value): void {
+    if (isCell(value) && asCell(value) != 0 && this.cellHeader(asCell(value)).mark == 0) this.markYoung(asCell(value));
+  }
+
+  // An old cell the full collection under way had not reached: reached,
+  // and queued for a slice to trace.
+  function shade(inout this, handle: u32): void {
+    this.headers[usize(handle)].mark = MARK_LIVE;
+    this.pushGrey(handle);
+  }
+
+  // Trace every young cell marked until the worklist is empty. While a
+  // full collection is under way each is traced for it here too, so a
+  // cell made old during one is never queued.
   function drainMarks(inout this): void {
     while (this.markCount > 0) {
       this.markCount = this.markCount - 1;
       const handle = this.markStack[this.markCount];
+      const header = this.cellHeader(handle);
       this.markedCells = this.markedCells + 1;
-      if (this.cellHeader(handle).tag != TAG_STRING) this.markedSlots = this.markedSlots + usize(this.cellHeader(handle).slotCount);
+      if (header.tag != TAG_STRING) this.markedSlots = this.markedSlots + usize(header.slotCount);
+      const marking = this.phase == PHASE_MARK;
+      if (marking) {
+        this.reachedCells = this.reachedCells + 1;
+        if (header.tag != TAG_STRING) {
+          this.reachedSlots = this.reachedSlots + usize(header.slotCount);
+        } else if ((header.payload & ARENA_BIT) != 0) {
+          this.reachedBytes = this.reachedBytes + usize(header.slotStart);
+        }
+      }
       // A key some weak record was waiting on: its values go live now.
       if (this.pendingCount > 0) this.activatePending(handle);
-      this.traceCell(handle);
+      this.traceCell(handle, true, marking);
     }
   }
 
-  // Mark and queue what one cell refers to.
-  function traceCell(inout this, handle: u32): void {
-    const tag = this.cellHeader(handle).tag;
-    const link = this.cellHeader(handle).link;
-    if (link != 0 && !this.cellHeader(link).marked) {
-      this.headers[usize(link)].marked = true;
-      this.pushMark(link);
+  // What a slice of marking may do: the setting; or, when it is more,
+  // twice the work the cells made old in this step brought with them, so
+  // the marking gains on the program however much it promotes; or the
+  // share of the heap that ends the marking in MARK_STEPS steps, so a
+  // large heap is not left waiting on a small setting while its garbage
+  // grows. 0 for no bound.
+  function markBudget(): u32 {
+    if (this.sliceWork == 0) return 0;
+    let budget = u64(this.sliceWork);
+    const brought = u64(this.markedCells) * 2 + u64(this.markedSlots >> 2);
+    if (brought > budget) budget = brought;
+    if (this.markPace > budget) budget = this.markPace;
+    if (budget > 0xFFFF_FFFF) return 0;
+    return u32(budget);
+  }
+
+  // A slice of the full collection under way: queued cells traced until
+  // none is left or `budget` is spent (0 for no bound). Whether none is
+  // left.
+  function markSlice(inout this, budget: u32): boolean {
+    let work: u32 = 0;
+    while (this.greyCount > 0) {
+      if (budget != 0 && work >= budget) return false;
+      this.greyCount = this.greyCount - 1;
+      const handle = this.greyStack[this.greyCount];
+      const header = this.cellHeader(handle);
+      this.reachedCells = this.reachedCells + 1;
+      work = work + 1;
+      if (header.tag == TAG_TABLE) {
+        work = work + u32(this.tables[usize(header.payload)].keys.length >> 2);
+      } else if (header.tag != TAG_STRING) {
+        this.reachedSlots = this.reachedSlots + usize(header.slotCount);
+        work = work + (header.slotCount >> 3);
+      } else if ((header.payload & ARENA_BIT) != 0) {
+        this.reachedBytes = this.reachedBytes + usize(header.slotStart);
+      }
+      if (this.pendingCount > 0) this.activatePending(handle);
+      this.traceCell(handle, this.whole, true);
+      // A whole collection reaches young cells through old ones' weak
+      // values; they are traced before the next old one.
+      if (this.markCount > 0) this.drainMarks();
     }
+    return true;
+  }
+
+  // Everything marked or queued traced, to the end.
+  function drainAll(inout this): void {
+    this.drainMarks();
+    const done = this.markSlice(0);
+  }
+
+  // Mark and queue what one cell refers to: with `young`, the young
+  // cells (a minor collection's work, and a whole one's); with `old`, the
+  // old cells the full collection under way has not reached.
+  function traceCell(inout this, handle: u32, young: boolean, old: boolean): void {
+    const header = this.cellHeader(handle);
+    const tag = header.tag;
+    if (header.link != 0) this.reach(header.link, young, old);
     // A table's keys and values are traced through its cell.
-    if (tag == TAG_TABLE) {
-      const table = usize(this.cellHeader(handle).payload);
-      this.markTable(table);
-    }
-    // In a full collection a weak record is traced like any cell (its
-    // index and counts, and the two weak arrays as cells), queued for the
-    // clearing pass, and its entries registered: a marked key's value is
-    // marked now, the rest wait on their keys. A weak array's elements
-    // are never traced from here. A minor collection traces both like
-    // any other cell.
-    if (tag == TAG_WEAK_RECORD && !this.minorCollection) {
-      this.weakRecords.push(handle);
-      this.registerWeakRecord(handle);
-    }
+    if (tag == TAG_TABLE) this.markTable(usize(header.payload), young, old);
+    // A weak record the full collection reaches is traced like any cell
+    // (its index and counts, and the two weak arrays as cells) and
+    // listed: its entries are settled once the marking is done
+    // (markEphemerons).
+    if (tag == TAG_WEAK_RECORD && old) this.weakRecords.push(handle);
     // Slots hold values for every tag but strings.
-    if (tag == TAG_STRING || (tag == TAG_WEAK_ARRAY && !this.minorCollection)) return;
-    const start = this.cellHeader(handle).slotStart;
-    const count = this.cellHeader(handle).slotCount;
+    if (tag == TAG_STRING) return;
+    // A full collection reaches nothing through a weak array's elements;
+    // a minor collection holds the young ones, as it does any cell's.
+    let reachOld = old;
+    if (tag == TAG_WEAK_ARRAY) {
+      if (!this.minorCollection) return;
+      reachOld = false;
+    }
+    const start = header.slotStart;
+    const count = header.slotCount;
     let index: u32 = 0;
     while (index < count) {
       const value = this.slots[usize(start + index)];
-      if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
-        this.headers[usize(asCell(value))].marked = true;
-        this.pushMark(asCell(value));
-      }
+      if (isCell(value) && asCell(value) != 0) this.reach(asCell(value), young, reachOld);
       index = index + 1;
+    }
+  }
+
+  // One reference: a young cell is marked and stacked for the minor
+  // trace; an old one not yet reached is queued for a slice.
+  inline function reach(inout this, target: u32, young: boolean, old: boolean): void {
+    const mark = this.cellHeader(target).mark;
+    if (mark == 0) {
+      if (young) {
+        this.headers[usize(target)].mark = target < this.liveBelow ? MARK_LIVE : MARK_OLD;
+        this.pushMark(target);
+      }
+    } else if (old && mark == MARK_OLD) {
+      this.headers[usize(target)].mark = MARK_LIVE;
+      this.pushGrey(target);
     }
   }
 
@@ -638,153 +873,329 @@ export struct Heap {
     this.markCount = this.markCount + 1;
   }
 
-  // Free every unmarked cell and compact what the survivors keep in the
-  // arenas in place. When a large table's survivors all sit in its lowest
-  // quarter, the dead cells above the highest of them are not listed for
-  // reuse: the table's extent is cut back to that survivor, so a
-  // collection after a spike costs what is alive and not what once was,
-  // and a table left far larger than it needs gives its storage back.
-  //
-  // Compaction slides: the survivors' slot ranges, taken in arena order,
-  // move down over the dead ones, and the arena is cut back after the
-  // last (see slideSlots); the small strings' bytes the same way once the
-  // byte arena holds twice what is live (slideBytes). Nothing is copied
-  // into a second arena, which the allocator would keep resident after
-  // the first was freed.
-  function sweep(inout this): void {
-    let clock = this.stamp(11, 0.0);
-    const count = u32(this.headerCount);
-    const liveSlots = this.markedSlots;
-    const survivors = this.markedCells;
-    const proportional = u32(u64(survivors) * u64(this.collectGrowthPercent) / 100);
+  function pushGrey(inout this, handle: u32): void {
+    if (this.greyCount < this.greyStack.length) {
+      this.greyStack[this.greyCount] = handle;
+    } else {
+      this.greyStack.push(handle);
+    }
+    this.greyCount = this.greyCount + 1;
+  }
+
+  // The marking of a full collection is done, and the weak entries and
+  // atoms of dead cells are dropped: every old cell not reached is dead.
+  // The policy takes its figures, the small strings' bytes are compacted
+  // if that is due, and the sweep begins.
+  function endMark(inout this): void {
+    // Nothing may be left queued: a cell reached and not traced would
+    // outlive what it refers to.
+    if (this.greyCount > 0 || this.markCount > 0) this.drainAll();
+    const survivors = this.reachedCells;
+    // The next full collection is due by what this one found alive. The
+    // cells made old while it marked were reached unseen, and some are
+    // dead by now: they are taken to have survived at the rate the cells
+    // that were old when it began did. Counted as kept, the dead among
+    // them would put the next collection off by their number times the
+    // growth multiple.
+    let alive = survivors;
+    if (!this.whole && this.promotedCells > this.promotedAtStart) {
+      const unseen = this.promotedCells - this.promotedAtStart;
+      const before = u64(this.majorCells) + u64(this.promotedAtStart);
+      if (survivors > unseen && before > 0) {
+        const seen = u64(survivors - unseen);
+        const estimate = seen + u64(unseen) * seen / before;
+        if (estimate < u64(survivors)) alive = u32(estimate);
+      }
+    }
+    const proportional = u32(u64(alive) * u64(this.collectGrowthPercent) / 100);
     const nextThreshold = proportional > this.collectFloor ? proportional : this.collectFloor;
-    let cycleSlots: usize = 0;
-    if (this.slots.length > this.slotsAfterSweep) cycleSlots = this.slots.length - this.slotsAfterSweep;
+    // The small strings' bytes are compacted once the arena holds twice
+    // the live bytes counted so far (the last collection's, and those
+    // made old since) and some slack: all at once, the live strings
+    // being the reached ones.
     const compactBytes = this.smallBytes.length >= this.smallLiveBytes * 2 + SMALL_ARENA_SLACK;
-    let liveBytes: usize = 0;
-    // The collector's sorting scratch, locals while they are used.
-    let counts = replace(inout this.slideCounts, Array<u32>());
-    let order = replace(inout this.slideOrder, Array<u32>());
-    fillZeros(inout counts, (this.slots.length >> usize(SLIDE_SLOT_SHIFT)) + 1);
-    let ranges: usize = 0;
-    // The highest survivor, found by looking down from the top -- but
-    // the table is cut back to it only when that is worth a pass over
-    // the free list: a large table that would shrink at least fourfold.
-    // A small heap's top survivor moves at every collection, and its
-    // table is cheap to walk whole.
-    let top: u32 = count - 1;
-    if (usize(count) >= HANDLE_TABLE_CUT_AT) {
-      while (top >= 1 && !this.cellHeader(top).marked) { top = top - 1; }
-      if ((usize(top) + 1) * 4 >= usize(count)) top = count - 1;
+    this.smallLiveBytes = this.reachedBytes;
+    if (compactBytes) {
+      let counts = Array<u32>();
+      let order = Array<u32>();
+      this.smallLiveBytes = this.slideBytes(inout counts, inout order);
+      this.byteTailBase = this.smallBytes.length;
     }
-    const cutting = top != count - 1;
-    // Handles are visited from the top down, so the cells this sweep
-    // frees are listed highest first and the next allocations take the
-    // lowest of them: survivors gather low in the table, which is what
-    // lets a later sweep cut it back. Each survivor's slot range is
-    // counted into its bucket of the arena for the slide.
-    const listBelow: u32 = cutting ? top : count;
-    // The free list is made again from the table: a minor sweep leaves a
-    // dead cell's header as it was, so only the marks say what is free.
-    this.freeHandleCount = 0;
-    let handle: u32 = count - 1;
-    while (handle >= 1) {
-      const header = this.cellHeader(handle);
-      const tag = header.tag;
-      if (tag == TAG_FREE || !header.marked) {
-        if (tag != TAG_FREE) this.releaseCell(handle, tag);
-        // A cell above the highest survivor is cut off with the table,
-        // not listed.
-        if (handle < listBelow) this.listFree(handle);
-        handle = handle - 1;
-        continue;
-      }
-      // A survivor keeps its mark: it is old now.
-      if (tag == TAG_STRING) {
-        if ((header.payload & ARENA_BIT) != 0) liveBytes = liveBytes + usize(header.slotStart);
-      } else if (header.slotCount > 0) {
-        const bucket = usize(header.slotStart >> SLIDE_SLOT_SHIFT);
-        counts[bucket] = counts[bucket] + 1;
-        ranges = ranges + 1;
-      }
-      handle = handle - 1;
-    }
-    if (cutting) this.trimHandleTable(top);
-    clock = this.stamp(8, clock);
-    this.slideSlots(inout counts, inout order, ranges);
-    clock = this.stamp(9, clock);
-    this.smallLiveBytes = liveBytes;
-    if (compactBytes) this.smallLiveBytes = this.slideBytes(inout counts, inout order);
-    clock = this.stamp(10, clock);
-    // The scratch is kept for the next collection unless a burst grew it
-    // far past what the heap needs.
-    if (counts.capacity <= (this.slots.length >> usize(SLIDE_SLOT_SHIFT)) * 4 + LOG_RETAIN_ENTRIES) {
-      const emptyCounts = replace(inout this.slideCounts, move counts);
-    }
-    if (order.capacity <= usize(survivors) * 2 + LOG_RETAIN_ENTRIES) {
-      const emptyOrder = replace(inout this.slideOrder, move order);
-    }
-    this.cellsBeforeCycle = this.cellsBeforeCycle + f64(this.allocatedSinceCollect);
-    this.slotsBeforeCycle = this.slotsBeforeCycle + f64(cycleSlots);
-    this.slotsAfterSweep = this.slots.length;
-    this.allocatedSinceCollect = 0;
     this.majorThreshold = nextThreshold;
     this.collectThreshold = this.nurseryCells == 0 ? nextThreshold : this.nurseryCells;
     this.majorCells = survivors;
-    this.majorSlots = liveSlots;
+    this.majorSlots = this.reachedSlots;
     this.tenureSkips = 0;
     this.promotedCells = 0;
     this.promotedSlots = 0;
-    this.endCycle();
+    this.markedCells = survivors;
+    this.markedSlots = this.reachedSlots;
+    this.whole = false;
+    this.phase = PHASE_SWEEP;
+    this.sweepCursor = u32(this.headerCount);
+    this.liveBelow = this.sweepCursor;
+    // Nothing is young, so the arena ends with the old cells' ranges:
+    // the ones there now are sorted and slid; any settled above this
+    // while the collection finishes are listed as they come.
+    this.slideLimit = this.slots.length;
+    this.slideRanges = 0;
+    this.laterRanges.clear();
+    this.laterRead = 0;
+    let counts = replace(inout this.slideCounts, Array<u32>());
+    fillZeros(inout counts, (this.slideLimit >> usize(SLIDE_SLOT_SHIFT)) + 1);
+    const emptyCounts = replace(inout this.slideCounts, move counts);
   }
 
-  // Slide every surviving slot range down in arena order. `counts` holds,
-  // per bucket of 2^SLIDE_SLOT_SHIFT arena slots, how many ranges start in
-  // it; the ranges are placed bucket by bucket into `order`, a pass of
-  // insertion sort puts each bucket's few in order, and each range moves
-  // to the cursor (never up: everything below it is placed).
-  function slideSlots(inout this, inout counts: Array<u32>, inout order: Array<u32>, ranges: usize): void {
+  // A slice of the sweep, right after a minor collection: `budget`
+  // handles (0 for all that are left), from the top down, so the cells
+  // freed are listed highest first and the next allocations take the
+  // lowest of them, and survivors gather low in the table. An old cell
+  // not reached is freed; a reached one is old again, unreached for the
+  // next full collection, and its slot range is counted into its bucket
+  // of the arena for the slide; an unmarked one is young, or free
+  // already. Whether the walk is done.
+  function sweepSlice(inout this, budget: usize): boolean {
+    // The counts and the figures the loop reads are locals while it runs.
+    let counts = replace(inout this.slideCounts, Array<u32>());
+    const limit = this.slideLimit;
+    let ranges = this.slideRanges;
+    let handle = this.sweepCursor;
+    let stop: u32 = 1;
+    if (budget != 0 && usize(handle) > budget + 1) stop = handle - u32(budget);
+    while (handle > stop) {
+      handle = handle - 1;
+      const header = this.cellHeader(handle);
+      if (header.mark == MARK_LIVE) {
+        this.headers[usize(handle)].mark = MARK_OLD;
+        if (header.tag != TAG_STRING && header.slotCount > 0 && usize(header.slotStart) < limit) {
+          const bucket = usize(header.slotStart >> SLIDE_SLOT_SHIFT);
+          counts[bucket] = counts[bucket] + 1;
+          ranges = ranges + 1;
+        }
+      } else if (header.mark == MARK_OLD) {
+        // Only a cell that owns something is given back and rewritten;
+        // any other is unmarked, which is all that says a handle is free.
+        const tag = header.tag;
+        if ((tag == TAG_OBJECT && (header.payload & DICT_BIT) != 0) || (tag == TAG_STRING && (header.payload & ARENA_BIT) == 0) || tag == TAG_TABLE || (tag == TAG_ARRAY && (header.flags & FLAG_ELEMENT_ATTRS) != 0)) {
+          this.releaseCell(handle, tag);
+        } else {
+          this.headers[usize(handle)].mark = 0;
+        }
+        this.listFree(handle);
+      }
+    }
+    const emptyCounts = replace(inout this.slideCounts, move counts);
+    this.slideRanges = ranges;
+    this.sweepCursor = handle;
+    this.liveBelow = handle;
+    // The handles listed here are no young cell's.
+    this.cycleFreeCount = this.freeHandleCount;
+    return handle <= 1;
+  }
+
+  // The sweep is done. When a large table's survivors all sit in its
+  // lowest quarter, its extent is cut back to the highest of them, so a
+  // collection after a spike costs what is alive and not what once was,
+  // and a table left far larger than it needs gives its storage back.
+  // Then the slide begins: the buckets' counts become their places in
+  // the order the ranges will move in.
+  function beginPlace(inout this): void {
+    const count = this.headerCount;
+    if (count >= HANDLE_TABLE_CUT_AT) {
+      let top = u32(count - 1);
+      while (top >= 1 && this.cellHeader(top).mark == 0) { top = top - 1; }
+      if ((usize(top) + 1) * 4 < count) {
+        this.trimHandleTable(top);
+        this.cycleFreeCount = this.freeHandleCount;
+        this.cycleExtent = this.headerCount;
+      }
+    }
+    let counts = replace(inout this.slideCounts, Array<u32>());
     prefixSums(inout counts);
-    order.clear();
-    fillZeros(inout order, ranges);
-    let handle: usize = 1;
-    while (handle < this.headerCount) {
-      const header = this.headers[handle];
-      if (header.tag != TAG_FREE && header.tag != TAG_STRING && header.slotCount > 0) {
+    const emptyCounts = replace(inout this.slideCounts, move counts);
+    this.slideOrder.clear();
+    this.slideOrder.appendRepeated(0, this.slideRanges);
+    this.phase = PHASE_PLACE;
+    this.liveBelow = 0;
+    this.placeCursor = 1;
+    this.placeEnd = this.headerCount;
+    this.moveIndex = 0;
+    this.slideCursor = 0;
+  }
+
+  // A slice of the slide's first half: `budget` handles, from the bottom
+  // up. Each old cell whose range the sweep counted is written into its
+  // bucket's place in the order, the range's start in the high word and
+  // the handle in the low one. A cell whose slots have moved since it
+  // was counted lies above the limit now and leaves its place empty.
+  // Whether the walk is done.
+  function placeSlice(inout this, budget: usize): boolean {
+    let counts = replace(inout this.slideCounts, Array<u32>());
+    let order = replace(inout this.slideOrder, Array<u64>());
+    const limit = this.slideLimit;
+    let handle = usize(this.placeCursor);
+    // (Cells past the table's extent when the walk began are no part of
+    // it: their ranges lie above the limit. The table is not cut back
+    // while the walk runs.)
+    const end = this.placeEnd;
+    let stop = end;
+    if (budget != 0 && handle + budget < end) stop = handle + budget;
+    while (handle < stop) {
+      const header = this.cellHeader(u32(handle));
+      if (header.mark != 0 && header.tag != TAG_STRING && header.slotCount > 0 && usize(header.slotStart) < limit) {
         const bucket = usize(header.slotStart >> SLIDE_SLOT_SHIFT);
-        order[usize(counts[bucket])] = u32(handle);
+        order[usize(counts[bucket])] = (u64(header.slotStart) << 32) | u64(handle);
         counts[bucket] = counts[bucket] + 1;
       }
       handle = handle + 1;
     }
-    let i: usize = 1;
-    while (i < order.length) {
-      const moving = order[i];
-      const key = this.cellHeader(moving).slotStart;
-      let j = i;
-      while (j > 0 && this.headers[usize(order[j - 1])].slotStart > key) {
-        order[j] = order[j - 1];
-        j = j - 1;
+    const emptyCounts = replace(inout this.slideCounts, move counts);
+    const emptyOrder = replace(inout this.slideOrder, move order);
+    this.placeCursor = u32(handle);
+    return handle >= end;
+  }
+
+  // A slice of the slide's second half, right after a minor collection:
+  // `budget` ranges. The order is taken bucket by bucket, a bucket's few
+  // entries put in order first, and each range still its cell's moves
+  // down to the cursor (never up: everything below it is placed); a
+  // handle never changes, so nothing outside the heap is told. Then the
+  // ranges settled above the limit since, in the order they were
+  // settled. Whether the slide has caught up, and so cut the arena back.
+  function moveSlice(inout this, budget: usize): boolean {
+    let order = replace(inout this.slideOrder, Array<u64>());
+    let cursor = this.slideCursor;
+    let index = this.moveIndex;
+    let work: usize = 0;
+    const total = order.length;
+    while (index < total) {
+      if (budget != 0 && work >= budget) break;
+      const first = order[index];
+      if (first == 0) {
+        index = index + 1;
+        continue;
       }
-      order[j] = moving;
-      i = i + 1;
+      const bucket = first >> 35;
+      let end = index + 1;
+      while (end < total && order[end] != 0 && (order[end] >> 35) == bucket) {
+        const moving = order[end];
+        let j = end;
+        while (j > index && order[j - 1] > moving) {
+          order[j] = order[j - 1];
+          j = j - 1;
+        }
+        order[j] = moving;
+        end = end + 1;
+      }
+      while (index < end) {
+        cursor = this.moveEntry(order[index], cursor);
+        index = index + 1;
+        work = work + 1;
+      }
     }
-    let cursor: usize = 0;
-    i = 0;
-    while (i < order.length) {
-      const moving = order[i];
-      const start = this.cellHeader(moving).slotStart;
-      const slotCount = this.cellHeader(moving).slotCount;
-      cursor = this.slideRange(moving, start, slotCount, cursor);
-      i = i + 1;
+    const emptyOrder = replace(inout this.slideOrder, move order);
+    this.moveIndex = index;
+    let read = this.laterRead;
+    if (index >= total) {
+      // A step settles a nursery's worth of ranges at most, so this much
+      // always gains on them.
+      const least = usize(this.nurseryCells) * 4;
+      while (read < this.laterRanges.length) {
+        if (budget != 0 && work >= budget && work >= least) break;
+        cursor = this.moveEntry(this.laterRanges[read], cursor);
+        read = read + 1;
+        work = work + 1;
+      }
+      this.laterRead = read;
     }
+    this.slideCursor = cursor;
+    if (index < total || read < this.laterRanges.length) return false;
+    // Nothing young lies above: the arena ends at the last range moved.
     while (this.slots.length > cursor) {
       const dropped = this.slots.pop();
     }
+    this.tailBase = this.slots.length;
+    this.slotsAfterSweep = this.slots.length;
+    // The scratch is kept for the next collection unless a burst grew it
+    // far past what the heap needs.
+    if (this.slideCounts.capacity > (this.slots.length >> usize(SLIDE_SLOT_SHIFT)) * 4 + LOG_RETAIN_ENTRIES) {
+      const unusedCounts = replace(inout this.slideCounts, Array<u32>());
+    }
+    if (this.slideOrder.capacity > usize(this.majorCells) * 2 + LOG_RETAIN_ENTRIES) {
+      const unusedOrder = replace(inout this.slideOrder, Array<u64>());
+    }
+    if (this.laterRanges.capacity > LOG_RETAIN_ENTRIES) {
+      const unusedLater = replace(inout this.laterRanges, Array<u64>());
+    } else {
+      this.laterRanges.clear();
+    }
+    this.laterRead = 0;
+    return true;
   }
 
-  // Slide the surviving small strings' bytes down in arena order, as
-  // slideSlots does slot ranges; the bytes kept. Strings sharing a start
+  // The range an entry names moved down to `cursor`, if it is still its
+  // cell's and the cell lives; the cursor past it.
+  function moveEntry(inout this, entry: u64, cursor: usize): usize {
+    const handle = u32(entry & 0xFFFF_FFFF);
+    // (The table may have been cut back below a dead cell's handle.)
+    if (usize(handle) >= this.headerCount) return cursor;
+    const header = this.cellHeader(handle);
+    if (header.mark == 0 || header.tag == TAG_FREE || header.slotStart != u32(entry >> 32) || header.slotCount == 0) return cursor;
+    return this.slideRange(handle, header.slotStart, header.slotCount, cursor);
+  }
+
+  // A slice of whatever follows a full collection's marking.
+  // Each of the three is done in FINISH_STEPS steps at most, however
+  // small the setting: a slice does that share of the table, or of the
+  // ranges, when it is more than the budget allows.
+  function advance(inout this, budget: u32): void {
+    let clock = this.stamp(11, 0.0);
+    let walk = usize(budget) * SWEEP_PER_MARK;
+    if (budget != 0 && walk < this.headerCount / FINISH_STEPS) walk = this.headerCount / FINISH_STEPS + 1;
+    if (this.phase == PHASE_SWEEP) {
+      if (this.sweepSlice(walk)) this.beginPlace();
+      clock = this.stamp(8, clock);
+    } else if (this.phase == PHASE_PLACE) {
+      if (this.placeSlice(walk)) this.phase = PHASE_MOVE;
+      clock = this.stamp(9, clock);
+    } else if (this.phase == PHASE_MOVE) {
+      let moves = usize(budget) * MOVE_PER_MARK;
+      if (budget != 0 && moves < this.slideRanges / FINISH_STEPS) moves = this.slideRanges / FINISH_STEPS + 1;
+      if (this.moveSlice(moves)) {
+        this.phase = PHASE_IDLE;
+        this.fullCollections = this.fullCollections + 1;
+      }
+      clock = this.stamp(10, clock);
+    }
+  }
+
+  // The sweep and the slide, to the end. Right after a minor collection.
+  function finishCollection(inout this): void {
+    while (this.phase >= PHASE_SWEEP) {
+      this.advance(0);
+    }
+  }
+
+  // The end of a whole collection, its marking done and the weak entries
+  // and atoms of dead cells dropped: the young cells are swept as a
+  // minor collection sweeps them, then the old ones, then the slide.
+  function finishWhole(inout this): void {
+    if (this.greyCount > 0 || this.markCount > 0) this.drainAll();
+    let clock = this.stamp(11, 0.0);
+    this.sweepYoung();
+    this.finishMinor();
+    clock = this.stamp(2, clock);
+    this.endMark();
+    clock = this.stamp(4, clock);
+    this.finishCollection();
+  }
+
+  // Slide the reached small strings' bytes down in arena order; the
+  // bytes kept. `counts` holds, per bucket of 2^SLIDE_BYTE_SHIFT bytes,
+  // how many strings start in it; the strings are placed bucket by
+  // bucket into `order`, a pass of insertion sort puts each bucket's few
+  // in order, and each moves to the cursor (never up: everything below
+  // it is placed). Strings sharing a start
   // (a run concatenation made; see sweepYoung) move together: the first
   // of a run takes the cursor and each other copies only what it adds.
   function slideBytes(inout this, inout counts: Array<u32>, inout order: Array<u32>): usize {
@@ -794,7 +1205,7 @@ export struct Heap {
     let handle: usize = 1;
     while (handle < this.headerCount) {
       const header = this.headers[handle];
-      if (header.tag == TAG_STRING && (header.payload & ARENA_BIT) != 0) {
+      if (header.mark == MARK_LIVE && header.tag == TAG_STRING && (header.payload & ARENA_BIT) != 0) {
         if (header.slotStart == 0) {
           // An empty string keeps no bytes.
           this.headers[handle].payload = ARENA_BIT;
@@ -812,7 +1223,7 @@ export struct Heap {
     handle = 1;
     while (handle < this.headerCount) {
       const header = this.headers[handle];
-      if (header.tag == TAG_STRING && (header.payload & ARENA_BIT) != 0 && header.slotStart != 0) {
+      if (header.mark == MARK_LIVE && header.tag == TAG_STRING && (header.payload & ARENA_BIT) != 0 && header.slotStart != 0) {
         const bucket = usize((header.payload & ~ARENA_BIT) >> SLIDE_BYTE_SHIFT);
         order[usize(counts[bucket])] = u32(handle);
         counts[bucket] = counts[bucket] + 1;
@@ -912,7 +1323,7 @@ export struct Heap {
   // A cell has come to own something a sweep must give back, or become
   // an atom: listed while it is young.
   function ownYoung(inout this, handle: u32): void {
-    if (!this.cellHeader(handle).marked) this.youngOwners.push(handle);
+    if (this.cellHeader(handle).mark == 0) this.youngOwners.push(handle);
   }
 
   // Give back what a dead cell owns outside its slots, and free its
@@ -930,7 +1341,7 @@ export struct Heap {
       this.releaseTable(table);
     }
     if (tag == TAG_ARRAY && (this.cellHeader(handle).flags & FLAG_ELEMENT_ATTRS) != 0) this.releaseElementAttrs(handle);
-    this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, marked: false, flags: 0, remembered: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
+    this.headers[usize(handle)] = CellHeader({ tag: TAG_FREE, mark: 0, flags: 0, remembered: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
   }
 
   // Move a cell's slots down to `cursor` (never up: everything below it
@@ -948,16 +1359,25 @@ export struct Heap {
     return cursor + usize(count);
   }
 
+  // An old cell's range put where it stays until a full collection's
+  // slide: moved down to `cursor`, and listed for the slide when one is
+  // under way, since it lies above the ranges that slide sorted.
+  function settleRange(inout this, handle: u32, start: u32, count: u32, cursor: usize): usize {
+    if (this.phase >= PHASE_SWEEP) this.laterRanges.push((u64(cursor) << 32) | u64(handle));
+    return this.slideRange(handle, start, count, cursor);
+  }
+
   // The grown range the log's entry names, slid down if it is still the
   // cell's and the cell lives.
   function slideGrown(inout this, entry: usize, cursor: usize): usize {
     const logged = this.growLog[entry];
     const handle = u32(logged & 0xFFFF_FFFF);
     const start = u32(logged >> 32);
-    if (this.cellHeader(handle).tag == TAG_FREE || !this.cellHeader(handle).marked) return cursor;
+    if (this.cellHeader(handle).tag == TAG_FREE || this.cellHeader(handle).mark == 0) return cursor;
     if (this.cellHeader(handle).slotStart != start) return cursor;
     const count = this.cellHeader(handle).slotCount;
-    return this.slideRange(handle, start, count, cursor);
+    if (count == 0) return cursor;
+    return this.settleRange(handle, start, count, cursor);
   }
 
   function listFree(inout this, handle: u32): void {
@@ -1010,7 +1430,7 @@ export struct Heap {
       const owning = this.youngOwners[owner];
       owner = owner + 1;
       const header = this.cellHeader(owning);
-      if (header.marked || header.tag == TAG_FREE) continue;
+      if (header.mark != 0 || header.tag == TAG_FREE) continue;
       if (header.tag == TAG_STRING && (header.flags & FLAG_INTERNED) != 0) {
         if (!header.remembered) {
           this.headers[usize(owning)].remembered = true;
@@ -1031,14 +1451,14 @@ export struct Heap {
         // the next survivor, whose place in the list is a gap.
         while (at < fromList) {
           handle = unsafe { select this.freeHandles.uncheckedAt(listTop - 1 - at); };
-          if (this.cellHeader(handle).marked) break;
+          if (this.cellHeader(handle).mark != 0) break;
           at = at + 1;
         }
         if (at == fromList) continue;
         this.youngGaps.push(u32(listTop - 1 - at));
       } else {
         handle = u32(this.cycleExtent + at - fromList);
-        if (!this.cellHeader(handle).marked) {
+        if (this.cellHeader(handle).mark == 0) {
           this.deadYoung.push(handle);
           at = at + 1;
           continue;
@@ -1098,7 +1518,7 @@ export struct Heap {
         cursor = this.slideGrown(grown, cursor);
         grown = grown + 1;
       }
-      cursor = this.slideRange(handle, start, count, cursor);
+      cursor = this.settleRange(handle, start, count, cursor);
     }
     while (grown < this.growLog.length) {
       cursor = this.slideGrown(grown, cursor);
@@ -1122,18 +1542,12 @@ export struct Heap {
       this.freeHandles[usize(this.youngGaps[low])] = this.freeHandles[position];
     }
     this.freeHandleCount = newTop;
-    // The dead from past the table's old extent listed free, as listFree
-    // would, in one loop.
-    at = 0;
-    while (at < this.deadYoung.length) {
-      const dead = this.deadYoung[at];
-      if (this.freeHandleCount < this.freeHandles.length) {
-        this.freeHandles[this.freeHandleCount] = dead;
-      } else {
-        this.freeHandles.push(dead);
-      }
-      this.freeHandleCount = this.freeHandleCount + 1;
-      at = at + 1;
+    // The dead from past the table's old extent listed free, the
+    // highest first, so the next allocations take the lowest of them.
+    at = this.deadYoung.length;
+    while (at > 0) {
+      at = at - 1;
+      this.listFree(this.deadYoung[at]);
     }
     while (this.slots.length > cursor) {
       const dropped = this.slots.pop();
@@ -1153,7 +1567,7 @@ export struct Heap {
     this.allocatedSinceCollect = 0;
     this.collectThreshold = this.nurseryCells;
     if (young >= TENURE_SAMPLE && usize(this.markedCells) * 100 >= young * TENURE_PERCENT) this.tenureSkips = TENURE_SKIPS;
-    this.minorCollections = this.minorCollections + 1;
+    if (!this.whole) this.minorCollections = this.minorCollections + 1;
   }
 
   // In place of a minor collection while most young cells survive one
@@ -1163,7 +1577,25 @@ export struct Heap {
   function promoteYoung(inout this): void {
     const fromList = this.cycleFreeCount - this.freeHandleCount;
     const young = fromList + this.headerCount - this.cycleExtent;
+    // While a full collection's sweep or slide is under way the ranges
+    // are listed for the slide where they lie, in arena order: a young
+    // cell's first range in the order of the cells, and the grown ones,
+    // which the log has, between.
+    const listing = this.phase >= PHASE_SWEEP;
+    let grown: usize = 0;
     let at: usize = 0;
+    // With no full collection under way the mark is all there is to it.
+    while (this.phase == PHASE_IDLE && at < young) {
+      let handle: u32 = 0;
+      if (at < fromList) {
+        handle = this.freeHandles[this.cycleFreeCount - 1 - at];
+      } else {
+        handle = u32(this.cycleExtent + at - fromList);
+      }
+      this.headers[usize(handle)].mark = MARK_OLD;
+      this.headers[usize(handle)].remembered = false;
+      at = at + 1;
+    }
     while (at < young) {
       let handle: u32 = 0;
       if (at < fromList) {
@@ -1171,15 +1603,33 @@ export struct Heap {
       } else {
         handle = u32(this.cycleExtent + at - fromList);
       }
-      this.headers[usize(handle)].marked = true;
-      this.headers[usize(handle)].remembered = false;
       at = at + 1;
+      const header = this.cellHeader(handle);
+      this.headers[usize(handle)].mark = handle < this.liveBelow ? MARK_LIVE : MARK_OLD;
+      this.headers[usize(handle)].remembered = false;
+      // While a full collection marks, each is queued: nothing has
+      // traced it.
+      if (this.phase == PHASE_MARK) this.pushGrey(handle);
+      // (`remembered` on a young cell: growSlots moved its slots, and the
+      // log has them.)
+      if (!listing || header.tag == TAG_STRING || header.slotCount == 0 || header.remembered) continue;
+      while (grown < this.growLog.length && u32(this.growLog[grown] >> 32) < header.slotStart) {
+        this.listGrown(grown);
+        grown = grown + 1;
+      }
+      this.laterRanges.push((u64(header.slotStart) << 32) | u64(handle));
+    }
+    while (listing && grown < this.growLog.length) {
+      this.listGrown(grown);
+      grown = grown + 1;
     }
     let cycleSlots: usize = 0;
     if (this.slots.length > this.slotsAfterSweep) cycleSlots = this.slots.length - this.slotsAfterSweep;
     this.smallLiveBytes = this.smallLiveBytes + (this.smallBytes.length - this.byteTailBase);
     this.promotedCells = this.promotedCells + u32(young);
     this.promotedSlots = this.promotedSlots + cycleSlots;
+    this.markedCells = u32(young);
+    this.markedSlots = cycleSlots;
     this.cellsBeforeCycle = this.cellsBeforeCycle + f64(this.allocatedSinceCollect);
     this.slotsBeforeCycle = this.slotsBeforeCycle + f64(cycleSlots);
     this.slotsAfterSweep = this.slots.length;
@@ -1190,6 +1640,16 @@ export struct Heap {
     this.deadAtoms.clear();
     this.endCycle();
     this.collections = this.collections - 1;
+  }
+
+  // The grown range the log's entry names, listed for the slide where
+  // it lies if it is still its cell's.
+  function listGrown(inout this, entry: usize): void {
+    const logged = this.growLog[entry];
+    const handle = u32(logged & 0xFFFF_FFFF);
+    const header = this.cellHeader(handle);
+    if (header.slotStart != u32(logged >> 32) || header.slotCount == 0) return;
+    this.laterRanges.push(logged);
   }
 
   // After the runtime has dropped the dead atoms from its table: they are
@@ -1280,7 +1740,7 @@ export struct Heap {
     this.headers[usize(handle)].slotStart = start;
     this.headers[usize(handle)].slotCount = newCount;
     this.growLog.push((u64(start) << 32) | u64(handle));
-    if (!this.cellHeader(handle).marked) this.headers[usize(handle)].remembered = true;
+    if (this.cellHeader(handle).mark == 0) this.headers[usize(handle)].remembered = true;
   }
 
   function linkOf(handle: u32): u32 {
@@ -1289,7 +1749,7 @@ export struct Heap {
 
   function setLink(inout this, handle: u32, link: u32): void {
     this.headers[usize(handle)].link = link;
-    if (link != 0 && this.cellHeader(handle).marked) this.remember(handle, link);
+    if (link != 0 && this.cellHeader(handle).mark != 0) this.remember(handle, link);
   }
 
   // --- Hidden classes ---
@@ -1419,7 +1879,7 @@ export struct Heap {
 
   function setObjectProto(inout this, handle: u32, proto: u32): void {
     this.headers[usize(handle)].link = proto;
-    if (proto != 0 && this.cellHeader(handle).marked) this.remember(handle, proto);
+    if (proto != 0 && this.cellHeader(handle).mark != 0) this.remember(handle, proto);
   }
 
   // The object's own slot for `atom`, or -1: the value slot, in either
@@ -1838,7 +2298,7 @@ export struct Heap {
 
   function setTableValue(inout this, handle: u32, position: u32, value: Value): void {
     this.tables[usize(this.cellHeader(handle).payload)].values[usize(position)] = value;
-    if (this.cellHeader(handle).marked) this.rememberStore(handle, position, value);
+    if (this.cellHeader(handle).mark != 0) this.rememberStore(handle, position, value);
   }
 
   // The position of `key`, whose hash is `hash`, or -1.
@@ -1862,7 +2322,7 @@ export struct Heap {
     while (this.tables[table].index[usize(slot)] >= 0) { slot = (slot + 1) & mask; }
     this.tables[table].index[usize(slot)] = i32(position);
     this.tables[table].live = this.tables[table].live + 1;
-    if (this.cellHeader(handle).marked) {
+    if (this.cellHeader(handle).mark != 0) {
       this.rememberStore(handle, u32(position), key);
       this.rememberStore(handle, u32(position), value);
     }
@@ -1916,19 +2376,13 @@ export struct Heap {
     this.tables[table].index = move index;
   }
 
-  function markTable(inout this, table: usize): void {
+  function markTable(inout this, table: usize, young: boolean, old: boolean): void {
     let k: usize = 0;
     while (k < this.tables[table].keys.length) {
       const key = this.tables[table].keys[k];
-      if (isCell(key) && asCell(key) != 0 && !this.cellHeader(asCell(key)).marked) {
-        this.headers[usize(asCell(key))].marked = true;
-        this.pushMark(asCell(key));
-      }
+      if (isCell(key) && asCell(key) != 0) this.reach(asCell(key), young, old);
       const value = this.tables[table].values[k];
-      if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
-        this.headers[usize(asCell(value))].marked = true;
-        this.pushMark(asCell(value));
-      }
+      if (isCell(value) && asCell(value) != 0) this.reach(asCell(value), young, old);
       k = k + 1;
     }
   }
@@ -2286,10 +2740,9 @@ export struct Heap {
       if (!isDeleted(key)) {
         this.weakVisits = this.weakVisits + 1;
         const value = this.slot(values, position);
-        if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
-          if (this.cellHeader(asCell(key)).marked) {
-            this.headers[usize(asCell(value))].marked = true;
-            this.pushMark(asCell(value));
+        if (isCell(value) && asCell(value) != 0 && (this.cellHeader(asCell(value)).mark & MARK_REACHED) == 0) {
+          if ((this.cellHeader(asCell(key)).mark & MARK_REACHED) != 0) {
+            this.reach(asCell(value), true, true);
           } else {
             this.addPending(asCell(key), value);
           }
@@ -2347,10 +2800,7 @@ export struct Heap {
         const value = this.pendingValues[entry];
         this.pendingKeys[entry] = 0;
         this.pendingCount = this.pendingCount - 1;
-        if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
-          this.headers[usize(asCell(value))].marked = true;
-          this.pushMark(asCell(value));
-        }
+        if (isCell(value) && asCell(value) != 0) this.reach(asCell(value), true, true);
       }
       at = this.pendingNext[entry];
     }
@@ -2384,16 +2834,26 @@ export struct Heap {
     return this.pendingKeys.capacity * 4 + this.pendingValues.capacity * 8 + this.pendingNext.capacity * 4 + this.pendingBuckets.capacity * 4;
   }
 
-  // After the strong roots have drained, with the pending index having
-  // activated every value whose key was marked: a verification scan over
-  // the records reached. It marks nothing when the index did its job;
-  // should it find something, it keeps going to a fixpoint, so the
-  // collection is right either way.
+  // After the marking is done: each record it reached is settled -- a
+  // reached key's value reached, the rest left waiting on their keys in
+  // the pending index, which reaches a value when its key is traced --
+  // and then a verification scan over the records. The scan reaches
+  // nothing when the index did its job; should it find something, it
+  // keeps going to a fixpoint, so the collection is right either way. A
+  // record reached on the way is settled like the rest.
   function markEphemerons(inout this): void {
+    this.drainAll();
+    let settled: usize = 0;
     let passes: u32 = 0;
     let progressed = true;
     while (progressed) {
       progressed = false;
+      while (settled < this.weakRecords.length) {
+        const record = this.weakRecords[settled];
+        settled = settled + 1;
+        this.registerWeakRecord(record);
+        this.drainAll();
+      }
       passes = passes + 1;
       let r: usize = 0;
       while (r < this.weakRecords.length) {
@@ -2404,11 +2864,12 @@ export struct Heap {
         let position: u32 = 0;
         while (position < count) {
           const key = this.slot(keys, position);
-          if (!isDeleted(key) && this.cellHeader(asCell(key)).marked) {
+          if (!isDeleted(key) && (this.cellHeader(asCell(key)).mark & MARK_REACHED) != 0) {
             this.weakVisits = this.weakVisits + 1;
             const value = this.slot(values, position);
-            if (isCell(value) && asCell(value) != 0 && !this.cellHeader(asCell(value)).marked) {
-              this.markHandle(asCell(value));
+            if (isCell(value) && asCell(value) != 0 && (this.cellHeader(asCell(value)).mark & MARK_REACHED) == 0) {
+              this.reach(asCell(value), true, true);
+              this.drainAll();
               progressed = true;
             }
           }
@@ -2433,7 +2894,7 @@ export struct Heap {
       let position: u32 = 0;
       while (position < count) {
         const key = this.slot(keys, position);
-        if (!isDeleted(key) && !this.cellHeader(asCell(key)).marked) {
+        if (!isDeleted(key) && (this.cellHeader(asCell(key)).mark & MARK_REACHED) == 0) {
           this.weakRetire(record, position, asCell(key));
           dropped = dropped + 1;
         }
@@ -3207,7 +3668,7 @@ export struct Heap {
     unsafe {
       this.slots.uncheckedSet(usize(header.slotStart.wrappingAdd(index)), value);
     }
-    if (header.marked) this.rememberStore(handle, index, value);
+    if (header.mark != 0) this.rememberStore(handle, index, value);
   }
 
   // A property's attributes, by the slot its value is in: an object's
@@ -3369,11 +3830,20 @@ export struct Heap {
   }
 
   function marked(handle: u32): boolean {
-    return this.cellHeader(handle).marked;
+    return this.cellHeader(handle).mark != 0;
+  }
+
+  // Whether the full collection under way has reached the cell.
+  function reached(handle: u32): boolean {
+    return (this.cellHeader(handle).mark & MARK_REACHED) != 0;
   }
 
   function setMarked(inout this, handle: u32, value: boolean): void {
-    this.headers[usize(handle)].marked = value;
+    if (value) {
+      this.headers[usize(handle)].mark = MARK_OLD;
+    } else {
+      this.headers[usize(handle)].mark = 0;
+    }
   }
 
   // Allocated cells, excluding the reserved handle 0.
@@ -3381,7 +3851,7 @@ export struct Heap {
   // from the table with everything above the highest survivor.
   function isReleased(handle: u32): boolean {
     if (usize(handle) >= this.headerCount) return true;
-    return this.cellHeader(handle).tag == TAG_FREE || !this.cellHeader(handle).marked;
+    return this.cellHeader(handle).tag == TAG_FREE || this.cellHeader(handle).mark == 0;
   }
 
   // One past the highest handle the table holds.
@@ -3424,7 +3894,7 @@ export struct Heap {
 
   // The slot arena, and the full collection's sorting scratch.
   function arenaBytesHeld(): f64 {
-    return f64(this.slots.capacity) * 8.0 + f64(this.slideCounts.capacity + this.slideOrder.capacity) * 4.0;
+    return f64(this.slots.capacity) * 8.0 + f64(this.slideCounts.capacity) * 4.0 + f64(this.slideOrder.capacity) * 8.0;
   }
 
   // The handle table with its free list, the mark stack, and the
@@ -3450,6 +3920,7 @@ export struct Heap {
   function otherBytesHeld(): f64 {
     let held: f64 = f64(this.classes.capacity) * 112.0 + f64(this.dictionaries.capacity) * 64.0 + f64(this.freeDictionaries.capacity) * 4.0;
     held = held + f64(this.weakRecords.capacity) * 4.0 + f64(this.pendingScratchBytes());
+    held = held + f64(this.laterRanges.capacity) * 8.0 + f64(this.greyStack.capacity) * 4.0;
     let index: usize = 0;
     while (index < this.classes.length) {
       held = held + f64(this.classes[index].transitionNames.capacity) * 4.0 + f64(this.classes[index].transitionChildren.capacity) * 4.0;
@@ -3623,7 +4094,7 @@ function sameStorage(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, l
 export function createHeap(): Heap {
   let headers = Array<CellHeader>();
   // Handle 0 is reserved; push a sentinel so live handles start at 1.
-  headers.push(CellHeader({ tag: TAG_RESERVED, marked: false, flags: 0, remembered: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 }));
+  headers.push(CellHeader({ tag: TAG_RESERVED, mark: 0, flags: 0, remembered: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 }));
   let classes = Array<HiddenClass>();
   // Class 0 is the empty root every object starts from.
   classes.push(HiddenClass({
@@ -3633,7 +4104,7 @@ export function createHeap(): Heap {
   let phaseNs = Array<f64>();
   phaseNs.appendRepeated(0.0, 12);
   return Heap({
-    headers: move headers, slots: Array<Value>(), slideCounts: Array<u32>(), slideOrder: Array<u32>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), slideCounts: Array<u32>(), slideOrder: Array<u64>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
@@ -3643,6 +4114,7 @@ export function createHeap(): Heap {
     allocatedSinceCollect: 0, collectThreshold: NURSERY_CELLS, collections: 0, collectFloor: COLLECT_FLOOR, collectGrowthPercent: COLLECT_GROWTH_PERCENT,
     cycleFreeCount: 0, cycleExtent: 1, growLog: Array<u64>(), rememberedCells: Array<u32>(), rememberedSlots: Array<u64>(), deadYoung: Array<u32>(), deadAtoms: Array<u32>(), youngOwners: Array<u32>(), youngGaps: Array<u32>(), tailBase: 0, byteTailBase: 0, minorCollection: false, nurseryCells: NURSERY_CELLS,
     promotedCells: 0, promotedSlots: 0, majorThreshold: COLLECT_FLOOR, majorCells: 0, majorSlots: 0, minorCollections: 0, tenureSkips: 0, tenured: 0,
+    phase: PHASE_IDLE, whole: false, liveBelow: 0, greyStack: Array<u32>(), greyCount: 0, reachedCells: 0, reachedSlots: 0, reachedBytes: 0, promotedAtStart: 0, markPace: 0, sweepCursor: 0, slideLimit: 0, slideRanges: 0, placeCursor: 0, placeEnd: 0, moveIndex: 0, slideCursor: 0, laterRanges: Array<u64>(), laterRead: 0, sliceWork: NURSERY_CELLS * 4, fullCollections: 0,
     phaseTiming: false, phaseNs: move phaseNs, youngSeen: 0.0, youngSurvived: 0.0, rememberedSeen: 0.0,
   });
 }
@@ -3870,8 +4342,9 @@ test "a sweep frees unmarked cells, compacts slots, and reuses handles" {
   heap.setSlot(child, 0, cellValue(keptString));
   heap.objectSet(dropped, keptString, cellValue(droppedString));
   const slotsBefore = heap.slotsInUse();
+  heap.beginWhole();
   heap.markHandle(kept);
-  heap.sweep();
+  heap.finishWhole();
   expect(heap.liveCells()).toEqual(3);
   expect(heap.isReleased(dropped)).toEqual(true);
   expect(heap.isReleased(droppedString)).toEqual(true);
@@ -3897,8 +4370,9 @@ test "marking follows links: prototypes, environments, closures" {
   const fn = heap.allocateFunction(3);
   const closure = heap.allocateClosure(3, innerEnv, cellValue(object));
   heap.setSlot(outerEnv, 0, cellValue(fn));
+  heap.beginWhole();
   heap.markHandle(closure);
-  heap.sweep();
+  heap.finishWhole();
   expect(heap.tagOf(proto)).toEqual(TAG_OBJECT);
   expect(heap.tagOf(outerEnv)).toEqual(TAG_ENV);
   expect(heap.tagOf(fn)).toEqual(TAG_FUNCTION);
@@ -3918,9 +4392,10 @@ test "a large table whose survivors sit low is cut back to the highest of them" 
     tail = tail + 1;
   }
   expect(heap.handleExtent()).toEqual(high + 40001);
+  heap.beginWhole();
   heap.markHandle(kept);
   heap.markHandle(high);
-  heap.sweep();
+  heap.finishWhole();
   // Everything above `high` is gone from the table and from the free
   // list; `low` and `middle` are free below it and come back first.
   expect(heap.handleExtent()).toEqual(high + 1);
@@ -3937,9 +4412,9 @@ test "a large table whose survivors sit low is cut back to the highest of them" 
     const garbage = heap.allocateObject(0);
     tail = tail + 1;
   }
-  heap.beginMajor();
+  heap.beginWhole();
   heap.markHandle(kept);
-  heap.sweep();
+  heap.finishWhole();
   expect(heap.handleExtent()).toEqual(kept + 1);
   expect(heap.liveCells()).toEqual(1);
   expect(heap.allocateObject(0)).toEqual(low);
@@ -3955,8 +4430,9 @@ test "a small table is walked whole and left as it is" {
     tail = tail + 1;
   }
   const extent = heap.handleExtent();
+  heap.beginWhole();
   heap.markHandle(kept);
-  heap.sweep();
+  heap.finishWhole();
   expect(heap.handleExtent()).toEqual(extent);
   expect(heap.liveCells()).toEqual(1);
   expect(heap.isReleased(kept + 50)).toEqual(true);
@@ -4102,8 +4578,9 @@ test "a sweep releases a dead dictionary and a live one survives the compaction"
     i = i + 1;
   }
   expect(heap.dictionaryCount()).toEqual(2);
+  heap.beginWhole();
   heap.markHandle(kept);
-  heap.sweep();
+  heap.finishWhole();
   expect(heap.dictionaryCount()).toEqual(1);
   expect(heap.isReleased(dead)).toEqual(true);
   // The keys were reached through the object's slots.
@@ -4152,7 +4629,7 @@ function weakFixture(inout heap: Heap, count: u32): WeakFixture {
 // One collection over explicit roots: the given handles are marked, the
 // ephemeron pass runs, dead entries are dropped, the sweep frees the rest.
 function collectWith(inout heap: Heap, in roots: Array<u32>): void {
-  heap.beginMajor();
+  heap.beginWhole();
   let i: usize = 0;
   while (i < roots.length) {
     heap.markHandle(roots[i]);
@@ -4160,7 +4637,7 @@ function collectWith(inout heap: Heap, in roots: Array<u32>): void {
   }
   heap.markEphemerons();
   heap.clearDeadWeakEntries();
-  heap.sweep();
+  heap.finishWhole();
 }
 
 test "weak record: a rooted key keeps its entry and value; a dropped key loses both" {
@@ -4461,13 +4938,13 @@ test "weak record: explicit deletes and reinserts reclaim storage without a coll
 
 // A full collection keeping `roots`, after which they are old.
 function collectFull(inout heap: Heap, in roots: Array<u32>): void {
-  heap.beginMajor();
+  heap.beginWhole();
   let i: usize = 0;
   while (i < roots.length) {
     heap.markHandle(roots[i]);
     i = i + 1;
   }
-  heap.sweep();
+  heap.finishWhole();
 }
 
 // A minor collection over explicit roots.

@@ -52,7 +52,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
 | Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`) |
-| Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives |
+| Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
 | Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp, arrays done |
@@ -181,9 +181,39 @@ Together, cycles less startup over 32 workloads
 -9%, allocation -7.5%; over 8 placements allocation -7.6%, closures
 -5.7%, no kernel slower beyond +0.4%; `__text` +1.3 KB; test262
 unchanged.
+Full collections in slices (2026-11-13). A full collection stopped the
+program for a time proportional to the live heap: 6 ms at 0.4 million
+cells, 35 to 55 ms at 1.3 to 6 million. It is now spread over the
+collections that follow its start (heap.zs, Full collections): marking
+in slices, with an old cell stored into an old one queued by the write
+barrier's slow half; then the sweep, then the slide of the slot ranges,
+each a slice at a time. A handle never changes, so the slide moves
+ranges between slices with no forwarding and nothing for the program to
+check. A heap one slice can mark is still collected whole. Longest
+pause, before and after (`bench/gc/results/incremental-vs-kept.json`):
+splay 47.2 -> 1.9 ms, old-to-young 13.4 -> 2.1,
+frames 11.2 -> 1.4, the large heap 11.0 -> 1.4, fifo 6.1 -> 2.1,
+then-chain 4.4 -> 0.7, and 53 -> 6.7 after a burst of two million
+objects, where cutting the handle table back is still one step. Time
+over those ten workloads is level (+0.2% geometric mean, least of 12
+runs each). The cost is
+memory: the cells made old while a collection runs are kept until the
+next, so resident memory is 0 to 10% higher on most of them and 26 to
+50% on the three with the highest turnover (fifo 55 -> 77 MB,
+binary-trees 27 -> 41, old-to-young 80 -> 101); `--gc-slice 0` gives
+the whole collection back. `__text` +5.2 KB; kernels within 1% over 8
+placements except helpers -1.7%; test262 unchanged, also with a
+collection every 64 allocations and 16 units of marking at each. The
+collection's entry point is marked cold: grown, it had been inlined
+into the loop back edge's safe point and cost polymorphic 7.7% and
+properties 3.2%.
 Left: every allocation pushes its slots one call at a time (Z has no
 bulk append); growth that does not move (Z upstream: reserved address
-space or remapping); cell headers are 20 bytes.
+space or remapping); cell headers are 20 bytes; a large array or table
+is traced, and the small strings' bytes compacted, in one step; marking
+is bound by cache misses (about 8 ns a cell, three times faster when
+the heap is laid out in the order it is traced), which a prefetch hint
+in Z would ease.
 
 **Call protocol.** A call writes an 88-byte frame into one array and a
 register window into another, and leaves the dispatch loop to reload the
@@ -648,7 +678,9 @@ profile through `z build` (or a build step compiling the emitted C).
   survive: frames +10.6% and half again the memory; making the young old
   untraced, sampled, replaced it. Strings marked without queueing and
   dead cells left unwritten by the full sweep: the sweep 25% faster,
-  the slide 50% slower, level.
+  the slide 50% slower, level. A list of every old cell's slot range
+  kept in arena order, so the slide needs no sort: an entry for every
+  cell promoted cost 10% on fifo; the sort cut into slices replaced it.
 
 - The interrupt poll's countdown (zjs_set_interrupt_handler) kept in a
   dispatch-loop local, which took the handlers' ninth argument register,

@@ -429,6 +429,29 @@ functions and hidden classes an earlier collection traced. When 60% or
 more of a young generation survives, the next seven are made old
 untraced and the eighth is traced to see whether that still holds.
 
+A full collection is spread over the collections that follow its start
+(2026-11-13), a slice after each minor collection, so the program stops
+for a minor collection and a slice and no longer for the whole heap.
+First the marking: a cell's mark says whether it is old and whether the
+collection has reached it; the roots' old cells are queued when it
+begins and at every minor collection, a cell made old meanwhile is
+reached, and the write barrier's slow half queues an old cell stored
+into an old one, so a cell already traced never holds one that is not
+reached. When a slice leaves nothing queued, right after a minor
+collection, what is not reached is dead: the weak entries and atoms of
+dead cells go, and the sweep walks the table a slice at a time, then the
+slide sorts and moves the slot ranges a slice at a time. A handle never
+changes, so ranges move between slices with nothing for the program to
+check. A slice traces 65,536 cells' worth, or more when the heap is
+large enough that the marking would otherwise take over 64 steps. A
+heap one slice can mark is collected whole, as before, and so is every
+collection of `gc()` and of a heap with no young generation. On a splay
+tree of 1.3 million cells the longest pause went from 47 ms to 1.9 ms,
+on 500,000 records under churn from 11 ms to 1.4 ms, with time level;
+the cells made old while a collection runs wait for the next, which
+costs up to 10% resident memory on most large heaps and 26 to 50% on
+those with the highest turnover (`bench/gc`, docs/levers.md).
+
 Places the corpus deliberately steps around, where the reference is wrong and
 the Z engine follows the specification: a property write to `undefined`
 throws a TypeError (the reference drops it); `Error.prototype.message` is
@@ -590,8 +613,9 @@ constructor, a function that needs more than 252 registers (operands
 are a byte; it fails to compile, where the reference compiles it), and
 the remaining builtins. A function declaration
 evaluated more than once yields the same function object each time
-(class members do not). The collector is stop-the-world, with a young
-generation (Phase 6).
+(class members do not). The collector stops the program for a minor
+collection and a slice of a full one at a time (Phase 6); a large array
+or table is still traced in one step.
 
 ```
 $ ./oracle.sh
@@ -676,12 +700,13 @@ Z_BIN=<native z> ./build.sh     # the same, built by a native compiler binary (z
 ./oracle-eval.sh                # behavioral oracle: diff eval results, both engines
 ./expect.sh                     # expectation cases recorded from node (tests/expect),
                                   #   each also run collecting at every safe point
-./gc-check.sh                   # collector checks on engine counters (tests/gc)
+./gc-check.sh                   # collector checks on engine counters, and a graph
+                                  #   mutated at random under seven collector settings (tests/gc)
 ./probes/run.sh                 # z-lang acceptance probes (see probes/README.md)
 Z_BIN=<native z> ./probes/native/run.sh   # programs Stage 0 accepts that a native compiler rejects
 ./spike/run.sh                  # Phase 0 measurements
 ./build/zjsz dump file.js       # the bytecode each function compiles to
-./build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats] [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] file.js
+./build/zjsz run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats] [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--gc-slice N] [--expose-gc] file.js
                                   # --dict-threshold: property count at which an
                                   #   object leaves its hidden class (measurement)
                                   # --stats: slots, cells, dictionaries, collections,
@@ -699,6 +724,9 @@ Z_BIN=<native z> ./probes/native/run.sh   # programs Stage 0 accepts that a nati
                                   # --gc-nursery: cells allocated between minor
                                   #   collections; 1 collects at every safe point
                                   #   (tests), 0 makes every collection full
+                                  # --gc-slice: the marking one slice of a full
+                                  #   collection does, in cells (four nurseries'
+                                  #   worth unless given); 0 collects whole
                                   # --expose-gc: a global gc() that collects
                                   #   everything (tests)
 

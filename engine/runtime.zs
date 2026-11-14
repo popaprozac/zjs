@@ -138,6 +138,10 @@ const JOB_COMPACT_AT: usize = 4096;
 // The embedder's interrupt handler is asked once every this many back
 // edges and calls.
 const INTERRUPT_POLL_INTERVAL: u32 = 4096;
+// What a collection at a safe point does (collectNow).
+const COLLECT_STEP: u8 = 0;
+const COLLECT_PROMOTE: u8 = 1;
+const COLLECT_WHOLE: u8 = 2;
 // Queue storage up to this many values is kept between drains.
 const JOB_STORAGE_KEPT: usize = 65536;
 export const REACTION_HANDLER: i32 = 0;
@@ -5260,62 +5264,134 @@ export struct Runtime {
 
   // --- Collection ---
 
-  // Mark everything reachable from the runtime's roots, then sweep: the
-  // young cells alone, or everything when the policy says the old ones
-  // are due. Runs only at instruction boundaries, where every live value
-  // sits in a register, a frame, a global, or a table -- never in a Z
-  // local.
-  function collectGarbage(inout this): void {
-    const full = this.heap.majorDue();
-    if (!full && this.heap.tenureSkips > 0) {
-      this.heap.promoteYoung();
-      return;
+  // At a safe point with enough allocated, where every live value sits
+  // in a register, a frame, a global, or a table -- never in a Z local.
+  // Ordinarily a step: a minor collection, then a slice of the full
+  // collection under way (the heap's Full collections). Without a young
+  // generation every collection is whole, and so is a full collection
+  // due on a heap one slice can mark. While most young cells survive a
+  // minor collection (tenureSkips) the young are made old untraced
+  // instead.
+  cold function collectGarbage(inout this): void {
+    if (this.heap.nurseryCells == 0) {
+      this.collectTimed(COLLECT_WHOLE);
+    } else if (!this.heap.collecting() && this.heap.majorDue()) {
+      if (this.heap.wholeFits()) {
+        this.collectTimed(COLLECT_WHOLE);
+      } else {
+        this.collectTimed(COLLECT_STEP);
+      }
+    } else if (this.heap.tenureSkips > 0) {
+      this.collectTimed(COLLECT_PROMOTE);
+    } else {
+      this.collectTimed(COLLECT_STEP);
     }
-    this.collectTimed(full);
   }
 
-  // A full collection now, whatever the policy says: gc().
+  // A whole collection now, whatever the policy says: gc().
   function collectAll(inout this): void {
-    this.collectTimed(true);
+    this.collectTimed(COLLECT_WHOLE);
   }
 
-  function collectTimed(inout this, full: boolean): void {
+  function collectTimed(inout this, mode: u8): void {
     let started: f64 = 0.0;
     if (this.gcTiming) started = native.zjs_clock_mono_ns();
-    this.collectNow(full);
+    this.collectNow(mode);
     if (this.gcTiming) this.gcPauses.push(native.zjs_clock_mono_ns() - started);
   }
 
-  function collectNow(inout this, full: boolean): void {
+  function collectNow(inout this, mode: u8): void {
     let clock = this.heap.stamp(11, 0.0);
-    if (full) {
-      this.heap.beginMajor();
-      clock = this.heap.stamp(4, clock);
-    } else {
-      this.heap.beginMinor();
-    }
-    this.markRoots();
-    if (!full) {
-      clock = this.heap.stamp(0, clock);
-      this.heap.traceRemembered();
-      clock = this.heap.stamp(1, clock);
-      this.heap.sweepYoung();
+    if (mode == COLLECT_PROMOTE) {
+      this.heap.promoteYoung();
       clock = this.heap.stamp(2, clock);
-      this.dropDeadAtoms();
-      this.heap.finishMinor();
-      clock = this.heap.stamp(3, clock);
+      // The roots were not scanned here, so a marking cannot end in this
+      // slice even if nothing is left queued.
+      if (this.heap.marking()) {
+        const done = this.heap.markSlice(this.heap.markBudget());
+        clock = this.heap.stamp(5, clock);
+      } else {
+        this.heap.advance(this.heap.sliceWork);
+      }
       return;
     }
-    clock = this.heap.stamp(5, clock);
+    if (mode == COLLECT_WHOLE) {
+      // A sweep or a slide under way is ended first, after a minor
+      // collection as its slices are.
+      if (this.heap.collecting() && !this.heap.marking()) {
+        this.collectYoung(false);
+        this.heap.finishCollection();
+      }
+      this.heap.beginWhole();
+      this.markRoots(true);
+      this.heap.traceRemembered();
+      this.heap.drainAll();
+      clock = this.heap.stamp(5, clock);
+      this.dropDeadEntries();
+      this.heap.finishWhole();
+      return;
+    }
+    // A full collection begins with a step that scans every root.
+    let starting = false;
+    if (!this.heap.collecting() && this.heap.majorDue()) {
+      this.heap.beginCycle();
+      starting = true;
+    }
+    this.collectYoung(starting);
+    clock = this.heap.stamp(11, 0.0);
+    if (this.heap.marking()) {
+      const done = this.heap.markSlice(this.heap.markBudget());
+      clock = this.heap.stamp(5, clock);
+      // Nothing is queued, this step scanned the roots, and no cell is
+      // young: what the collection has not reached is dead.
+      if (done) {
+        this.dropDeadEntries();
+        clock = this.heap.stamp(11, 0.0);
+        this.heap.endMark();
+        clock = this.heap.stamp(4, clock);
+      }
+    } else {
+      this.heap.advance(this.heap.sliceWork);
+    }
+  }
+
+  // A minor collection.
+  function collectYoung(inout this, allRoots: boolean): void {
+    let clock = this.heap.stamp(11, 0.0);
+    this.heap.beginMinor();
+    this.markRoots(allRoots);
+    clock = this.heap.stamp(0, clock);
+    // The old cells given young ones since the last collection are
+    // roots too. The atoms interned since then that nothing reached
+    // leave the table before their cells are freed.
+    this.heap.traceRemembered();
+    clock = this.heap.stamp(1, clock);
+    this.heap.sweepYoung();
+    clock = this.heap.stamp(2, clock);
+    this.dropDeadAtoms();
+    this.heap.finishMinor();
+    clock = this.heap.stamp(3, clock);
+  }
+
+  // A full collection's marking is done: what hangs on dead cells goes.
+  function dropDeadEntries(inout this): void {
+    let clock = this.heap.stamp(11, 0.0);
+    // Weak collections: values reached through reached keys, to a
+    // fixpoint, then the entries of dead keys dropped -- before the
+    // atom rebuild, since such values can hold interned strings.
     this.heap.markEphemerons();
     this.heap.clearDeadWeakEntries();
     clock = this.heap.stamp(6, clock);
+    // The atom table is weak: an interned string nothing else reaches is
+    // dropped, and the table is rebuilt from the survivors.
     this.rebuildAtoms();
     clock = this.heap.stamp(7, clock);
-    this.heap.sweep();
   }
 
-  function markRoots(inout this): void {
+  // The roots. A full collection's first step, and a whole collection,
+  // take all of them; any other takes the functions and hidden classes
+  // no collection has traced yet.
+  function markRoots(inout this, all: boolean): void {
     let index: usize = 0;
     while (index < usize(this.regTop)) {
       const value = this.regStack[index];
@@ -5537,14 +5613,14 @@ export struct Runtime {
     this.heap.markHandle(atomResolve);
     // Names that hidden classes carry: a class is never freed, so the
     // atoms it names live as long as the runtime.
-    index = this.heap.minorCollection ? this.rootClassesFrom : 1;
+    index = all ? 1 : this.rootClassesFrom;
     while (index < this.heap.classes.length) {
       const name = this.heap.classes[index].transitionName;
       this.heap.markHandle(name);
       index = index + 1;
     }
     // Function values, strings, and property names held by compiled code.
-    index = this.heap.minorCollection ? this.rootFunctionsFrom : 0;
+    index = all ? 0 : this.rootFunctionsFrom;
     while (index < this.functions.length) {
       let c: usize = 0;
       while (c < this.functions[index].constants.length) {
@@ -5660,7 +5736,7 @@ export struct Runtime {
     let index: usize = 0;
     while (index < this.atoms.length) {
       const atom = this.atoms[index];
-      if (atom != 0 && this.heap.marked(atom)) survivors.push(atom);
+      if (atom != 0 && this.heap.reached(atom)) survivors.push(atom);
       this.atoms[index] = 0;
       index = index + 1;
     }

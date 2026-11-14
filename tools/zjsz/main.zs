@@ -219,7 +219,7 @@ function loadViaBytecode(inout runtime: Runtime, specifier: u32, referrer: u32):
   return LoadedSource({ found: true, key: loaded.key, source: move bytes });
 }
 
-function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, viaBytecode: boolean, noCompiler: boolean, module: boolean, in includes: Array<String>): i32 throws String {
+function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: boolean, gcStats: boolean, memStats: boolean, gcFloor: i32, gcGrowth: i32, gcNursery: i32, gcSlice: i32, viaBytecode: boolean, noCompiler: boolean, module: boolean, in includes: Array<String>): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
   if (dictThreshold >= 0) runtime.heap.dictThreshold = u32(dictThreshold);
@@ -228,7 +228,13 @@ function runFile(in path: String, dictThreshold: i32, stats: boolean, exposeGc: 
     runtime.heap.majorThreshold = u32(gcFloor);
   }
   if (gcGrowth > 0) runtime.heap.collectGrowthPercent = u32(gcGrowth);
-  if (gcNursery >= 0) runtime.heap.nurseryCells = u32(gcNursery);
+  // A slice of a full collection is sized to the nursery unless given:
+  // collecting at every safe point also marks a few cells at each.
+  if (gcNursery >= 0) {
+    runtime.heap.nurseryCells = u32(gcNursery);
+    runtime.heap.sliceWork = u32(gcNursery) * 4;
+  }
+  if (gcSlice >= 0) runtime.heap.sliceWork = u32(gcSlice);
   runtime.heap.collectThreshold = runtime.heap.nurseryCells == 0 ? runtime.heap.majorThreshold : runtime.heap.nurseryCells;
   runtime.gcTiming = gcStats;
   runtime.heap.phaseTiming = gcStats;
@@ -449,6 +455,8 @@ function reportGcStats(in runtime: Runtime): void {
     appendDecimal(inout phases, microseconds(runtime.heap.phaseNs[phase]));
     phase = phase + 1;
   }
+  appendText(inout phases, " full ");
+  appendDecimal(inout phases, runtime.heap.fullCollections);
   appendText(inout phases, " minors ");
   appendDecimal(inout phases, runtime.heap.minorCollections);
   appendText(inout phases, " young-seen ");
@@ -573,7 +581,8 @@ function decimalOf(in text: String): i32 {
 function main(): i32 {
   // Arguments exclude the program name:
   //   run [--dict-threshold N] [--stats] [--gc-stats] [--mem-stats]
-  //       [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--expose-gc] <file>
+  //       [--gc-floor N] [--gc-growth P] [--gc-nursery N] [--gc-slice N]
+  //       [--expose-gc] <file>
   //       [--module] [--include <script>]...
   //   dump <file>        the bytecode the file compiles to
   //   compile [--module] <in.js> -o <out.zbc>   a bytecode file
@@ -646,6 +655,7 @@ function main(): i32 {
   let gcFloor: i32 = -1;
   let gcGrowth: i32 = -1;
   let gcNursery: i32 = -1;
+  let gcSlice: i32 = -1;
   let viaBytecode = false;
   let noCompiler = false;
   let module = false;
@@ -685,6 +695,15 @@ function main(): i32 {
         return 2;
       }
       index = index + 2;
+    } else if (option == "--gc-slice" && index + 2 < arguments.length) {
+      const valueLength = arguments[index + 1].byteLength;
+      const value = arguments[index + 1].copyBytes(0, valueLength);
+      gcSlice = decimalOf(in value);
+      if (gcSlice < 0) {
+        console.error("zjsz: --gc-slice needs a decimal count");
+        return 2;
+      }
+      index = index + 2;
     } else if (option == "--expose-gc") {
       exposeGc = true;
       index = index + 1;
@@ -717,7 +736,7 @@ function main(): i32 {
   const path = arguments[index].copyBytes(0, pathLength);
   // A .mjs file is a module whether or not --module says so.
   if (pathLength >= 4 && path.copyBytes(pathLength - 4, pathLength) == ".mjs") module = true;
-  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery, viaBytecode, noCompiler, module, in includes);
+  const outcome = attempt runFile(in path, dictThreshold, stats, exposeGc, gcStats, memStats, gcFloor, gcGrowth, gcNursery, gcSlice, viaBytecode, noCompiler, module, in includes);
   return match (outcome) {
     success(code) => code;
     failure(message) => 2;

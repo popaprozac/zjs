@@ -39,5 +39,16 @@ echo "$out" | grep -q "^promise rounds intact 1500" || { echo "gc: FAIL promise 
 [ "$collections" -ge 100 ] || { echo "gc: FAIL too few collections in promise pressure ($collections)"; fail=1; }
 [ "$cells" -lt 20000 ] || { echo "gc: FAIL settled promise work is still held ($cells cells)"; fail=1; }
 
+# A graph mutated at random and checked every round (recorded from node):
+# the same lines whatever the nursery and the slice of a full collection,
+# down to a collection at every safe point with a cell or two marked at
+# each, and with every collection whole.
+torture=0
+for setting in "" "--gc-nursery 1" "--gc-nursery 16 --gc-slice 1" "--gc-nursery 64 --gc-slice 8" "--gc-nursery 1000 --gc-slice 3" "--gc-slice 0" "--gc-nursery 0"; do
+  out="$("$ZJSZ" run $setting "$HERE/tests/gc/torture.js" 2>&1)"
+  if [ "$out" = "$(cat "$HERE/tests/gc/torture.expected")" ]; then torture=$((torture+1)); else echo "gc: FAIL torture ($setting)"; fail=1; fi
+done
+echo "gc: torture: $torture of 7 settings agree"
+
 [ "$fail" = 0 ] && echo "gc: ok"
 exit $fail
