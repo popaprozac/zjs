@@ -1,0 +1,8 @@
+test262-ab.py, the curated subset in every execution mode, 2026-11-13, z-lang 17662184 (Stage 0).
+
+tests: 55610  regressions: 0  fixes: 0   baseline 1842094 -> minor-collection changes (roots, young sweep, untraced promotion)
+tests: 55610  regressions: 0  fixes: 0   baseline 1842094 -> the incremental collector (final binary)
+tests: 55610  regressions: 0  fixes: 0   baseline 1842094 -> the same binary run with --gc-nursery 64 --gc-slice 16
+tests: 55610  regressions: 0  fixes: 0   the final engine built by Stage 0 -> the same built by the native compiler (z-lang 17662184 plus the fix for an unsafe expression as an assignment's value)
+
+Pin moved 17662184 -> f9ef0733 the same day: zjsz built by Stage 0 is byte-identical at both pins, and zjsz built by the native compiler at f9ef0733 is byte-identical to the one compared above, so these runs stand for the new pin.

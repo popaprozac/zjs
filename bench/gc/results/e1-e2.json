@@ -1,0 +1,1622 @@
+{
+ "date": "2026-11-13 14:07",
+ "load": 4.73779296875,
+ "runs": 5,
+ "engines": {
+  "base": "<scratch>/bin/zjsz-base run",
+  "phases": "<scratch>/bin/zjsz-phases run",
+  "new": "<scratch>/bin/zjsz-gaps run"
+ },
+ "startup_cycles": {
+  "base": 6342287,
+  "phases": 6126613,
+  "new": 6359910
+ },
+ "workloads": {
+  "big-program": {
+   "base": {
+    "cycles": 315468163,
+    "instructions": 2400962776,
+    "rss": 17285120,
+    "gc": {
+     "collections": 147,
+     "total-us": 11750,
+     "p50-us": 75,
+     "p95-us": 87,
+     "p99-us": 214,
+     "max-us": 462,
+     "cells-allocated": 2424863,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   },
+   "phases": {
+    "cycles": 317269014,
+    "instructions": 2401227791,
+    "rss": 17219584,
+    "gc": {
+     "collections": 147,
+     "total-us": 12018,
+     "p50-us": 77,
+     "p95-us": 87,
+     "p99-us": 215,
+     "max-us": 458,
+     "cells-allocated": 2424863,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   },
+   "new": {
+    "cycles": 276129330,
+    "instructions": 2122563267,
+    "rss": 17367040,
+    "gc": {
+     "collections": 147,
+     "total-us": 1624,
+     "p50-us": 6,
+     "p95-us": 8,
+     "p99-us": 228,
+     "max-us": 448,
+     "cells-allocated": 2424863,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   }
+  },
+  "binary-trees": {
+   "base": {
+    "cycles": 686837544,
+    "instructions": 4847170141,
+    "rss": 25346048,
+    "gc": {
+     "collections": 194,
+     "total-us": 27205,
+     "p50-us": 64,
+     "p95-us": 195,
+     "p99-us": 1811,
+     "max-us": 2352,
+     "cells-allocated": 3190285,
+     "slots-allocated": 12760623,
+     "in-use-kib": 13701
+    }
+   },
+   "phases": {
+    "cycles": 683084263,
+    "instructions": 4846498654,
+    "rss": 25444352,
+    "gc": {
+     "collections": 194,
+     "total-us": 27075,
+     "p50-us": 65,
+     "p95-us": 175,
+     "p99-us": 1869,
+     "max-us": 2425,
+     "cells-allocated": 3190285,
+     "slots-allocated": 12760623,
+     "in-use-kib": 13701
+    }
+   },
+   "new": {
+    "cycles": 675395579,
+    "instructions": 4756134012,
+    "rss": 25493504,
+    "gc": {
+     "collections": 194,
+     "total-us": 23994,
+     "p50-us": 46,
+     "p95-us": 191,
+     "p99-us": 1825,
+     "max-us": 2350,
+     "cells-allocated": 3190285,
+     "slots-allocated": 12760623,
+     "in-use-kib": 13701
+    }
+   }
+  },
+  "fifo": {
+   "base": {
+    "cycles": 630415518,
+    "instructions": 4816175997,
+    "rss": 56164352,
+    "gc": {
+     "collections": 292,
+     "total-us": 77252,
+     "p50-us": 119,
+     "p95-us": 150,
+     "p99-us": 5438,
+     "max-us": 6715,
+     "cells-allocated": 4800861,
+     "slots-allocated": 13065069,
+     "in-use-kib": 28582
+    }
+   },
+   "phases": {
+    "cycles": 630522603,
+    "instructions": 4817204935,
+    "rss": 56197120,
+    "gc": {
+     "collections": 292,
+     "total-us": 78866,
+     "p50-us": 122,
+     "p95-us": 153,
+     "p99-us": 5575,
+     "max-us": 6588,
+     "cells-allocated": 4800861,
+     "slots-allocated": 13065069,
+     "in-use-kib": 28582
+    }
+   },
+   "new": {
+    "cycles": 628763333,
+    "instructions": 4846973954,
+    "rss": 57540608,
+    "gc": {
+     "collections": 292,
+     "total-us": 75687,
+     "p50-us": 126,
+     "p95-us": 159,
+     "p99-us": 4803,
+     "max-us": 5845,
+     "cells-allocated": 4800861,
+     "slots-allocated": 13065069,
+     "in-use-kib": 28582
+    }
+   }
+  },
+  "frames": {
+   "base": {
+    "cycles": 1596772186,
+    "instructions": 5880834312,
+    "rss": 98779136,
+    "gc": {
+     "collections": 410,
+     "total-us": 46277,
+     "p50-us": 56,
+     "p95-us": 150,
+     "p99-us": 206,
+     "max-us": 10571,
+     "cells-allocated": 6720875,
+     "slots-allocated": 25211505,
+     "in-use-kib": 87038
+    }
+   },
+   "phases": {
+    "cycles": 1611915360,
+    "instructions": 5880513091,
+    "rss": 98729984,
+    "gc": {
+     "collections": 410,
+     "total-us": 47410,
+     "p50-us": 57,
+     "p95-us": 150,
+     "p99-us": 230,
+     "max-us": 11523,
+     "cells-allocated": 6720875,
+     "slots-allocated": 25211505,
+     "in-use-kib": 87038
+    }
+   },
+   "new": {
+    "cycles": 1552107876,
+    "instructions": 5644117494,
+    "rss": 98779136,
+    "gc": {
+     "collections": 410,
+     "total-us": 37263,
+     "p50-us": 31,
+     "p95-us": 149,
+     "p99-us": 245,
+     "max-us": 10417,
+     "cells-allocated": 6720875,
+     "slots-allocated": 25211505,
+     "in-use-kib": 87038
+    }
+   }
+  },
+  "map-churn": {
+   "base": {
+    "cycles": 114891700,
+    "instructions": 733356766,
+    "rss": 5505024,
+    "gc": {
+     "collections": 22,
+     "total-us": 2385,
+     "p50-us": 106,
+     "p95-us": 120,
+     "p99-us": 148,
+     "max-us": 148,
+     "cells-allocated": 360857,
+     "slots-allocated": 1202929,
+     "in-use-kib": 380
+    }
+   },
+   "phases": {
+    "cycles": 114956466,
+    "instructions": 733321663,
+    "rss": 5554176,
+    "gc": {
+     "collections": 22,
+     "total-us": 2374,
+     "p50-us": 105,
+     "p95-us": 124,
+     "p99-us": 137,
+     "max-us": 137,
+     "cells-allocated": 360857,
+     "slots-allocated": 1202929,
+     "in-use-kib": 380
+    }
+   },
+   "new": {
+    "cycles": 113318638,
+    "instructions": 718449304,
+    "rss": 5488640,
+    "gc": {
+     "collections": 22,
+     "total-us": 1797,
+     "p50-us": 79,
+     "p95-us": 90,
+     "p99-us": 130,
+     "max-us": 130,
+     "cells-allocated": 360857,
+     "slots-allocated": 1202929,
+     "in-use-kib": 380
+    }
+   }
+  },
+  "old-to-young": {
+   "base": {
+    "cycles": 1019478024,
+    "instructions": 3643367802,
+    "rss": 83771392,
+    "gc": {
+     "collections": 134,
+     "total-us": 102460,
+     "p50-us": 496,
+     "p95-us": 1079,
+     "p99-us": 13843,
+     "max-us": 13989,
+     "cells-allocated": 2200861,
+     "slots-allocated": 9327213,
+     "in-use-kib": 47273
+    }
+   },
+   "phases": {
+    "cycles": 1027331160,
+    "instructions": 3642014378,
+    "rss": 83853312,
+    "gc": {
+     "collections": 134,
+     "total-us": 97653,
+     "p50-us": 491,
+     "p95-us": 1217,
+     "p99-us": 10785,
+     "max-us": 12334,
+     "cells-allocated": 2200861,
+     "slots-allocated": 9327213,
+     "in-use-kib": 47273
+    }
+   },
+   "new": {
+    "cycles": 1093404881,
+    "instructions": 3650776815,
+    "rss": 83836928,
+    "gc": {
+     "collections": 134,
+     "total-us": 112105,
+     "p50-us": 568,
+     "p95-us": 1377,
+     "p99-us": 12196,
+     "max-us": 13190,
+     "cells-allocated": 2200861,
+     "slots-allocated": 9327213,
+     "in-use-kib": 47273
+    }
+   }
+  },
+  "splay": {
+   "base": {
+    "cycles": 2083470762,
+    "instructions": 8899843328,
+    "rss": 197558272,
+    "gc": {
+     "collections": 218,
+     "total-us": 107391,
+     "p50-us": 262,
+     "p95-us": 380,
+     "p99-us": 2073,
+     "max-us": 34576,
+     "cells-allocated": 3580871,
+     "slots-allocated": 15922912,
+     "in-use-kib": 185629
+    }
+   },
+   "phases": {
+    "cycles": 2085646076,
+    "instructions": 8902792247,
+    "rss": 197558272,
+    "gc": {
+     "collections": 218,
+     "total-us": 109605,
+     "p50-us": 274,
+     "p95-us": 362,
+     "p99-us": 2156,
+     "max-us": 35841,
+     "cells-allocated": 3580871,
+     "slots-allocated": 15922912,
+     "in-use-kib": 185629
+    }
+   },
+   "new": {
+    "cycles": 2068843107,
+    "instructions": 8902541567,
+    "rss": 197623808,
+    "gc": {
+     "collections": 218,
+     "total-us": 105774,
+     "p50-us": 261,
+     "p95-us": 360,
+     "p99-us": 2512,
+     "max-us": 33037,
+     "cells-allocated": 3580871,
+     "slots-allocated": 15922912,
+     "in-use-kib": 185629
+    }
+   }
+  },
+  "large-heap": {
+   "base": {
+    "cycles": 673489207,
+    "instructions": 3261274663,
+    "rss": 71106560,
+    "gc": {
+     "collections": 219,
+     "total-us": 33074,
+     "p50-us": 41,
+     "p95-us": 155,
+     "p99-us": 1007,
+     "max-us": 11824,
+     "cells-allocated": 3600911,
+     "slots-allocated": 10651501,
+     "in-use-kib": 56994
+    }
+   },
+   "phases": {
+    "cycles": 676196595,
+    "instructions": 3261148901,
+    "rss": 72269824,
+    "gc": {
+     "collections": 219,
+     "total-us": 35174,
+     "p50-us": 40,
+     "p95-us": 159,
+     "p99-us": 1073,
+     "max-us": 13589,
+     "cells-allocated": 3600911,
+     "slots-allocated": 10651501,
+     "in-use-kib": 56994
+    }
+   },
+   "new": {
+    "cycles": 679047536,
+    "instructions": 3136651068,
+    "rss": 71516160,
+    "gc": {
+     "collections": 219,
+     "total-us": 26955,
+     "p50-us": 7,
+     "p95-us": 150,
+     "p99-us": 1041,
+     "max-us": 10978,
+     "cells-allocated": 3600911,
+     "slots-allocated": 10651501,
+     "in-use-kib": 56994
+    }
+   }
+  },
+  "allocation": {
+   "base": {
+    "cycles": 56893860,
+    "instructions": 486466224,
+    "rss": 5259264,
+    "gc": {
+     "collections": 48,
+     "total-us": 2618,
+     "p50-us": 47,
+     "p95-us": 96,
+     "p99-us": 98,
+     "max-us": 98,
+     "cells-allocated": 800855,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   },
+   "phases": {
+    "cycles": 57799087,
+    "instructions": 486535298,
+    "rss": 5292032,
+    "gc": {
+     "collections": 48,
+     "total-us": 2635,
+     "p50-us": 47,
+     "p95-us": 94,
+     "p99-us": 106,
+     "max-us": 106,
+     "cells-allocated": 800855,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   },
+   "new": {
+    "cycles": 52821175,
+    "instructions": 454427300,
+    "rss": 5275648,
+    "gc": {
+     "collections": 48,
+     "total-us": 1545,
+     "p50-us": 20,
+     "p95-us": 94,
+     "p99-us": 95,
+     "max-us": 95,
+     "cells-allocated": 800855,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   }
+  },
+  "arrays": {
+   "base": {
+    "cycles": 288303875,
+    "instructions": 2063266810,
+    "rss": 36864000,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1169,
+     "slots-allocated": 3977621,
+     "in-use-kib": 31101
+    }
+   },
+   "phases": {
+    "cycles": 283378045,
+    "instructions": 2062899375,
+    "rss": 36896768,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1169,
+     "slots-allocated": 3977621,
+     "in-use-kib": 31101
+    }
+   },
+   "new": {
+    "cycles": 285728611,
+    "instructions": 2062892903,
+    "rss": 36864000,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1169,
+     "slots-allocated": 3977621,
+     "in-use-kib": 31101
+    }
+   }
+  },
+  "calls": {
+   "base": {
+    "cycles": 35774103,
+    "instructions": 284464013,
+    "rss": 2768896,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 853,
+     "slots-allocated": 2929,
+     "in-use-kib": 42
+    }
+   },
+   "phases": {
+    "cycles": 35987249,
+    "instructions": 284479969,
+    "rss": 2752512,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 853,
+     "slots-allocated": 2929,
+     "in-use-kib": 42
+    }
+   },
+   "new": {
+    "cycles": 34972668,
+    "instructions": 284462570,
+    "rss": 2768896,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 853,
+     "slots-allocated": 2929,
+     "in-use-kib": 42
+    }
+   }
+  },
+  "closures": {
+   "base": {
+    "cycles": 57341981,
+    "instructions": 482716460,
+    "rss": 4145152,
+    "gc": {
+     "collections": 36,
+     "total-us": 1281,
+     "p50-us": 34,
+     "p95-us": 42,
+     "p99-us": 61,
+     "max-us": 61,
+     "cells-allocated": 600856,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   },
+   "phases": {
+    "cycles": 57514472,
+    "instructions": 482687543,
+    "rss": 3866624,
+    "gc": {
+     "collections": 36,
+     "total-us": 1412,
+     "p50-us": 38,
+     "p95-us": 41,
+     "p99-us": 69,
+     "max-us": 69,
+     "cells-allocated": 600856,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   },
+   "new": {
+    "cycles": 53464732,
+    "instructions": 451690807,
+    "rss": 4145152,
+    "gc": {
+     "collections": 36,
+     "total-us": 293,
+     "p50-us": 7,
+     "p95-us": 9,
+     "p99-us": 61,
+     "max-us": 61,
+     "cells-allocated": 600856,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   }
+  },
+  "helpers": {
+   "base": {
+    "cycles": 65673732,
+    "instructions": 542720796,
+    "rss": 2834432,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 928,
+     "slots-allocated": 3313,
+     "in-use-kib": 47
+    }
+   },
+   "phases": {
+    "cycles": 66248108,
+    "instructions": 542741684,
+    "rss": 2834432,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 928,
+     "slots-allocated": 3313,
+     "in-use-kib": 47
+    }
+   },
+   "new": {
+    "cycles": 65440659,
+    "instructions": 542678507,
+    "rss": 2883584,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 928,
+     "slots-allocated": 3313,
+     "in-use-kib": 47
+    }
+   }
+  },
+  "json": {
+   "base": {
+    "cycles": 49231058,
+    "instructions": 323171863,
+    "rss": 4866048,
+    "gc": {
+     "collections": 10,
+     "total-us": 477,
+     "p50-us": 43,
+     "p95-us": 78,
+     "p99-us": 78,
+     "max-us": 78,
+     "cells-allocated": 167471,
+     "slots-allocated": 513265,
+     "in-use-kib": 572
+    }
+   },
+   "phases": {
+    "cycles": 50000489,
+    "instructions": 323362553,
+    "rss": 4866048,
+    "gc": {
+     "collections": 10,
+     "total-us": 468,
+     "p50-us": 43,
+     "p95-us": 82,
+     "p99-us": 82,
+     "max-us": 82,
+     "cells-allocated": 167471,
+     "slots-allocated": 513265,
+     "in-use-kib": 572
+    }
+   },
+   "new": {
+    "cycles": 47279799,
+    "instructions": 314986619,
+    "rss": 4833280,
+    "gc": {
+     "collections": 10,
+     "total-us": 171,
+     "p50-us": 12,
+     "p95-us": 65,
+     "p99-us": 65,
+     "max-us": 65,
+     "cells-allocated": 167471,
+     "slots-allocated": 513265,
+     "in-use-kib": 572
+    }
+   }
+  },
+  "long-strings": {
+   "base": {
+    "cycles": 11532863,
+    "instructions": 55668897,
+    "rss": 25395200,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 13054,
+     "slots-allocated": 14929,
+     "in-use-kib": 20952
+    }
+   },
+   "phases": {
+    "cycles": 11975688,
+    "instructions": 55807121,
+    "rss": 25362432,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 13054,
+     "slots-allocated": 14929,
+     "in-use-kib": 20952
+    }
+   },
+   "new": {
+    "cycles": 12063520,
+    "instructions": 56089721,
+    "rss": 25477120,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 13054,
+     "slots-allocated": 14929,
+     "in-use-kib": 20952
+    }
+   }
+  },
+  "maps": {
+   "base": {
+    "cycles": 145971059,
+    "instructions": 874093534,
+    "rss": 8126464,
+    "gc": {
+     "collections": 24,
+     "total-us": 2621,
+     "p50-us": 109,
+     "p95-us": 187,
+     "p99-us": 189,
+     "max-us": 189,
+     "cells-allocated": 401014,
+     "slots-allocated": 3249,
+     "in-use-kib": 913
+    }
+   },
+   "phases": {
+    "cycles": 146741464,
+    "instructions": 874144768,
+    "rss": 8454144,
+    "gc": {
+     "collections": 24,
+     "total-us": 2598,
+     "p50-us": 101,
+     "p95-us": 175,
+     "p99-us": 195,
+     "max-us": 195,
+     "cells-allocated": 401014,
+     "slots-allocated": 3249,
+     "in-use-kib": 913
+    }
+   },
+   "new": {
+    "cycles": 145021430,
+    "instructions": 867372561,
+    "rss": 7684096,
+    "gc": {
+     "collections": 24,
+     "total-us": 2385,
+     "p50-us": 100,
+     "p95-us": 180,
+     "p99-us": 201,
+     "max-us": 201,
+     "cells-allocated": 401014,
+     "slots-allocated": 3249,
+     "in-use-kib": 913
+    }
+   }
+  },
+  "polymorphic": {
+   "base": {
+    "cycles": 32616951,
+    "instructions": 304610564,
+    "rss": 2965504,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1858,
+     "slots-allocated": 8973,
+     "in-use-kib": 109
+    }
+   },
+   "phases": {
+    "cycles": 32631283,
+    "instructions": 304466842,
+    "rss": 2949120,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1858,
+     "slots-allocated": 8973,
+     "in-use-kib": 109
+    }
+   },
+   "new": {
+    "cycles": 32464699,
+    "instructions": 304584283,
+    "rss": 2981888,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1858,
+     "slots-allocated": 8973,
+     "in-use-kib": 109
+    }
+   }
+  },
+  "properties": {
+   "base": {
+    "cycles": 91749926,
+    "instructions": 827497670,
+    "rss": 3014656,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1861,
+     "slots-allocated": 8985,
+     "in-use-kib": 110
+    }
+   },
+   "phases": {
+    "cycles": 91671606,
+    "instructions": 827534009,
+    "rss": 3014656,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1861,
+     "slots-allocated": 8985,
+     "in-use-kib": 110
+    }
+   },
+   "new": {
+    "cycles": 91224065,
+    "instructions": 827507781,
+    "rss": 3031040,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1861,
+     "slots-allocated": 8985,
+     "in-use-kib": 110
+    }
+   }
+  },
+  "regexp": {
+   "base": {
+    "cycles": 79242735,
+    "instructions": 542594847,
+    "rss": 4653056,
+    "gc": {
+     "collections": 12,
+     "total-us": 476,
+     "p50-us": 35,
+     "p95-us": 83,
+     "p99-us": 83,
+     "max-us": 83,
+     "cells-allocated": 197107,
+     "slots-allocated": 244169,
+     "in-use-kib": 437
+    }
+   },
+   "phases": {
+    "cycles": 81100214,
+    "instructions": 542492515,
+    "rss": 4620288,
+    "gc": {
+     "collections": 12,
+     "total-us": 487,
+     "p50-us": 36,
+     "p95-us": 91,
+     "p99-us": 91,
+     "max-us": 91,
+     "cells-allocated": 197107,
+     "slots-allocated": 244169,
+     "in-use-kib": 437
+    }
+   },
+   "new": {
+    "cycles": 78827483,
+    "instructions": 532975564,
+    "rss": 4603904,
+    "gc": {
+     "collections": 12,
+     "total-us": 162,
+     "p50-us": 8,
+     "p95-us": 75,
+     "p99-us": 75,
+     "max-us": 75,
+     "cells-allocated": 197107,
+     "slots-allocated": 244169,
+     "in-use-kib": 437
+    }
+   }
+  },
+  "strings": {
+   "base": {
+    "cycles": 32925862,
+    "instructions": 251501143,
+    "rss": 4603904,
+    "gc": {
+     "collections": 12,
+     "total-us": 659,
+     "p50-us": 48,
+     "p95-us": 97,
+     "p99-us": 97,
+     "max-us": 97,
+     "cells-allocated": 202057,
+     "slots-allocated": 103929,
+     "in-use-kib": 619
+    }
+   },
+   "phases": {
+    "cycles": 32563496,
+    "instructions": 251455670,
+    "rss": 4571136,
+    "gc": {
+     "collections": 12,
+     "total-us": 656,
+     "p50-us": 47,
+     "p95-us": 99,
+     "p99-us": 99,
+     "max-us": 99,
+     "cells-allocated": 202057,
+     "slots-allocated": 103929,
+     "in-use-kib": 619
+    }
+   },
+   "new": {
+    "cycles": 31313876,
+    "instructions": 247574984,
+    "rss": 4538368,
+    "gc": {
+     "collections": 12,
+     "total-us": 3625,
+     "p50-us": 141,
+     "p95-us": 2070,
+     "p99-us": 2070,
+     "max-us": 2070,
+     "cells-allocated": 202057,
+     "slots-allocated": 103929,
+     "in-use-kib": 619
+    }
+   }
+  },
+  "async-gen": {
+   "base": {
+    "cycles": 264928146,
+    "instructions": 1877603826,
+    "rss": 5013504,
+    "gc": {
+     "collections": 97,
+     "total-us": 3964,
+     "p50-us": 40,
+     "p95-us": 51,
+     "p99-us": 72,
+     "max-us": 72,
+     "cells-allocated": 1600875,
+     "slots-allocated": 7003037,
+     "in-use-kib": 807
+    }
+   },
+   "phases": {
+    "cycles": 265792457,
+    "instructions": 1877591567,
+    "rss": 4997120,
+    "gc": {
+     "collections": 97,
+     "total-us": 3963,
+     "p50-us": 41,
+     "p95-us": 45,
+     "p99-us": 71,
+     "max-us": 71,
+     "cells-allocated": 1600875,
+     "slots-allocated": 7003037,
+     "in-use-kib": 807
+    }
+   },
+   "new": {
+    "cycles": 255906129,
+    "instructions": 1791575474,
+    "rss": 5029888,
+    "gc": {
+     "collections": 97,
+     "total-us": 808,
+     "p50-us": 8,
+     "p95-us": 10,
+     "p99-us": 58,
+     "max-us": 58,
+     "cells-allocated": 1600875,
+     "slots-allocated": 7003037,
+     "in-use-kib": 807
+    }
+   }
+  },
+  "await-fresh": {
+   "base": {
+    "cycles": 102604874,
+    "instructions": 733423185,
+    "rss": 4947968,
+    "gc": {
+     "collections": 36,
+     "total-us": 1452,
+     "p50-us": 38,
+     "p95-us": 51,
+     "p99-us": 70,
+     "max-us": 70,
+     "cells-allocated": 600863,
+     "slots-allocated": 2602977,
+     "in-use-kib": 737
+    }
+   },
+   "phases": {
+    "cycles": 101809323,
+    "instructions": 733233090,
+    "rss": 4816896,
+    "gc": {
+     "collections": 36,
+     "total-us": 1457,
+     "p50-us": 38,
+     "p95-us": 45,
+     "p99-us": 79,
+     "max-us": 79,
+     "cells-allocated": 600863,
+     "slots-allocated": 2602977,
+     "in-use-kib": 737
+    }
+   },
+   "new": {
+    "cycles": 97023267,
+    "instructions": 701814664,
+    "rss": 4980736,
+    "gc": {
+     "collections": 36,
+     "total-us": 314,
+     "p50-us": 7,
+     "p95-us": 8,
+     "p99-us": 58,
+     "max-us": 58,
+     "cells-allocated": 600863,
+     "slots-allocated": 2602977,
+     "in-use-kib": 737
+    }
+   }
+  },
+  "await-prim": {
+   "base": {
+    "cycles": 43904610,
+    "instructions": 350625468,
+    "rss": 4997120,
+    "gc": {
+     "collections": 12,
+     "total-us": 467,
+     "p50-us": 38,
+     "p95-us": 69,
+     "p99-us": 69,
+     "max-us": 69,
+     "cells-allocated": 200863,
+     "slots-allocated": 1002976,
+     "in-use-kib": 527
+    }
+   },
+   "phases": {
+    "cycles": 43548792,
+    "instructions": 350535597,
+    "rss": 4997120,
+    "gc": {
+     "collections": 12,
+     "total-us": 476,
+     "p50-us": 38,
+     "p95-us": 67,
+     "p99-us": 67,
+     "max-us": 67,
+     "cells-allocated": 200863,
+     "slots-allocated": 1002976,
+     "in-use-kib": 527
+    }
+   },
+   "new": {
+    "cycles": 42548634,
+    "instructions": 340351983,
+    "rss": 5046272,
+    "gc": {
+     "collections": 12,
+     "total-us": 137,
+     "p50-us": 7,
+     "p95-us": 55,
+     "p99-us": 55,
+     "max-us": 55,
+     "cells-allocated": 200863,
+     "slots-allocated": 1002976,
+     "in-use-kib": 527
+    }
+   }
+  },
+  "await-settled": {
+   "base": {
+    "cycles": 56401264,
+    "instructions": 446780200,
+    "rss": 5013504,
+    "gc": {
+     "collections": 12,
+     "total-us": 484,
+     "p50-us": 38,
+     "p95-us": 70,
+     "p99-us": 70,
+     "max-us": 70,
+     "cells-allocated": 200866,
+     "slots-allocated": 1002984,
+     "in-use-kib": 527
+    }
+   },
+   "phases": {
+    "cycles": 56024860,
+    "instructions": 446571578,
+    "rss": 4833280,
+    "gc": {
+     "collections": 12,
+     "total-us": 479,
+     "p50-us": 38,
+     "p95-us": 67,
+     "p99-us": 67,
+     "max-us": 67,
+     "cells-allocated": 200866,
+     "slots-allocated": 1002984,
+     "in-use-kib": 527
+    }
+   },
+   "new": {
+    "cycles": 54664681,
+    "instructions": 436470625,
+    "rss": 4915200,
+    "gc": {
+     "collections": 12,
+     "total-us": 139,
+     "p50-us": 8,
+     "p95-us": 58,
+     "p99-us": 58,
+     "max-us": 58,
+     "cells-allocated": 200866,
+     "slots-allocated": 1002984,
+     "in-use-kib": 527
+    }
+   }
+  },
+  "await-suspended": {
+   "base": {
+    "cycles": 98701919,
+    "instructions": 670873365,
+    "rss": 4980736,
+    "gc": {
+     "collections": 42,
+     "total-us": 1743,
+     "p50-us": 42,
+     "p95-us": 45,
+     "p99-us": 74,
+     "max-us": 74,
+     "cells-allocated": 700875,
+     "slots-allocated": 3203012,
+     "in-use-kib": 832
+    }
+   },
+   "phases": {
+    "cycles": 98453532,
+    "instructions": 670751458,
+    "rss": 4964352,
+    "gc": {
+     "collections": 42,
+     "total-us": 1721,
+     "p50-us": 37,
+     "p95-us": 52,
+     "p99-us": 116,
+     "max-us": 116,
+     "cells-allocated": 700875,
+     "slots-allocated": 3203012,
+     "in-use-kib": 832
+    }
+   },
+   "new": {
+    "cycles": 92811710,
+    "instructions": 634077837,
+    "rss": 4980736,
+    "gc": {
+     "collections": 42,
+     "total-us": 387,
+     "p50-us": 8,
+     "p95-us": 10,
+     "p99-us": 59,
+     "max-us": 59,
+     "cells-allocated": 700875,
+     "slots-allocated": 3203012,
+     "in-use-kib": 832
+    }
+   }
+  },
+  "churn-retained": {
+   "base": {
+    "cycles": 248818819,
+    "instructions": 2041460654,
+    "rss": 31358976,
+    "gc": {
+     "collections": 140,
+     "total-us": 8834,
+     "p50-us": 36,
+     "p95-us": 151,
+     "p99-us": 383,
+     "max-us": 1529,
+     "cells-allocated": 2300859,
+     "slots-allocated": 10251500,
+     "in-use-kib": 22996
+    }
+   },
+   "phases": {
+    "cycles": 249501321,
+    "instructions": 2041483665,
+    "rss": 31326208,
+    "gc": {
+     "collections": 140,
+     "total-us": 8640,
+     "p50-us": 35,
+     "p95-us": 149,
+     "p99-us": 458,
+     "max-us": 1368,
+     "cells-allocated": 2300859,
+     "slots-allocated": 10251500,
+     "in-use-kib": 22996
+    }
+   },
+   "new": {
+    "cycles": 235481888,
+    "instructions": 1933555037,
+    "rss": 31391744,
+    "gc": {
+     "collections": 140,
+     "total-us": 5032,
+     "p50-us": 6,
+     "p95-us": 143,
+     "p99-us": 404,
+     "max-us": 1417,
+     "cells-allocated": 2300859,
+     "slots-allocated": 10251500,
+     "in-use-kib": 22996
+    }
+   }
+  },
+  "churn-small": {
+   "base": {
+    "cycles": 307722148,
+    "instructions": 2567172923,
+    "rss": 4259840,
+    "gc": {
+     "collections": 183,
+     "total-us": 7043,
+     "p50-us": 38,
+     "p95-us": 44,
+     "p99-us": 64,
+     "max-us": 68,
+     "cells-allocated": 3000859,
+     "slots-allocated": 8002928,
+     "in-use-kib": 431
+    }
+   },
+   "phases": {
+    "cycles": 307747892,
+    "instructions": 2566935008,
+    "rss": 4243456,
+    "gc": {
+     "collections": 183,
+     "total-us": 7096,
+     "p50-us": 38,
+     "p95-us": 43,
+     "p99-us": 52,
+     "max-us": 72,
+     "cells-allocated": 3000859,
+     "slots-allocated": 8002928,
+     "in-use-kib": 431
+    }
+   },
+   "new": {
+    "cycles": 284958977,
+    "instructions": 2409105701,
+    "rss": 4325376,
+    "gc": {
+     "collections": 183,
+     "total-us": 1228,
+     "p50-us": 6,
+     "p95-us": 8,
+     "p99-us": 11,
+     "max-us": 56,
+     "cells-allocated": 3000859,
+     "slots-allocated": 8002928,
+     "in-use-kib": 431
+    }
+   }
+  },
+  "combinators": {
+   "base": {
+    "cycles": 150950072,
+    "instructions": 1017855824,
+    "rss": 5210112,
+    "gc": {
+     "collections": 76,
+     "total-us": 3672,
+     "p50-us": 44,
+     "p95-us": 79,
+     "p99-us": 134,
+     "max-us": 134,
+     "cells-allocated": 1270856,
+     "slots-allocated": 5967933,
+     "in-use-kib": 1061
+    }
+   },
+   "phases": {
+    "cycles": 151130046,
+    "instructions": 1017632457,
+    "rss": 5308416,
+    "gc": {
+     "collections": 76,
+     "total-us": 3773,
+     "p50-us": 46,
+     "p95-us": 81,
+     "p99-us": 128,
+     "max-us": 128,
+     "cells-allocated": 1270856,
+     "slots-allocated": 5967933,
+     "in-use-kib": 1061
+    }
+   },
+   "new": {
+    "cycles": 138176552,
+    "instructions": 953167540,
+    "rss": 5292032,
+    "gc": {
+     "collections": 76,
+     "total-us": 1152,
+     "p50-us": 9,
+     "p95-us": 69,
+     "p99-us": 126,
+     "max-us": 126,
+     "cells-allocated": 1270856,
+     "slots-allocated": 5967933,
+     "in-use-kib": 1061
+    }
+   }
+  },
+  "medium-live-set": {
+   "base": {
+    "cycles": 624321479,
+    "instructions": 4259762377,
+    "rss": 12124160,
+    "gc": {
+     "collections": 278,
+     "total-us": 11706,
+     "p50-us": 39,
+     "p95-us": 47,
+     "p99-us": 144,
+     "max-us": 436,
+     "cells-allocated": 4560862,
+     "slots-allocated": 12293868,
+     "in-use-kib": 3810
+    }
+   },
+   "phases": {
+    "cycles": 625035865,
+    "instructions": 4259869485,
+    "rss": 12156928,
+    "gc": {
+     "collections": 278,
+     "total-us": 11218,
+     "p50-us": 38,
+     "p95-us": 43,
+     "p99-us": 149,
+     "max-us": 434,
+     "cells-allocated": 4560862,
+     "slots-allocated": 12293868,
+     "in-use-kib": 3810
+    }
+   },
+   "new": {
+    "cycles": 594862679,
+    "instructions": 4022858453,
+    "rss": 12124160,
+    "gc": {
+     "collections": 278,
+     "total-us": 2592,
+     "p50-us": 6,
+     "p95-us": 8,
+     "p99-us": 150,
+     "max-us": 431,
+     "cells-allocated": 4560862,
+     "slots-allocated": 12293868,
+     "in-use-kib": 3810
+    }
+   }
+  },
+  "spike": {
+   "base": {
+    "cycles": 1182994358,
+    "instructions": 8925013523,
+    "rss": 275382272,
+    "gc": {
+     "collections": 610,
+     "total-us": 121952,
+     "p50-us": 36,
+     "p95-us": 137,
+     "p99-us": 178,
+     "max-us": 51682,
+     "cells-allocated": 10000862,
+     "slots-allocated": 44197229,
+     "in-use-kib": 220113
+    }
+   },
+   "phases": {
+    "cycles": 1188824012,
+    "instructions": 8918355169,
+    "rss": 275103744,
+    "gc": {
+     "collections": 610,
+     "total-us": 123539,
+     "p50-us": 37,
+     "p95-us": 138,
+     "p99-us": 155,
+     "max-us": 52148,
+     "cells-allocated": 10000862,
+     "slots-allocated": 44197229,
+     "in-use-kib": 220113
+    }
+   },
+   "new": {
+    "cycles": 1142110827,
+    "instructions": 8596659487,
+    "rss": 275120128,
+    "gc": {
+     "collections": 610,
+     "total-us": 110155,
+     "p50-us": 7,
+     "p95-us": 138,
+     "p99-us": 179,
+     "max-us": 51018,
+     "cells-allocated": 10000862,
+     "slots-allocated": 44197229,
+     "in-use-kib": 220113
+    }
+   }
+  },
+  "then-chain": {
+   "base": {
+    "cycles": 114447474,
+    "instructions": 779010121,
+    "rss": 40140800,
+    "gc": {
+     "collections": 36,
+     "total-us": 10821,
+     "p50-us": 145,
+     "p95-us": 1261,
+     "p99-us": 4341,
+     "max-us": 4341,
+     "cells-allocated": 600860,
+     "slots-allocated": 2602951,
+     "in-use-kib": 32071
+    }
+   },
+   "phases": {
+    "cycles": 115785418,
+    "instructions": 778389985,
+    "rss": 40091648,
+    "gc": {
+     "collections": 36,
+     "total-us": 11258,
+     "p50-us": 149,
+     "p95-us": 1304,
+     "p99-us": 4548,
+     "max-us": 4548,
+     "cells-allocated": 600860,
+     "slots-allocated": 2602951,
+     "in-use-kib": 32071
+    }
+   },
+   "new": {
+    "cycles": 114417895,
+    "instructions": 779220981,
+    "rss": 40222720,
+    "gc": {
+     "collections": 36,
+     "total-us": 10777,
+     "p50-us": 143,
+     "p95-us": 1242,
+     "p99-us": 4400,
+     "max-us": 4400,
+     "cells-allocated": 600860,
+     "slots-allocated": 2602951,
+     "in-use-kib": 32071
+    }
+   }
+  },
+  "then-loop": {
+   "base": {
+    "cycles": 175132631,
+    "instructions": 1242162315,
+    "rss": 5046272,
+    "gc": {
+     "collections": 134,
+     "total-us": 5517,
+     "p50-us": 41,
+     "p95-us": 43,
+     "p99-us": 51,
+     "max-us": 71,
+     "cells-allocated": 2200856,
+     "slots-allocated": 8402932,
+     "in-use-kib": 573
+    }
+   },
+   "phases": {
+    "cycles": 176335855,
+    "instructions": 1242123098,
+    "rss": 5046272,
+    "gc": {
+     "collections": 134,
+     "total-us": 5172,
+     "p50-us": 37,
+     "p95-us": 45,
+     "p99-us": 53,
+     "max-us": 68,
+     "cells-allocated": 2200856,
+     "slots-allocated": 8402932,
+     "in-use-kib": 573
+    }
+   },
+   "new": {
+    "cycles": 160815619,
+    "instructions": 1123573070,
+    "rss": 4292608,
+    "gc": {
+     "collections": 134,
+     "total-us": 1037,
+     "p50-us": 7,
+     "p95-us": 9,
+     "p99-us": 10,
+     "max-us": 55,
+     "cells-allocated": 2200856,
+     "slots-allocated": 8402932,
+     "in-use-kib": 573
+    }
+   }
+  }
+ },
+ "geomean_vs_base": {
+  "base": 1.0,
+  "phases": 1.0036353590548825,
+  "new": 0.9699880231565082
+ }
+}

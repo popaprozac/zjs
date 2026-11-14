@@ -1,0 +1,495 @@
+{
+ "date": "2026-11-13 14:14",
+ "load": 4.470703125,
+ "runs": 3,
+ "engines": {
+  "e12": "<scratch>/bin/zjsz-gaps run",
+  "tenure": "<scratch>/bin/zjsz-tenure2 run"
+ },
+ "startup_cycles": {
+  "e12": 6605488,
+  "tenure": 6150846
+ },
+ "workloads": {
+  "big-program": {
+   "e12": {
+    "cycles": 279629684,
+    "instructions": 2121942509,
+    "rss": 17235968,
+    "gc": {
+     "collections": 147,
+     "total-us": 1658,
+     "p50-us": 7,
+     "p95-us": 9,
+     "p99-us": 225,
+     "max-us": 435,
+     "cells-allocated": 2424863,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   },
+   "tenure": {
+    "cycles": 277942255,
+    "instructions": 2121763815,
+    "rss": 17088512,
+    "gc": {
+     "collections": 147,
+     "total-us": 1663,
+     "p50-us": 7,
+     "p95-us": 8,
+     "p99-us": 224,
+     "max-us": 450,
+     "cells-allocated": 2424863,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   }
+  },
+  "binary-trees": {
+   "e12": {
+    "cycles": 678807585,
+    "instructions": 4755590707,
+    "rss": 25395200,
+    "gc": {
+     "collections": 194,
+     "total-us": 23422,
+     "p50-us": 44,
+     "p95-us": 192,
+     "p99-us": 1772,
+     "max-us": 2312,
+     "cells-allocated": 3190285,
+     "slots-allocated": 12760623,
+     "in-use-kib": 13701
+    }
+   },
+   "tenure": {
+    "cycles": 655135839,
+    "instructions": 4623058213,
+    "rss": 27951104,
+    "gc": {
+     "collections": 143,
+     "total-us": 16561,
+     "p50-us": 18,
+     "p95-us": 389,
+     "p99-us": 1951,
+     "max-us": 2763,
+     "cells-allocated": 3190285,
+     "slots-allocated": 12760623,
+     "in-use-kib": 14661
+    }
+   }
+  },
+  "fifo": {
+   "e12": {
+    "cycles": 627343222,
+    "instructions": 4841421921,
+    "rss": 56918016,
+    "gc": {
+     "collections": 292,
+     "total-us": 76834,
+     "p50-us": 127,
+     "p95-us": 149,
+     "p99-us": 5017,
+     "max-us": 6034,
+     "cells-allocated": 4800861,
+     "slots-allocated": 13065069,
+     "in-use-kib": 28582
+    }
+   },
+   "tenure": {
+    "cycles": 514999765,
+    "instructions": 3964304757,
+    "rss": 57032704,
+    "gc": {
+     "collections": 50,
+     "total-us": 46549,
+     "p50-us": 137,
+     "p95-us": 5331,
+     "p99-us": 6169,
+     "max-us": 6169,
+     "cells-allocated": 4800861,
+     "slots-allocated": 13065069,
+     "in-use-kib": 28582
+    }
+   }
+  },
+  "frames": {
+   "e12": {
+    "cycles": 1682692580,
+    "instructions": 5640674965,
+    "rss": 99106816,
+    "gc": {
+     "collections": 410,
+     "total-us": 38532,
+     "p50-us": 32,
+     "p95-us": 146,
+     "p99-us": 175,
+     "max-us": 11227,
+     "cells-allocated": 6720875,
+     "slots-allocated": 25211505,
+     "in-use-kib": 87038
+    }
+   },
+   "tenure": {
+    "cycles": 1609509498,
+    "instructions": 5359592400,
+    "rss": 98975744,
+    "gc": {
+     "collections": 336,
+     "total-us": 29428,
+     "p50-us": 33,
+     "p95-us": 138,
+     "p99-us": 328,
+     "max-us": 11556,
+     "cells-allocated": 6720875,
+     "slots-allocated": 25211505,
+     "in-use-kib": 87038
+    }
+   }
+  },
+  "old-to-young": {
+   "e12": {
+    "cycles": 1432728261,
+    "instructions": 3649817571,
+    "rss": 83558400,
+    "gc": {
+     "collections": 134,
+     "total-us": 122409,
+     "p50-us": 643,
+     "p95-us": 1340,
+     "p99-us": 12600,
+     "max-us": 13671,
+     "cells-allocated": 2200861,
+     "slots-allocated": 9327213,
+     "in-use-kib": 47273
+    }
+   },
+   "tenure": {
+    "cycles": 1022838918,
+    "instructions": 3088166014,
+    "rss": 84836352,
+    "gc": {
+     "collections": 25,
+     "total-us": 52827,
+     "p50-us": 751,
+     "p95-us": 13097,
+     "p99-us": 13420,
+     "max-us": 13420,
+     "cells-allocated": 2200861,
+     "slots-allocated": 9327213,
+     "in-use-kib": 47273
+    }
+   }
+  },
+  "splay": {
+   "e12": {
+    "cycles": 2173437212,
+    "instructions": 8899140792,
+    "rss": 197607424,
+    "gc": {
+     "collections": 218,
+     "total-us": 107202,
+     "p50-us": 263,
+     "p95-us": 357,
+     "p99-us": 1949,
+     "max-us": 35483,
+     "cells-allocated": 3580871,
+     "slots-allocated": 15922912,
+     "in-use-kib": 185629
+    }
+   },
+   "tenure": {
+    "cycles": 2153728496,
+    "instructions": 8552984156,
+    "rss": 204275712,
+    "gc": {
+     "collections": 35,
+     "total-us": 99519,
+     "p50-us": 285,
+     "p95-us": 28816,
+     "p99-us": 48875,
+     "max-us": 48875,
+     "cells-allocated": 3580871,
+     "slots-allocated": 15922912,
+     "in-use-kib": 130188
+    }
+   }
+  },
+  "large-heap": {
+   "e12": {
+    "cycles": 658265259,
+    "instructions": 3133031733,
+    "rss": 72974336,
+    "gc": {
+     "collections": 219,
+     "total-us": 27415,
+     "p50-us": 7,
+     "p95-us": 158,
+     "p99-us": 1143,
+     "max-us": 10972,
+     "cells-allocated": 3600911,
+     "slots-allocated": 10651501,
+     "in-use-kib": 56994
+    }
+   },
+   "tenure": {
+    "cycles": 629946367,
+    "instructions": 2914629797,
+    "rss": 73793536,
+    "gc": {
+     "collections": 159,
+     "total-us": 19019,
+     "p50-us": 7,
+     "p95-us": 146,
+     "p99-us": 3524,
+     "max-us": 11456,
+     "cells-allocated": 3600911,
+     "slots-allocated": 10651501,
+     "in-use-kib": 58172
+    }
+   }
+  },
+  "allocation": {
+   "e12": {
+    "cycles": 53165662,
+    "instructions": 454581305,
+    "rss": 5292032,
+    "gc": {
+     "collections": 48,
+     "total-us": 1606,
+     "p50-us": 21,
+     "p95-us": 89,
+     "p99-us": 142,
+     "max-us": 142,
+     "cells-allocated": 800855,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   },
+   "tenure": {
+    "cycles": 52905448,
+    "instructions": 454385729,
+    "rss": 5226496,
+    "gc": {
+     "collections": 48,
+     "total-us": 1512,
+     "p50-us": 20,
+     "p95-us": 89,
+     "p99-us": 99,
+     "max-us": 99,
+     "cells-allocated": 800855,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   }
+  },
+  "closures": {
+   "e12": {
+    "cycles": 53360889,
+    "instructions": 451926289,
+    "rss": 4145152,
+    "gc": {
+     "collections": 36,
+     "total-us": 293,
+     "p50-us": 6,
+     "p95-us": 11,
+     "p99-us": 61,
+     "max-us": 61,
+     "cells-allocated": 600856,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   },
+   "tenure": {
+    "cycles": 53108776,
+    "instructions": 453579940,
+    "rss": 4063232,
+    "gc": {
+     "collections": 36,
+     "total-us": 296,
+     "p50-us": 7,
+     "p95-us": 9,
+     "p99-us": 59,
+     "max-us": 59,
+     "cells-allocated": 600856,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   }
+  },
+  "maps": {
+   "e12": {
+    "cycles": 146689704,
+    "instructions": 868083385,
+    "rss": 8388608,
+    "gc": {
+     "collections": 24,
+     "total-us": 2462,
+     "p50-us": 95,
+     "p95-us": 179,
+     "p99-us": 201,
+     "max-us": 201,
+     "cells-allocated": 401014,
+     "slots-allocated": 3249,
+     "in-use-kib": 913
+    }
+   },
+   "tenure": {
+    "cycles": 147464588,
+    "instructions": 868157793,
+    "rss": 8749056,
+    "gc": {
+     "collections": 24,
+     "total-us": 2380,
+     "p50-us": 103,
+     "p95-us": 182,
+     "p99-us": 182,
+     "max-us": 182,
+     "cells-allocated": 401014,
+     "slots-allocated": 3249,
+     "in-use-kib": 913
+    }
+   }
+  },
+  "churn-retained": {
+   "e12": {
+    "cycles": 236443359,
+    "instructions": 1934828181,
+    "rss": 31326208,
+    "gc": {
+     "collections": 140,
+     "total-us": 5122,
+     "p50-us": 7,
+     "p95-us": 141,
+     "p99-us": 411,
+     "max-us": 1503,
+     "cells-allocated": 2300859,
+     "slots-allocated": 10251500,
+     "in-use-kib": 22996
+    }
+   },
+   "tenure": {
+    "cycles": 246946915,
+    "instructions": 2001485278,
+    "rss": 34504704,
+    "gc": {
+     "collections": 125,
+     "total-us": 8021,
+     "p50-us": 7,
+     "p95-us": 141,
+     "p99-us": 1414,
+     "max-us": 4750,
+     "cells-allocated": 2300859,
+     "slots-allocated": 10251500,
+     "in-use-kib": 20763
+    }
+   }
+  },
+  "medium-live-set": {
+   "e12": {
+    "cycles": 594321867,
+    "instructions": 4023109824,
+    "rss": 12124160,
+    "gc": {
+     "collections": 278,
+     "total-us": 2622,
+     "p50-us": 6,
+     "p95-us": 8,
+     "p99-us": 143,
+     "max-us": 428,
+     "cells-allocated": 4560862,
+     "slots-allocated": 12293868,
+     "in-use-kib": 3810
+    }
+   },
+   "tenure": {
+    "cycles": 586185329,
+    "instructions": 4042407008,
+    "rss": 14041088,
+    "gc": {
+     "collections": 275,
+     "total-us": 3603,
+     "p50-us": 6,
+     "p95-us": 8,
+     "p99-us": 193,
+     "max-us": 1015,
+     "cells-allocated": 4560862,
+     "slots-allocated": 12293868,
+     "in-use-kib": 4369
+    }
+   }
+  },
+  "spike": {
+   "e12": {
+    "cycles": 1151583193,
+    "instructions": 8606555442,
+    "rss": 275857408,
+    "gc": {
+     "collections": 610,
+     "total-us": 119017,
+     "p50-us": 7,
+     "p95-us": 138,
+     "p99-us": 180,
+     "max-us": 54744,
+     "cells-allocated": 10000862,
+     "slots-allocated": 44197229,
+     "in-use-kib": 220113
+    }
+   },
+   "tenure": {
+    "cycles": 1056256822,
+    "instructions": 7907115678,
+    "rss": 277086208,
+    "gc": {
+     "collections": 399,
+     "total-us": 88808,
+     "p50-us": 6,
+     "p95-us": 131,
+     "p99-us": 1620,
+     "max-us": 52547,
+     "cells-allocated": 10000862,
+     "slots-allocated": 44197229,
+     "in-use-kib": 224943
+    }
+   }
+  },
+  "then-chain": {
+   "e12": {
+    "cycles": 117113021,
+    "instructions": 781398257,
+    "rss": 41435136,
+    "gc": {
+     "collections": 36,
+     "total-us": 11183,
+     "p50-us": 147,
+     "p95-us": 1303,
+     "p99-us": 4610,
+     "max-us": 4610,
+     "cells-allocated": 600860,
+     "slots-allocated": 2602951,
+     "in-use-kib": 32071
+    }
+   },
+   "tenure": {
+    "cycles": 102487141,
+    "instructions": 696601915,
+    "rss": 40173568,
+    "gc": {
+     "collections": 9,
+     "total-us": 7834,
+     "p50-us": 159,
+     "p95-us": 5246,
+     "p99-us": 5246,
+     "max-us": 5246,
+     "cells-allocated": 600860,
+     "slots-allocated": 2602951,
+     "in-use-kib": 32071
+    }
+   }
+  }
+ },
+ "geomean_vs_base": {
+  "e12": 1.0,
+  "tenure": 0.9398879452697365
+ }
+}
