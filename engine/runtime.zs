@@ -504,6 +504,13 @@ export struct Runtime {
   // those classes whose prototype's slot still holds the builtin exec
   // needs no lookup (see execMatch). 0 for none recorded.
   execShapeClass: u32;
+  // The classes of the objects the engine makes with a fixed shape: a
+  // promise, a generator object, an iterator result. One of these is
+  // allocated with its class, and an object still of that class is known
+  // for what it is without a lookup.
+  promiseClass: u32;
+  generatorClass: u32;
+  iterResultClass: u32;
   execProtoClass: u32;
   execSlot: u32;
   // In an object of that class, the slots of `lastIndex` (a writable
@@ -599,7 +606,7 @@ export struct Runtime {
   // its own object; that constructor takes it on entry, so a plain call
   // finds undefined here.
   hostNewTarget: Value;
-  atomPromiseRecord: u32;
+  atomPromiseState: u32;
   atomErrorData: u32;
   atomDateValue: u32;
   atomRegexSource: u32;
@@ -3718,11 +3725,10 @@ export struct Runtime {
 
   function createIterResult(inout this, value: Value, done: boolean): Value {
     const objectProto = this.objectProto;
-    const result = this.heap.allocateObject(objectProto);
-    const valueAtom = this.atomValue;
-    this.heap.objectSet(result, valueAtom, value);
-    const doneAtom = this.atomDone;
-    this.heap.objectSet(result, doneAtom, booleanValue(done));
+    const iterResultClass = this.iterResultClass;
+    const result = this.heap.allocateObjectOfClass(objectProto, iterResultClass);
+    this.heap.setSlot(result, 0, value);
+    this.heap.setSlot(result, 1, booleanValue(done));
     return cellValue(result);
   }
 
@@ -4087,12 +4093,13 @@ export struct Runtime {
 
   function isGeneratorObject(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return false;
+    if (this.heap.objectClass(asCell(value)) == this.generatorClass) return true;
     return this.heap.objectFindSlot(asCell(value), this.atomGenRecord) >= 0;
   }
 
+  // The record is the object's first property, from birth.
   function generatorRecord(gen: u32): u32 {
-    const slot = this.heap.objectFindSlot(gen, this.atomGenRecord);
-    return asCell(this.heap.slot(gen, u32(slot)));
+    return asCell(this.heap.slot(gen, this.heap.leadingSlot(gen, 0)));
   }
 
   // A generator object for a call of a generator function. The call runs
@@ -4100,7 +4107,8 @@ export struct Runtime {
   // returns this object, and the first next() resumes after it.
   function createGenerator(inout this, callee: Value, thisValue: Value): Value {
     const proto = this.prototypeOf(asCell(callee));
-    const gen = this.heap.allocateObject(proto);
+    const generatorClass = this.generatorClass;
+    const gen = this.heap.allocateObjectOfClass(proto, generatorClass);
     // [state, callee, this, promise, saved regs, ip, resume dst, saved
     // tries, env, suspension kind, request queue, queue cursor, resume
     // mode]; the queue exists for async generators only. Suspension kind
@@ -4122,8 +4130,7 @@ export struct Runtime {
     if (this.functions[usize(code)].isAsync && this.functions[usize(code)].isGenerator) {
       this.heap.setSlot(record, 10, cellValue(this.heap.allocateArray(0)));
     }
-    const atomGenRecord = this.atomGenRecord;
-    this.heap.objectDefine(gen, atomGenRecord, cellValue(record), PROP_NONE);
+    this.heap.setSlot(gen, 0, cellValue(record));
     return cellValue(gen);
   }
 
@@ -5196,7 +5203,21 @@ export struct Runtime {
     this.atomNewTarget = this.hiddenAtom(110, 116);
     this.atomFunctionProto = this.hiddenAtom(102, 112);
     this.atomArrayProto = this.hiddenAtom(97, 112);
-    this.atomPromiseRecord = this.hiddenAtom(112, 114);
+    this.atomPromiseState = this.hiddenAtom(112, 115);
+    const atomPromiseState = this.atomPromiseState;
+    const promiseResult = this.hiddenAtom(112, 114);
+    const promiseReactions = this.hiddenAtom(112, 119);
+    const promiseHandled = this.hiddenAtom(112, 104);
+    const stateClass = this.heap.classTransitionWith(0, atomPromiseState, PROP_NONE);
+    const resultClass = this.heap.classTransitionWith(stateClass, promiseResult, PROP_NONE);
+    const reactionsClass = this.heap.classTransitionWith(resultClass, promiseReactions, PROP_NONE);
+    this.promiseClass = this.heap.classTransitionWith(reactionsClass, promiseHandled, PROP_NONE);
+    const atomGenRecord = this.atomGenRecord;
+    this.generatorClass = this.heap.classTransitionWith(0, atomGenRecord, PROP_NONE);
+    const atomValue = this.atomValue;
+    const atomDone = this.atomDone;
+    const valueClass = this.heap.classTransition(0, atomValue);
+    this.iterResultClass = this.heap.classTransition(valueClass, atomDone);
     this.atomErrorData = this.hiddenAtom(101, 100);
     this.atomDateValue = this.hiddenAtom(100, 116);
     this.atomRegexSource = this.hiddenAtom(114, 115);
@@ -5506,8 +5527,8 @@ export struct Runtime {
     this.heap.markHandle(atomFunctionProto);
     const atomArrayProto = this.atomArrayProto;
     this.heap.markHandle(atomArrayProto);
-    const atomPromiseRecord = this.atomPromiseRecord;
-    this.heap.markHandle(atomPromiseRecord);
+    const atomPromiseState = this.atomPromiseState;
+    this.heap.markHandle(atomPromiseState);
     const atomErrorData = this.atomErrorData;
     this.heap.markHandle(atomErrorData);
     const atomDateValue = this.atomDateValue;
@@ -6398,8 +6419,10 @@ export struct Runtime {
 
   // --- Promises and jobs ---
   //
-  // A promise is an ordinary object holding a record under a hidden key:
-  // [state, result, reactions, handled]. `reactions` is undefined while
+  // A promise is an ordinary object whose first four properties, under
+  // hidden keys, are its fields: [state, result, reactions, handled]. It
+  // is allocated with them, so a field is read at its place (see
+  // leadingSlot) and no second cell holds them. `reactions` is undefined while
   // nothing waits, the one reaction while one does, and an array of them
   // from the second on; settling empties it. A reaction is [kind,
   // onFulfilled, onRejected, destination, generator]: kind 0 runs the
@@ -6418,12 +6441,17 @@ export struct Runtime {
 
   function isPromise(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return false;
-    return this.heap.objectFindSlot(asCell(value), this.atomPromiseRecord) >= 0;
+    if (this.heap.objectClass(asCell(value)) == this.promiseClass) return true;
+    return this.heap.objectFindSlot(asCell(value), this.atomPromiseState) >= 0;
   }
 
-  function promiseRecord(handle: u32): u32 {
-    const slot = this.heap.objectFindSlot(handle, this.atomPromiseRecord);
-    return asCell(this.heap.slot(handle, u32(slot)));
+  function promiseField(handle: u32, field: u32): Value {
+    return this.heap.slot(handle, this.heap.leadingSlot(handle, field));
+  }
+
+  function setPromiseField(inout this, handle: u32, field: u32, value: Value): void {
+    const slot = this.heap.leadingSlot(handle, field);
+    this.heap.setSlot(handle, slot, value);
   }
 
   function newPromise(inout this): Value {
@@ -6432,25 +6460,20 @@ export struct Runtime {
   }
 
   function newPromiseWithProto(inout this, proto: u32): Value {
-    const object = this.heap.allocateObject(proto);
-    this.pushTempRoot(cellValue(object));
-    const record = this.heap.allocateArray(4);
-    this.heap.setSlot(record, 0, int32Value(PROMISE_PENDING));
-    this.heap.setSlot(record, 1, undefinedValue());
-    this.heap.setSlot(record, 2, undefinedValue());
-    this.heap.setSlot(record, 3, booleanValue(false));
-    const atomPromiseRecord = this.atomPromiseRecord;
-    this.heap.objectDefine(object, atomPromiseRecord, cellValue(record), PROP_NONE);
-    this.popTempRoot();
+    const promiseClass = this.promiseClass;
+    const object = this.heap.allocateObjectOfClass(proto, promiseClass);
+    // The result and the reactions start undefined, as allocated.
+    this.heap.setSlot(object, 0, int32Value(PROMISE_PENDING));
+    this.heap.setSlot(object, 3, booleanValue(false));
     return cellValue(object);
   }
 
   function promiseState(handle: u32): i32 {
-    return asInt32(this.heap.slot(this.promiseRecord(handle), 0));
+    return asInt32(this.promiseField(handle, 0));
   }
 
   function promiseResult(handle: u32): Value {
-    return this.heap.slot(this.promiseRecord(handle), 1);
+    return this.promiseField(handle, 1);
   }
 
   function enqueueJob(inout this, kind: i32, a: Value, b: Value, c: Value): void {
@@ -6470,12 +6493,11 @@ export struct Runtime {
   }
 
   function settlePromise(inout this, handle: u32, state: i32, value: Value): void {
-    const record = this.promiseRecord(handle);
-    if (asInt32(this.heap.slot(record, 0)) != PROMISE_PENDING) return;
-    this.heap.setSlot(record, 0, int32Value(state));
-    this.heap.setSlot(record, 1, value);
-    const waiting = this.heap.slot(record, 2);
-    this.heap.setSlot(record, 2, undefinedValue());
+    if (asInt32(this.promiseField(handle, 0)) != PROMISE_PENDING) return;
+    this.setPromiseField(handle, 0, int32Value(state));
+    this.setPromiseField(handle, 1, value);
+    const waiting = this.promiseField(handle, 2);
+    this.setPromiseField(handle, 2, undefinedValue());
     if (isUndefined(waiting)) return;
     const rejected = booleanValue(state == PROMISE_REJECTED);
     if (this.isReactionCell(asCell(waiting))) {
@@ -6565,26 +6587,25 @@ export struct Runtime {
   // A pending promise keeps the reaction -- alone, or in a list from the
   // second on; a settled one queues its job at once.
   function attachReaction(inout this, handle: u32, reaction: Value): void {
-    const record = this.promiseRecord(handle);
-    const state = asInt32(this.heap.slot(record, 0));
+    const state = asInt32(this.promiseField(handle, 0));
     if (state == PROMISE_PENDING) {
-      const waiting = this.heap.slot(record, 2);
+      const waiting = this.promiseField(handle, 2);
       if (isUndefined(waiting)) {
-        this.heap.setSlot(record, 2, reaction);
+        this.setPromiseField(handle, 2, reaction);
       } else if (this.isReactionCell(asCell(waiting))) {
         const list = this.heap.allocateArray(0);
         this.heap.arraySet(list, 0, waiting);
         this.heap.arraySet(list, 1, reaction);
-        this.heap.setSlot(record, 2, cellValue(list));
+        this.setPromiseField(handle, 2, cellValue(list));
       } else {
         const list = asCell(waiting);
         this.heap.arraySet(list, this.heap.arrayLength(list), reaction);
       }
     } else {
-      const result = this.heap.slot(record, 1);
+      const result = this.promiseField(handle, 1);
       this.enqueueJob(JOB_REACTION, reaction, result, booleanValue(state == PROMISE_REJECTED));
     }
-    this.heap.setSlot(record, 3, booleanValue(true));
+    this.setPromiseField(handle, 3, booleanValue(true));
   }
 
   // PromiseResolve(%Promise%, value): a promise whose `constructor` is
@@ -9935,12 +9956,12 @@ export function createRuntime(): Runtime {
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
-    randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), jsonTextHint: 0, execShapeClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, lastResult: undefinedValue(),
+    randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, gcPauses: Array<f64>(), resumeDone: false,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseState: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

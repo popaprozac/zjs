@@ -1,0 +1,33 @@
+fresh promise:  |  | 0 | 0 | {}
+with a property: extra | extra | 1 | 0 | {"extra":"x"} true
+for-in: extra | assign: {"extra":"x"} | spread: {"extra":"x"}
+after a delete: b,c | b,c | 2 | 0 | {"b":2,"c":3}
+frozen: true  |  | 0 | 0 | {}
+subclass instance: tag,count | tag,count | 2 | 0 | {"tag":"t","count":0}
+derived: true t tag,count
+fresh generator:  |  | 0 | 0 | {}
+crowded generator: {"value":1,"done":false} {"value":"sent","done":false} 19900
+after a delete: {"value":"end","done":true} {"done":true} 200 g
+frozen generator: {"value":1,"done":false} {"value":"r","done":true} {"done":true}
+generator that lost a property: {"value":1,"done":false}  b
+async function's promise:  |  | 0 | 0 | {} true
+iterator result: value,done {"value":{"value":1,"writable":true,"enumerable":true,"configurable":true},"done":{"value":false,"writable":true,"enumerable":true,"configurable":true}}
+changed: {"done":false,"extra":1} false done,extra
+array iterator result: {"value":7,"done":false} true
+return result: {"value":"x","done":true} true false
+crowded pending promise settled: late 19900 200
+crowded settled promise: early 19900
+promise that lost a property rejected: holed 5
+and again after another add: RangeError b,c,d
+its second reaction: 41
+its third: y
+frozen promise settled: frozen value
+frozen pending promise settled: after freeze true
+sealed: sealed value true 10
+non-extensible: closed value false false
+awaited promise with properties: w
+awaited promise that lost a property: holed
+pending promise that lost a property: 42
+subclass chain: 10
+async iterator result: {"value":"a","done":false} value,done
+async generator with properties: a,b 99

@@ -233,8 +233,13 @@ its parent, so statics inherit. Function values of class members are
 fresh per evaluation. Anonymous class expressions take the name of what
 they initialize; identifier names with unicode escapes decode (`l\u0065t`
 names the identifier `let` and never opens a declaration).
-Promises and async: a promise is an ordinary object holding a record
-under a hidden key: state, result, reactions, handled. The reactions
+Promises and async: a promise is an ordinary object whose first four
+properties, under hidden keys, are its fields: state, result, reactions,
+handled. It is allocated with them, as one cell of a class made
+beforehand (a generator object and an iterator result are made the same
+way), so an object still of that class is known for a promise without a
+lookup, and a field is read at its place whatever the program adds or
+deletes. The reactions
 slot holds nothing while nothing waits, the one reaction while one
 does, and a list from the second on; a reaction is one cell carrying
 the handler for each outcome, its destination, and the body an async

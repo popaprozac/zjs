@@ -55,7 +55,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
-| Built-in fast paths | json, strings, regexp, arrays | small growth | 1-2 days each | JSON, strings, regexp, arrays done |
+| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (six promise loops -13 to -27% over two changes) |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's calls done; a core context running bytecode links no front end, 393 KB of `__TEXT` against 573 KB (`docs/bytecode-files.md`); load time and the compiler's spare time next |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -592,6 +592,30 @@ string eagerly. Done so far: in-place element reads in the callback
 walks, the inherited-method cache, string and number concatenation,
 native Map and Set tables, JSON in one buffer, regular expressions that
 build a match array only when a program sees it.
+Promises and async (2026-11-15). A sample profile of the promise loops
+in `bench/alloc/workloads` put 70 to 90% of their time in the runtime's
+own promise machinery, 10 to 31% in bytecode handlers, and 2 to 5% in
+the collector. Two changes so far. `then` and `finally` skip the
+`constructor` and species reads when no program could observe them, and
+an anonymous builtin function takes its name from an atom the runtime
+holds, where each had looked the empty string up (then-loop -13%;
+combinators, await-suspended, and then-chain -5 to -6%;
+`bench/gc/results/promise-species.json`). A promise is one cell whose
+first four properties are its fields, where it was an object and a
+record; and promises, generator objects, and iterator results are
+allocated with a class made beforehand, where each had searched the
+empty class's transitions for its first name and every access had found
+the record by name (then-chain -18% and a quarter less memory, then-loop
+-16%, combinators -15%, await-fresh -14%, async-gen -13%,
+await-suspended -11%; the 32 workloads' geometric mean -3.2%;
+`promise-fields.json`). Against V8's interpreter in that run: then-loop
+from 1.58 times its time to 1.32, async-gen 1.52 to 1.32, await-fresh
+1.45 to 1.25, combinators 1.22 to 1.04, await-suspended 1.14 to 1.02,
+then-chain 0.89 to 0.73. Left, by the profile's shares: a suspension
+saves each register through the write barrier's slow half (5 to 9% of
+the async loops), a property load on a function (`Promise.resolve`) has
+no cache (8% of await-fresh), and a generator object still keeps its
+record in a second cell.
 
 **Precompiled bytecode.** Hermes compiles at the application's build
 time and ships bytecode, so it pays no parse on the device and can

@@ -1865,6 +1865,27 @@ export struct Heap {
     return handle;
   }
 
+  // An object of a class made beforehand, its properties' slots left
+  // undefined for the caller to fill: how the engine makes its own
+  // fixed-shape objects, with no transition looked up.
+  function allocateObjectOfClass(inout this, proto: u32, classId: u32): u32 {
+    const propCount = this.classes[usize(classId)].propCount;
+    const slotCount: u32 = propCount > 4 ? propCount : 4;
+    const handle = this.allocate(TAG_OBJECT, slotCount);
+    this.headers[usize(handle)].payload = classId;
+    this.headers[usize(handle)].link = proto;
+    return handle;
+  }
+
+  // The value slot of an object's k-th property, for the leading
+  // properties the engine gives an object at birth and nothing removes:
+  // slot k while the object has its class, and pair k's value in
+  // dictionary mode, where pairs keep their order and only the pairs
+  // after a removed one ever move.
+  function leadingSlot(handle: u32, k: u32): u32 {
+    return (this.cellHeader(handle).payload & DICT_BIT) != 0 ? k * 2 + 1 : k;
+  }
+
   function isObject(handle: u32): boolean {
     return this.cellHeader(handle).tag == TAG_OBJECT;
   }
@@ -4563,6 +4584,48 @@ test "a dictionary grows, and compacts instead of growing when most pairs are re
   expect(order[0]).toEqual(names[190]);
   expect(order[9]).toEqual(names[195]);
   expect(heap.objectFindSlot(object, names[0])).toEqual(-1);
+}
+
+test "an object made of a class keeps its leading properties in place through dictionary mode" {
+  let heap = createHeap();
+  heap.dictThreshold = 4;
+  const names = testNames(inout heap, 40);
+  const first = heap.classTransitionWith(0, names[0], PROP_NONE);
+  const made = heap.classTransitionWith(first, names[1], PROP_NONE);
+  const object = heap.allocateObjectOfClass(0, made);
+  expect(heap.objectClass(object)).toEqual(made);
+  expect(isDeleted(heap.slot(object, 0))).toEqual(false);
+  heap.setSlot(object, 0, int32Value(100));
+  heap.setSlot(object, 1, int32Value(101));
+  expect(heap.objectFindSlot(object, names[1])).toEqual(1);
+  expect(heap.leadingSlot(object, 1)).toEqual(1);
+  // Past the threshold, then pairs retired and one re-added until the
+  // dictionary compacts.
+  let i: u32 = 2;
+  while (i < 40) {
+    heap.objectSet(object, names[usize(i)], int32Value(i32(i)));
+    i = i + 1;
+  }
+  expect(heap.isDictionary(object)).toEqual(true);
+  i = 2;
+  while (i < 38) {
+    heap.objectDelete(object, names[usize(i)], u32(heap.objectFindSlot(object, names[usize(i)])));
+    i = i + 1;
+  }
+  let cycle: u32 = 0;
+  while (cycle < 500) {
+    heap.objectDelete(object, names[39], u32(heap.objectFindSlot(object, names[39])));
+    heap.objectSet(object, names[39], int32Value(i32(cycle)));
+    cycle = cycle + 1;
+  }
+  const zeroth = heap.leadingSlot(object, 0);
+  const oneth = heap.leadingSlot(object, 1);
+  expect(zeroth).toEqual(u32(heap.objectFindSlot(object, names[0])));
+  expect(oneth).toEqual(u32(heap.objectFindSlot(object, names[1])));
+  expect(asInt32(heap.slot(object, zeroth))).toEqual(100);
+  expect(asInt32(heap.slot(object, oneth))).toEqual(101);
+  expect(heap.attrOf(object, oneth)).toEqual(PROP_NONE);
+  expect(asInt32(heap.slot(object, u32(heap.objectFindSlot(object, names[39]))))).toEqual(499);
 }
 
 test "a sweep releases a dead dictionary and a live one survives the compaction" {
