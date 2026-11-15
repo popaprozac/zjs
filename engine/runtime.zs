@@ -533,6 +533,9 @@ export struct Runtime {
   atomConstructor: u32;
   atomName: u32;
   atomMessage: u32;
+  // The empty string: the name of every function the engine makes
+  // without one.
+  atomEmpty: u32;
   // Names the engine itself looks up constantly: iterator results,
   // thenables, iterator methods. Held as atoms so a lookup builds nothing.
   atomDone: u32;
@@ -4332,18 +4335,25 @@ export struct Runtime {
     this.sharedHosts[which] = u32(this.hostTable.length - 1);
   }
 
-  // An instance of a registered builtin, anonymous unless named.
+  // An instance of a registered builtin, anonymous unless named. Every
+  // constructed promise makes two anonymous ones, so their name is the
+  // atom the runtime holds, not one looked up each time.
   function newSharedHost(inout this, which: usize, bound: Value, length: u32): u32 {
-    return this.newSharedHostNamed(which, bound, length, Array<u16>());
+    const name = cellValue(this.atomEmpty);
+    return this.newSharedHostWithName(which, bound, length, name);
   }
 
   function newSharedHostNamed(inout this, which: usize, bound: Value, length: u32, nameUnits: Array<u16>): u32 {
+    const name = this.internUnitsValue(move nameUnits);
+    return this.newSharedHostWithName(which, bound, length, name);
+  }
+
+  function newSharedHostWithName(inout this, which: usize, bound: Value, length: u32, name: Value): u32 {
     const id = this.sharedHosts[which];
     const handle = this.heap.allocateHostFunction(id);
     this.heap.setSlot(handle, 0, bound);
     this.heap.setSlot(handle, 1, int32Value(i32(length)));
-    const nameValue = this.internUnitsValue(move nameUnits);
-    this.heap.setSlot(handle, 2, nameValue);
+    this.heap.setSlot(handle, 2, name);
     this.heap.setSlot(handle, 4, booleanValue(false));
     return handle;
   }
@@ -5124,6 +5134,7 @@ export struct Runtime {
     this.atomConstructor = this.atomOf(in constructorText);
     this.atomName = this.atomOf(in nameText);
     this.atomMessage = this.atomOf(in messageText);
+    this.atomEmpty = this.internLatin1(Array<u8>());
     const doneText: String = "done";
     this.atomDone = this.atomOf(in doneText);
     const valueText: String = "value";
@@ -5451,6 +5462,8 @@ export struct Runtime {
     this.heap.markHandle(symbolProto);
     const atomPrimitive = this.atomPrimitive;
     this.heap.markHandle(atomPrimitive);
+    const atomEmpty = this.atomEmpty;
+    this.heap.markHandle(atomEmpty);
     const atomArgumentsMarker = this.atomArgumentsMarker;
     this.heap.markHandle(atomArgumentsMarker);
     const iteratorProto = this.iteratorProto;
@@ -6612,12 +6625,30 @@ export struct Runtime {
     return isCell(getter) && asCell(getter) == this.promiseSpeciesGetter;
   }
 
-  // SpeciesConstructor(promise, %Promise%). The `constructor` read is
-  // always made. When it yields the intrinsic constructor and that
-  // constructor's species accessor is untouched, the answer is the
-  // intrinsic constructor and the getter call is skipped: the builtin
-  // getter only returns its receiver, so the call is not observable.
+  // Whether reading `constructor` from this value can only yield the
+  // intrinsic constructor with nothing run: an object with no such
+  // property of its own, whose prototype is the intrinsic one, where
+  // `constructor` is still a data property holding that constructor.
+  function promiseConstructorPristine(promise: Value): boolean {
+    if (!isCell(promise) || asCell(promise) == 0 || !this.heap.isObject(asCell(promise))) return false;
+    const proto = this.promiseProto;
+    if (this.heap.objectProto(asCell(promise)) != proto) return false;
+    if (this.heap.objectFindSlot(asCell(promise), this.atomConstructor) >= 0) return false;
+    const slot = this.heap.objectFindSlot(proto, this.atomConstructor);
+    if (slot < 0 || (this.heap.attrOf(proto, u32(slot)) & PROP_ACCESSOR) != 0) return false;
+    const held = this.heap.slot(proto, u32(slot));
+    return isCell(held) && asCell(held) == this.promiseCtor;
+  }
+
+  // SpeciesConstructor(promise, %Promise%). When the `constructor` read
+  // can only yield the intrinsic constructor and that constructor's
+  // species accessor is untouched, the answer is the intrinsic
+  // constructor with neither read made: nothing the program wrote would
+  // run, and the builtin getter only returns its receiver. Otherwise
+  // `constructor` is read, and the getter call alone is skipped when the
+  // read yields the intrinsic constructor with its accessor untouched.
   function promiseSpeciesConstructor(inout this, promise: Value): Value {
+    if (this.promiseConstructorPristine(promise) && this.promiseSpeciesPristine()) return cellValue(this.promiseCtor);
     const atomConstructor = this.atomConstructor;
     const ctor = this.getProperty(promise, cellValue(atomConstructor));
     if (this.pendingThrow) return undefinedValue();
@@ -9906,7 +9937,7 @@ export function createRuntime(): Runtime {
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
     randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), jsonTextHint: 0, execShapeClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
-    atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
+    atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
     mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseRecord: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, gcPauses: Array<f64>(), resumeDone: false,

@@ -153,5 +153,32 @@ note("deleted species falls back:", Promise.resolve(1).then() instanceof Promise
 Object.defineProperty(Promise, Symbol.species, speciesDescriptor);
 note("restored:", Promise[Symbol.species] === Promise, Promise.resolve(1).then() instanceof Promise);
 
+// --- Promise.prototype.constructor replaced, redefined, restored ---
+var constructorDescriptor = Object.getOwnPropertyDescriptor(Promise.prototype, "constructor");
+var prototypeReads = 0;
+Object.defineProperty(Promise.prototype, "constructor", { get: function () { prototypeReads += 1; return Promise; }, configurable: true });
+Promise.resolve(1).then(function () {});
+note("prototype's replaced getter is read by then:", prototypeReads);
+Promise.resolve(1).finally(function () {});
+note("and by finally:", prototypeReads);
+Object.defineProperty(Promise.prototype, "constructor", { value: Sub, writable: true, configurable: true });
+constructed = 0;
+note("prototype's constructor names a subclass:", Promise.resolve(1).then() instanceof Sub, constructed);
+Promise.prototype.constructor = undefined;
+note("prototype's constructor undefined:", Promise.resolve(1).then() instanceof Promise);
+Promise.prototype.constructor = 5;
+note("prototype's constructor number:", kind(function () { Promise.resolve(1).then(); }));
+Object.defineProperty(Promise.prototype, "constructor", constructorDescriptor);
+note("restored:", Promise.resolve(1).then().constructor === Promise);
+var reparented = Promise.resolve(1);
+Object.setPrototypeOf(reparented, Sub.prototype);
+constructed = 0;
+note("another prototype's constructor is read:", Promise.prototype.then.call(reparented) instanceof Sub, constructed);
+var ownDeleted = Promise.resolve(1);
+ownDeleted.constructor = Sub;
+note("own constructor:", ownDeleted.then() instanceof Sub);
+delete ownDeleted.constructor;
+note("own constructor deleted:", ownDeleted.then() instanceof Sub);
+
 function settle(n, done) { if (n == 0) { done(); } else { Promise.resolve().then(function () { settle(n - 1, done); }); } }
 settle(12, function () { console.log(log.join("\n")); });

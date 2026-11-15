@@ -34,6 +34,15 @@ data-property species is used: 1
 invalid species on Promise: TypeError
 deleted species falls back: true false
 restored: true true
+prototype's replaced getter is read by then: 1
+and by finally: 3
+prototype's constructor names a subclass: true 1
+prototype's constructor undefined: true
+prototype's constructor number: TypeError
+restored: true
+another prototype's constructor is read: true 1
+own constructor: true
+own constructor deleted: false
 onFinally ran
 subclass chain value 2
 finally throw replaces: finally threw
