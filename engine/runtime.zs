@@ -4592,10 +4592,22 @@ export struct Runtime {
     return cellValue(array);
   }
 
-  // Place an array's elements on the register stack for a spread call and
-  // return where they start; the caller restores regTop afterwards.
-  function spreadArguments(inout this, array: u32): u32 {
-    const argsBase = this.regTop;
+  // Place an array's elements on the register stack for a spread call of
+  // `callee` and return where they start. They go above the stack top,
+  // which stays where it is, and past the registers a compiled callee's
+  // frame opens there: every frame starts where its caller's registers
+  // end, and leaving one, by a return, a throw, or a suspension, puts the
+  // top back at its start. Under the frame they would stay on the stack
+  // until the caller's own frame went. The caller raises the top over
+  // them once the frame is open, or around a host function's call.
+  function spreadArguments(inout this, callee: Value, array: u32): u32 {
+    let argsBase = this.regTop;
+    if (this.isCompiledCallable(callee)) {
+      const code = usize(this.heap.functionIndex(asCell(callee)));
+      const regCount = this.functions[code].registerCount;
+      const paramCount = this.functions[code].paramCount;
+      argsBase = argsBase + (regCount < paramCount ? paramCount : regCount);
+    }
     const argc = this.heap.arrayLength(array);
     const needed = usize(argsBase + argc);
     if (this.regStack.length < needed) this.growRegisters(needed);
@@ -4605,7 +4617,6 @@ export struct Runtime {
       this.setStackAt(usize(argsBase + index), element);
       index = index + 1;
     }
-    this.regTop = argsBase + argc;
     return argsBase;
   }
 
@@ -6609,7 +6620,8 @@ export struct Runtime {
     // Indices in usize, where a sum of two u32s cannot overflow.
     const top = usize(base) + usize(regCount);
     if (this.regStack.length < top) this.growRegisters(top);
-    // The arguments lie below the stack top, so below `base`.
+    // The arguments lie outside these registers: below `base`, or for a
+    // spread call above them (spreadArguments).
     const copied = argc < paramCount ? argc : paramCount;
     let source = usize(argsBase);
     let target = usize(base);
@@ -8558,13 +8570,17 @@ export struct Runtime {
           // Callee at b; for a method call the receiver at b + 1; the
           // arguments array in the next register. The elements are placed
           // on the register stack and the ordinary call paths take over.
+          // The stack top covers them only while the call runs: from the
+          // moment a compiled callee's frame is open (the array holds them
+          // until then, and nothing on the way collects), and around a
+          // host function's call.
           const callee = this.reg(base, inst.b);
           const isMethod = op == Op.spreadMethodInvoke;
           const receiver = isMethod ? this.reg(base, inst.b + 1) : undefinedValue();
           const arrayReg: u8 = isMethod ? inst.b + 2 : inst.b + 1;
           const argsArray = this.reg(base, arrayReg);
-          const argsBase = this.spreadArguments(asCell(argsArray));
-          const argc = this.regTop - argsBase;
+          const argsBase = this.spreadArguments(callee, asCell(argsArray));
+          const argc = this.heap.arrayLength(asCell(argsArray));
           if (op == Op.spreadNewInvoke) {
             if (!this.isConstructorValue(callee)) {
               {
@@ -8574,11 +8590,13 @@ export struct Runtime {
             } else if (this.isCompiledCallable(callee)) {
               this.frames[frameIndex].ip = ip;
               if (this.enterConstruct(callee, inst.a, argsBase, argc, callee)) {
+                this.regTop = argsBase + argc;
                 returned = true;
               } else {
                 // The throw stays pending for the loop to take.
               }
             } else {
+              this.regTop = argsBase + argc;
               const produced = this.constructHostDirect(asCell(callee), argsBase, argc);
               this.regTop = argsBase;
               if (!this.pendingThrow) this.setReg(base, inst.a, produced);
@@ -8586,17 +8604,18 @@ export struct Runtime {
           } else if (this.isCompiledCallable(callee)) {
             this.frames[frameIndex].ip = ip;
             if (this.enterCallable(callee, inst.a, receiver, argsBase, argc, undefinedValue())) {
+              this.regTop = argsBase + argc;
               returned = true;
             } else {
               // The throw stays pending for the loop to take.
             }
           } else if (this.isHostFunctionValue(callee)) {
             const builtin = this.heap.hostFunctionId(asCell(callee));
+            this.regTop = argsBase + argc;
             const outcome = this.callHost(builtin, receiver, argsBase, argc, asCell(callee));
             this.regTop = argsBase;
             if (!this.pendingThrow) this.setReg(base, inst.a, outcome);
           } else {
-            this.regTop = argsBase;
             const message: String = isMethod ? "property is not a function" : "value is not a function";
             {
               const raised = this.typeError(in message);

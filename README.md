@@ -732,7 +732,8 @@ Z_BIN=<native z> ./probes/native/run.sh   # programs Stage 0 accepts that a nati
                                   # --dict-threshold: property count at which an
                                   #   object leaves its hidden class (measurement)
                                   # --stats: slots, cells, dictionaries, collections,
-                                  #   weak entries cleared, ephemeron passes
+                                  #   weak entries cleared, ephemeron passes, how far
+                                  #   the register stack grew
                                   # --gc-stats: times every collection; prints their
                                   #   count, total, pause percentiles, cells and
                                   #   slots allocated, engine storage in use, and

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Collector checks on the engine's own counters: allocation pressure
-# through ordinary collections, and exact reclamation under gc().
+# through ordinary collections, exact reclamation under gc(), and a
+# register stack (the first of the roots) no larger than the calls running.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ZJSZ="$HERE/build/zjsz"
@@ -38,6 +39,15 @@ echo "gc: promise: $(echo "$out" | head -1); cells $cells, collections $collecti
 echo "$out" | grep -q "^promise rounds intact 1500" || { echo "gc: FAIL promise rounds under pressure"; fail=1; }
 [ "$collections" -ge 100 ] || { echo "gc: FAIL too few collections in promise pressure ($collections)"; fail=1; }
 [ "$cells" -lt 20000 ] || { echo "gc: FAIL settled promise work is still held ($cells cells)"; fail=1; }
+
+# A spread call's arguments leave the register stack when the call ends,
+# whichever way its frame goes; left there until the caller returned, the
+# expectation case's 500 rounds would take the stack to 25,000 registers.
+out="$("$ZJSZ" run --stats "$HERE/tests/expect/spread-calls.js" 2>&1)"
+registers="$(stat "$out" registers)"
+echo "gc: spread calls: $(echo "$out" | head -1); registers $registers"
+echo "$out" | grep -q "^later 4000" || { echo "gc: FAIL spread calls result"; fail=1; }
+[ "$registers" -lt 1000 ] || { echo "gc: FAIL spread calls' arguments stay on the register stack ($registers registers)"; fail=1; }
 
 # A graph mutated at random and checked every round (recorded from node):
 # the same lines whatever the nursery and the slice of a full collection,

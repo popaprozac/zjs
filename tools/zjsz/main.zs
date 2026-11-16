@@ -409,6 +409,9 @@ function reportStats(in runtime: Runtime): void {
   appendDecimal(inout line, runtime.heap.markedCells);
   appendText(inout line, " pending-scratch ");
   appendDecimal(inout line, u32(runtime.heap.pendingScratchBytes()));
+  // The register stack only grows, so its length is how far the run took it.
+  appendText(inout line, " registers ");
+  appendDecimal(inout line, u32(runtime.regStack.length));
   line.push(10);
   writeError(in line);
 }
