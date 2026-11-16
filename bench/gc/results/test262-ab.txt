@@ -22,3 +22,4 @@ tests: 55610  regressions: 0  fixes: 0   dbd865c -> indexOf, lastIndexOf, includ
 tests: 55610  regressions: 0  fixes: 0   23259e9 -> an ordinary array's species found without the reads of constructor and Symbol.species
 tests: 55610  regressions: 0  fixes: 0   623ed74 -> an ordinary array spread, or given to Array.from, copied without the iterator protocol
 tests: 55610  regressions: 0  fixes: 0   3635b34 -> a plain object's own properties listed and copied from its slots, with no temporary lists
+tests: 55610  regressions: 0  fixes: 0   176873f -> the list of a hidden class's names made once and kept

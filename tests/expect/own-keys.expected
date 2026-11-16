@@ -14,6 +14,8 @@ and added again: a,c,d,b | 1,3,4,back | a=1,c=3,d=4,b=back | a,c,d,b | a,c,d,b |
 the newest deleted: a,c,d | 1,3,4 | a=1,c=3,d=4 | a,c,d | a,c,d | a:1,c:3,d:4 | a:1,c:3,d:4
 all deleted: [ |  |  |  |  |  | ]
 and one new: fresh | 1 | fresh=1 | fresh | fresh | fresh:1 | fresh:1
+one deleted and one that does not enumerate: a,d | 1,4 | a=1,d=4 | a,c,d | a,d | a:1,d:4 | a:1,d:4
+a wrapper with one deleted: 0,1,y 0,1,length,y a,b,2
 eighty: 80 k0 k79 79 k40=40 309 80 true
 eighty, changed: 3 k1 k0 again 3 81
 an accessor: a,b,c | 1,2,3 | a=1,b=2,c=3 | a,b,c | a,b,c | a:1,b:2,c:3 | a:1,b:2,c:3 b,b,b,b
@@ -75,3 +77,10 @@ the global object: true true false true true true 1
 others with hidden state: [] [] [] lastIndex [] message tag
 private and static names: visible visible made visible:1
 frozen and sealed: a,b | 1,2 | a=1,b=2 | a,b | a,b | a:1,b:2 | a:1,b:2 a false
+the same shape again: a,b | 1,2 | a=1,b=2 | a,b | a,b | a:1,b:2 | a:1,b:2 a,b | 1,2 | a=1,b=2 | a,b | a,b | a:1,b:2 | a:1,b:2 a,b,c a,b,d a=1,b=2,c=c! a,b
+one object through its shapes: a,b | a,b,c | 1,a,b,c | index,1,2,3 | a,b,c | a,b | a,b,z | a,b,z | a:1,b:2,z:26 | a,b | a,b,z | a,b | a,b,z
+the shapes it left: a,b a,b,c a=1,b=2,z=z! a,b,z a,b,c
+three hundred shapes, twice: true 0+only0+shared only1+shared only299+shared 150+only150+shared 297,only297,shared 3=index,only3=3,shared=1 6:index,only6:6,shared:1
+kept for what is not plain: a:1,b:2,c:3,fixed:read-only,Symbol(marked):symbol,Symbol(other):second symbol = a:1,b:2,c:3,fixed:read-only,Symbol(marked):symbol,Symbol(other):second symbol 0,1,extra = 0,1,extra Symbol(marked):1 = Symbol(marked):1
+kept for prototypes: own,shadowed = own,shadowed kind,sides = kind,sides x,y,norm = x,y,norm
+kept, and a getter still changes what follows: 1,2,4 = 1,2,4 first:1,second:2,third:3 = first:1,second:2,third:3

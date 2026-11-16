@@ -472,6 +472,17 @@ export struct JsonPlan {
   wraps: boolean = false;
 }
 
+// A hidden class's own string-named properties in the order the language
+// lists them, with their slots, and what orderNames passed over to make
+// it (OWN_WRAPS, OWN_SYMBOLS): the list a walk over an object of the
+// class starts from, made once. A class fixes all of it but whether a
+// slot holds anything yet, which whoever reads the slot looks at.
+struct KeyPlan {
+  names: Array<u32>;
+  slots: Array<u32>;
+  saw: u32;
+}
+
 // A read the general path answered, kept where any site can find it:
 // for a receiver of `shape`, where `atom` is (see Shared loads). `shape`
 // is a plain object's class, a function's bag's class (the root class
@@ -735,10 +746,14 @@ export struct Runtime {
   // it, and the slot found (-1 for none): see arrayIterationPristine.
   arrayIterSlotClass: u32 = 0;
   arrayIterSlot: i32 = -1;
-  // The names and value slots of the object a key walk is on (walkOwn,
-  // enumerateKeys), kept from one walk to the next so that a walk
-  // allocates nothing. A walk takes them out while it runs: one begun
-  // inside it, by a getter, finds none and makes its own.
+  // The key list of each hidden class an object of which has been
+  // listed (KeyPlan), and for a class its list's place in keyPlans plus
+  // one, 0 for none yet.
+  keyPlans: Array<KeyPlan> = Array<KeyPlan>();
+  keyPlanOfClass: Array<u32> = Array<u32>();
+  // The names and value slots of the dictionary a key walk is on, which
+  // has no class to keep them for (listDictionary): the two lists stay
+  // from one walk to the next, so that a walk allocates nothing.
   keyNames: Array<u32> = Array<u32>();
   keySlots: Array<u32> = Array<u32>();
   throwTypeErrorFn: u32 = 0;
@@ -3664,6 +3679,12 @@ export struct Runtime {
   function orderedOwnNames(inout this, object: u32, skipIndices: boolean, inout names: Array<u32>, inout slots: Array<u32>): u32 {
     const start = names.length;
     this.heap.appendOwnNamedSlots(object, inout names, inout slots);
+    return this.orderNames(start, skipIndices, inout names, inout slots);
+  }
+
+  // The names from `start` on, in insertion order with their slots, put
+  // in place as orderedOwnNames gives them.
+  function orderNames(inout this, start: usize, skipIndices: boolean, inout names: Array<u32>, inout slots: Array<u32>): u32 {
     let saw: u32 = 0;
     let indices = false;
     let write = start;
@@ -3717,37 +3738,106 @@ export struct Runtime {
     return saw;
   }
 
-  // Visit the own string-named properties of an ordinary object in the
-  // language's order, for the builtins that list or copy them (`mode` is
-  // one of the WALK_ values, `sink` the array or object written). The
-  // names are taken first, as the specification takes its key list, and
-  // each property is looked at when it is reached. Until something a
-  // program wrote may have run (a getter here, a setter on the object an
-  // assign writes), and after that while the object still has the class
-  // it had, a property is read straight from its slot; otherwise it is
-  // found again by name. `excluded` is an array of keys to leave out, or
-  // 0. False, with nothing done, for what needs the general walk:
-  // anything but a plain object, the global object, a namespace, a
-  // wrapper, an object with symbol keys when those would be copied, and
-  // a dictionary when values are read (a getter may drop a name that
-  // only the dictionary held). A throw is left pending.
-  function walkOwn(inout this, source: Value, mode: u32, sink: Value, excluded: u32): boolean {
-    if (!isCell(source) || asCell(source) == 0) return false;
-    const handle = asCell(source);
-    if (this.heap.tagOf(handle) != TAG_OBJECT || handle == this.globalObject || (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) return false;
-    if (mode >= WALK_VALUES && this.heap.isDictionary(handle)) return false;
+  // The key list of a class-mode object's hidden class: its place in
+  // keyPlans.
+  function keyPlanFor(inout this, handle: u32): usize {
+    const id = usize(this.heap.objectClass(handle));
+    if (id < this.keyPlanOfClass.length && this.keyPlanOfClass[id] != 0) return usize(this.keyPlanOfClass[id] - 1);
+    return this.makeKeyPlan(handle);
+  }
+
+  // The first time an object of a class is listed: the class's names by
+  // slot, which is the order they were added in, put in the language's.
+  cold function makeKeyPlan(inout this, handle: u32): usize {
+    const id = usize(this.heap.objectClass(handle));
+    while (this.keyPlanOfClass.length <= id) {
+      this.keyPlanOfClass.push(0);
+    }
+    const bySlot = this.heap.objectNames(handle);
+    let names = Array<u32>();
+    let slots = Array<u32>();
+    let slot: u32 = 0;
+    while (usize(slot) < bySlot.length) {
+      if (bySlot[usize(slot)] != 0) {
+        names.push(bySlot[usize(slot)]);
+        slots.push(slot);
+      }
+      slot = slot + 1;
+    }
+    const saw = this.orderNames(0, false, inout names, inout slots);
+    this.keyPlans.push(KeyPlan({ names: move names, slots: move slots, saw: saw }));
+    this.keyPlanOfClass[id] = u32(this.keyPlans.length);
+    return this.keyPlans.length - 1;
+  }
+
+  // A dictionary's own names in the language's order, with their slots,
+  // put in keyNames and keySlots, for enumerateKeys. They hold until the
+  // next dictionary is listed, which nothing that reads them there can
+  // bring about: no code of a program's runs while it does.
+  function listDictionary(inout this, handle: u32): void {
+    let names = replace(inout this.keyNames, Array<u32>());
+    let slots = replace(inout this.keySlots, Array<u32>());
+    names.clear();
+    slots.clear();
+    this.orderedOwnNames(handle, false, inout names, inout slots);
+    const noNames = replace(inout this.keyNames, move names);
+    const noSlots = replace(inout this.keySlots, move slots);
+  }
+
+  // walkOwn for a dictionary, whose names only are listed: those that
+  // enumerate, or with `all` every one, appended to the array `result`
+  // in the language's order. False, with nothing done, for a wrapper.
+  function walkDictionary(inout this, handle: u32, all: boolean, result: u32): boolean {
     let names = replace(inout this.keyNames, Array<u32>());
     let slots = replace(inout this.keySlots, Array<u32>());
     names.clear();
     slots.clear();
     const saw = this.orderedOwnNames(handle, false, inout names, inout slots);
+    const plain = (saw & OWN_WRAPS) == 0;
+    let index: usize = 0;
+    while (plain && index < names.length) {
+      if (all || (this.heap.objectAttrOf(handle, slots[index]) & PROP_ENUMERABLE) != 0) this.heap.arraySet(result, this.heap.arrayLength(result), cellValue(names[index]));
+      index = index + 1;
+    }
+    const noNames = replace(inout this.keyNames, move names);
+    const noSlots = replace(inout this.keySlots, move slots);
+    return plain;
+  }
+
+  // Visit the own string-named properties of an ordinary object in the
+  // language's order, for the builtins that list or copy them (`mode` is
+  // one of the WALK_ values, `sink` the array or object written). The
+  // names are taken first, as the specification takes its key list: the
+  // list kept for the object's class, which does not change. Each
+  // property is looked at when it is reached. Until something a program
+  // wrote may have run (a getter here, a setter on the object an assign
+  // writes), and after that while the object still has the class it had,
+  // a property is read straight from its slot; otherwise it is found
+  // again by name. `excluded` is an array of keys to leave out, or 0. A
+  // dictionary has no class: its names are listed by walkDictionary.
+  // False, with nothing done, for what needs the general walk: anything
+  // but a plain object, the global object, a namespace, a wrapper, an
+  // object with symbol keys when those would be copied, and a dictionary
+  // when values are read (a getter may drop a name that only the
+  // dictionary held). A throw is left pending.
+  function walkOwn(inout this, source: Value, mode: u32, sink: Value, excluded: u32): boolean {
+    if (!isCell(source) || asCell(source) == 0) return false;
+    const handle = asCell(source);
+    if (this.heap.tagOf(handle) != TAG_OBJECT || handle == this.globalObject || (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) return false;
+    if (this.heap.isDictionary(handle)) {
+      if (mode >= WALK_VALUES) return false;
+      return this.walkDictionary(handle, mode == WALK_NAMES, asCell(sink));
+    }
+    const plan = this.keyPlanFor(handle);
+    const count = this.keyPlans[plan].names.length;
+    const saw = this.keyPlans[plan].saw;
     const plain = (saw & OWN_WRAPS) == 0 && (mode < WALK_DEFINE || (saw & OWN_SYMBOLS) == 0);
     const shape = this.heap.objectClass(handle);
     let ran = false;
     let index: usize = 0;
-    while (plain && index < names.length) {
-      const name = names[index];
-      const slot = slots[index];
+    while (plain && index < count) {
+      const name = this.keyPlans[plan].names[index];
+      const slot = this.keyPlans[plan].slots[index];
       index = index + 1;
       const key = cellValue(name);
       if (excluded != 0 && this.keyListed(excluded, name)) continue;
@@ -3796,8 +3886,6 @@ export struct Runtime {
         this.heap.arraySet(result, this.heap.arrayLength(result), value);
       }
     }
-    const noNames = replace(inout this.keyNames, move names);
-    const noSlots = replace(inout this.keySlots, move slots);
     return plain;
   }
 
@@ -4248,17 +4336,28 @@ export struct Runtime {
       let current = handle;
       let seen = Array<u32>();
       let first = true;
-      let names = replace(inout this.keyNames, Array<u32>());
-      let slots = replace(inout this.keySlots, Array<u32>());
       while (current != 0 && current != this.objectProto) {
-        names.clear();
-        slots.clear();
-        this.orderedOwnNames(current, false, inout names, inout slots);
+        // The list kept for its class, or a dictionary's made here.
+        const planned = !this.heap.isDictionary(current);
+        let plan: usize = 0;
+        let count: usize = 0;
+        if (planned) {
+          plan = this.keyPlanFor(current);
+          count = this.keyPlans[plan].names.length;
+        } else {
+          this.listDictionary(current);
+          count = this.keyNames.length;
+        }
         const next = this.heap.objectProto(current);
         const remember = next != 0 && next != this.objectProto;
         let i: usize = 0;
-        while (i < names.length) {
-          const name = names[i];
+        while (i < count) {
+          const name = planned ? this.keyPlans[plan].names[i] : this.keyNames[i];
+          const slot = planned ? this.keyPlans[plan].slots[i] : this.keySlots[i];
+          i = i + 1;
+          // A class's list has every name of the class: one whose slot
+          // holds nothing yet is not this object's.
+          if (planned && isDeleted(this.heap.slot(current, slot))) continue;
           let already = false;
           if (!first) {
             let j: usize = 0;
@@ -4269,12 +4368,11 @@ export struct Runtime {
           }
           if (!already) {
             if (remember) seen.push(name);
-            if ((this.heap.attrOf(current, slots[i]) & PROP_ENUMERABLE) != 0) {
-              const count = this.heap.arrayLength(keys);
-              this.heap.arraySet(keys, count, cellValue(name));
+            if ((this.heap.attrOf(current, slot) & PROP_ENUMERABLE) != 0) {
+              const listed = this.heap.arrayLength(keys);
+              this.heap.arraySet(keys, listed, cellValue(name));
             }
           }
-          i = i + 1;
         }
         first = false;
         current = next;
@@ -4284,8 +4382,6 @@ export struct Runtime {
           break;
         }
       }
-      const noNames = replace(inout this.keyNames, move names);
-      const noSlots = replace(inout this.keySlots, move slots);
       return cellValue(keys);
     }
     return cellValue(keys);

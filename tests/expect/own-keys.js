@@ -59,6 +59,13 @@ delete loose.a; delete loose.c; delete loose.d;
 note("all deleted:", "[" + every(loose) + "]");
 loose.fresh = 1;
 note("and one new:", every(loose));
+var looseHidden = { a: 1, b: 2, c: 3, d: 4 };
+delete looseHidden.b;
+Object.defineProperty(looseHidden, "c", { enumerable: false });
+note("one deleted and one that does not enumerate:", every(looseHidden));
+var looseWrapper = Object.assign(new String("ab"), { x: 1, y: 2 });
+delete looseWrapper.x;
+note("a wrapper with one deleted:", Object.keys(looseWrapper).join(), Object.getOwnPropertyNames(looseWrapper).join(), Object.values(looseWrapper).join());
 var wide = {};
 for (var w = 0; w < 80; w++) wide["k" + w] = w;
 note("eighty:", Object.keys(wide).length, Object.keys(wide)[0], Object.keys(wide)[79], Object.values(wide)[79], Object.entries(wide)[40].join("="), forIn(wide).length, Object.keys(Object.assign({}, wide)).length, Object.keys({ ...wide }).join() === Object.keys(wide).join());
@@ -192,5 +199,31 @@ note("others with hidden state:", "[" + Object.keys(new Map([[1, 2]])).join() + 
 class Counter { #count = 0; visible = 1; static made = 0; }
 note("private and static names:", Object.keys(new Counter()).join(), Object.getOwnPropertyNames(new Counter()).join(), Object.keys(Counter).join(), described({ ...new Counter() }));
 note("frozen and sealed:", every(Object.freeze({ a: 1, b: 2 })), Object.keys(Object.seal({ a: 1 })).join(), Object.isFrozen(Object.assign({}, Object.freeze({ a: 1 }))));
+
+// --- the list kept for a shape ---
+// A shape's names are listed once and kept: every object of the shape,
+// and every way of listing, must get them, and an object that changes
+// shape the list of the shape it has now.
+function twice(run) { return run() + " = " + run(); }
+function shaped(extra) { var object = { a: 1, b: 2 }; if (extra) object[extra] = extra + "!"; return object; }
+note("the same shape again:", every(shaped()), every(shaped()), Object.keys(shaped("c")).join(), Object.keys(shaped("d")).join(), pairs(shaped("c")), Object.keys(shaped()).join());
+var grown = shaped(), stages = [Object.keys(grown).join()];
+grown.c = 3; stages.push(Object.keys(grown).join());
+grown[1] = "index"; stages.push(Object.keys(grown).join(), Object.values(grown).join());
+delete grown[1]; stages.push(Object.keys(grown).join());
+delete grown.c; stages.push(Object.keys(grown).join());
+grown.z = 26; stages.push(Object.keys(grown).join(), forIn(grown), described({ ...grown }));
+Object.defineProperty(grown, "z", { enumerable: false }); stages.push(Object.keys(grown).join(), Object.getOwnPropertyNames(grown).join(), forIn(grown));
+Object.defineProperty(grown, "z", { enumerable: true }); stages.push(Object.keys(grown).join());
+note("one object through its shapes:", stages.join(" | "));
+note("the shapes it left:", Object.keys(shaped()).join(), Object.keys(shaped("c")).join(), pairs(shaped("z")), Object.keys(Object.freeze(shaped("z"))).join(), forIn(shaped("c")));
+var many = [];
+for (var m = 0; m < 300; m++) { var each = {}; each["only" + m] = m; each.shared = 1; if (m % 3 == 0) each[m] = "index"; many.push(each); }
+function listAll() { return many.map(function (o, at) { return at % 2 ? Object.keys(o).join("+") : forIn(o).split(",").join("+"); }); }
+var firstPass = listAll(), secondPass = listAll();
+note("three hundred shapes, twice:", firstPass.join() === secondPass.join(), firstPass[0], firstPass[1], firstPass[299], secondPass[150], forIn(many[297]), pairs(many[3]), described(Object.assign({}, many[6])));
+note("kept for what is not plain:", twice(function () { return described(Object.assign({}, mixed)); }), twice(function () { return Object.keys(Object.assign(new String("ab"), { extra: 1 })).join(); }), twice(function () { return described({ ...onlySymbols }); }));
+note("kept for prototypes:", twice(function () { return forIn(child); }), twice(function () { return forIn(new Shape()); }), twice(function () { return forIn(Object.create(new Point(1, 2))); }));
+note("kept, and a getter still changes what follows:", twice(function () { return Object.values(changing(function (o) { delete o.third; })).join(); }), twice(function () { return described({ ...changing(function (o) { delete o.fourth; o.fifth = 5; }) }); }));
 
 console.log(log.join("\n"));
