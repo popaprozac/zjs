@@ -1,0 +1,19 @@
+new: [true,true,"function",5,2,"anonymous",true,true,"[object Function]"]
+new with no source: [true,null,0]
+new with a body that does not parse: throws SyntaxError
+called without new: throws TypeError
+statics the subclass inherits: ["Fn",0,true,true,7]
+own keys: [["extra"],["extra","length","name","prototype"],true]
+inherited and added methods: [18,1,12,15,18,"string"]
+a bound instance: [true,6,true,true]
+an instance as a constructor: [8,true,true,true]
+a constructor and fields of its own: [true,"adder",42,3,2,["label"]]
+this before super: throws ReferenceError
+a subclass of a subclass: [true,true,true,"deep 3",1,true,true]
+Reflect.construct: [true,1,false,true,2,true,"function","undefined",3,true,4]
+bound constructors: [true,true,8,true,5]
+prototype is read once the source has compiled: ["SyntaxError","source","prototype",true,6]
+Function itself: [true,2,true,9,false]
+an instance keeps its class through a collection: ["temp 2",12,"Temp"]
+a prototype nothing else holds: ["fresh",2,"function"]
+collecting while the source is read: [true,[1,"function"]]

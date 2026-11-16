@@ -156,8 +156,11 @@ function boundTrampoline(inout runtime: Runtime, thisValue: Value, argsBase: u32
 }
 
 // Function(p1, ..., body): compiled from source through the runtime's
-// compiler.
+// compiler. The constructor makes its own object, so a new target other
+// than Function itself (a subclass, or the one Reflect.construct names)
+// gives the function its `prototype`, read once the source has compiled.
 function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const newTarget = runtime.takeHostNewTarget();
   const head: String = "(function anonymous(";
   let source = bytesOf(in head);
   let index: u32 = 0;
@@ -208,6 +211,17 @@ function constructFunction(inout runtime: Runtime, thisValue: Value, argsBase: u
     runtime.raise(outcome.value);
     return undefinedValue();
   }
+  if (!isUndefined(newTarget) && asCell(newTarget) != callee) {
+    // The read may run the program; the function is rooted until the
+    // builtin returns (callHost pops it).
+    runtime.pushTempRoot(outcome.value);
+    const atomPrototype = runtime.atomPrototype;
+    const proto = runtime.getProperty(newTarget, cellValue(atomPrototype));
+    if (runtime.pendingThrow) return undefinedValue();
+    if (runtime.isObjectLike(proto)) {
+      const kept = runtime.setPrototypeOfValue(outcome.value, proto);
+    }
+  }
   return outcome.value;
 }
 
@@ -226,7 +240,7 @@ export function installFunction(inout runtime: Runtime): void {
   runtime.registerSharedHost(HOST_BOUND_TRAMPOLINE, boundTrampoline);
   const functionProto = runtime.functionProto;
   const functionText: String = "Function";
-  const ctor = runtime.defineConstructor(constructFunction, undefinedValue(), 1, in functionText);
+  const ctor = runtime.defineAllocatingConstructor(constructFunction, undefinedValue(), 1, in functionText);
   runtime.heap.setLink(ctor, functionProto);
   const atomConstructor = runtime.atomConstructor;
   runtime.defineOwnAttr(functionProto, atomConstructor, cellValue(ctor), PROP_METHOD);
