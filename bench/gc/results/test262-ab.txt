@@ -10,3 +10,7 @@ Pin moved 17662184 -> f9ef0733 the same day: zjsz built by Stage 0 is byte-ident
 2026-11-15, z-lang f9ef0733 (Stage 0):
 tests: 55610  regressions: 0  fixes: 0   6c2db29 -> the species fast path and the held empty name (3c16de6)
 tests: 55610  regressions: 0  fixes: 0   3c16de6 -> a promise's fields in the object; promise, generator, and iterator-result classes made beforehand
+
+2026-11-15, z-lang c9d1bf09 (Stage 0):
+tests: 55610  regressions: 0  fixes: 0   771b5d6 -> a suspension's registers saved as one run; a generator record's numbers stored with no barrier
+tests: 55610  regressions: 0  fixes: 0   that binary -> the same run with --gc-nursery 64 --gc-slice 16

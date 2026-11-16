@@ -55,7 +55,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
-| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (six promise loops -13 to -27% over two changes) |
+| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third) |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's calls done; a core context running bytecode links no front end, 393 KB of `__TEXT` against 573 KB (`docs/bytecode-files.md`); load time and the compiler's spare time next |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -595,7 +595,7 @@ build a match array only when a program sees it.
 Promises and async (2026-11-15). A sample profile of the promise loops
 in `bench/alloc/workloads` put 70 to 90% of their time in the runtime's
 own promise machinery, 10 to 31% in bytecode handlers, and 2 to 5% in
-the collector. Two changes so far. `then` and `finally` skip the
+the collector. Three changes so far. `then` and `finally` skip the
 `constructor` and species reads when no program could observe them, and
 an anonymous builtin function takes its name from an atom the runtime
 holds, where each had looked the empty string up (then-loop -13%;
@@ -611,11 +611,24 @@ await-suspended -11%; the 32 workloads' geometric mean -3.2%;
 `promise-fields.json`). Against V8's interpreter in that run: then-loop
 from 1.58 times its time to 1.32, async-gen 1.52 to 1.32, await-fresh
 1.45 to 1.25, combinators 1.22 to 1.04, await-suspended 1.14 to 1.02,
-then-chain 0.89 to 0.73. Left, by the profile's shares: a suspension
-saves each register through the write barrier's slow half (5 to 9% of
-the async loops), a property load on a function (`Promise.resolve`) has
-no cache (8% of await-fresh), and a generator object still keeps its
-record in a second cell.
+then-chain 0.89 to 0.73. A suspension saved each register through the
+write barrier, whose slow half is a call for every store into an old
+cell, and the saved array and the record of a body that outlives a
+collection are old. The registers now go to the heap as one run under
+one barrier decision (a young cell takes them as they are; an old one is
+listed whole for the next minor collection; while a full collection
+marks, each store takes the barrier as before), and the numbers a
+generator's record holds are stored with no barrier, a collection
+following nothing through them. Over eight placements: async-gen -8.8%,
+await-fresh -6.6%, await-prim -6.0%, await-settled -5.2%,
+await-suspended -3.4%, five kernels and two promise loops within 0.7%
+(`promise-suspend-placements.txt`); in instructions the five lose 6.5
+to 10.9% and no other workload moves by more than 0.6%
+(`promise-suspend.json`). Left, by
+the profile's shares: a property load on a function (`Promise.resolve`)
+has no cache (8% of await-fresh), resuming copies the registers back one
+checked store at a time, and a generator object still keeps its record
+in a second cell.
 
 **Precompiled bytecode.** Hermes compiles at the application's build
 time and ships bytecode, so it pays no parse on the device and can
@@ -694,6 +707,15 @@ profile through `z build` (or a build step compiling the emitted C).
 
 ## Tried and not kept
 
+- Testing for a cell before the write barrier's call (2026-11-15,
+  `bench/gc/results/promise-suspend.json`, build `cells`). A number
+  stored into an old cell calls the barrier's slow half only to return.
+  With the test inline at every store the async loops lose 4 to 7% more
+  instructions, and nearly every other workload gains 0.5 to 1.9%
+  (allocation +1.9%, closures +1.2%, arrays +1.0%), 640 bytes of code:
+  every store pays for the test. Storing a generator record's numbers
+  with no barrier gave the async loops the same and cost the rest
+  nothing.
 - Collector settings and trims (2026-11-13, `bench/gc/results`). Other
   nursery sizes: 4K +1.2%, 8K +0.2%, 32K +0.7%, 64K +1.7% against 16K.
   Other growth multiples: 100% costs 2% for 15 to 30% less memory on

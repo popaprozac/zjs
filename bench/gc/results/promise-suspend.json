@@ -1,0 +1,2741 @@
+{
+ "date": "2026-11-15 12:49",
+ "load": 3.68798828125,
+ "runs": 9,
+ "engines": {
+  "base": "<scratch>/bin/zjsz-fix1 run",
+  "save": "<scratch>/bin/zjsz-fix2a run",
+  "record": "<scratch>/bin/zjsz-fix2 run",
+  "cells": "<scratch>/bin/zjsz-fix2b run",
+  "jsc-nojit": "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc --useJIT=false",
+  "v8-jitless": "node --jitless",
+  "quickjs": "qjs",
+  "hermes": "hermes -Xes6-class"
+ },
+ "startup_cycles": {
+  "base": 6014119,
+  "save": 5914155,
+  "record": 6235990,
+  "cells": 6158421,
+  "jsc-nojit": 14901217,
+  "v8-jitless": 104968882,
+  "quickjs": 7263476,
+  "hermes": 12968145
+ },
+ "workloads": {
+  "big-program": {
+   "base": {
+    "cycles": 274760404,
+    "instructions": 2129275171,
+    "rss": 17170432,
+    "gc": {
+     "collections": 147,
+     "total-us": 2334,
+     "p50-us": 10,
+     "p95-us": 12,
+     "p99-us": 263,
+     "max-us": 533,
+     "cells-allocated": 2424866,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   },
+   "save": {
+    "cycles": 272340540,
+    "instructions": 2128550601,
+    "rss": 17334272,
+    "gc": {
+     "collections": 147,
+     "total-us": 2270,
+     "p50-us": 10,
+     "p95-us": 13,
+     "p99-us": 251,
+     "max-us": 497,
+     "cells-allocated": 2424866,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   },
+   "record": {
+    "cycles": 274413339,
+    "instructions": 2128846599,
+    "rss": 17285120,
+    "gc": {
+     "collections": 147,
+     "total-us": 2400,
+     "p50-us": 11,
+     "p95-us": 13,
+     "p99-us": 285,
+     "max-us": 520,
+     "cells-allocated": 2424866,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   },
+   "cells": {
+    "cycles": 275016762,
+    "instructions": 2145662887,
+    "rss": 17186816,
+    "gc": {
+     "collections": 147,
+     "total-us": 2363,
+     "p50-us": 11,
+     "p95-us": 12,
+     "p99-us": 275,
+     "max-us": 509,
+     "cells-allocated": 2424866,
+     "slots-allocated": 9635217,
+     "in-use-kib": 1510
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 413033863,
+    "instructions": 2339029583,
+    "rss": 67502080
+   },
+   "v8-jitless": {
+    "cycles": 517949228,
+    "instructions": 3576856834,
+    "rss": 55803904
+   },
+   "quickjs": {
+    "cycles": 494238477,
+    "instructions": 3007640549,
+    "rss": 10223616
+   },
+   "hermes": {
+    "cycles": 804356253,
+    "instructions": 3838959892,
+    "rss": 68173824
+   }
+  },
+  "binary-trees": {
+   "base": {
+    "cycles": 670996355,
+    "instructions": 4776450195,
+    "rss": 43073536,
+    "gc": {
+     "collections": 194,
+     "total-us": 23076,
+     "p50-us": 28,
+     "p95-us": 531,
+     "p99-us": 1033,
+     "max-us": 1313,
+     "cells-allocated": 3190288,
+     "slots-allocated": 12760623,
+     "in-use-kib": 23528
+    }
+   },
+   "save": {
+    "cycles": 679541965,
+    "instructions": 4776135098,
+    "rss": 43040768,
+    "gc": {
+     "collections": 194,
+     "total-us": 23717,
+     "p50-us": 27,
+     "p95-us": 515,
+     "p99-us": 1082,
+     "max-us": 1417,
+     "cells-allocated": 3190288,
+     "slots-allocated": 12760623,
+     "in-use-kib": 23528
+    }
+   },
+   "record": {
+    "cycles": 679652673,
+    "instructions": 4777020020,
+    "rss": 42958848,
+    "gc": {
+     "collections": 194,
+     "total-us": 23494,
+     "p50-us": 31,
+     "p95-us": 493,
+     "p99-us": 1087,
+     "max-us": 1438,
+     "cells-allocated": 3190288,
+     "slots-allocated": 12760623,
+     "in-use-kib": 23528
+    }
+   },
+   "cells": {
+    "cycles": 674667959,
+    "instructions": 4801687309,
+    "rss": 43057152,
+    "gc": {
+     "collections": 194,
+     "total-us": 23619,
+     "p50-us": 27,
+     "p95-us": 505,
+     "p99-us": 1061,
+     "max-us": 1425,
+     "cells-allocated": 3190288,
+     "slots-allocated": 12760623,
+     "in-use-kib": 23528
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 553058147,
+    "instructions": 3810324070,
+    "rss": 45924352
+   },
+   "v8-jitless": {
+    "cycles": 582576170,
+    "instructions": 3427721661,
+    "rss": 52969472
+   },
+   "quickjs": {
+    "cycles": 949387890,
+    "instructions": 5821552905,
+    "rss": 13713408
+   },
+   "hermes": {
+    "cycles": 686924580,
+    "instructions": 4762898609,
+    "rss": 27279360
+   }
+  },
+  "fifo": {
+   "base": {
+    "cycles": 522952654,
+    "instructions": 4051063870,
+    "rss": 81215488,
+    "gc": {
+     "collections": 292,
+     "total-us": 49741,
+     "p50-us": 12,
+     "p95-us": 756,
+     "p99-us": 1278,
+     "max-us": 2087,
+     "cells-allocated": 4800864,
+     "slots-allocated": 13065069,
+     "in-use-kib": 53267
+    }
+   },
+   "save": {
+    "cycles": 531417691,
+    "instructions": 4049894554,
+    "rss": 81018880,
+    "gc": {
+     "collections": 292,
+     "total-us": 51790,
+     "p50-us": 11,
+     "p95-us": 762,
+     "p99-us": 1217,
+     "max-us": 2205,
+     "cells-allocated": 4800864,
+     "slots-allocated": 13065069,
+     "in-use-kib": 53267
+    }
+   },
+   "record": {
+    "cycles": 529510816,
+    "instructions": 4053867376,
+    "rss": 81215488,
+    "gc": {
+     "collections": 292,
+     "total-us": 50664,
+     "p50-us": 13,
+     "p95-us": 766,
+     "p99-us": 1178,
+     "max-us": 2157,
+     "cells-allocated": 4800864,
+     "slots-allocated": 13065069,
+     "in-use-kib": 53267
+    }
+   },
+   "cells": {
+    "cycles": 524389631,
+    "instructions": 4092551470,
+    "rss": 81035264,
+    "gc": {
+     "collections": 292,
+     "total-us": 50535,
+     "p50-us": 12,
+     "p95-us": 761,
+     "p99-us": 1304,
+     "max-us": 2131,
+     "cells-allocated": 4800864,
+     "slots-allocated": 13065069,
+     "in-use-kib": 53267
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 849002126,
+    "instructions": 5056649919,
+    "rss": 190513152
+   },
+   "v8-jitless": {
+    "cycles": 732961453,
+    "instructions": 4701058939,
+    "rss": 205144064
+   },
+   "quickjs": {
+    "cycles": 1034339001,
+    "instructions": 6268119095,
+    "rss": 35946496
+   },
+   "hermes": {
+    "cycles": 1673680901,
+    "instructions": 10248585370,
+    "rss": 44974080
+   }
+  },
+  "frames": {
+   "base": {
+    "cycles": 1010881605,
+    "instructions": 5394882358,
+    "rss": 102170624,
+    "gc": {
+     "collections": 410,
+     "total-us": 32476,
+     "p50-us": 36,
+     "p95-us": 432,
+     "p99-us": 855,
+     "max-us": 1428,
+     "cells-allocated": 6720878,
+     "slots-allocated": 25211505,
+     "in-use-kib": 88897
+    }
+   },
+   "save": {
+    "cycles": 1060189268,
+    "instructions": 5393423159,
+    "rss": 102219776,
+    "gc": {
+     "collections": 410,
+     "total-us": 31098,
+     "p50-us": 37,
+     "p95-us": 388,
+     "p99-us": 862,
+     "max-us": 1321,
+     "cells-allocated": 6720878,
+     "slots-allocated": 25211505,
+     "in-use-kib": 88897
+    }
+   },
+   "record": {
+    "cycles": 1048816868,
+    "instructions": 5395206427,
+    "rss": 102219776,
+    "gc": {
+     "collections": 410,
+     "total-us": 30721,
+     "p50-us": 36,
+     "p95-us": 379,
+     "p99-us": 837,
+     "max-us": 1275,
+     "cells-allocated": 6720878,
+     "slots-allocated": 25211505,
+     "in-use-kib": 88897
+    }
+   },
+   "cells": {
+    "cycles": 1032378692,
+    "instructions": 5461126841,
+    "rss": 102219776,
+    "gc": {
+     "collections": 410,
+     "total-us": 31975,
+     "p50-us": 38,
+     "p95-us": 380,
+     "p99-us": 895,
+     "max-us": 1314,
+     "cells-allocated": 6720878,
+     "slots-allocated": 25211505,
+     "in-use-kib": 88897
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 1569454812,
+    "instructions": 7142790608,
+    "rss": 351109120
+   },
+   "v8-jitless": {
+    "cycles": 2147757939,
+    "instructions": 8712287600,
+    "rss": 277856256
+   },
+   "quickjs": {
+    "cycles": 3981912743,
+    "instructions": 11728269890,
+    "rss": 182566912
+   },
+   "hermes": {
+    "cycles": 2419173164,
+    "instructions": 12775095324,
+    "rss": 92782592
+   }
+  },
+  "map-churn": {
+   "base": {
+    "cycles": 111005762,
+    "instructions": 718989935,
+    "rss": 5505024,
+    "gc": {
+     "collections": 22,
+     "total-us": 1856,
+     "p50-us": 81,
+     "p95-us": 88,
+     "p99-us": 157,
+     "max-us": 157,
+     "cells-allocated": 360860,
+     "slots-allocated": 1202929,
+     "in-use-kib": 381
+    }
+   },
+   "save": {
+    "cycles": 111317122,
+    "instructions": 719012672,
+    "rss": 5505024,
+    "gc": {
+     "collections": 22,
+     "total-us": 1869,
+     "p50-us": 82,
+     "p95-us": 88,
+     "p99-us": 146,
+     "max-us": 146,
+     "cells-allocated": 360860,
+     "slots-allocated": 1202929,
+     "in-use-kib": 381
+    }
+   },
+   "record": {
+    "cycles": 111104756,
+    "instructions": 718946344,
+    "rss": 5488640,
+    "gc": {
+     "collections": 22,
+     "total-us": 1878,
+     "p50-us": 82,
+     "p95-us": 96,
+     "p99-us": 149,
+     "max-us": 149,
+     "cells-allocated": 360860,
+     "slots-allocated": 1202929,
+     "in-use-kib": 381
+    }
+   },
+   "cells": {
+    "cycles": 111422243,
+    "instructions": 719700168,
+    "rss": 5505024,
+    "gc": {
+     "collections": 22,
+     "total-us": 1846,
+     "p50-us": 80,
+     "p95-us": 107,
+     "p99-us": 165,
+     "max-us": 165,
+     "cells-allocated": 360860,
+     "slots-allocated": 1202929,
+     "in-use-kib": 381
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 71852961,
+    "instructions": 400079178,
+    "rss": 40681472
+   },
+   "v8-jitless": {
+    "cycles": 82646173,
+    "instructions": 809619630,
+    "rss": 43663360
+   },
+   "quickjs": {
+    "cycles": 112885932,
+    "instructions": 748495894,
+    "rss": 2506752
+   },
+   "hermes": {
+    "cycles": 72607943,
+    "instructions": 531417022,
+    "rss": 13303808
+   }
+  },
+  "old-to-young": {
+   "base": {
+    "cycles": 609248685,
+    "instructions": 3174303633,
+    "rss": 105627648,
+    "gc": {
+     "collections": 134,
+     "total-us": 43373,
+     "p50-us": 39,
+     "p95-us": 1247,
+     "p99-us": 1793,
+     "max-us": 2056,
+     "cells-allocated": 2200864,
+     "slots-allocated": 9327213,
+     "in-use-kib": 56569
+    }
+   },
+   "save": {
+    "cycles": 610340152,
+    "instructions": 3172178706,
+    "rss": 106921984,
+    "gc": {
+     "collections": 134,
+     "total-us": 40164,
+     "p50-us": 35,
+     "p95-us": 1188,
+     "p99-us": 1524,
+     "max-us": 1727,
+     "cells-allocated": 2200864,
+     "slots-allocated": 9327213,
+     "in-use-kib": 56569
+    }
+   },
+   "record": {
+    "cycles": 595096419,
+    "instructions": 3172584363,
+    "rss": 106037248,
+    "gc": {
+     "collections": 134,
+     "total-us": 37906,
+     "p50-us": 34,
+     "p95-us": 1071,
+     "p99-us": 1449,
+     "max-us": 1688,
+     "cells-allocated": 2200864,
+     "slots-allocated": 9327213,
+     "in-use-kib": 56569
+    }
+   },
+   "cells": {
+    "cycles": 610640134,
+    "instructions": 3167976212,
+    "rss": 106971136,
+    "gc": {
+     "collections": 134,
+     "total-us": 40528,
+     "p50-us": 35,
+     "p95-us": 1050,
+     "p99-us": 1627,
+     "max-us": 1704,
+     "cells-allocated": 2200864,
+     "slots-allocated": 9327213,
+     "in-use-kib": 56569
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 666534606,
+    "instructions": 2882042811,
+    "rss": 57802752
+   },
+   "v8-jitless": {
+    "cycles": 762070712,
+    "instructions": 3545454999,
+    "rss": 129138688
+   },
+   "quickjs": {
+    "cycles": 1696943080,
+    "instructions": 4556288788,
+    "rss": 56262656
+   },
+   "hermes": {
+    "cycles": 1271552595,
+    "instructions": 6421994829,
+    "rss": 55934976
+   }
+  },
+  "splay": {
+   "base": {
+    "cycles": 1739630771,
+    "instructions": 8311735918,
+    "rss": 219873280,
+    "gc": {
+     "collections": 218,
+     "total-us": 63566,
+     "p50-us": 11,
+     "p95-us": 1276,
+     "p99-us": 1620,
+     "max-us": 1848,
+     "cells-allocated": 3580874,
+     "slots-allocated": 15922912,
+     "in-use-kib": 200515
+    }
+   },
+   "save": {
+    "cycles": 1729603266,
+    "instructions": 8312582490,
+    "rss": 219807744,
+    "gc": {
+     "collections": 218,
+     "total-us": 63752,
+     "p50-us": 13,
+     "p95-us": 1330,
+     "p99-us": 1551,
+     "max-us": 1894,
+     "cells-allocated": 3580874,
+     "slots-allocated": 15922912,
+     "in-use-kib": 200515
+    }
+   },
+   "record": {
+    "cycles": 1710614983,
+    "instructions": 8309650227,
+    "rss": 219791360,
+    "gc": {
+     "collections": 218,
+     "total-us": 62744,
+     "p50-us": 11,
+     "p95-us": 1286,
+     "p99-us": 1612,
+     "max-us": 1780,
+     "cells-allocated": 3580874,
+     "slots-allocated": 15922912,
+     "in-use-kib": 200515
+    }
+   },
+   "cells": {
+    "cycles": 1748154389,
+    "instructions": 8367102006,
+    "rss": 219856896,
+    "gc": {
+     "collections": 218,
+     "total-us": 64264,
+     "p50-us": 12,
+     "p95-us": 1339,
+     "p99-us": 1679,
+     "max-us": 1883,
+     "cells-allocated": 3580874,
+     "slots-allocated": 15922912,
+     "in-use-kib": 200515
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 1155927921,
+    "instructions": 5822552952,
+    "rss": 126517248
+   },
+   "v8-jitless": {
+    "cycles": 1931302956,
+    "instructions": 7365468687,
+    "rss": 278265856
+   },
+   "quickjs": {
+    "cycles": 2716885512,
+    "instructions": 8467318709,
+    "rss": 178503680
+   },
+   "hermes": {
+    "cycles": 2654776289,
+    "instructions": 11444132914,
+    "rss": 124403712
+   }
+  },
+  "large-heap": {
+   "base": {
+    "cycles": 470106782,
+    "instructions": 2930748281,
+    "rss": 76382208,
+    "gc": {
+     "collections": 219,
+     "total-us": 21088,
+     "p50-us": 11,
+     "p95-us": 537,
+     "p99-us": 1063,
+     "max-us": 1281,
+     "cells-allocated": 3600914,
+     "slots-allocated": 10651501,
+     "in-use-kib": 60245
+    }
+   },
+   "save": {
+    "cycles": 474835616,
+    "instructions": 2930728540,
+    "rss": 76414976,
+    "gc": {
+     "collections": 219,
+     "total-us": 21394,
+     "p50-us": 12,
+     "p95-us": 563,
+     "p99-us": 930,
+     "max-us": 1355,
+     "cells-allocated": 3600914,
+     "slots-allocated": 10651501,
+     "in-use-kib": 60245
+    }
+   },
+   "record": {
+    "cycles": 469104324,
+    "instructions": 2931207266,
+    "rss": 76382208,
+    "gc": {
+     "collections": 219,
+     "total-us": 20978,
+     "p50-us": 11,
+     "p95-us": 515,
+     "p99-us": 943,
+     "max-us": 1335,
+     "cells-allocated": 3600914,
+     "slots-allocated": 10651501,
+     "in-use-kib": 60245
+    }
+   },
+   "cells": {
+    "cycles": 484554152,
+    "instructions": 2961351625,
+    "rss": 76398592,
+    "gc": {
+     "collections": 219,
+     "total-us": 20346,
+     "p50-us": 12,
+     "p95-us": 507,
+     "p99-us": 852,
+     "max-us": 1424,
+     "cells-allocated": 3600914,
+     "slots-allocated": 10651501,
+     "in-use-kib": 60245
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 1175738347,
+    "instructions": 4847888148,
+    "rss": 196460544
+   },
+   "v8-jitless": {
+    "cycles": 1390131320,
+    "instructions": 4895823897,
+    "rss": 219627520
+   },
+   "quickjs": {
+    "cycles": 1640489065,
+    "instructions": 5912211296,
+    "rss": 137723904
+   },
+   "hermes": {
+    "cycles": 1336881334,
+    "instructions": 6789500535,
+    "rss": 66093056
+   }
+  },
+  "allocation": {
+   "base": {
+    "cycles": 53629084,
+    "instructions": 451777881,
+    "rss": 5275648,
+    "gc": {
+     "collections": 48,
+     "total-us": 1549,
+     "p50-us": 27,
+     "p95-us": 64,
+     "p99-us": 97,
+     "max-us": 97,
+     "cells-allocated": 800858,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   },
+   "save": {
+    "cycles": 53914007,
+    "instructions": 451816980,
+    "rss": 5242880,
+    "gc": {
+     "collections": 48,
+     "total-us": 1553,
+     "p50-us": 26,
+     "p95-us": 67,
+     "p99-us": 91,
+     "max-us": 91,
+     "cells-allocated": 800858,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   },
+   "record": {
+    "cycles": 53348244,
+    "instructions": 451806724,
+    "rss": 5242880,
+    "gc": {
+     "collections": 48,
+     "total-us": 1517,
+     "p50-us": 26,
+     "p95-us": 65,
+     "p99-us": 90,
+     "max-us": 90,
+     "cells-allocated": 800858,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   },
+   "cells": {
+    "cycles": 53408701,
+    "instructions": 460365400,
+    "rss": 5308416,
+    "gc": {
+     "collections": 48,
+     "total-us": 1575,
+     "p50-us": 27,
+     "p95-us": 67,
+     "p99-us": 92,
+     "max-us": 92,
+     "cells-allocated": 800858,
+     "slots-allocated": 3202929,
+     "in-use-kib": 1055
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 88300355,
+    "instructions": 616795036,
+    "rss": 40075264
+   },
+   "v8-jitless": {
+    "cycles": 88927068,
+    "instructions": 977974561,
+    "rss": 43892736
+   },
+   "quickjs": {
+    "cycles": 178790640,
+    "instructions": 1195266568,
+    "rss": 2736128
+   },
+   "hermes": {
+    "cycles": 140544437,
+    "instructions": 1107894236,
+    "rss": 17645568
+   }
+  },
+  "arrays": {
+   "base": {
+    "cycles": 271933303,
+    "instructions": 2061805733,
+    "rss": 36880384,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1172,
+     "slots-allocated": 3977621,
+     "in-use-kib": 31101
+    }
+   },
+   "save": {
+    "cycles": 276995085,
+    "instructions": 2062020197,
+    "rss": 36864000,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1172,
+     "slots-allocated": 3977621,
+     "in-use-kib": 31101
+    }
+   },
+   "record": {
+    "cycles": 279465768,
+    "instructions": 2061817050,
+    "rss": 36831232,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1172,
+     "slots-allocated": 3977621,
+     "in-use-kib": 31101
+    }
+   },
+   "cells": {
+    "cycles": 280862063,
+    "instructions": 2082807780,
+    "rss": 36864000,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1172,
+     "slots-allocated": 3977621,
+     "in-use-kib": 31101
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 693239588,
+    "instructions": 4418290970,
+    "rss": 34455552
+   },
+   "v8-jitless": {
+    "cycles": 323454311,
+    "instructions": 2743641084,
+    "rss": 47448064
+   },
+   "quickjs": {
+    "cycles": 568736875,
+    "instructions": 3431833737,
+    "rss": 3784704
+   },
+   "hermes": {
+    "cycles": 1255461181,
+    "instructions": 7566306429,
+    "rss": 14057472
+   }
+  },
+  "calls": {
+   "base": {
+    "cycles": 34890433,
+    "instructions": 284394413,
+    "rss": 2752512,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 856,
+     "slots-allocated": 2929,
+     "in-use-kib": 43
+    }
+   },
+   "save": {
+    "cycles": 35332779,
+    "instructions": 284420199,
+    "rss": 2719744,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 856,
+     "slots-allocated": 2929,
+     "in-use-kib": 43
+    }
+   },
+   "record": {
+    "cycles": 34424392,
+    "instructions": 284371219,
+    "rss": 2719744,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 856,
+     "slots-allocated": 2929,
+     "in-use-kib": 43
+    }
+   },
+   "cells": {
+    "cycles": 35155132,
+    "instructions": 284468975,
+    "rss": 2752512,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 856,
+     "slots-allocated": 2929,
+     "in-use-kib": 43
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 39221359,
+    "instructions": 288426478,
+    "rss": 4849664
+   },
+   "v8-jitless": {
+    "cycles": 32082976,
+    "instructions": 572352806,
+    "rss": 39239680
+   },
+   "quickjs": {
+    "cycles": 35298451,
+    "instructions": 250493426,
+    "rss": 2490368
+   },
+   "hermes": {
+    "cycles": 33774725,
+    "instructions": 296551209,
+    "rss": 9142272
+   }
+  },
+  "closures": {
+   "base": {
+    "cycles": 52903133,
+    "instructions": 452475496,
+    "rss": 4079616,
+    "gc": {
+     "collections": 36,
+     "total-us": 404,
+     "p50-us": 9,
+     "p95-us": 17,
+     "p99-us": 81,
+     "max-us": 81,
+     "cells-allocated": 600859,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   },
+   "save": {
+    "cycles": 52403445,
+    "instructions": 452419132,
+    "rss": 4046848,
+    "gc": {
+     "collections": 36,
+     "total-us": 400,
+     "p50-us": 9,
+     "p95-us": 16,
+     "p99-us": 79,
+     "max-us": 79,
+     "cells-allocated": 600859,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   },
+   "record": {
+    "cycles": 52729620,
+    "instructions": 452426108,
+    "rss": 4030464,
+    "gc": {
+     "collections": 36,
+     "total-us": 372,
+     "p50-us": 8,
+     "p95-us": 11,
+     "p99-us": 75,
+     "max-us": 75,
+     "cells-allocated": 600859,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   },
+   "cells": {
+    "cycles": 53352889,
+    "instructions": 457934966,
+    "rss": 4112384,
+    "gc": {
+     "collections": 36,
+     "total-us": 392,
+     "p50-us": 9,
+     "p95-us": 13,
+     "p99-us": 82,
+     "max-us": 82,
+     "cells-allocated": 600859,
+     "slots-allocated": 1202931,
+     "in-use-kib": 537
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 84472821,
+    "instructions": 633059769,
+    "rss": 29540352
+   },
+   "v8-jitless": {
+    "cycles": 67383274,
+    "instructions": 768772550,
+    "rss": 41648128
+   },
+   "quickjs": {
+    "cycles": 142714460,
+    "instructions": 1008071332,
+    "rss": 2490368
+   },
+   "hermes": {
+    "cycles": 52290205,
+    "instructions": 448265142,
+    "rss": 13893632
+   }
+  },
+  "helpers": {
+   "base": {
+    "cycles": 65447780,
+    "instructions": 542623152,
+    "rss": 2834432,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 931,
+     "slots-allocated": 3313,
+     "in-use-kib": 47
+    }
+   },
+   "save": {
+    "cycles": 64288033,
+    "instructions": 542649600,
+    "rss": 2818048,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 931,
+     "slots-allocated": 3313,
+     "in-use-kib": 47
+    }
+   },
+   "record": {
+    "cycles": 63852903,
+    "instructions": 542623706,
+    "rss": 2801664,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 931,
+     "slots-allocated": 3313,
+     "in-use-kib": 47
+    }
+   },
+   "cells": {
+    "cycles": 66764618,
+    "instructions": 542653316,
+    "rss": 2818048,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 931,
+     "slots-allocated": 3313,
+     "in-use-kib": 47
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 215263656,
+    "instructions": 1315428884,
+    "rss": 4931584
+   },
+   "v8-jitless": {
+    "cycles": 204043941,
+    "instructions": 1452891277,
+    "rss": 39354368
+   },
+   "quickjs": {
+    "cycles": 180324306,
+    "instructions": 1105165594,
+    "rss": 2506752
+   },
+   "hermes": {
+    "cycles": 95525667,
+    "instructions": 671036604,
+    "rss": 9224192
+   }
+  },
+  "json": {
+   "base": {
+    "cycles": 49009268,
+    "instructions": 316111965,
+    "rss": 4800512,
+    "gc": {
+     "collections": 10,
+     "total-us": 247,
+     "p50-us": 17,
+     "p95-us": 95,
+     "p99-us": 95,
+     "max-us": 95,
+     "cells-allocated": 167474,
+     "slots-allocated": 513265,
+     "in-use-kib": 572
+    }
+   },
+   "save": {
+    "cycles": 47738487,
+    "instructions": 316070437,
+    "rss": 4784128,
+    "gc": {
+     "collections": 10,
+     "total-us": 248,
+     "p50-us": 17,
+     "p95-us": 87,
+     "p99-us": 87,
+     "max-us": 87,
+     "cells-allocated": 167474,
+     "slots-allocated": 513265,
+     "in-use-kib": 572
+    }
+   },
+   "record": {
+    "cycles": 48047218,
+    "instructions": 316110046,
+    "rss": 4816896,
+    "gc": {
+     "collections": 10,
+     "total-us": 244,
+     "p50-us": 17,
+     "p95-us": 86,
+     "p99-us": 86,
+     "max-us": 86,
+     "cells-allocated": 167474,
+     "slots-allocated": 513265,
+     "in-use-kib": 572
+    }
+   },
+   "cells": {
+    "cycles": 47158599,
+    "instructions": 316996860,
+    "rss": 4767744,
+    "gc": {
+     "collections": 10,
+     "total-us": 265,
+     "p50-us": 19,
+     "p95-us": 90,
+     "p99-us": 90,
+     "max-us": 90,
+     "cells-allocated": 167474,
+     "slots-allocated": 513265,
+     "in-use-kib": 572
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 28871308,
+    "instructions": 195994240,
+    "rss": 15745024
+   },
+   "v8-jitless": {
+    "cycles": 46689718,
+    "instructions": 603685299,
+    "rss": 41631744
+   },
+   "quickjs": {
+    "cycles": 195822889,
+    "instructions": 1240527530,
+    "rss": 2605056
+   },
+   "hermes": {
+    "cycles": 132530625,
+    "instructions": 868165436,
+    "rss": 13500416
+   }
+  },
+  "long-strings": {
+   "base": {
+    "cycles": 11708380,
+    "instructions": 55046222,
+    "rss": 25427968,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 13057,
+     "slots-allocated": 14929,
+     "in-use-kib": 20952
+    }
+   },
+   "save": {
+    "cycles": 12092608,
+    "instructions": 55138612,
+    "rss": 25395200,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 13057,
+     "slots-allocated": 14929,
+     "in-use-kib": 20952
+    }
+   },
+   "record": {
+    "cycles": 11140764,
+    "instructions": 55024139,
+    "rss": 25444352,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 13057,
+     "slots-allocated": 14929,
+     "in-use-kib": 20952
+    }
+   },
+   "cells": {
+    "cycles": 11294133,
+    "instructions": 54896940,
+    "rss": 25411584,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 13057,
+     "slots-allocated": 14929,
+     "in-use-kib": 20952
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 9122017,
+    "instructions": 62221862,
+    "rss": 27017216
+   },
+   "v8-jitless": {
+    "cycles": 18423316,
+    "instructions": 470569821,
+    "rss": 41664512
+   },
+   "quickjs": {
+    "cycles": 5811055,
+    "instructions": 56059620,
+    "rss": 2605056
+   },
+   "hermes": {
+    "cycles": 8741685,
+    "instructions": 74241753,
+    "rss": 13303808
+   }
+  },
+  "maps": {
+   "base": {
+    "cycles": 143581093,
+    "instructions": 867918240,
+    "rss": 7258112,
+    "gc": {
+     "collections": 24,
+     "total-us": 2368,
+     "p50-us": 107,
+     "p95-us": 167,
+     "p99-us": 177,
+     "max-us": 177,
+     "cells-allocated": 401017,
+     "slots-allocated": 3249,
+     "in-use-kib": 846
+    }
+   },
+   "save": {
+    "cycles": 143884294,
+    "instructions": 868040385,
+    "rss": 7356416,
+    "gc": {
+     "collections": 24,
+     "total-us": 2355,
+     "p50-us": 103,
+     "p95-us": 165,
+     "p99-us": 175,
+     "max-us": 175,
+     "cells-allocated": 401017,
+     "slots-allocated": 3249,
+     "in-use-kib": 846
+    }
+   },
+   "record": {
+    "cycles": 145064407,
+    "instructions": 867946166,
+    "rss": 7159808,
+    "gc": {
+     "collections": 24,
+     "total-us": 2340,
+     "p50-us": 104,
+     "p95-us": 167,
+     "p99-us": 174,
+     "max-us": 174,
+     "cells-allocated": 401017,
+     "slots-allocated": 3249,
+     "in-use-kib": 846
+    }
+   },
+   "cells": {
+    "cycles": 142408100,
+    "instructions": 868006307,
+    "rss": 7340032,
+    "gc": {
+     "collections": 24,
+     "total-us": 2566,
+     "p50-us": 115,
+     "p95-us": 181,
+     "p99-us": 190,
+     "max-us": 190,
+     "cells-allocated": 401017,
+     "slots-allocated": 3249,
+     "in-use-kib": 846
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 223379024,
+    "instructions": 1189439029,
+    "rss": 50364416
+   },
+   "v8-jitless": {
+    "cycles": 203409246,
+    "instructions": 1117221638,
+    "rss": 56852480
+   },
+   "quickjs": {
+    "cycles": 218847330,
+    "instructions": 1065945988,
+    "rss": 3620864
+   },
+   "hermes": {
+    "cycles": 211973274,
+    "instructions": 1140674637,
+    "rss": 15499264
+   }
+  },
+  "polymorphic": {
+   "base": {
+    "cycles": 32246249,
+    "instructions": 304598371,
+    "rss": 2965504,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1861,
+     "slots-allocated": 8973,
+     "in-use-kib": 109
+    }
+   },
+   "save": {
+    "cycles": 31803079,
+    "instructions": 304461010,
+    "rss": 2949120,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1861,
+     "slots-allocated": 8973,
+     "in-use-kib": 109
+    }
+   },
+   "record": {
+    "cycles": 31622382,
+    "instructions": 304433714,
+    "rss": 2932736,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1861,
+     "slots-allocated": 8973,
+     "in-use-kib": 109
+    }
+   },
+   "cells": {
+    "cycles": 31158955,
+    "instructions": 304485633,
+    "rss": 2949120,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1861,
+     "slots-allocated": 8973,
+     "in-use-kib": 109
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 83135016,
+    "instructions": 779943665,
+    "rss": 4997120
+   },
+   "v8-jitless": {
+    "cycles": 61361956,
+    "instructions": 896411842,
+    "rss": 39387136
+   },
+   "quickjs": {
+    "cycles": 60717946,
+    "instructions": 391017279,
+    "rss": 2654208
+   },
+   "hermes": {
+    "cycles": 86070730,
+    "instructions": 650656493,
+    "rss": 9240576
+   }
+  },
+  "properties": {
+   "base": {
+    "cycles": 91049923,
+    "instructions": 827370711,
+    "rss": 3014656,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1864,
+     "slots-allocated": 8985,
+     "in-use-kib": 110
+    }
+   },
+   "save": {
+    "cycles": 91163137,
+    "instructions": 827369828,
+    "rss": 2998272,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1864,
+     "slots-allocated": 8985,
+     "in-use-kib": 110
+    }
+   },
+   "record": {
+    "cycles": 90633303,
+    "instructions": 827281716,
+    "rss": 2965504,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1864,
+     "slots-allocated": 8985,
+     "in-use-kib": 110
+    }
+   },
+   "cells": {
+    "cycles": 91620930,
+    "instructions": 831953130,
+    "rss": 2998272,
+    "gc": {
+     "collections": 0,
+     "total-us": 0,
+     "p50-us": 0,
+     "p95-us": 0,
+     "p99-us": 0,
+     "max-us": 0,
+     "cells-allocated": 1864,
+     "slots-allocated": 8985,
+     "in-use-kib": 110
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 96957453,
+    "instructions": 945671380,
+    "rss": 5062656
+   },
+   "v8-jitless": {
+    "cycles": 119897312,
+    "instructions": 1383276543,
+    "rss": 39436288
+   },
+   "quickjs": {
+    "cycles": 144673818,
+    "instructions": 871696951,
+    "rss": 2654208
+   },
+   "hermes": {
+    "cycles": 125629281,
+    "instructions": 1089345261,
+    "rss": 9273344
+   }
+  },
+  "regexp": {
+   "base": {
+    "cycles": 80997933,
+    "instructions": 534290486,
+    "rss": 4505600,
+    "gc": {
+     "collections": 12,
+     "total-us": 265,
+     "p50-us": 15,
+     "p95-us": 100,
+     "p99-us": 100,
+     "max-us": 100,
+     "cells-allocated": 197110,
+     "slots-allocated": 244169,
+     "in-use-kib": 437
+    }
+   },
+   "save": {
+    "cycles": 79034842,
+    "instructions": 534346919,
+    "rss": 4571136,
+    "gc": {
+     "collections": 12,
+     "total-us": 259,
+     "p50-us": 15,
+     "p95-us": 95,
+     "p99-us": 95,
+     "max-us": 95,
+     "cells-allocated": 197110,
+     "slots-allocated": 244169,
+     "in-use-kib": 437
+    }
+   },
+   "record": {
+    "cycles": 77496844,
+    "instructions": 534288549,
+    "rss": 4587520,
+    "gc": {
+     "collections": 12,
+     "total-us": 275,
+     "p50-us": 15,
+     "p95-us": 108,
+     "p99-us": 108,
+     "max-us": 108,
+     "cells-allocated": 197110,
+     "slots-allocated": 244169,
+     "in-use-kib": 437
+    }
+   },
+   "cells": {
+    "cycles": 78041747,
+    "instructions": 534351410,
+    "rss": 4620288,
+    "gc": {
+     "collections": 12,
+     "total-us": 270,
+     "p50-us": 15,
+     "p95-us": 99,
+     "p99-us": 99,
+     "max-us": 99,
+     "cells-allocated": 197110,
+     "slots-allocated": 244169,
+     "in-use-kib": 437
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 65342126,
+    "instructions": 513561216,
+    "rss": 13287424
+   },
+   "v8-jitless": {
+    "cycles": 62692487,
+    "instructions": 638539869,
+    "rss": 41828352
+   },
+   "quickjs": {
+    "cycles": 79660077,
+    "instructions": 522329400,
+    "rss": 2703360
+   },
+   "hermes": {
+    "cycles": 114772927,
+    "instructions": 713394117,
+    "rss": 13516800
+   }
+  },
+  "strings": {
+   "base": {
+    "cycles": 32649847,
+    "instructions": 248267126,
+    "rss": 4440064,
+    "gc": {
+     "collections": 12,
+     "total-us": 568,
+     "p50-us": 37,
+     "p95-us": 102,
+     "p99-us": 102,
+     "max-us": 102,
+     "cells-allocated": 202060,
+     "slots-allocated": 103929,
+     "in-use-kib": 561
+    }
+   },
+   "save": {
+    "cycles": 32912784,
+    "instructions": 248238421,
+    "rss": 4341760,
+    "gc": {
+     "collections": 12,
+     "total-us": 591,
+     "p50-us": 38,
+     "p95-us": 111,
+     "p99-us": 111,
+     "max-us": 111,
+     "cells-allocated": 202060,
+     "slots-allocated": 103929,
+     "in-use-kib": 561
+    }
+   },
+   "record": {
+    "cycles": 32376975,
+    "instructions": 248273748,
+    "rss": 4456448,
+    "gc": {
+     "collections": 12,
+     "total-us": 579,
+     "p50-us": 38,
+     "p95-us": 106,
+     "p99-us": 106,
+     "max-us": 106,
+     "cells-allocated": 202060,
+     "slots-allocated": 103929,
+     "in-use-kib": 561
+    }
+   },
+   "cells": {
+    "cycles": 32151599,
+    "instructions": 248695523,
+    "rss": 4456448,
+    "gc": {
+     "collections": 12,
+     "total-us": 546,
+     "p50-us": 36,
+     "p95-us": 105,
+     "p99-us": 105,
+     "max-us": 105,
+     "cells-allocated": 202060,
+     "slots-allocated": 103929,
+     "in-use-kib": 561
+    }
+   },
+   "jsc-nojit": {
+    "cycles": 34025878,
+    "instructions": 236945648,
+    "rss": 17563648
+   },
+   "v8-jitless": {
+    "cycles": 33835832,
+    "instructions": 568367349,
+    "rss": 41549824
+   },
+   "quickjs": {
+    "cycles": 71020418,
+    "instructions": 453910964,
+    "rss": 2801664
+   },
+   "hermes": {
+    "cycles": 60292734,
+    "instructions": 459402788,
+    "rss": 13762560
+   }
+  },
+  "async-gen": {
+   "base": {
+    "cycles": 225891412,
+    "instructions": 1521385886,
+    "rss": 4964352,
+    "gc": {
+     "collections": 85,
+     "total-us": 1107,
+     "p50-us": 12,
+     "p95-us": 14,
+     "p99-us": 84,
+     "max-us": 84,
+     "cells-allocated": 1400875,
+     "slots-allocated": 6203025,
+     "in-use-kib": 671
+    }
+   },
+   "save": {
+    "cycles": 215574116,
+    "instructions": 1424766325,
+    "rss": 4325376,
+    "gc": {
+     "collections": 85,
+     "total-us": 1153,
+     "p50-us": 13,
+     "p95-us": 16,
+     "p99-us": 81,
+     "max-us": 81,
+     "cells-allocated": 1400875,
+     "slots-allocated": 6203025,
+     "in-use-kib": 671
+    }
+   },
+   "record": {
+    "cycles": 206069831,
+    "instructions": 1368141544,
+    "rss": 4915200,
+    "gc": {
+     "collections": 85,
+     "total-us": 1089,
+     "p50-us": 12,
+     "p95-us": 13,
+     "p99-us": 80,
+     "max-us": 80,
+     "cells-allocated": 1400875,
+     "slots-allocated": 6203025,
+     "in-use-kib": 671
+    }
+   },
+   "cells": {
+    "cycles": 204583352,
+    "instructions": 1356908791,
+    "rss": 5013504,
+    "gc": {
+     "collections": 85,
+     "total-us": 1141,
+     "p50-us": 12,
+     "p95-us": 14,
+     "p99-us": 100,
+     "max-us": 100,
+     "cells-allocated": 1400875,
+     "slots-allocated": 6203025,
+     "in-use-kib": 671
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 172492250,
+    "instructions": 1350547948,
+    "rss": 43827200
+   },
+   "quickjs": {
+    "cycles": 926879250,
+    "instructions": 6229011358,
+    "rss": 2523136
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "await-fresh": {
+   "base": {
+    "cycles": 88782030,
+    "instructions": 591876810,
+    "rss": 4194304,
+    "gc": {
+     "collections": 24,
+     "total-us": 371,
+     "p50-us": 12,
+     "p95-us": 15,
+     "p99-us": 85,
+     "max-us": 85,
+     "cells-allocated": 400864,
+     "slots-allocated": 1802969,
+     "in-use-kib": 631
+    }
+   },
+   "save": {
+    "cycles": 85568343,
+    "instructions": 565322378,
+    "rss": 4931584,
+    "gc": {
+     "collections": 24,
+     "total-us": 364,
+     "p50-us": 12,
+     "p95-us": 14,
+     "p99-us": 82,
+     "max-us": 82,
+     "cells-allocated": 400864,
+     "slots-allocated": 1802969,
+     "in-use-kib": 631
+    }
+   },
+   "record": {
+    "cycles": 79254714,
+    "instructions": 545895198,
+    "rss": 4210688,
+    "gc": {
+     "collections": 24,
+     "total-us": 351,
+     "p50-us": 12,
+     "p95-us": 15,
+     "p99-us": 75,
+     "max-us": 75,
+     "cells-allocated": 400864,
+     "slots-allocated": 1802969,
+     "in-use-kib": 631
+    }
+   },
+   "cells": {
+    "cycles": 83956442,
+    "instructions": 542048971,
+    "rss": 4931584,
+    "gc": {
+     "collections": 24,
+     "total-us": 372,
+     "p50-us": 12,
+     "p95-us": 15,
+     "p99-us": 84,
+     "max-us": 84,
+     "cells-allocated": 400864,
+     "slots-allocated": 1802969,
+     "in-use-kib": 631
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 63634955,
+    "instructions": 728739454,
+    "rss": 43696128
+   },
+   "quickjs": {
+    "cycles": 259727591,
+    "instructions": 1735445111,
+    "rss": 2539520
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "await-prim": {
+   "base": {
+    "cycles": 41430172,
+    "instructions": 322956595,
+    "rss": 4964352,
+    "gc": {
+     "collections": 12,
+     "total-us": 227,
+     "p50-us": 12,
+     "p95-us": 89,
+     "p99-us": 89,
+     "max-us": 89,
+     "cells-allocated": 200864,
+     "slots-allocated": 1002968,
+     "in-use-kib": 527
+    }
+   },
+   "save": {
+    "cycles": 41566066,
+    "instructions": 306433208,
+    "rss": 4964352,
+    "gc": {
+     "collections": 12,
+     "total-us": 219,
+     "p50-us": 13,
+     "p95-us": 79,
+     "p99-us": 79,
+     "max-us": 79,
+     "cells-allocated": 200864,
+     "slots-allocated": 1002968,
+     "in-use-kib": 527
+    }
+   },
+   "record": {
+    "cycles": 38236608,
+    "instructions": 287861743,
+    "rss": 4931584,
+    "gc": {
+     "collections": 12,
+     "total-us": 216,
+     "p50-us": 12,
+     "p95-us": 79,
+     "p99-us": 79,
+     "max-us": 79,
+     "cells-allocated": 200864,
+     "slots-allocated": 1002968,
+     "in-use-kib": 527
+    }
+   },
+   "cells": {
+    "cycles": 37521493,
+    "instructions": 285013470,
+    "rss": 4997120,
+    "gc": {
+     "collections": 12,
+     "total-us": 220,
+     "p50-us": 13,
+     "p95-us": 80,
+     "p99-us": 80,
+     "max-us": 80,
+     "cells-allocated": 200864,
+     "slots-allocated": 1002968,
+     "in-use-kib": 527
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 60754075,
+    "instructions": 686903774,
+    "rss": 43745280
+   },
+   "quickjs": {
+    "cycles": 233327636,
+    "instructions": 1645261017,
+    "rss": 2539520
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "await-settled": {
+   "base": {
+    "cycles": 54224314,
+    "instructions": 417542379,
+    "rss": 4947968,
+    "gc": {
+     "collections": 12,
+     "total-us": 228,
+     "p50-us": 13,
+     "p95-us": 87,
+     "p99-us": 87,
+     "max-us": 87,
+     "cells-allocated": 200866,
+     "slots-allocated": 1002972,
+     "in-use-kib": 527
+    }
+   },
+   "save": {
+    "cycles": 55735265,
+    "instructions": 398367856,
+    "rss": 4947968,
+    "gc": {
+     "collections": 12,
+     "total-us": 224,
+     "p50-us": 13,
+     "p95-us": 84,
+     "p99-us": 84,
+     "max-us": 84,
+     "cells-allocated": 200866,
+     "slots-allocated": 1002972,
+     "in-use-kib": 527
+    }
+   },
+   "record": {
+    "cycles": 52489955,
+    "instructions": 379659716,
+    "rss": 4259840,
+    "gc": {
+     "collections": 12,
+     "total-us": 253,
+     "p50-us": 12,
+     "p95-us": 95,
+     "p99-us": 95,
+     "max-us": 95,
+     "cells-allocated": 200866,
+     "slots-allocated": 1002972,
+     "in-use-kib": 527
+    }
+   },
+   "cells": {
+    "cycles": 51921659,
+    "instructions": 377006143,
+    "rss": 4849664,
+    "gc": {
+     "collections": 12,
+     "total-us": 227,
+     "p50-us": 13,
+     "p95-us": 88,
+     "p99-us": 88,
+     "max-us": 88,
+     "cells-allocated": 200866,
+     "slots-allocated": 1002972,
+     "in-use-kib": 527
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 56224867,
+    "instructions": 648377384,
+    "rss": 43712512
+   },
+   "quickjs": {
+    "cycles": 72373085,
+    "instructions": 491297665,
+    "rss": 2523136
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "await-suspended": {
+   "base": {
+    "cycles": 79328583,
+    "instructions": 545586575,
+    "rss": 4997120,
+    "gc": {
+     "collections": 36,
+     "total-us": 571,
+     "p50-us": 12,
+     "p95-us": 58,
+     "p99-us": 84,
+     "max-us": 84,
+     "cells-allocated": 600875,
+     "slots-allocated": 2803000,
+     "in-use-kib": 774
+    }
+   },
+   "save": {
+    "cycles": 78822013,
+    "instructions": 529743351,
+    "rss": 4898816,
+    "gc": {
+     "collections": 36,
+     "total-us": 558,
+     "p50-us": 13,
+     "p95-us": 26,
+     "p99-us": 82,
+     "max-us": 82,
+     "cells-allocated": 600875,
+     "slots-allocated": 2803000,
+     "in-use-kib": 774
+    }
+   },
+   "record": {
+    "cycles": 75746777,
+    "instructions": 510400394,
+    "rss": 4784128,
+    "gc": {
+     "collections": 36,
+     "total-us": 539,
+     "p50-us": 13,
+     "p95-us": 24,
+     "p99-us": 75,
+     "max-us": 75,
+     "cells-allocated": 600875,
+     "slots-allocated": 2803000,
+     "in-use-kib": 774
+    }
+   },
+   "cells": {
+    "cycles": 74401101,
+    "instructions": 508453191,
+    "rss": 4833280,
+    "gc": {
+     "collections": 36,
+     "total-us": 522,
+     "p50-us": 12,
+     "p95-us": 16,
+     "p99-us": 85,
+     "max-us": 85,
+     "cells-allocated": 600875,
+     "slots-allocated": 2803000,
+     "in-use-kib": 774
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 78960257,
+    "instructions": 772104205,
+    "rss": 43843584
+   },
+   "quickjs": {
+    "cycles": 259238333,
+    "instructions": 1740808661,
+    "rss": 2523136
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "churn-retained": {
+   "base": {
+    "cycles": 239123956,
+    "instructions": 1967165928,
+    "rss": 34832384,
+    "gc": {
+     "collections": 140,
+     "total-us": 6517,
+     "p50-us": 11,
+     "p95-us": 317,
+     "p99-us": 628,
+     "max-us": 700,
+     "cells-allocated": 2300862,
+     "slots-allocated": 10251500,
+     "in-use-kib": 23782
+    }
+   },
+   "save": {
+    "cycles": 238760002,
+    "instructions": 1967193636,
+    "rss": 34865152,
+    "gc": {
+     "collections": 140,
+     "total-us": 7180,
+     "p50-us": 11,
+     "p95-us": 438,
+     "p99-us": 755,
+     "max-us": 767,
+     "cells-allocated": 2300862,
+     "slots-allocated": 10251500,
+     "in-use-kib": 23782
+    }
+   },
+   "record": {
+    "cycles": 237761801,
+    "instructions": 1967007664,
+    "rss": 34816000,
+    "gc": {
+     "collections": 140,
+     "total-us": 7062,
+     "p50-us": 11,
+     "p95-us": 394,
+     "p99-us": 686,
+     "max-us": 769,
+     "cells-allocated": 2300862,
+     "slots-allocated": 10251500,
+     "in-use-kib": 23782
+    }
+   },
+   "cells": {
+    "cycles": 238428436,
+    "instructions": 1985724841,
+    "rss": 34881536,
+    "gc": {
+     "collections": 140,
+     "total-us": 6988,
+     "p50-us": 11,
+     "p95-us": 362,
+     "p99-us": 690,
+     "max-us": 722,
+     "cells-allocated": 2300862,
+     "slots-allocated": 10251500,
+     "in-use-kib": 23782
+    }
+   },
+   "jsc-nojit": {
+    "failed": "Exception: TypeError: undefined is not an object (evaluating"
+   },
+   "v8-jitless": {
+    "cycles": 295681288,
+    "instructions": 2094845157,
+    "rss": 97746944
+   },
+   "quickjs": {
+    "cycles": 517561398,
+    "instructions": 3204345604,
+    "rss": 43204608
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "churn-small": {
+   "base": {
+    "cycles": 284911689,
+    "instructions": 2415060527,
+    "rss": 4243456,
+    "gc": {
+     "collections": 183,
+     "total-us": 2018,
+     "p50-us": 11,
+     "p95-us": 12,
+     "p99-us": 19,
+     "max-us": 83,
+     "cells-allocated": 3000862,
+     "slots-allocated": 8002928,
+     "in-use-kib": 432
+    }
+   },
+   "save": {
+    "cycles": 283546237,
+    "instructions": 2415117776,
+    "rss": 4227072,
+    "gc": {
+     "collections": 183,
+     "total-us": 2010,
+     "p50-us": 10,
+     "p95-us": 12,
+     "p99-us": 17,
+     "max-us": 80,
+     "cells-allocated": 3000862,
+     "slots-allocated": 8002928,
+     "in-use-kib": 432
+    }
+   },
+   "record": {
+    "cycles": 282459155,
+    "instructions": 2414880246,
+    "rss": 4194304,
+    "gc": {
+     "collections": 183,
+     "total-us": 2019,
+     "p50-us": 11,
+     "p95-us": 11,
+     "p99-us": 14,
+     "max-us": 81,
+     "cells-allocated": 3000862,
+     "slots-allocated": 8002928,
+     "in-use-kib": 432
+    }
+   },
+   "cells": {
+    "cycles": 284874571,
+    "instructions": 2432069831,
+    "rss": 4292608,
+    "gc": {
+     "collections": 183,
+     "total-us": 2027,
+     "p50-us": 11,
+     "p95-us": 12,
+     "p99-us": 14,
+     "max-us": 82,
+     "cells-allocated": 3000862,
+     "slots-allocated": 8002928,
+     "in-use-kib": 432
+    }
+   },
+   "jsc-nojit": {
+    "failed": "Exception: TypeError: undefined is not an object (evaluating"
+   },
+   "v8-jitless": {
+    "cycles": 231384605,
+    "instructions": 2050744814,
+    "rss": 43696128
+   },
+   "quickjs": {
+    "cycles": 497216956,
+    "instructions": 3448485510,
+    "rss": 2506752
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "combinators": {
+   "base": {
+    "cycles": 110480469,
+    "instructions": 748957383,
+    "rss": 5226496,
+    "gc": {
+     "collections": 54,
+     "total-us": 946,
+     "p50-us": 15,
+     "p95-us": 24,
+     "p99-us": 88,
+     "max-us": 88,
+     "cells-allocated": 895859,
+     "slots-allocated": 4467933,
+     "in-use-kib": 810
+    }
+   },
+   "save": {
+    "cycles": 110723521,
+    "instructions": 749051808,
+    "rss": 5242880,
+    "gc": {
+     "collections": 54,
+     "total-us": 942,
+     "p50-us": 15,
+     "p95-us": 18,
+     "p99-us": 79,
+     "max-us": 79,
+     "cells-allocated": 895859,
+     "slots-allocated": 4467933,
+     "in-use-kib": 810
+    }
+   },
+   "record": {
+    "cycles": 108963371,
+    "instructions": 748928040,
+    "rss": 5177344,
+    "gc": {
+     "collections": 54,
+     "total-us": 917,
+     "p50-us": 15,
+     "p95-us": 17,
+     "p99-us": 80,
+     "max-us": 80,
+     "cells-allocated": 895859,
+     "slots-allocated": 4467933,
+     "in-use-kib": 810
+    }
+   },
+   "cells": {
+    "cycles": 109892337,
+    "instructions": 743851841,
+    "rss": 5242880,
+    "gc": {
+     "collections": 54,
+     "total-us": 932,
+     "p50-us": 15,
+     "p95-us": 18,
+     "p99-us": 85,
+     "max-us": 85,
+     "cells-allocated": 895859,
+     "slots-allocated": 4467933,
+     "in-use-kib": 810
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 99609310,
+    "instructions": 939090973,
+    "rss": 43679744
+   },
+   "quickjs": {
+    "cycles": 437913067,
+    "instructions": 3071660199,
+    "rss": 2555904
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "medium-live-set": {
+   "base": {
+    "cycles": 590023789,
+    "instructions": 4082398520,
+    "rss": 16793600,
+    "gc": {
+     "collections": 278,
+     "total-us": 6100,
+     "p50-us": 11,
+     "p95-us": 27,
+     "p99-us": 389,
+     "max-us": 572,
+     "cells-allocated": 4560865,
+     "slots-allocated": 12293868,
+     "in-use-kib": 7100
+    }
+   },
+   "save": {
+    "cycles": 586515629,
+    "instructions": 4082127358,
+    "rss": 16760832,
+    "gc": {
+     "collections": 278,
+     "total-us": 6019,
+     "p50-us": 11,
+     "p95-us": 18,
+     "p99-us": 367,
+     "max-us": 556,
+     "cells-allocated": 4560865,
+     "slots-allocated": 12293868,
+     "in-use-kib": 7100
+    }
+   },
+   "record": {
+    "cycles": 582689856,
+    "instructions": 4082059831,
+    "rss": 16777216,
+    "gc": {
+     "collections": 278,
+     "total-us": 5935,
+     "p50-us": 11,
+     "p95-us": 17,
+     "p99-us": 297,
+     "max-us": 589,
+     "cells-allocated": 4560865,
+     "slots-allocated": 12293868,
+     "in-use-kib": 7100
+    }
+   },
+   "cells": {
+    "cycles": 590619043,
+    "instructions": 4103566614,
+    "rss": 16596992,
+    "gc": {
+     "collections": 278,
+     "total-us": 5972,
+     "p50-us": 11,
+     "p95-us": 18,
+     "p99-us": 376,
+     "max-us": 613,
+     "cells-allocated": 4560865,
+     "slots-allocated": 12293868,
+     "in-use-kib": 7100
+    }
+   },
+   "jsc-nojit": {
+    "failed": "Exception: TypeError: undefined is not an object (evaluating"
+   },
+   "v8-jitless": {
+    "cycles": 1326836074,
+    "instructions": 8221425844,
+    "rss": 82673664
+   },
+   "quickjs": {
+    "cycles": 901866619,
+    "instructions": 5577926283,
+    "rss": 9977856
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "spike": {
+   "base": {
+    "cycles": 1081632824,
+    "instructions": 8010700523,
+    "rss": 298713088,
+    "gc": {
+     "collections": 610,
+     "total-us": 90189,
+     "p50-us": 11,
+     "p95-us": 700,
+     "p99-us": 1151,
+     "max-us": 6048,
+     "cells-allocated": 10000865,
+     "slots-allocated": 44197229,
+     "in-use-kib": 225775
+    }
+   },
+   "save": {
+    "cycles": 1074873804,
+    "instructions": 8007242033,
+    "rss": 298663936,
+    "gc": {
+     "collections": 610,
+     "total-us": 90911,
+     "p50-us": 11,
+     "p95-us": 751,
+     "p99-us": 1154,
+     "max-us": 5803,
+     "cells-allocated": 10000865,
+     "slots-allocated": 44197229,
+     "in-use-kib": 225775
+    }
+   },
+   "record": {
+    "cycles": 1065400587,
+    "instructions": 7967759724,
+    "rss": 298614784,
+    "gc": {
+     "collections": 610,
+     "total-us": 89983,
+     "p50-us": 11,
+     "p95-us": 717,
+     "p99-us": 1127,
+     "max-us": 6005,
+     "cells-allocated": 10000865,
+     "slots-allocated": 44197229,
+     "in-use-kib": 225775
+    }
+   },
+   "cells": {
+    "cycles": 1055567669,
+    "instructions": 8045973749,
+    "rss": 298598400,
+    "gc": {
+     "collections": 610,
+     "total-us": 90453,
+     "p50-us": 11,
+     "p95-us": 695,
+     "p99-us": 1207,
+     "max-us": 5954,
+     "cells-allocated": 10000865,
+     "slots-allocated": 44197229,
+     "in-use-kib": 225775
+    }
+   },
+   "jsc-nojit": {
+    "failed": "Exception: TypeError: undefined is not an object (evaluating"
+   },
+   "v8-jitless": {
+    "cycles": 1905268217,
+    "instructions": 10580549908,
+    "rss": 455852032
+   },
+   "quickjs": {
+    "cycles": 2619686197,
+    "instructions": 14274071289,
+    "rss": 541360128
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "then-chain": {
+   "base": {
+    "cycles": 71569294,
+    "instructions": 536695525,
+    "rss": 29851648,
+    "gc": {
+     "collections": 24,
+     "total-us": 4933,
+     "p50-us": 160,
+     "p95-us": 510,
+     "p99-us": 727,
+     "max-us": 727,
+     "cells-allocated": 400861,
+     "slots-allocated": 1802943,
+     "in-use-kib": 21915
+    }
+   },
+   "save": {
+    "cycles": 71262612,
+    "instructions": 536777915,
+    "rss": 29851648,
+    "gc": {
+     "collections": 24,
+     "total-us": 4897,
+     "p50-us": 149,
+     "p95-us": 516,
+     "p99-us": 737,
+     "max-us": 737,
+     "cells-allocated": 400861,
+     "slots-allocated": 1802943,
+     "in-use-kib": 21915
+    }
+   },
+   "record": {
+    "cycles": 70430549,
+    "instructions": 536678502,
+    "rss": 29851648,
+    "gc": {
+     "collections": 24,
+     "total-us": 4658,
+     "p50-us": 146,
+     "p95-us": 491,
+     "p99-us": 679,
+     "max-us": 679,
+     "cells-allocated": 400861,
+     "slots-allocated": 1802943,
+     "in-use-kib": 21915
+    }
+   },
+   "cells": {
+    "cycles": 69966676,
+    "instructions": 528682994,
+    "rss": 29868032,
+    "gc": {
+     "collections": 24,
+     "total-us": 4723,
+     "p50-us": 150,
+     "p95-us": 528,
+     "p99-us": 616,
+     "max-us": 616,
+     "cells-allocated": 400861,
+     "slots-allocated": 1802943,
+     "in-use-kib": 21915
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 86803345,
+    "instructions": 815850692,
+    "rss": 83165184
+   },
+   "quickjs": {
+    "cycles": 469057182,
+    "instructions": 2667301586,
+    "rss": 157548544
+   },
+   "hermes": {
+    "failed": ""
+   }
+  },
+  "then-loop": {
+   "base": {
+    "cycles": 122220122,
+    "instructions": 873602798,
+    "rss": 4997120,
+    "gc": {
+     "collections": 109,
+     "total-us": 1323,
+     "p50-us": 11,
+     "p95-us": 12,
+     "p99-us": 14,
+     "max-us": 101,
+     "cells-allocated": 1800859,
+     "slots-allocated": 6802932,
+     "in-use-kib": 837
+    }
+   },
+   "save": {
+    "cycles": 122206932,
+    "instructions": 873730237,
+    "rss": 5029888,
+    "gc": {
+     "collections": 109,
+     "total-us": 1335,
+     "p50-us": 12,
+     "p95-us": 13,
+     "p99-us": 15,
+     "max-us": 81,
+     "cells-allocated": 1800859,
+     "slots-allocated": 6802932,
+     "in-use-kib": 837
+    }
+   },
+   "record": {
+    "cycles": 122011376,
+    "instructions": 873556185,
+    "rss": 4947968,
+    "gc": {
+     "collections": 109,
+     "total-us": 1344,
+     "p50-us": 11,
+     "p95-us": 13,
+     "p99-us": 25,
+     "max-us": 87,
+     "cells-allocated": 1800859,
+     "slots-allocated": 6802932,
+     "in-use-kib": 837
+    }
+   },
+   "cells": {
+    "cycles": 119213621,
+    "instructions": 877294458,
+    "rss": 5046272,
+    "gc": {
+     "collections": 109,
+     "total-us": 1359,
+     "p50-us": 12,
+     "p95-us": 13,
+     "p99-us": 21,
+     "max-us": 84,
+     "cells-allocated": 1800859,
+     "slots-allocated": 6802932,
+     "in-use-kib": 837
+    }
+   },
+   "jsc-nojit": {
+    "failed": ""
+   },
+   "v8-jitless": {
+    "cycles": 89588056,
+    "instructions": 877277561,
+    "rss": 43778048
+   },
+   "quickjs": {
+    "cycles": 479757262,
+    "instructions": 3374824297,
+    "rss": 2523136
+   },
+   "hermes": {
+    "failed": ""
+   }
+  }
+ },
+ "geomean_vs_base": {
+  "base": 1.0,
+  "save": 0.9995085013019783,
+  "record": 0.9822276895317957,
+  "cells": 0.9854588883093346,
+  "jsc-nojit": 1.2847517303496592,
+  "v8-jitless": 1.2483460209811275,
+  "quickjs": 2.2251927679761634,
+  "hermes": 1.7417199584128187
+ }
+}

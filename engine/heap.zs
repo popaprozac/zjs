@@ -3692,6 +3692,55 @@ export struct Heap {
     if (header.mark != 0) this.rememberStore(handle, index, value);
   }
 
+  // A number stored in a cell's slot. A collection follows nothing
+  // through it, so the store takes no barrier.
+  function setSlotInt32(inout this, handle: u32, index: u32, value: i32): void {
+    const header = this.cellHeader(handle);
+    unsafe {
+      this.slots.uncheckedSet(usize(header.slotStart.wrappingAdd(index)), int32Value(value));
+    }
+  }
+
+  // A slot emptied to undefined, likewise with no barrier.
+  function clearSlot(inout this, handle: u32, index: u32): void {
+    const header = this.cellHeader(handle);
+    unsafe {
+      this.slots.uncheckedSet(usize(header.slotStart.wrappingAdd(index)), undefinedValue());
+    }
+  }
+
+  // Store `values` over a cell's first slots, the barrier settled once
+  // for all of them. A young cell takes them as they are. An old one is
+  // listed whole for the next minor collection whatever they hold: that
+  // collection traces the cell once, and no value is looked at here.
+  // While a full collection marks, each store takes the barrier as any
+  // other does, since an old cell stored then has to be reached.
+  function setSlots(inout this, handle: u32, values: Slice<Value>): void {
+    const header = this.cellHeader(handle);
+    if (header.mark != 0) {
+      if (this.phase == PHASE_MARK) {
+        let each: u32 = 0;
+        while (usize(each) < values.length) {
+          this.setSlot(handle, each, values[usize(each)]);
+          each = each + 1;
+        }
+        return;
+      }
+      if (!header.remembered) {
+        this.headers[usize(handle)].remembered = true;
+        this.rememberedCells.push(handle);
+      }
+    }
+    const start = usize(header.slotStart);
+    let index: usize = 0;
+    while (index < values.length) {
+      unsafe {
+        this.slots.uncheckedSet(start + index, values[index]);
+      }
+      index = index + 1;
+    }
+  }
+
   // A property's attributes, by the slot its value is in: an object's
   // from its class or its dictionary, an array element's from its
   // array's table when it has one; the default for anything else.
@@ -5078,6 +5127,59 @@ test "an old cell given a young one keeps it through a minor collection" {
   expect(heap.isObject(byValue)).toEqual(true);
   expect(heap.isReleased(unreached)).toEqual(true);
   expect(asCell(heap.arrayGet(large, 299))).toEqual(byLargeSlot);
+}
+
+test "a run of values stored in an old cell is kept: by its listing for a minor collection, by the barrier while a full one marks" {
+  let heap = createHeap();
+  let roots = Array<u32>();
+  const holder = heap.allocateArray(3);
+  const late = heap.allocateObject(0);
+  roots.push(holder);
+  roots.push(late);
+  collectFull(inout heap, in roots);
+  const empty = Array<u32>();
+  // Twice: the listing made for one minor collection is made again for
+  // the next.
+  let round: u32 = 0;
+  while (round < 2) {
+    const first = heap.allocateObject(0);
+    const second = heap.allocateObject(0);
+    const unreached = heap.allocateObject(0);
+    let values = Array<Value>();
+    values.push(int32Value(i32(round)));
+    values.push(cellValue(first));
+    values.push(cellValue(second));
+    values.push(cellValue(unreached));
+    heap.setSlots(holder, values.slice(0, 3));
+    collectMinor(inout heap, in empty);
+    expect(heap.isObject(first)).toEqual(true);
+    expect(heap.isObject(second)).toEqual(true);
+    expect(heap.isReleased(unreached)).toEqual(true);
+    expect(asInt32(heap.slot(holder, 0))).toEqual(i32(round));
+    expect(asCell(heap.slot(holder, 2))).toEqual(second);
+    round = round + 1;
+  }
+  // A full collection has traced the holder when it is given an old cell
+  // nothing else holds.
+  heap.beginWhole();
+  heap.markHandle(holder);
+  heap.drainAll();
+  let run = Array<Value>();
+  run.push(cellValue(late));
+  heap.setSlots(holder, run);
+  heap.finishWhole();
+  expect(heap.isObject(late)).toEqual(true);
+  expect(asCell(heap.slot(holder, 0))).toEqual(late);
+  // A young cell takes a run as it is.
+  const youngHolder = heap.allocateArray(3);
+  const inner = heap.allocateObject(0);
+  let fresh = Array<Value>();
+  fresh.push(cellValue(inner));
+  heap.setSlots(youngHolder, fresh);
+  let young = Array<u32>();
+  young.push(youngHolder);
+  collectMinor(inout heap, in young);
+  expect(heap.isObject(inner)).toEqual(true);
 }
 
 test "a minor collection slides the young ranges still in use down and cuts the arena back" {

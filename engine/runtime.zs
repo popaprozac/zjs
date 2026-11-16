@@ -4115,17 +4115,17 @@ export struct Runtime {
     // 3 is a delegating yield (yield*), which every resumption -- next,
     // throw, return -- re-enters with its mode for the delegation loop.
     const record = this.heap.allocateArray(13);
-    this.heap.setSlot(record, 0, int32Value(GEN_START));
+    this.heap.setSlotInt32(record, 0, GEN_START);
     this.heap.setSlot(record, 1, callee);
     this.heap.setSlot(record, 2, thisValue);
-    this.heap.setSlot(record, 3, undefinedValue());
-    this.heap.setSlot(record, 5, int32Value(0));
-    this.heap.setSlot(record, 6, int32Value(0));
-    this.heap.setSlot(record, 8, undefinedValue());
-    this.heap.setSlot(record, 9, int32Value(0));
-    this.heap.setSlot(record, 10, undefinedValue());
-    this.heap.setSlot(record, 11, int32Value(0));
-    this.heap.setSlot(record, 12, int32Value(0));
+    this.heap.clearSlot(record, 3);
+    this.heap.setSlotInt32(record, 5, 0);
+    this.heap.setSlotInt32(record, 6, 0);
+    this.heap.clearSlot(record, 8);
+    this.heap.setSlotInt32(record, 9, 0);
+    this.heap.clearSlot(record, 10);
+    this.heap.setSlotInt32(record, 11, 0);
+    this.heap.setSlotInt32(record, 12, 0);
     const code = this.heap.functionIndex(asCell(callee));
     if (this.functions[usize(code)].isAsync && this.functions[usize(code)].isGenerator) {
       this.heap.setSlot(record, 10, cellValue(this.heap.allocateArray(0)));
@@ -4165,15 +4165,15 @@ export struct Runtime {
       // A return before the body ever ran completes the generator (an
       // async generator's driver settles such a request itself, after
       // awaiting the value, and never resumes here).
-      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      this.heap.setSlotInt32(record, 0, GEN_COMPLETED);
       const unstartedAsync = this.generatorIsAsync(record);
       return this.resumeResult(unstartedAsync, sent, true);
     }
     // A return at a yield re-enters the body, which returns the value
     // through its finally blocks (the compiler checks the mode after
     // every yield); a delegating yield forwards it.
-    this.heap.setSlot(record, 12, int32Value(i32(mode)));
-    this.heap.setSlot(record, 0, int32Value(GEN_RUNNING));
+    this.heap.setSlotInt32(record, 12, i32(mode));
+    this.heap.setSlotInt32(record, 0, GEN_RUNNING);
     const thisValue = this.heap.slot(record, 2);
     const entryDepth = this.frameCount;
     const savedTop = this.regTop;
@@ -4244,15 +4244,10 @@ export struct Runtime {
     } else {
       saved = this.heap.allocateArray(count);
     }
-    let index: u32 = 0;
-    while (index < count) {
-      const held = this.regStack[usize(base + index)];
-      this.heap.setSlot(saved, index, held);
-      index = index + 1;
-    }
+    this.heap.setSlots(saved, this.regStack.slice(usize(base), usize(base + count)));
     this.heap.setSlot(record, 4, cellValue(saved));
-    this.heap.setSlot(record, 5, int32Value(i32(ip)));
-    this.heap.setSlot(record, 6, int32Value(i32(resumeDst)));
+    this.heap.setSlotInt32(record, 5, i32(ip));
+    this.heap.setSlotInt32(record, 6, i32(resumeDst));
     // The environment as a cell, so a collection while the generator is
     // suspended keeps it: nothing else may hold it.
     const env = this.frames[frameIndex].env;
@@ -4262,7 +4257,7 @@ export struct Runtime {
     let first = this.tryDepth;
     while (first > 0 && this.tryStack[usize(first - 1)].frameIndex == u32(frameIndex)) { first = first - 1; }
     if (first == this.tryDepth) {
-      this.heap.setSlot(record, 7, undefinedValue());
+      this.heap.clearSlot(record, 7);
     } else {
       const tries = this.heap.allocateArray(0);
       let t = first;
@@ -4277,7 +4272,7 @@ export struct Runtime {
       this.tryDepth = first;
       this.heap.setSlot(record, 7, cellValue(tries));
     }
-    this.heap.setSlot(record, 0, int32Value(GEN_YIELDED));
+    this.heap.setSlotInt32(record, 0, GEN_YIELDED);
   }
 
   // An async function's frame still evaluating its parameters: its
@@ -4294,9 +4289,9 @@ export struct Runtime {
   // A finished body lets go of the registers and handlers it had saved.
   function completeGenerator(inout this, gen: u32): void {
     const record = this.generatorRecord(gen);
-    this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
-    this.heap.setSlot(record, 4, undefinedValue());
-    this.heap.setSlot(record, 7, undefinedValue());
+    this.heap.setSlotInt32(record, 0, GEN_COMPLETED);
+    this.heap.clearSlot(record, 4);
+    this.heap.clearSlot(record, 7);
   }
 
   // --- Builtins ---
@@ -6841,7 +6836,7 @@ export struct Runtime {
       // awaited value as its done result, or the rejection.
       const gen = asCell(this.heap.slot(reaction, 4));
       const record = this.generatorRecord(gen);
-      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      this.heap.setSlotInt32(record, 0, GEN_COMPLETED);
       const request = this.asyncGeneratorFront(record);
       if (request != 0) {
         const promise = this.heap.slot(request, 2);
@@ -6875,7 +6870,7 @@ export struct Runtime {
         return;
       }
       const record = this.generatorRecord(gen);
-      this.heap.setSlot(record, 0, int32Value(GEN_YIELDED));
+      this.heap.setSlotInt32(record, 0, GEN_YIELDED);
       const request = this.asyncGeneratorFront(record);
       if (request != 0) {
         const promise = this.heap.slot(request, 2);
@@ -6987,9 +6982,9 @@ export struct Runtime {
     const cursor = u32(asInt32(this.heap.slot(record, 11))) + 1;
     if (cursor >= this.heap.arrayLength(queue)) {
       this.heap.setSlot(record, 10, cellValue(this.heap.allocateArray(0)));
-      this.heap.setSlot(record, 11, int32Value(0));
+      this.heap.setSlotInt32(record, 11, 0);
     } else {
-      this.heap.setSlot(record, 11, int32Value(i32(cursor)));
+      this.heap.setSlotInt32(record, 11, i32(cursor));
     }
   }
 
@@ -7013,7 +7008,7 @@ export struct Runtime {
   // AsyncGeneratorAwaitReturn: a return request on a generator that is
   // not running awaits its value, then settles the request with it.
   function asyncGeneratorAwaitReturn(inout this, gen: u32, record: u32, value: Value): void {
-    this.heap.setSlot(record, 0, int32Value(GEN_AWAITING_RETURN));
+    this.heap.setSlotInt32(record, 0, GEN_AWAITING_RETURN);
     // The `constructor` read may run the program: the body is between
     // its frame and its reaction here, so it is held explicitly.
     this.pushTempRoot(cellValue(gen));
@@ -7024,7 +7019,7 @@ export struct Runtime {
     if (this.pendingThrow) {
       // The value's `constructor` read threw: the request is rejected.
       const thrown = this.takePending();
-      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      this.heap.setSlotInt32(record, 0, GEN_COMPLETED);
       const request = this.asyncGeneratorFront(record);
       if (request != 0) {
         const promise = this.heap.slot(request, 2);
@@ -7044,7 +7039,7 @@ export struct Runtime {
   // suspended at a yield awaits its value first; the body then resumes
   // in return mode with it (or in throw mode with the rejection).
   function asyncGeneratorAwaitResumeReturn(inout this, gen: u32, record: u32, value: Value): void {
-    this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+    this.heap.setSlotInt32(record, 0, GEN_AWAITING);
     // The `constructor` read may run the program: the body is between
     // its frame and its reaction here, so it is held explicitly.
     this.pushTempRoot(cellValue(gen));
@@ -7075,7 +7070,7 @@ export struct Runtime {
       const value = this.heap.slot(request, 1);
       const promise = this.heap.slot(request, 2);
       if (state == GEN_COMPLETED || (unstarted && mode != 0)) {
-        this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+        this.heap.setSlotInt32(record, 0, GEN_COMPLETED);
         if (mode == 2) {
           // The value is awaited before the request settles.
           this.asyncGeneratorAwaitReturn(gen, record, value);
@@ -7110,7 +7105,7 @@ export struct Runtime {
     const record = this.generatorRecord(gen);
     if (this.pendingThrow) {
       const thrown = this.takePending();
-      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      this.heap.setSlotInt32(record, 0, GEN_COMPLETED);
       const request = this.asyncGeneratorFront(record);
       if (request != 0) {
         const promise = this.heap.slot(request, 2);
@@ -7122,7 +7117,7 @@ export struct Runtime {
     }
     const value = outcome;
     if (this.resumeDone) {
-      this.heap.setSlot(record, 0, int32Value(GEN_COMPLETED));
+      this.heap.setSlotInt32(record, 0, GEN_COMPLETED);
       const request = this.asyncGeneratorFront(record);
       if (request != 0) {
         const promise = this.heap.slot(request, 2);
@@ -7152,7 +7147,7 @@ export struct Runtime {
     }
     // A yield awaits its value before answering; nothing else resumes
     // the body meanwhile.
-    if (kind == 0) this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+    if (kind == 0) this.heap.setSlotInt32(record, 0, GEN_AWAITING);
     if (!this.isObjectLike(value)) {
       this.awaitPlainValue(kind == 1 ? REACTION_ASYNC_GEN_AWAIT : REACTION_ASYNC_GEN_YIELD, gen, value);
       return;
@@ -7308,7 +7303,7 @@ export struct Runtime {
           this.suspendGenerator(frameIndex, ip, inst.a);
           const gen = this.frames[frameIndex].generator;
           const record = this.generatorRecord(gen);
-          this.heap.setSlot(record, 9, int32Value(0));
+          this.heap.setSlotInt32(record, 9, 0);
           const yieldingAsync = this.functions[usize(fi)].isAsync;
           const produced = this.resumeResult(yieldingAsync, yielded, false);
           const frame = this.popFrame();
@@ -7378,10 +7373,10 @@ export struct Runtime {
           if (this.functions[usize(fi)].isAsync) {
             // An async delegation yields the delegate's value; the
             // driver answers the request with it as it is.
-            this.heap.setSlot(record, 9, int32Value(5));
+            this.heap.setSlotInt32(record, 9, 5);
             this.resumeDone = false;
           } else {
-            this.heap.setSlot(record, 9, int32Value(3));
+            this.heap.setSlotInt32(record, 9, 3);
           }
           const frame = this.popFrame();
           if (this.frameCount <= entryDepth) {
@@ -7542,7 +7537,7 @@ export struct Runtime {
           this.suspendGenerator(frameIndex, ip, inst.a);
           const gen = this.frames[frameIndex].generator;
           const record = this.generatorRecord(gen);
-          this.heap.setSlot(record, 9, int32Value(2));
+          this.heap.setSlotInt32(record, 9, 2);
           // Only an async generator delegates this way: its driver takes the value.
           this.resumeDone = false;
           const produced = yielded;
@@ -7570,8 +7565,8 @@ export struct Runtime {
           this.suspendGenerator(frameIndex, ip, inst.a);
           const gen = this.frames[frameIndex].generator;
           const record = this.generatorRecord(gen);
-          this.heap.setSlot(record, 9, int32Value(1));
-          this.heap.setSlot(record, 0, int32Value(GEN_AWAITING));
+          this.heap.setSlotInt32(record, 9, 1);
+          this.heap.setSlotInt32(record, 0, GEN_AWAITING);
           this.resumeDone = false;
           const produced = awaited;
           const frame = this.popFrame();

@@ -446,7 +446,12 @@ collection has reached it; the roots' old cells are queued when it
 begins and at every minor collection, a cell made old meanwhile is
 reached, and the write barrier's slow half queues an old cell stored
 into an old one, so a cell already traced never holds one that is not
-reached. When a slice leaves nothing queued, right after a minor
+reached. A run of values stored at once (a suspended body's registers)
+settles the barrier once: a young cell takes the run as it is, an old
+one is listed whole for the next minor collection, and while a full
+collection marks each store takes the barrier as any other. A number
+stored in a generator's record takes none, a collection following
+nothing through it. When a slice leaves nothing queued, right after a minor
 collection, what is not reached is dead: the weak entries and atoms of
 dead cells go, and the sweep walks the table a slice at a time, then the
 slide sorts and moves the slot ranges a slice at a time. A handle never

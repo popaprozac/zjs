@@ -1,0 +1,18 @@
+bench/speed/placements.py compare, 2026-11-15, z-lang c9d1bf09 (Stage 0), load about 5.
+Eight placements of the dispatch loop each: the engine at 771b5d6, then the
+one that saves a suspended body's registers as one run and stores the
+numbers of its record with no barrier. Columns: median cycles before and
+after, the change (geometric mean over placements), and its spread.
+
+async-gen         236969644    216550980   -8.8%   over placements -10.7..-7.2%
+await-fresh        97454279     90448044   -6.6%   over placements -12.2..-1.1%
+await-prim         48205344     45067788   -6.0%   over placements -8.8..-3.3%
+await-settled      63375310     60077554   -5.2%   over placements -7.7..-3.3%
+await-suspended     86616870     83595301   -3.4%   over placements -4.3..-2.4%
+then-loop         129688558    130385021   +0.4%   over placements -1.5..+1.3%
+combinators       118365428    117589654   -0.7%   over placements -2.1..+0.8%
+allocation         60053148     59583870   -0.7%   over placements -1.4..+0.1%
+properties         98431586     98220562   -0.1%   over placements -1.5..+0.7%
+calls              42462577     42240840   -0.6%   over placements -2.7..+0.4%
+arrays            285509827    283309670   +0.3%   over placements -1.1..+1.3%
+closures           59554600     59865661   +0.3%   over placements -0.7..+2.4%
