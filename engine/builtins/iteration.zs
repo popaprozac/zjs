@@ -2,7 +2,7 @@
 // Array, String, and arguments.
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted } from "../value.zs";
-import { Runtime } from "../runtime.zs";
+import { Runtime, ITERATOR_OF_STRING } from "../runtime.zs";
 import { PROP_METHOD, PROP_CONFIGURABLE } from "../heap.zs";
 import { constructReceiver, fillReceiver } from "./array.zs";
 
@@ -11,9 +11,11 @@ function iteratorSelf(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   return thisValue;
 }
 
-// %ArrayIteratorPrototype%.next
-function arrayIteratorNext(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  if (!isCell(thisValue) || asCell(thisValue) == 0 || !runtime.heap.isObject(asCell(thisValue)) || runtime.heap.objectFindSlot(asCell(thisValue), runtime.atomIterSource) < 0) {
+// %ArrayIteratorPrototype%.next and %StringIteratorPrototype%.next: each
+// steps only an iterator of its own kind.
+function iteratorNext(inout runtime: Runtime, thisValue: Value, ofString: boolean): Value {
+  const kind = runtime.iteratorKind(thisValue);
+  if (kind < 0 || (kind == i32(ITERATOR_OF_STRING)) != ofString) {
     const message: String = "next called on an incompatible receiver";
     const error = runtime.typeError(in message);
     runtime.raise(error);
@@ -23,6 +25,14 @@ function arrayIteratorNext(inout runtime: Runtime, thisValue: Value, argsBase: u
   if (runtime.pendingThrow) return undefinedValue();
   if (isDeleted(next)) return runtime.createIterResult(undefinedValue(), true);
   return runtime.createIterResult(next, false);
+}
+
+function arrayIteratorNext(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return iteratorNext(inout runtime, thisValue, false);
+}
+
+function stringIteratorNext(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return iteratorNext(inout runtime, thisValue, true);
 }
 
 function requireCoercible(inout runtime: Runtime, thisValue: Value, in method: String): boolean {
@@ -51,14 +61,14 @@ function arrayEntries(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   return runtime.createArrayIterator(thisValue, 2);
 }
 
-// String.prototype[Symbol.iterator]: over the bytes, as the engine's
-// strings are byte strings.
+// String.prototype[Symbol.iterator]: the string's own iterator, by code
+// point.
 function stringIterator(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "String.prototype[Symbol.iterator]";
   if (!requireCoercible(inout runtime, thisValue, in method)) return undefinedValue();
   const text = runtime.toStringValue(thisValue);
   if (runtime.pendingThrow) return undefinedValue();
-  return runtime.createArrayIterator(text, 0);
+  return runtime.createArrayIterator(text, ITERATOR_OF_STRING);
 }
 
 // Array.from(items, mapFn): an iterable, or an array-like by length.
@@ -191,6 +201,14 @@ export function installIteration(inout runtime: Runtime): void {
   const tagText: String = "Array Iterator";
   const tagValue = runtime.internText(in tagText);
   runtime.heap.objectDefine(arrayIteratorProto, tagKey, tagValue, PROP_CONFIGURABLE);
+
+  const stringIteratorProto = runtime.heap.allocateObject(iteratorProto);
+  runtime.stringIteratorProto = stringIteratorProto;
+  const stringNextFn = runtime.defineMethod(stringIteratorProto, in nextText, stringIteratorNext, 0);
+  runtime.stringIteratorNext = stringNextFn;
+  const stringTagText: String = "String Iterator";
+  const stringTagValue = runtime.internText(in stringTagText);
+  runtime.heap.objectDefine(stringIteratorProto, tagKey, stringTagValue, PROP_CONFIGURABLE);
 
   const arrayProto = runtime.arrayProto;
   const valuesText: String = "values";

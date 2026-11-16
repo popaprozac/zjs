@@ -162,6 +162,10 @@ const CONCAT_GATHER: usize = 256;
 export const HINT_NUMBER: u32 = 1;
 export const HINT_STRING: u32 = 2;
 
+// The kind createArrayIterator makes a string's own iterator with; an
+// array iterator's are 0 (values), 1 (keys), and 2 (entries).
+export const ITERATOR_OF_STRING: u32 = 3;
+
 // Generator states.
 const GEN_START: i32 = 0;
 const GEN_YIELDED: i32 = 1;
@@ -719,6 +723,10 @@ export struct Runtime {
   scriptKey: u32 = 0;
   // How many module evaluations have turned async: their order.
   moduleAsyncOrder: u32 = 0;
+  // %StringIteratorPrototype% and its `next` (0 until the iteration
+  // builtins install them).
+  stringIteratorProto: u32 = 0;
+  stringIteratorNext: u32 = 0;
   // %Array.prototype.values%, an arguments object's @@iterator (0 until
   // the iteration builtins install it), and %ThrowTypeError%, a strict
   // arguments object's `callee` (made the first time one is).
@@ -4391,11 +4399,12 @@ export struct Runtime {
     return cellValue(result);
   }
 
-  // An array iterator over `source` (an array, a string, or any
-  // array-like), yielding values (0), keys (1), or entries (2).
+  // An array iterator over `source` (an array or any array-like),
+  // yielding values (0), keys (1), or entries (2); or a string's own
+  // iterator (3), which has its own prototype and yields code points.
   function createArrayIterator(inout this, source: Value, kind: u32): Value {
-    const arrayIteratorProto = this.arrayIteratorProto;
-    const iterator = this.heap.allocateObject(arrayIteratorProto);
+    const proto = kind == ITERATOR_OF_STRING ? this.stringIteratorProto : this.arrayIteratorProto;
+    const iterator = this.heap.allocateObject(proto);
     const atomIterSource = this.atomIterSource;
     this.heap.objectDefine(iterator, atomIterSource, source, PROP_WRITABLE);
     const atomIterIndex = this.atomIterIndex;
@@ -4431,8 +4440,9 @@ export struct Runtime {
       this.heap.setSlot(iterator, u32(sourceSlot), undefinedValue());
       return deletedValue();
     }
-    // A string iterates by code point: a surrogate pair is one element.
-    if (kind == 0 && this.isStringValue(source)) {
+    // A string's iterator goes by code point: a surrogate pair is one
+    // element. (An array iterator over a string goes by index.)
+    if (kind == ITERATOR_OF_STRING) {
       const handle = asCell(source);
       const unit = this.heap.stringUnit(handle, usize(index));
       let step: u32 = 1;
@@ -4491,17 +4501,28 @@ export struct Runtime {
   // Whether an iterator is a pristine array iterator: its own state, and
   // `next` still the builtin, found through its prototype.
   function isPristineArrayIterator(inout this, iterator: Value): boolean {
-    if (!isCell(iterator) || asCell(iterator) == 0 || !this.heap.isObject(asCell(iterator))) return false;
+    // A string's iterator is one too, by its own prototype and `next`.
+    const kind = this.iteratorKind(iterator);
+    if (kind < 0) return false;
     const handle = asCell(iterator);
-    if (this.heap.objectFindSlot(handle, this.atomIterSource) < 0) return false;
     const nextAtom = this.atomNext;
     if (this.heap.objectFindSlot(handle, nextAtom) >= 0) return false;
-    const arrayIteratorProto = this.arrayIteratorProto;
-    if (this.heap.objectProto(handle) != arrayIteratorProto) return false;
-    const slot = this.heap.objectFindSlot(arrayIteratorProto, nextAtom);
+    const ofString = kind == i32(ITERATOR_OF_STRING);
+    const proto = ofString ? this.stringIteratorProto : this.arrayIteratorProto;
+    if (this.heap.objectProto(handle) != proto) return false;
+    const slot = this.heap.objectFindSlot(proto, nextAtom);
     if (slot < 0) return false;
-    const held = this.heap.slot(arrayIteratorProto, u32(slot));
-    return isCell(held) && asCell(held) == this.arrayIteratorNext;
+    const held = this.heap.slot(proto, u32(slot));
+    return isCell(held) && asCell(held) == (ofString ? this.stringIteratorNext : this.arrayIteratorNext);
+  }
+
+  // The kind an array iterator or a string's iterator was made with
+  // (createArrayIterator); -1 for any other value.
+  function iteratorKind(value: Value): i32 {
+    if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return -1;
+    const slot = this.heap.objectFindSlot(asCell(value), this.atomIterKind);
+    if (slot < 0) return -1;
+    return asInt32(this.heap.slot(asCell(value), u32(slot)));
   }
 
   // What stepping an iterator goes by (the specification's iterator
@@ -4528,7 +4549,7 @@ export struct Runtime {
   // The `next` an iteration was got with.
   function nextOf(held: Value): Value {
     if (this.heap.isIteration(asCell(held))) return this.heap.slot(asCell(held), 1);
-    return cellValue(this.arrayIteratorNext);
+    return cellValue(this.iteratorKind(held) == i32(ITERATOR_OF_STRING) ? this.stringIteratorNext : this.arrayIteratorNext);
   }
 
   // GetIterator: the iteration the value's @@iterator method starts. A
@@ -6421,6 +6442,10 @@ export struct Runtime {
     this.heap.markHandle(throwTypeErrorFn);
     const arrayValuesFn = this.arrayValuesFn;
     this.heap.markHandle(arrayValuesFn);
+    const stringIteratorProto = this.stringIteratorProto;
+    this.heap.markHandle(stringIteratorProto);
+    const stringIteratorNext = this.stringIteratorNext;
+    this.heap.markHandle(stringIteratorNext);
     this.markModules();
     this.rootFunctionsFrom = this.functions.length;
     this.rootClassesFrom = this.heap.classes.length;

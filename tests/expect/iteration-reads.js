@@ -2,6 +2,7 @@
 // and its iterator's `next` once, when the iterator is got, however many
 // steps follow; and Array.from calling its mapping function on each value
 // as that value is produced.
+// A string's iterator reads a `next` of its own.
 
 // An iterable that counts each read of Symbol.iterator and of `next`,
 // each call of `next`, and each call of `return`.
@@ -25,6 +26,7 @@ function show(label, iterable, result) {
   var log = iterable.log;
   console.log(label + ":", "Symbol.iterator", log.iterator, "next", log.next, "calls", log.calls, "closed", log.closed, "->", String(result));
 }
+function attempt(f) { try { return String(f()); } catch (e) { return e.constructor.name; } }
 var c, key1 = {}, key2 = {};
 
 // --- Statements and expressions ---
@@ -154,6 +156,35 @@ console.log("no next, no step:", (function () { try { var [] = noNext; return "r
 var throwingNext = { [Symbol.iterator]: function () { return { get next() { throw new RangeError("next getter"); } }; } };
 console.log("next getter throws, no step:", (function () { try { var [] = throwingNext; return "ran"; } catch (e) { return e.message; } })());
 console.log("next getter throws, Array.from:", (function () { try { return Array.from(throwingNext); } catch (e) { return e.message; } })());
+
+// --- A string's iterator has a prototype, and a `next`, of its own ---
+var arrayIterProto = Object.getPrototypeOf([][Symbol.iterator]());
+var stringIterProto = Object.getPrototypeOf(""[Symbol.iterator]());
+var arrayNext = arrayIterProto.next, stringNext = stringIterProto.next;
+console.log("string iterator prototype:", stringIterProto !== arrayIterProto, Object.getPrototypeOf(stringIterProto) === Object.getPrototypeOf(arrayIterProto), stringNext !== arrayNext);
+console.log("tags:", Object.prototype.toString.call(""[Symbol.iterator]()), Object.prototype.toString.call([][Symbol.iterator]()), Object.prototype.toString.call(Array.prototype.values.call("ab")));
+console.log("own names:", Object.getOwnPropertyNames(stringIterProto).join(), stringIterProto[Symbol.toStringTag], stringNext.name, stringNext.length);
+console.log("next on the other kind:", attempt(function () { return arrayNext.call("ab"[Symbol.iterator]()); }), attempt(function () { return stringNext.call([1][Symbol.iterator]()); }), attempt(function () { return stringNext.call({}); }), attempt(function () { return stringNext.call("ab"[Symbol.iterator]()).value; }));
+// By code point through its own iterator; by index through an array iterator.
+var astral = "a\uD83D\uDE00b";
+console.log("code points:", [...astral].length, Array.from(astral).length, [...Array.prototype.values.call(astral)].length, [...Array.prototype.keys.call(astral)].join());
+Object.defineProperty(arrayIterProto, "next", { get: function () { steps++; return arrayNext; }, configurable: true });
+steps = 0; var spelled = [..."abc"].join(); console.log("array iterator's next, read by a string:", spelled, steps);
+Object.defineProperty(arrayIterProto, "next", { value: arrayNext, writable: true, configurable: true });
+Object.defineProperty(stringIterProto, "next", { get: function () { steps++; return stringNext; }, configurable: true });
+steps = 0; spelled = [..."abc"].join(); console.log("string iterator's next, read by a string:", spelled, steps);
+steps = 0; seen = ""; for (var ch of "abc") seen += ch; console.log("string iterator's next, for-of:", seen, steps);
+steps = 0; var [s1, s2] = "xyz"; console.log("string iterator's next, destructuring:", s1 + s2, steps);
+steps = 0; copy = [...[1, 2, 3]].join(); console.log("string iterator's next, read by an array:", copy, steps);
+Object.defineProperty(stringIterProto, "next", { value: stringNext, writable: true, configurable: true });
+stringIterProto.next = function () { return { done: true }; };
+console.log("string next replaced before the loop:", [..."abc"].length, [...[1, 2]].length);
+stringIterProto.next = stringNext;
+seen = ""; for (var ch of "abc") { seen += ch; stringIterProto.next = function () { return { done: true }; }; }
+stringIterProto.next = stringNext;
+console.log("string next replaced mid-loop:", seen);
+function* spell() { yield* "hi"; }
+console.log("yield* over a string:", [...spell()].join());
 
 // --- for await and async yield*: a sync iterable goes through the same
 // iteration, and an async iterator's `next` is read once as well ---

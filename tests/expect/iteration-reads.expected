@@ -51,6 +51,19 @@ no next, for-of: TypeError
 no next, no step: ran
 next getter throws, no step: next getter
 next getter throws, Array.from: next getter
+string iterator prototype: true true true
+tags: [object String Iterator] [object Array Iterator] [object Array Iterator]
+own names: next String Iterator next 0
+next on the other kind: TypeError TypeError TypeError a
+code points: 3 3 4 0,1,2,3
+array iterator's next, read by a string: a,b,c 0
+string iterator's next, read by a string: a,b,c 1
+string iterator's next, for-of: abc 1
+string iterator's next, destructuring: xy 1
+string iterator's next, read by an array: 1,2,3 0
+string next replaced before the loop: 0 2
+string next replaced mid-loop: abc
+yield* over a string: h,i
 for await, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 6
 async yield*, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,2,3
 for await, async iterable: Symbol.asyncIterator 1 next 1 calls 4 closed 0 arguments 0000 -> 6
