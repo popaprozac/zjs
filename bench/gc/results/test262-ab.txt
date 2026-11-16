@@ -19,3 +19,4 @@ tests: 55610  regressions: 0  fixes: 0   a96be99 -> a function's inherited and c
 tests: 55610  regressions: 0  fixes: 0   a17e42d -> reads the search found kept in a table shared by all sites, for a shape a site's entry does not hold
 tests: 55610  regressions: 0  fixes: 0   4030a32 -> a name found past the first prototype, or nowhere, kept with the classes of the prototypes passed
 tests: 55610  regressions: 0  fixes: 0   dbd865c -> indexOf, lastIndexOf, includes, slice, concat, and reverse read an array's elements in place
+tests: 55610  regressions: 0  fixes: 0   23259e9 -> an ordinary array's species found without the reads of constructor and Symbol.species

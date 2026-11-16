@@ -645,6 +645,15 @@ export struct Runtime {
   // in place its call can be skipped: it returns its receiver and does
   // nothing else, so nothing can tell.
   promiseSpeciesGetter: u32;
+  // The intrinsic Array constructor and the getter its Symbol.species
+  // was installed with (0 until then): what an ordinary array's species
+  // is while a program has changed nothing (arraySpeciesPristine).
+  arrayCtor: u32;
+  arraySpeciesGetter: u32;
+  // Array.prototype's class when `constructor` was last looked for on
+  // it, and the slot found (-1 for none).
+  arrayCtorSlotClass: u32;
+  arrayCtorSlot: i32;
   // The new target of a builtin construct call whose constructor makes
   // its own object; that constructor takes it on entry, so a plain call
   // finds undefined here.
@@ -6081,6 +6090,11 @@ export struct Runtime {
     this.heap.markHandle(promiseCtor);
     const promiseSpeciesGetter = this.promiseSpeciesGetter;
     this.heap.markHandle(promiseSpeciesGetter);
+    // Compared by handle, so kept even if a program drops them.
+    const arrayCtor = this.arrayCtor;
+    this.heap.markHandle(arrayCtor);
+    const arraySpeciesGetter = this.arraySpeciesGetter;
+    this.heap.markHandle(arraySpeciesGetter);
     let job: usize = 0;
     while (job < this.jobEnd) {
       const queued = this.jobs[job];
@@ -7146,6 +7160,44 @@ export struct Runtime {
     if (!isCell(accessor) || asCell(accessor) == 0) return false;
     const getter = this.heap.slot(asCell(accessor), 0);
     return isCell(getter) && asCell(getter) == this.promiseSpeciesGetter;
+  }
+
+  // Whether ArraySpeciesCreate for this array can only make an ordinary
+  // array, with nothing a program could observe run to find that out.
+  // The array has no named properties of its own, so no `constructor`,
+  // and its prototype is Array.prototype; Array.prototype's
+  // `constructor` is still a data property holding the intrinsic Array;
+  // and Array's Symbol.species is still the getter it was installed
+  // with, which returns Array.
+  function arraySpeciesPristine(inout this, handle: u32): boolean {
+    if (this.arraySpeciesGetter == 0 || this.heap.linkOf(handle) != 0) return false;
+    const proto = this.arrayProto;
+    const protoClass = this.heap.objectClass(proto);
+    let slot = this.arrayCtorSlot;
+    if (protoClass != this.arrayCtorSlotClass) {
+      // `constructor` was the first name Array.prototype was given, the
+      // far end of its class chain: looked for once for each shape the
+      // prototype takes. (In dictionary mode the search is a hash, and
+      // nothing is kept.)
+      slot = this.heap.objectFindSlot(proto, this.atomConstructor);
+      if (!this.heap.isDictionary(proto)) {
+        this.arrayCtorSlotClass = protoClass;
+        this.arrayCtorSlot = slot;
+      }
+    }
+    if (slot < 0 || (this.heap.attrOf(proto, u32(slot)) & PROP_ACCESSOR) != 0) return false;
+    const held = this.heap.slot(proto, u32(slot));
+    if (!isCell(held) || asCell(held) != this.arrayCtor) return false;
+    const bag = this.functionBag(this.arrayCtor);
+    if (bag == 0) return false;
+    const symbolSpecies = this.symbolSpecies;
+    const key = this.propertyKey(symbolSpecies);
+    const speciesSlot = this.heap.objectFindSlot(bag, key);
+    if (speciesSlot < 0 || (this.heap.attrOf(bag, u32(speciesSlot)) & PROP_ACCESSOR) == 0) return false;
+    const accessor = this.heap.slot(bag, u32(speciesSlot));
+    if (!isCell(accessor) || asCell(accessor) == 0) return false;
+    const getter = this.heap.slot(asCell(accessor), 0);
+    return isCell(getter) && asCell(getter) == this.arraySpeciesGetter;
   }
 
   // Whether reading `constructor` from this value can only yield the
@@ -10458,7 +10510,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseState: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, sharedLoads: Array<SharedLoad>(), gcPauses: Array<f64>(), resumeDone: false,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, arrayCtor: 0, arraySpeciesGetter: 0, arrayCtorSlotClass: 0, arrayCtorSlot: -1, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseState: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, sharedLoads: Array<SharedLoad>(), gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

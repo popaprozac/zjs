@@ -1,0 +1,35 @@
+plain: array,array,array,array,array,array,array 2,3 2,4,6 1,2,3,4,5 3
+empty and long: 0 0 array 5 1
+an own constructor: array marked,array marked,array marked,array marked,array,array marked,array marked
+undefined: array,array,array,array,array,array,array
+a null species: array,array,array,array,array,array,array
+no species: array,array,array,array,array,array,array
+not an object: TypeError
+a species that is no constructor: TypeError
+deleted: array,array,array,array,array,array,array
+another property of its own: array,array,array,array,array,array,array undefined
+replaced on the prototype: array marked,array marked,array marked,array marked,array marked,array marked,array marked array marked,array marked,array marked,array marked,array marked,array marked,array marked
+undefined there: array,array,array,array,array,array,array
+a getter there: array array constructor,constructor
+restored: array,array,array,array,array,array,array
+deleted there: array,array,array,array,array,array,array true
+put back: array,array,array,array,array,array,array true
+another species: array marked,array marked,array marked,array marked,array marked,array marked,array marked 8
+the order of the reads: constructor,species
+undefined as a value: array,array,array,array,array,array,array
+a constructor as a value: array marked,array marked,array marked,array marked,array marked,array marked,array marked
+deleted: array,array,array,array,array,array,array
+the first getter again: array,array,array,array,array,array,array true
+another prototype: array marked array marked array marked array marked
+and back: array,array,array,array,array,array,array
+none: array array
+a method added: array,array,array,array,array,array,array extra
+then the constructor replaced: array marked,array marked,array marked,array marked,array marked,array marked,array marked
+both undone: array,array,array,array,array,array,array
+a crowded prototype: array,array,array,array,array,array,array 79
+its constructor replaced: array marked,array marked,array marked,array marked,array marked,array marked,array marked
+and restored: array,array,array,array,array,array,array
+uncrowded: array,array,array,array,array,array,array 6,7 false
+array-likes: array array array
+the global replaced: array,array,array,array,array,array,array 2 true
+and put back: array,array,array,array,array,array,array true

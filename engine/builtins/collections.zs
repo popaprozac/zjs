@@ -1024,6 +1024,13 @@ export function installCollections(inout runtime: Runtime): void {
   const arraySlot = runtime.globalSlot("Array");
   const arrayCtor = asCell(runtime.globals[usize(arraySlot)].value);
   defineSpecies(inout runtime, arrayCtor);
+  // The getter just installed, remembered so that an ordinary array's
+  // species need not be asked for while it stays in place.
+  const arraySpeciesBag = runtime.functionBag(arrayCtor);
+  const arraySpeciesKey = runtime.propertyKey(runtime.symbolSpecies);
+  const arraySpeciesSlot = runtime.heap.objectFindSlot(arraySpeciesBag, arraySpeciesKey);
+  const arraySpeciesAccessor = runtime.heap.slot(arraySpeciesBag, u32(arraySpeciesSlot));
+  runtime.arraySpeciesGetter = asCell(runtime.heap.slot(asCell(arraySpeciesAccessor), 0));
 
   // Set
   runtime.setProto = runtime.heap.allocateObject(objectProto);

@@ -1,0 +1,151 @@
+bench/speed/placements.py compare, 2026-11-15, z-lang c9d1bf09 (Stage 0), load about 5.
+Eight placements of the dispatch loop each: the engine at 23259e9, then the
+one that makes an ordinary array's slice, map, filter, concat, splice, flat,
+or flatMap result without reading `constructor` and Symbol.species.
+Columns: median cycles before and after, the change (geometric mean over
+placements), and its spread. The kernels' arrays are long (`arrays` maps and
+filters 20,000 elements, `array-methods` slices up to 64), so what a call
+saves is small beside its copying; the lines for short arrays are below.
+
+array-methods     158225531    133204837  -15.7%   over placements -16.7..-14.9%
+arrays            287612432    288359000   -0.6%   over placements -2.6..+1.9%
+method-shapes     157166498    158261915   +0.7%   over placements -1.2..+1.6%
+borrowed-methods    243302816    241300034   -0.7%   over placements -1.9..+0.4%
+prototype-chains    148347396    149193930   +0.6%   over placements -1.2..+2.2%
+properties         97890510     97475762   -0.3%   over placements -0.7..+0.6%
+polymorphic        38355574     38789612   +0.5%   over placements -1.1..+2.5%
+helpers            72159836     71816807   -0.5%   over placements -2.7..+1.8%
+calls              41976516     42035317   -0.0%   over placements -1.5..+1.4%
+closures           59460358     59301286   +0.0%   over placements -1.2..+1.8%
+allocation         59554428     59544385   +0.0%   over placements -0.9..+1.2%
+strings            38573120     39206623   +1.5%   over placements -2.1..+5.5%
+long-strings       18153168     18317931   +0.7%   over placements -4.9..+4.8%
+json               55381466     54143545   -1.4%   over placements -4.5..+2.8%
+maps              152372102    152582040   +0.3%   over placements -1.1..+2.3%
+regexp             86218248     87352284   +1.5%   over placements -0.5..+3.1%
+fifo              549004722    539328374   -1.8%   over placements -2.8..+0.2%
+
+Built-in calls on short receivers, 2026-11-15, load about 5. Per pass of a
+loop of a million: instructions on the engine before and after; cycles (the
+least of five runs, less the first line's loop) before, after, and on V8
+jitless, QuickJS, and JavaScriptCore without its JIT; then the engine's
+cycles over each of theirs. `list.slice(1)` and `list.map(twice)` are the
+lines this changes.
+
+The program, with BODY one of the lines after it; the first is the loop every
+other is measured against:
+
+  function run() {
+    function twice(x) { return x * 2; }
+    var list = [3, 1, 2], text = "abc", record = { a: 1, b: 2 }, big = [];
+    for (var k = 0; k < 64; k++) big.push(k);
+    var total = 0;
+    for (var i = 0; i < 1000000; i++) {
+      BODY
+    }
+    return total;
+  }
+  var result = run();
+  (typeof console !== "undefined" ? console.log : print)(String(result));
+
+  empty loop:                    total = (total + (i & 7)) | 0;
+  a function written in JS:      total = (total + twice(i & 7)) | 0;
+  Math.abs(x):                   total = (total + Math.abs(i & 7)) | 0;
+  Math.max(a, b):                total = (total + Math.max(i & 7, 3)) | 0;
+  Math.floor(x):                 total = (total + Math.floor((i & 7) / 2)) | 0;
+  Array.isArray(list):           if (Array.isArray(list)) total = (total + 1) | 0;
+  list.indexOf(2), 3 elements:   total = (total + list.indexOf(2)) | 0;
+  big.indexOf(63), 64 elements:  total = (total + big.indexOf(63)) | 0;
+  list.includes(2):              if (list.includes(2)) total = (total + 1) | 0;
+  list.push(x); list.pop():      list.push(i); total = (total + list.pop()) | 0;
+  list.slice(1):                 total = (total + list.slice(1).length) | 0;
+  list.join():                   total = (total + list.join().length) | 0;
+  text.indexOf('c'):             total = (total + text.indexOf('c')) | 0;
+  text.charCodeAt(1):            total = (total + text.charCodeAt(1)) | 0;
+  text.slice(1):                 total = (total + text.slice(1).length) | 0;
+  record.hasOwnProperty('a'):    if (record.hasOwnProperty('a')) total = (total + 1) | 0;
+  Object.keys(record):           total = (total + Object.keys(record).length) | 0;
+  String(i & 7):                 total = (total + String(i & 7).length) | 0;
+  list.map(twice):               total = (total + list.map(twice).length) | 0;
+  list.forEach(twice):           list.forEach(twice); total = (total + 1) | 0;
+
+per pass                             instructions before  after | cycles before after    v8   qjs   jsc | new/v8 new/qjs new/jsc
+a function written in JS                              44     44 |            5     5    53    28    45 |   0.10    0.18    0.11
+Math.abs(x)                                          260    260 |           35    35    28    24    34 |   1.26    1.45    1.01
+Math.max(a, b)                                       332    332 |           44    45    32    27    39 |   1.41    1.69    1.14
+Math.floor(x)                                        352    352 |           51    51    42    42    60 |   1.22    1.22    0.85
+Array.isArray(list)                                  280    280 |           31    31    20    29    36 |   1.59    1.06    0.86
+list.indexOf(2), 3 elements                          426    426 |           51    52    28    77    46 |   1.87    0.67    1.13
+big.indexOf(63), 64 elements                        3111   3111 |          452   451    63   604    69 |   7.16    0.75    6.58
+list.includes(2)                                     484    484 |           60    60    30    89    43 |   2.00    0.67    1.38
+list.push(x); list.pop()                             654    654 |           76    76    80   122    74 |   0.95    0.62    1.03
+list.slice(1)                                       3654   1418 |          752   175    64   458    86 |   2.74    0.38    2.03
+list.join()                                         1111   1111 |          155   153   145   348   215 |   1.05    0.44    0.71
+text.indexOf('c')                                    450    450 |           55    55    38    63    45 |   1.46    0.87    1.22
+text.charCodeAt(1)                                   243    243 |           28    28    26    41    33 |   1.10    0.69    0.85
+text.slice(1)                                        444    444 |           52    53    45    91    80 |   1.18    0.58    0.66
+record.hasOwnProperty('a')                           359    359 |           43    41    30    65    42 |   1.37    0.64    0.98
+Object.keys(record)                                 5012   5078 |          658   665    44   327    51 |  15.08    2.03   13.06
+String(i & 7)                                        823    890 |          113   120    40    63    70 |   3.02    1.90    1.71
+list.map(twice)                                     3986   1749 |          830   225   172   686   560 |   1.31    0.33    0.40
+list.forEach(twice)                                 1066   1066 |          155   143   119   263   459 |   1.20    0.54    0.31
+
+The same on 64 elements and 8 keys. This loop runs 100,000 passes, so every
+figure in the table is a tenth of one call's.
+
+The program, with BODY one of the lines after it; the first is the loop every
+other is measured against:
+
+  function run() {
+    function twice(x) { return x * 2; }
+    function odd(x) { return (x & 1) == 1; }
+    function add(a, b) { return a + b; }
+    var big = [], words = [];
+    for (var k = 0; k < 64; k++) { big.push(k); words.push("w" + k); }
+    var record = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8 };
+    var total = 0;
+    for (var i = 0; i < 100000; i++) {
+      BODY
+    }
+    return total;
+  }
+  var result = run();
+  (typeof console !== "undefined" ? console.log : print)(String(result));
+
+  empty loop:                    total = (total + (i & 7)) | 0;
+  big.indexOf(63):               total = (total + big.indexOf(63)) | 0;
+  big.includes(63):              if (big.includes(63)) total = (total + 1) | 0;
+  big.lastIndexOf(0):            total = (total + big.lastIndexOf(0)) | 0;
+  big.slice(0):                  total = (total + big.slice(0).length) | 0;
+  big.concat(big):               total = (total + big.concat(big).length) | 0;
+  big.map(twice):                total = (total + big.map(twice).length) | 0;
+  big.filter(odd):               total = (total + big.filter(odd).length) | 0;
+  big.forEach(twice):            big.forEach(twice); total = (total + 1) | 0;
+  big.reduce(add, 0):            total = (total + big.reduce(add, 0)) | 0;
+  big.join():                    total = (total + big.join().length) | 0;
+  big.reverse():                 big.reverse(); total = (total + big[0]) | 0;
+  words.indexOf('w63'):          total = (total + words.indexOf('w63')) | 0;
+  Object.keys(record), 8 keys:   total = (total + Object.keys(record).length) | 0;
+  for-in over 8 keys:            for (var key in record) total = (total + 1) | 0;
+  Object.assign({}, record):     total = (total + Object.assign({}, record).a) | 0;
+  spread of big:                 total = (total + [...big].length) | 0;
+  Array.from(big):               total = (total + Array.from(big).length) | 0;
+
+per pass                             instructions before  after | cycles before after    v8   qjs   jsc | new/v8 new/qjs new/jsc
+big.indexOf(63)                                      311    311 |           46    45     8    63     7 |   5.38    0.72    6.11
+big.includes(63)                                     317    317 |           46    46    10    75     7 |   4.35    0.61    6.53
+big.lastIndexOf(0)                                   305    305 |           46    45    26   283     7 |   1.70    0.16    6.05
+big.slice(0)                                        1115    893 |          178   118    16   381    28 |   7.61    0.31    4.19
+big.concat(big)                                     2135   1915 |          360   303    52  1160    40 |   5.82    0.26    7.50
+big.map(twice)                                      2234   2013 |          349   273   248   854   715 |   1.10    0.32    0.38
+big.filter(odd)                                     4220   3997 |          564   509   327   763   807 |   1.56    0.67    0.63
+big.forEach(twice)                                  1467   1467 |          205   206   209   455   628 |   0.98    0.45    0.33
+big.reduce(add, 0)                                  1469   1469 |          176   164   258   498   662 |   0.64    0.33    0.25
+big.join()                                           964    963 |          145   143   177   535   173 |   0.81    0.27    0.83
+big.reverse()                                        352    352 |           45    45    16    12     9 |   2.78    3.81    5.28
+words.indexOf('w63')                                 992    992 |          130   126    45   139    56 |   2.82    0.91    2.27
+Object.keys(record), 8 keys                         1319   1342 |          182   184     7    93     5 |  26.23    1.97   39.80
+for-in over 8 keys                                   972    980 |          130   132    23   115    26 |   5.67    1.15    5.02
+Object.assign({}, record)                           1898   1920 |          290   294    35   108    23 |   8.30    2.73   12.94
+spread of big                                       4169   4169 |          538   531    14   365    35 |  36.86    1.45   15.27
+Array.from(big)                                     3772   3772 |          485   481    17   669    50 |  28.42    0.72    9.65

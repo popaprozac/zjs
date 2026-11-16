@@ -172,6 +172,10 @@ function arrayCreate(inout runtime: Runtime, length: f64): Value {
 // ArraySpeciesCreate.
 function arraySpeciesCreate(inout runtime: Runtime, original: Value, length: f64): Value {
   if (!isArrayValue(in runtime, original)) return arrayCreate(inout runtime, length);
+  // An ordinary array whose species nothing has changed: the reads of
+  // `constructor` and Symbol.species and the call of Array would end in
+  // this, and none of them can be observed.
+  if (runtime.arraySpeciesPristine(asCell(original))) return arrayCreate(inout runtime, length);
   const atomConstructor = runtime.atomConstructor;
   let ctor = runtime.getProperty(original, cellValue(atomConstructor));
   if (runtime.pendingThrow) return undefinedValue();
@@ -1672,6 +1676,7 @@ export function installArray(inout runtime: Runtime): void {
   const atomConstructor = runtime.atomConstructor;
   runtime.defineOwnAttr(arrayProto, atomConstructor, cellValue(ctor), PROP_METHOD);
   runtime.setGlobal("Array", cellValue(ctor));
+  runtime.arrayCtor = ctor;
   const isArrayText: String = "isArray"; method(inout runtime, ctor, in isArrayText, arrayIsArray, 1);
   const atText: String = "at"; method(inout runtime, arrayProto, in atText, arrayAt, 1);
   const concatText: String = "concat"; method(inout runtime, arrayProto, in concatText, arrayConcat, 1);
