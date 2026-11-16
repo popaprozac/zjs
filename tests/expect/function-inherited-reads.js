@@ -83,6 +83,10 @@ var seen = [];
 for (var r = 0; r < receivers.length; r++) seen.push(String(shared(receivers[r])));
 note("mixed:", seen.join(" | "));
 
+// --- a site that has seen only functions, then other cells ---
+function callAt(x) { return x.call; }
+note("functions, then other cells:", callAt(plain) === Function.prototype.call, callAt(closure) === Function.prototype.call, callAt([5]), callAt("text"), callAt(plain) === Function.prototype.call, callAt({ a: 1 }), callAt(Symbol("s")), callAt(/x/), callAt([{ call: "inner" }]), callAt(arrow) === Function.prototype.call);
+
 // --- names Object.prototype holds ---
 function deep(x) { return x.deep; }
 note("on neither:", deep(plain), deep(plain));

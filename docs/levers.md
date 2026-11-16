@@ -39,15 +39,18 @@ same run, and about 1.9, 1.7, and 1.6 times faster than QuickJS, Hermes,
 and Hermes on precompiled bytecode on their 2026-09-29 figures. Startup is
 3.5 ms against 6.9 and 30.7.
 
-Two kernels added on 2026-11-15 are not in this table:
+Three kernels added on 2026-11-15 are not in this table:
 `borrowed-methods` (names read off functions, and calls made through
-`call` and `apply`) and `method-shapes` (one name read off receivers of
-several shapes). On both the engine is behind every engine measured: on
-the first 1.50 times V8 jitless's time, 1.76 times JavaScriptCore's
-interpreter's, and 1.16 times QuickJS's; on the second 1.21, 1.35, and
-1.13 (`bench/gc/results/shared-loads.json`). The first was at 2.78,
-3.14, and 2.07 two changes earlier (`function-inherited-reads.json`),
-the second at 2.41, 2.69, and 2.25 one change earlier.
+`call` and `apply`), `method-shapes` (one name read off receivers of
+several shapes), and `prototype-chains` (names found past an object's
+first prototype, or nowhere). The engine is behind V8 jitless and
+JavaScriptCore's interpreter on all three, and behind QuickJS on the
+first two: on `borrowed-methods` 1.52 times V8's time, 1.72 times
+JavaScriptCore's, and 1.13 times QuickJS's; on `method-shapes` 1.33,
+1.36, and 1.16; on `prototype-chains` 1.26, 1.03, and 0.92
+(`bench/gc/results/prototype-chains.json`). When each was added the
+figures were 2.78, 3.14, and 2.07 (`function-inherited-reads.json`),
+2.41, 2.69, and 2.25 (`shared-loads.json`), and 2.07, 1.69, and 1.51.
 
 The day before the margins were 1.28 over JavaScriptCore and 1.42 over V8
 (geometric mean of engine time over zjsz time, within one run). Behind on
@@ -61,7 +64,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
-| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`); a shape a site's entry does not hold answered from a table all sites share (`method-shapes` -50%, `borrowed-methods` -35%) |
+| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`); a shape a site's entry does not hold answered from a table all sites share (`method-shapes` -50%, `borrowed-methods` -35%); a name past the first prototype, or found nowhere, kept as a fact (`prototype-chains` -39%) |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
@@ -172,11 +175,45 @@ instructions: its loads and stores of `left` and `right` share entries,
 a store writes over the entry, and each load after it searched for and
 kept a fact the table had); stopping after 64 failures (a site's shapes
 all fail once before any is answered, so a site of 150 would stop in
-its first pass). Left, in the same file: a name two prototypes away (a
-base class's method on a subclass's object, 62 cycles against 36 for
-one prototype; V8 41) and a name found nowhere (113 cycles; V8 5) are
-searched for on every read, and the search itself walks the class
-chain.
+its first pass).
+Names past the first prototype, and names found nowhere (2026-11-15). A
+site recorded a name found on the object or on its first prototype and
+nothing else. So a base class's method called on a subclass's object
+was searched for at every call (59 cycles, against 36 for a method one
+prototype away; V8 43), and so was a property an object does not have,
+which code asks about all the time (`options.limit === undefined`: 114
+cycles, V8 8). Both are now facts like the others: the object's class
+and the class of each prototype passed, up to four, with the slot in
+the last, or with nothing after the last. No handle is kept. A class
+fixes that its object lacks the name or where it holds it; a read
+follows the prototypes it finds, checks each one's class, and for a
+name found nowhere that the last has no prototype. So the fact for one
+subclass serves another whose prototypes have the same classes, and
+nothing a program does to a chain has to find the fact: adding the name
+anywhere on it changes a class the read checks, and changing a
+prototype changes what the read follows. A site with no entry takes
+such a fact as its entry; a site whose entry the handler answers from
+keeps it, and the table answers. These reads are answered in the
+general path, not the handler. Not kept: an accessor, a prototype that
+is not a plain object in class mode, a chain of more than four,
+anything read off the global object (which answers a name it lacks from
+the global variables), and `length` on a wrapper. Over eight placements
+`prototype-chains`, written for this, is -39.3%, async-gen -1.7%,
+`borrowed-methods` -1.5%, regexp -2.0%, `method-shapes` +2.3%, the
+other eleven kernels within 0.6% (`prototype-chains.txt`,
+`prototype-chains.json`). The base class's method takes 42 cycles (V8
+43, QuickJS 35), `hasOwnProperty` on an instance 52 from 104 (V8 18),
+a property an object lacks 34 (V8 8, QuickJS 8). `borrowed-methods`
+gains because a function's own entry is now answered before the rest of
+the general path is set up (`f.call` 265 instructions to 257);
+`method-shapes` loses because a read the table answers is 15 to 20
+instructions longer, the code that answers having more to carry.
+`__text` +1.6 KB; a fact is 32 bytes where it was 24, the table 16 KB.
+Left: these reads still leave the handler (a pass of the read that
+finds nothing is 300 instructions, of one that finds an own property
+133), which is the distance to V8 on them; a name a function or an
+array lacks is searched for on every read (1,023 and 1,065
+instructions); and the search itself walks the class chain.
 
 **Allocator and collector.** A cell is a header pushed into a table and
 slots pushed into an arena one at a time; every string is its own
@@ -714,7 +751,7 @@ now. Left: `apply` builds a list and enters a second interpreter loop
 (1,612 instructions against 140 for the call written out), array
 `indexOf` takes 99 cycles on two elements against V8's 24, and `bind`
 is 6 times V8's; a read on a function that finds nothing
-(`type.defaultProps`) walks to Object.prototype every time, 1,019
+(`type.defaultProps`) walks to Object.prototype every time, 1,023
 instructions; resuming copies the registers back one checked store at
 a time; and a generator object still keeps its record in a second cell.
 

@@ -17,7 +17,7 @@ import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, i
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CHAIN_LIMIT } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -458,18 +458,31 @@ export struct JsonPlan {
 // is a plain object's class, a function's bag's class (the root class
 // for no bag), or the prototype an array or a string reads through;
 // `kind` is the site cache's kind for the same fact, `holder` and
-// `holderClass` its prototype and that prototype's class.
+// `holderClass` its prototype and that prototype's class. For a name
+// found further along the chain of prototypes, or nowhere on it
+// (CACHE_CHAIN, CACHE_ABSENT), `depth` is how many prototypes the fact
+// follows and `holder`, `holderClass`, `class3`, and `class4` their
+// classes in order.
 struct SharedLoad {
   atom: u32;
   kind: u8;
   attr: u8;
+  depth: u8;
   shape: u32;
   holder: u32;
   holderClass: u32;
   slot: u32;
+  class3: u32;
+  class4: u32;
 }
 
-// Entries in the shared load table, a power of two (12 KB, made when the
+// What populateLoadCache made of a read.
+const LOAD_REFUSED: u8 = 0;
+const LOAD_RECORDED: u8 = 1;
+// The object and its first prototype lack the name: recordChain's case.
+const LOAD_NOT_FOUND: u8 = 2;
+
+// Entries in the shared load table, a power of two (16 KB, made when the
 // first read is kept).
 const SHARED_LOADS: usize = 512;
 // Reads the table answers for a site whose own entry is for another
@@ -844,6 +857,17 @@ export struct Runtime {
     return 0;
   }
 
+  // A function's inherited or computed name by the site's own entry
+  // (CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL); deleted for a miss.
+  function loadSiteFunctionName(fi: u32, nameSlot: usize, handle: u32): Value {
+    const tag = this.heap.tagOf(handle);
+    if (tag != TAG_FUNCTION && tag != TAG_HOST_FUNCTION && tag != TAG_CLOSURE) return deletedValue();
+    const bag = this.functionBag(handle);
+    const bagClass: u32 = bag == 0 ? 0 : this.heap.objectClass(bag);
+    if (bagClass != this.siteCache(fi, nameSlot).receiverClass) return deletedValue();
+    return this.functionNameLoad(this.siteCache(fi, nameSlot).kind, this.siteCache(fi, nameSlot).slot, this.siteCache(fi, nameSlot).proto1Class, handle);
+  }
+
   // A read on a function of a name its own properties lack, for a
   // function whose bag's class the caller has matched: `kind`
   // CACHE_FUNCTION_PROTO with Function.prototype's bag's class and the
@@ -931,43 +955,178 @@ export struct Runtime {
       shape = this.inheritingProto(handle);
     }
     const siteKind = this.siteCache(fi, nameSlot).kind;
-    let kind: u8 = CACHE_EMPTY;
-    let slot: u32 = 0;
-    let holder: u32 = 0;
-    let holderClass: u32 = 0;
-    let fromTable = false;
-    if (isFunction && (siteKind == CACHE_FUNCTION_PROTO || siteKind == CACHE_FUNCTION_VIRTUAL) && this.siteCache(fi, nameSlot).receiverClass == shape) {
-      kind = siteKind;
-      slot = this.siteCache(fi, nameSlot).slot;
-      holderClass = this.siteCache(fi, nameSlot).proto1Class;
-    } else if (this.sharedLoads.length != 0) {
-      const entry = this.sharedLoads[this.sharedIndex(handle, shape, atom)];
-      if (entry.atom == atom && entry.shape == shape) {
-        kind = entry.kind;
-        slot = entry.slot;
-        holder = entry.holder;
-        holderClass = entry.holderClass;
-        fromTable = true;
-      }
-    }
+    // The site's own entry when it is a chain's, which the handler
+    // leaves to this path. (A function's is answered before this.)
+    const siteAnswers = tag == TAG_OBJECT && (siteKind == CACHE_CHAIN || siteKind == CACHE_ABSENT);
     let value = deletedValue();
-    if (tag == TAG_OBJECT) {
-      if (kind == CACHE_OWN) {
-        value = this.heap.slot(handle, slot);
-      } else if (kind == CACHE_PROTO) {
-        const proto = this.heap.objectProto(handle);
-        if (proto == holder && this.heap.objectClass(proto) == holderClass) value = this.heap.slot(proto, slot);
+    let fromTable = false;
+    // The site's entry first, then the table's fact: an entry for the
+    // shape may still be for another chain of prototypes, objects
+    // without fields of their own all having the root class.
+    let source: u8 = siteAnswers && this.siteCache(fi, nameSlot).receiverClass == shape ? 0 : 1;
+    while (source < 2) {
+      let kind: u8 = CACHE_EMPTY;
+      let depth: u8 = 0;
+      let slot: u32 = 0;
+      let holder: u32 = 0;
+      let holderClass: u32 = 0;
+      let class3: u32 = 0;
+      let class4: u32 = 0;
+      if (source == 0) {
+        kind = siteKind;
+        depth = this.siteCache(fi, nameSlot).depth;
+        slot = this.siteCache(fi, nameSlot).slot;
+        holder = this.siteCache(fi, nameSlot).proto1;
+        holderClass = this.siteCache(fi, nameSlot).proto1Class;
+        class3 = this.siteCache(fi, nameSlot).proto2;
+        class4 = this.siteCache(fi, nameSlot).proto2Class;
+      } else if (this.sharedLoads.length != 0) {
+        const entry = this.sharedLoads[this.sharedIndex(handle, shape, atom)];
+        if (entry.atom == atom && entry.shape == shape) {
+          kind = entry.kind;
+          depth = entry.depth;
+          slot = entry.slot;
+          holder = entry.holder;
+          holderClass = entry.holderClass;
+          class3 = entry.class3;
+          class4 = entry.class4;
+          fromTable = true;
+        }
       }
-    } else if (isFunction) {
-      // An own property's class is never the root class, so the bag exists.
-      if (kind == CACHE_BAG) value = this.heap.slot(this.functionBag(handle), slot);
-      else if (kind == CACHE_FUNCTION_PROTO || kind == CACHE_FUNCTION_VIRTUAL) value = this.functionNameLoad(kind, slot, holderClass, handle);
-    } else if (kind == CACHE_INHERITED && this.heap.objectClass(shape) == holderClass) {
-      // An array or a string: the shape is the prototype it reads through.
-      value = this.heap.slot(shape, slot);
+      if (tag == TAG_OBJECT) {
+        if (kind == CACHE_OWN) {
+          value = this.heap.slot(handle, slot);
+        } else if (kind == CACHE_PROTO) {
+          const proto = this.heap.objectProto(handle);
+          if (proto == holder && this.heap.objectClass(proto) == holderClass) value = this.heap.slot(proto, slot);
+        } else if (kind == CACHE_CHAIN || kind == CACHE_ABSENT) {
+          value = this.chainLoad(kind, depth, slot, holder, holderClass, class3, class4, handle);
+        }
+      } else if (isFunction) {
+        // An own property's class is never the root class, so the bag exists.
+        if (kind == CACHE_BAG) value = this.heap.slot(this.functionBag(handle), slot);
+        else if (kind == CACHE_FUNCTION_PROTO || kind == CACHE_FUNCTION_VIRTUAL) value = this.functionNameLoad(kind, slot, holderClass, handle);
+      } else if (kind == CACHE_INHERITED && this.heap.objectClass(shape) == holderClass) {
+        // An array or a string: the shape is the prototype it reads through.
+        value = this.heap.slot(shape, slot);
+      }
+      if (!isDeleted(value)) break;
+      source = source + 1;
     }
     if (fromTable && !isDeleted(value)) this.sharedAnswered(fi, nameSlot, handle, atom);
     return value;
+  }
+
+  // A read through a chain of prototypes (CACHE_CHAIN, CACHE_ABSENT) on
+  // a plain object whose class the caller has matched; deleted for a
+  // miss. Each prototype must be a plain object of the class recorded,
+  // which fixes that it lacks the name or where it holds it. The global
+  // object answers a name it lacks from the global variables, so nothing
+  // is said for it.
+  function chainLoad(kind: u8, depth: u8, slot: u32, class1: u32, class2: u32, class3: u32, class4: u32, handle: u32): Value {
+    if (handle == this.globalObject) return deletedValue();
+    let current = handle;
+    let hop: u8 = 0;
+    while (hop < depth) {
+      const proto = this.heap.objectProto(current);
+      const expected = hop == 0 ? class1 : hop == 1 ? class2 : hop == 2 ? class3 : class4;
+      if (proto == 0 || !this.heap.isObject(proto) || this.heap.objectClass(proto) != expected) return deletedValue();
+      current = proto;
+      hop = hop + 1;
+    }
+    if (kind == CACHE_CHAIN) return this.heap.slot(current, slot);
+    return this.heap.objectProto(current) == 0 ? undefinedValue() : deletedValue();
+  }
+
+  // What a read of `atom` on a plain object found past its first
+  // prototype, as a fact to keep; of kind CACHE_EMPTY when it is not
+  // one. The caller knows the object is in class mode and lacks the
+  // name, and that its first prototype, if it has one, is a plain object
+  // in class mode that lacks it too (populateLoadCache's
+  // LOAD_NOT_FOUND). An accessor, a deleted name, a prototype that is
+  // not a plain object in class mode, and a chain longer than
+  // CHAIN_LIMIT are not kept. Nor is anything for the global object,
+  // nor `length` for a wrapper, which answers it from its string.
+  function chainFact(handle: u32, atom: u32): SharedLoad {
+    let fact = SharedLoad({ atom: atom, kind: CACHE_EMPTY, attr: 0, depth: 0, shape: this.heap.objectClass(handle), holder: 0, holderClass: 0, slot: 0, class3: 0, class4: 0 });
+    if (handle == this.globalObject) return fact;
+    if (atom == this.atomLength && !isDeleted(this.wrappedPrimitive(handle))) return fact;
+    let current = handle;
+    let depth: u8 = 0;
+    while (true) {
+      const proto = this.heap.objectProto(current);
+      if (proto == 0) {
+        fact.kind = CACHE_ABSENT;
+        fact.depth = depth;
+        return fact;
+      }
+      if (depth == CHAIN_LIMIT || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return fact;
+      const protoClass = this.heap.objectClass(proto);
+      if (depth == 0) fact.holder = protoClass;
+      else if (depth == 1) fact.holderClass = protoClass;
+      else if (depth == 2) fact.class3 = protoClass;
+      else fact.class4 = protoClass;
+      depth = depth + 1;
+      // The first prototype is known to lack the name.
+      if (depth > 1) {
+        const found = this.heap.objectFindSlot(proto, atom);
+        if (found >= 0) {
+          if (isDeleted(this.heap.slot(proto, u32(found)))) return fact;
+          fact.attr = this.heap.attrOf(proto, u32(found));
+          if ((fact.attr & PROP_ACCESSOR) != 0) return fact;
+          fact.kind = CACHE_CHAIN;
+          fact.depth = depth;
+          fact.slot = u32(found);
+          return fact;
+        }
+      }
+      current = proto;
+    }
+    return fact;
+  }
+
+  // After the search read a name the object and its first prototype
+  // lack: keep where it was found, or that it was not. The site takes
+  // the fact as its entry when it has none, or one of these kinds; an
+  // entry the handler answers from stays, and the table answers for
+  // this shape.
+  function recordChain(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, keep: boolean): void {
+    const fact = this.chainFact(handle, atom);
+    if (fact.kind == CACHE_EMPTY) return;
+    const siteKind = this.siteCache(fi, nameSlot).kind;
+    if (siteKind == CACHE_EMPTY || siteKind == CACHE_CHAIN || siteKind == CACHE_ABSENT) {
+      this.functions[usize(fi)].caches[nameSlot] = this.siteEntry(fact, this.siteCache(fi, nameSlot).searches);
+    }
+    if (keep) this.keepShared(handle, fact);
+  }
+
+  // A fact as a site's entry.
+  function siteEntry(fact: SharedLoad, searches: u8): PropertyCache {
+    let fresh = emptyCache();
+    fresh.kind = fact.kind;
+    fresh.attr = fact.attr;
+    fresh.searches = searches;
+    fresh.slot = fact.slot;
+    fresh.proto1 = fact.holder;
+    fresh.proto1Class = fact.holderClass;
+    if (fact.kind == CACHE_CHAIN || fact.kind == CACHE_ABSENT) {
+      fresh.depth = fact.depth;
+      fresh.receiverClass = fact.shape;
+      fresh.proto2 = fact.class3;
+      fresh.proto2Class = fact.class4;
+    } else {
+      fresh.depth = fact.kind == CACHE_PROTO || fact.kind == CACHE_INHERITED || fact.kind == CACHE_FUNCTION_PROTO ? 1 : 0;
+      fresh.receiverClass = fact.kind == CACHE_INHERITED ? 0 : fact.shape;
+    }
+    return fresh;
+  }
+
+  // Put a fact in the table, making the table for the first.
+  function keepShared(inout this, handle: u32, fact: SharedLoad): void {
+    if (this.sharedLoads.length == 0) {
+      this.sharedLoads.appendRepeated(SharedLoad({ atom: 0, kind: CACHE_EMPTY, attr: 0, depth: 0, shape: 0, holder: 0, holderClass: 0, slot: 0, class3: 0, class4: 0 }), SHARED_LOADS);
+    }
+    this.sharedLoads[this.sharedIndex(handle, fact.shape, fact.atom)] = fact;
   }
 
   // After the general path read `atom` on this receiver and wrote the
@@ -975,7 +1134,7 @@ export struct Runtime {
   function recordShared(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
     const cache = this.siteCache(fi, nameSlot);
     const shape = this.sharedShape(handle);
-    let entry = SharedLoad({ atom: atom, kind: cache.kind, attr: cache.attr, shape: shape, holder: cache.proto1, holderClass: cache.proto1Class, slot: cache.slot });
+    let entry = SharedLoad({ atom: atom, kind: cache.kind, attr: cache.attr, depth: 0, shape: shape, holder: cache.proto1, holderClass: cache.proto1Class, slot: cache.slot, class3: 0, class4: 0 });
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
       if (cache.kind == CACHE_OWN) {
@@ -997,10 +1156,7 @@ export struct Runtime {
     } else if (shape == 0 || cache.kind != CACHE_INHERITED || cache.proto1 != shape) {
       return;
     }
-    if (this.sharedLoads.length == 0) {
-      this.sharedLoads.appendRepeated(SharedLoad({ atom: 0, kind: CACHE_EMPTY, attr: 0, shape: 0, holder: 0, holderClass: 0, slot: 0 }), SHARED_LOADS);
-    }
-    this.sharedLoads[this.sharedIndex(handle, shape, atom)] = entry;
+    this.keepShared(handle, entry);
   }
 
   // After the table answered a read the site's own entry missed. A site
@@ -1053,16 +1209,7 @@ export struct Runtime {
       this.functions[usize(fi)].caches[nameSlot] = cache;
       return;
     }
-    let fresh = emptyCache();
-    fresh.kind = entry.kind;
-    fresh.attr = entry.attr;
-    fresh.searches = cache.searches;
-    fresh.depth = entry.kind == CACHE_PROTO || entry.kind == CACHE_INHERITED || entry.kind == CACHE_FUNCTION_PROTO ? 1 : 0;
-    fresh.receiverClass = entry.kind == CACHE_INHERITED ? 0 : shape;
-    fresh.slot = entry.slot;
-    fresh.proto1 = entry.holder;
-    fresh.proto1Class = entry.holderClass;
-    this.functions[usize(fi)].caches[nameSlot] = fresh;
+    this.functions[usize(fi)].caches[nameSlot] = this.siteEntry(entry, cache.searches);
   }
 
   // loadProp's general path, for a receiver that is not undefined or
@@ -1079,6 +1226,16 @@ export struct Runtime {
   function loadPropSlow(inout this, fi: u32, nameSlot: usize, object: Value, atom: u32): Value {
     const isCellValue = isCell(object) && asCell(object) != 0;
     const hasEntry = isCellValue && this.siteCache(fi, nameSlot).kind != CACHE_EMPTY;
+    if (hasEntry) {
+      // A function's inherited or computed name, by the site's own
+      // entry: the commonest of the reads answered here, so it comes
+      // before the rest is set up.
+      const siteKind = this.siteCache(fi, nameSlot).kind;
+      if (siteKind == CACHE_FUNCTION_PROTO || siteKind == CACHE_FUNCTION_VIRTUAL) {
+        const named = this.loadSiteFunctionName(fi, nameSlot, asCell(object));
+        if (!isDeleted(named)) return named;
+      }
+    }
     const searches: u8 = hasEntry ? this.siteCache(fi, nameSlot).searches : 0;
     const asks = hasEntry && searches < SHARED_GIVE_UP;
     if (asks) {
@@ -1089,7 +1246,9 @@ export struct Runtime {
     if (this.pendingThrow || !isCellValue) return found;
     let recorded = false;
     if (this.heap.isObject(asCell(object))) {
-      recorded = this.populateLoadCache(fi, nameSlot, asCell(object), atom);
+      const outcome = this.populateLoadCache(fi, nameSlot, asCell(object), atom);
+      recorded = outcome == LOAD_RECORDED;
+      if (outcome == LOAD_NOT_FOUND) this.recordChain(fi, nameSlot, asCell(object), atom, searches < SHARED_GIVE_UP);
     } else if (!isUndefined(found)) {
       // Nothing found is nothing to record.
       recorded = this.populateInheritedCache(fi, nameSlot, asCell(object), atom);
@@ -1183,15 +1342,15 @@ export struct Runtime {
     return true;
   }
 
-  function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): boolean {
-    if (this.heap.isDictionary(handle)) return false;
+  function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): u8 {
+    if (this.heap.isDictionary(handle)) return LOAD_REFUSED;
     const receiverClass = this.heap.objectClass(handle);
     const own = this.heap.objectFindSlot(handle, atom);
     if (own >= 0) {
-      if (isDeleted(this.heap.slot(handle, u32(own)))) return false;
+      if (isDeleted(this.heap.slot(handle, u32(own)))) return LOAD_REFUSED;
       // An accessor is not cached: a hit reads the slot as data.
       const ownAttr = this.heap.attrOf(handle, u32(own));
-      if ((ownAttr & PROP_ACCESSOR) != 0) return false;
+      if ((ownAttr & PROP_ACCESSOR) != 0) return LOAD_REFUSED;
       if (this.functions[usize(fi)].caches[nameSlot].kind == CACHE_OWN && this.functions[usize(fi)].caches[nameSlot].receiverClass != receiverClass) {
         // Another shape at an own-property site: kept beside the first.
         let cache = this.functions[usize(fi)].caches[nameSlot];
@@ -1209,20 +1368,22 @@ export struct Runtime {
         if (cache.extraCount < 3) cache.extraCount = cache.extraCount + 1;
         cache.extraNext = position == 2 ? 0 : position + 1;
         this.functions[usize(fi)].caches[nameSlot] = cache;
-        return true;
+        return LOAD_RECORDED;
       }
       this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, attr: ownAttr, depth: 0, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
-      return true;
+      return LOAD_RECORDED;
     }
     const proto = this.heap.objectProto(handle);
-    if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return false;
+    if (proto == 0) return LOAD_NOT_FOUND;
+    if (!this.heap.isObject(proto) || this.heap.isDictionary(proto)) return LOAD_REFUSED;
     const inherited = this.heap.objectFindSlot(proto, atom);
-    if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return false;
+    if (inherited < 0) return LOAD_NOT_FOUND;
+    if (isDeleted(this.heap.slot(proto, u32(inherited)))) return LOAD_REFUSED;
     const inheritedAttr = this.heap.attrOf(proto, u32(inherited));
-    if ((inheritedAttr & PROP_ACCESSOR) != 0) return false;
+    if ((inheritedAttr & PROP_ACCESSOR) != 0) return LOAD_REFUSED;
     const protoClass = this.heap.objectClass(proto);
     this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, attr: inheritedAttr, depth: 1, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
-    return true;
+    return LOAD_RECORDED;
   }
 
   // A cached store; false for a miss.

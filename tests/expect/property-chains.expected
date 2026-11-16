@@ -1,0 +1,47 @@
+depths: base base base base base base base base base base
+changed at the holder: base changed base changed base changed base changed base changed base changed
+added nearer: mid mid mid mid mid mid base changed base changed
+removed again: base changed base changed base changed base changed base changed base changed
+an own one: this leaf's own this leaf's own base changed base changed base changed base changed
+own removed: base changed base changed
+an accessor at the holder: getter on mid getter on mid getter elsewhere getter elsewhere 4
+data again: data again data again data again data again data again data again
+an accessor on the way: getter on the way getter on the way getter on the way getter on the way data again data again
+and gone: data again data again data again data again
+the chain cut over: side side side side data again data again
+and back: data again data again data again data again
+the object's own prototype: leaf's new prototype leaf's new prototype data again data again data again data again
+one more on the way: data again data again data again data again
+and it has the name: between between between between data again data again
+restored: data again data again data again data again
+a crowded prototype on the way: data again data again data again data again 199
+changed under it: base under a crowd base under a crowd base under a crowd base under a crowd
+the crowded one gets the name: in the crowd in the crowd in the crowd in the crowd base under a crowd base under a crowd
+and loses it: base under a crowd base under a crowd base under a crowd base under a crowd undefined undefined undefined undefined
+and gets another: in the crowd too in the crowd too in the crowd too in the crowd too undefined undefined
+nowhere: undefined undefined undefined undefined undefined undefined undefined undefined undefined undefined
+added to the object: now its own now its own undefined undefined
+removed: undefined undefined
+added at the end of the chain: on Object.prototype on Object.prototype on Object.prototype on Object.prototype on Object.prototype on Object.prototype undefined undefined
+removed there: undefined undefined undefined undefined
+added in the middle: on Base.prototype on Base.prototype on Base.prototype on Base.prototype undefined undefined
+an accessor at the end: a getter at the end a getter at the end a getter at the end a getter at the end
+and gone: undefined undefined undefined undefined undefined undefined
+an object that had no prototype: bare's new prototype bare's new prototype undefined undefined
+an object that loses its prototype: undefined undefined undefined
+a chain that ends: undefined undefined undefined undefined
+and then goes on: added past the end added past the end added past the end added past the end undefined undefined
+two classes without fields: undefined,undefined,undefined,undefined,undefined,undefined,one,undefined,one,undefined,one,undefined,undefined,two,undefined,two,undefined,two
+found holding undefined: undefined undefined undefined undefined true
+options: 1,default,4,default,5,default,1,default,4,default,5,default,1,default,4,default,5,default
+options changed: default 20 default default 20
+read, then written: 1 2 1 3 2 1
+the global object: undefined undefined true true undefined undefined true undefined true
+wrappers: undefined undefined 4 4 undefined 6 undefined
+other kinds on the way: true true true true undefined undefined undefined
+arrays, functions, strings: undefined undefined undefined undefined undefined undefined
+many shapes: base under a crowd/undefined undefined/undefined base under a crowd/undefined undefined/undefined base under a crowd/undefined undefined/undefined base under a crowd/undefined undefined/undefined
+after changes: base at the end/0 undefined/0 base at the end/0 undefined/0 base at the end/0 undefined/0 base at the end/0 undefined/0
+calls: animal rex animal pip animal rex animal pip true false true
+overridden: dog rex dog pip animal undefined
+override removed: animal rex animal pip

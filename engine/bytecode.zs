@@ -823,6 +823,19 @@ export const CACHE_FUNCTION_PROTO: u8 = 7;
 // `name`) while its own properties lack it: the class of its bag, and
 // in `slot` which of the three.
 export const CACHE_FUNCTION_VIRTUAL: u8 = 8;
+// A read on a plain object of a name found as data on its second to
+// fourth prototype: the object's class, the classes of the prototypes
+// on the way in proto1, proto1Class, proto2, and proto2Class (`depth`
+// of them), and the slot in the last. Each class fixes that its object
+// lacks the name, or where the last holds it. A class does not say what
+// an object's prototype is, so a read follows the prototypes it finds
+// and checks each one's class.
+export const CACHE_CHAIN: u8 = 9;
+// The same for a name found nowhere: `depth` prototypes (none to four),
+// each lacking the name and the last without a prototype.
+export const CACHE_ABSENT: u8 = 10;
+// The most prototypes either of those follows.
+export const CHAIN_LIMIT: u8 = 4;
 export const VIRTUAL_PROTOTYPE: u32 = 0;
 export const VIRTUAL_LENGTH: u32 = 1;
 export const VIRTUAL_NAME: u32 = 2;

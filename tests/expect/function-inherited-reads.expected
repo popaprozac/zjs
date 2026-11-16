@@ -19,6 +19,7 @@ after losing one: data again data again b
 with 200: data again data again
 and its own: crowded's own crowded's own
 mixed: data again | object's | data again | array's | undefined | owner's | undefined | undefined | data again | base's | owner's | data again
+functions, then other cells: true true undefined undefined true undefined undefined undefined undefined true
 on neither: undefined undefined
 on Object.prototype: Object.prototype's Object.prototype's Object.prototype's
 hidden by Function.prototype: Function.prototype's Function.prototype's Function.prototype's

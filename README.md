@@ -552,7 +552,9 @@ sites of one name share it; for a shape the entry does not hold, the
 general path looks in a table of 512 facts the whole runtime shares,
 found by shape and name and checked the same way, before it searches
 (a method called on two classes' objects, an array's and a string's
-method of one name). Constructing two million
+method of one name). A name found on a prototype further away,
+up to the fourth, or found on none, is a fact too: the class of each
+prototype passed, which a read checks as it follows them. Constructing two million
 objects went from 0.46 s to 0.23 s, ahead of the reference's 0.24; a
 property-read loop from 0.59 to 0.34 (reference 0.19). The remaining
 gap is per-instruction overhead -- about thirty instructions of loop,
