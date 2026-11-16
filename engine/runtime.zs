@@ -453,6 +453,36 @@ export struct JsonPlan {
   wraps: boolean = false;
 }
 
+// A read the general path answered, kept where any site can find it:
+// for a receiver of `shape`, where `atom` is (see Shared loads). `shape`
+// is a plain object's class, a function's bag's class (the root class
+// for no bag), or the prototype an array or a string reads through;
+// `kind` is the site cache's kind for the same fact, `holder` and
+// `holderClass` its prototype and that prototype's class.
+struct SharedLoad {
+  atom: u32;
+  kind: u8;
+  attr: u8;
+  shape: u32;
+  holder: u32;
+  holderClass: u32;
+  slot: u32;
+}
+
+// Entries in the shared load table, a power of two (12 KB, made when the
+// first read is kept).
+const SHARED_LOADS: usize = 512;
+// Reads the table answers for a site whose own entry is for another
+// shape, before the site takes the shape that keeps arriving.
+const SHARED_ADOPT_AFTER: u8 = 16;
+// A site's count of reads the table did not answer (PropertyCache's
+// `searches`) at which it stops asking. An answer takes four off, so a
+// site the table answers one time in five keeps asking: about where the
+// look and the keeping cost what the answers save. The count is as high
+// as it goes because a site's shapes all fail once, on their first
+// read, before any can be answered.
+const SHARED_GIVE_UP: u8 = 255;
+
 export struct Runtime {
   heap: Heap;
   functions: Array<FunctionCode>;
@@ -692,6 +722,7 @@ export struct Runtime {
   // writing one's constants, lowers the function mark.
   rootFunctionsFrom: usize;
   rootClassesFrom: usize;
+  sharedLoads: Array<SharedLoad>;
   gcPauses: Array<f64>;
   // Whether the async body last resumed finished, beside the value it
   // handed back (see resumeResult).
@@ -813,59 +844,261 @@ export struct Runtime {
     return 0;
   }
 
-  // A cached read on a function of a name its own properties lack
-  // (CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL); deleted for a miss.
-  // A function answers a read from its own properties first, and its
-  // bag's class says what they are: no bag reads as the root class,
-  // which holds none. Then come the names it computes, then
-  // Function.prototype's, which is its prototype while its bag holds no
-  // other.
-  function loadCachedFunctionName(fi: u32, nameSlot: usize, handle: u32): Value {
-    const cache = this.siteCache(fi, nameSlot);
-    const tag = this.heap.tagOf(handle);
-    if (tag != TAG_FUNCTION && tag != TAG_HOST_FUNCTION && tag != TAG_CLOSURE) return deletedValue();
-    const bag = this.functionBag(handle);
-    const bagClass: u32 = bag == 0 ? 0 : this.heap.objectClass(bag);
-    if (bagClass != cache.receiverClass) return deletedValue();
-    if (cache.kind == CACHE_FUNCTION_PROTO) {
+  // A read on a function of a name its own properties lack, for a
+  // function whose bag's class the caller has matched: `kind`
+  // CACHE_FUNCTION_PROTO with Function.prototype's bag's class and the
+  // slot there, or CACHE_FUNCTION_VIRTUAL with which name in `slot`.
+  // Deleted for a miss. A function answers a read from its own
+  // properties first, and its bag's class says what they are: no bag
+  // reads as the root class, which holds none. Then come the names it
+  // computes, then Function.prototype's, which is its prototype while
+  // its bag holds no other.
+  function functionNameLoad(kind: u8, slot: u32, protoClass: u32, handle: u32): Value {
+    if (kind == CACHE_FUNCTION_PROTO) {
       const protoBag = this.functionBag(this.functionProto);
-      if (protoBag == 0 || this.heap.objectClass(protoBag) != cache.proto1Class) return deletedValue();
-      return this.heap.slot(protoBag, cache.slot);
+      if (protoBag == 0 || this.heap.objectClass(protoBag) != protoClass) return deletedValue();
+      return this.heap.slot(protoBag, slot);
     }
-    if (cache.slot == VIRTUAL_PROTOTYPE) {
+    if (slot == VIRTUAL_PROTOTYPE) {
       // Only one already made: the general path makes it on first use.
       if (!this.functionHasPrototype(cellValue(handle))) return deletedValue();
       const made = this.madePrototype(handle);
       return made == 0 ? deletedValue() : cellValue(made);
     }
-    if (tag == TAG_HOST_FUNCTION) return this.heap.slot(handle, cache.slot == VIRTUAL_LENGTH ? 1 : 2);
+    if (this.heap.tagOf(handle) == TAG_HOST_FUNCTION) return this.heap.slot(handle, slot == VIRTUAL_LENGTH ? 1 : 2);
     const code = this.heap.functionIndex(handle);
-    if (cache.slot == VIRTUAL_LENGTH) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
+    if (slot == VIRTUAL_LENGTH) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
     // As functionName.
     const nameAtom = this.functions[usize(code)].nameAtom;
     return cellValue(nameAtom == 0 ? this.atomEmpty : nameAtom);
   }
 
+  // --- Shared loads ---
+  //
+  // A site's entry holds one shape for an inherited name, and a
+  // function's sites of one name share the entry, so a method read off
+  // two classes' objects, or an array's and a string's method of one
+  // name, would take the general path every time. What that path finds
+  // it also keeps in one table for the whole runtime, by shape and name,
+  // and it looks there before it searches. An entry is a fact about a
+  // shape, checked against the receiver as a site's entry is, so it
+  // answers for any site and nothing invalidates it: a class never
+  // changes, and a name an entry holds is carried by a class or by the
+  // runtime, so its handle is never another name's. A newer fact with
+  // the same hash replaces the older.
+
+  // What a receiver's shared loads are found by, beside the name.
+  function sharedShape(handle: u32): u32 {
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_OBJECT) return this.heap.objectClass(handle);
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      const bag = this.functionBag(handle);
+      return bag == 0 ? 0 : this.heap.objectClass(bag);
+    }
+    return this.inheritingProto(handle);
+  }
+
+  // Where the table keeps this receiver's fact for `atom`. A plain
+  // object's class does not say what its prototype is (every instance
+  // of every class with no fields of its own has the root class), so
+  // the prototype takes part: two classes' methods of one name then
+  // have two places.
+  function sharedIndex(handle: u32, shape: u32, atom: u32): usize {
+    let hash = shape ^ atom.wrappingMultiply(2654435761);
+    if (this.heap.tagOf(handle) == TAG_OBJECT) hash = hash ^ this.heap.objectProto(handle).wrappingMultiply(40503);
+    hash = hash ^ (hash >> 15);
+    return usize(hash) & (SHARED_LOADS - 1);
+  }
+
+  // What is already known for this receiver, at a site that has an
+  // entry; deleted for nothing. The site's own entry when it is a
+  // function's inherited or computed name, which the handler does not
+  // answer; else the table's fact for this shape and name. Shapes of
+  // different kinds of cell may be the same number, so a fact's kind
+  // must be one the receiver's kind of cell records.
+  function loadKnown(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): Value {
+    const tag = this.heap.tagOf(handle);
+    const isFunction = tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
+    // As sharedShape, written out so that no call stands before the
+    // commonest answer.
+    let shape: u32 = 0;
+    if (isFunction) {
+      const bag = this.functionBag(handle);
+      if (bag != 0) shape = this.heap.objectClass(bag);
+    } else if (tag == TAG_OBJECT) {
+      shape = this.heap.objectClass(handle);
+    } else {
+      shape = this.inheritingProto(handle);
+    }
+    const siteKind = this.siteCache(fi, nameSlot).kind;
+    let kind: u8 = CACHE_EMPTY;
+    let slot: u32 = 0;
+    let holder: u32 = 0;
+    let holderClass: u32 = 0;
+    let fromTable = false;
+    if (isFunction && (siteKind == CACHE_FUNCTION_PROTO || siteKind == CACHE_FUNCTION_VIRTUAL) && this.siteCache(fi, nameSlot).receiverClass == shape) {
+      kind = siteKind;
+      slot = this.siteCache(fi, nameSlot).slot;
+      holderClass = this.siteCache(fi, nameSlot).proto1Class;
+    } else if (this.sharedLoads.length != 0) {
+      const entry = this.sharedLoads[this.sharedIndex(handle, shape, atom)];
+      if (entry.atom == atom && entry.shape == shape) {
+        kind = entry.kind;
+        slot = entry.slot;
+        holder = entry.holder;
+        holderClass = entry.holderClass;
+        fromTable = true;
+      }
+    }
+    let value = deletedValue();
+    if (tag == TAG_OBJECT) {
+      if (kind == CACHE_OWN) {
+        value = this.heap.slot(handle, slot);
+      } else if (kind == CACHE_PROTO) {
+        const proto = this.heap.objectProto(handle);
+        if (proto == holder && this.heap.objectClass(proto) == holderClass) value = this.heap.slot(proto, slot);
+      }
+    } else if (isFunction) {
+      // An own property's class is never the root class, so the bag exists.
+      if (kind == CACHE_BAG) value = this.heap.slot(this.functionBag(handle), slot);
+      else if (kind == CACHE_FUNCTION_PROTO || kind == CACHE_FUNCTION_VIRTUAL) value = this.functionNameLoad(kind, slot, holderClass, handle);
+    } else if (kind == CACHE_INHERITED && this.heap.objectClass(shape) == holderClass) {
+      // An array or a string: the shape is the prototype it reads through.
+      value = this.heap.slot(shape, slot);
+    }
+    if (fromTable && !isDeleted(value)) this.sharedAnswered(fi, nameSlot, handle, atom);
+    return value;
+  }
+
+  // After the general path read `atom` on this receiver and wrote the
+  // site's entry: keep the same fact in the table.
+  function recordShared(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    const cache = this.siteCache(fi, nameSlot);
+    const shape = this.sharedShape(handle);
+    let entry = SharedLoad({ atom: atom, kind: cache.kind, attr: cache.attr, shape: shape, holder: cache.proto1, holderClass: cache.proto1Class, slot: cache.slot });
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_OBJECT) {
+      if (cache.kind == CACHE_OWN) {
+        if (cache.receiverClass != shape) {
+          // One of the site's other shapes, whose attributes the site
+          // does not keep.
+          if (cache.extraCount > 0 && cache.extraClass0 == shape) entry.slot = cache.extraSlot0;
+          else if (cache.extraCount > 1 && cache.extraClass1 == shape) entry.slot = cache.extraSlot1;
+          else if (cache.extraCount > 2 && cache.extraClass2 == shape) entry.slot = cache.extraSlot2;
+          else return;
+          entry.attr = this.heap.attrOf(handle, entry.slot);
+        }
+      } else if (cache.kind != CACHE_PROTO || cache.receiverClass != shape) {
+        return;
+      }
+    } else if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      if (cache.kind != CACHE_BAG && cache.kind != CACHE_FUNCTION_PROTO && cache.kind != CACHE_FUNCTION_VIRTUAL) return;
+      if (cache.receiverClass != shape) return;
+    } else if (shape == 0 || cache.kind != CACHE_INHERITED || cache.proto1 != shape) {
+      return;
+    }
+    if (this.sharedLoads.length == 0) {
+      this.sharedLoads.appendRepeated(SharedLoad({ atom: 0, kind: CACHE_EMPTY, attr: 0, shape: 0, holder: 0, holderClass: 0, slot: 0 }), SHARED_LOADS);
+    }
+    this.sharedLoads[this.sharedIndex(handle, shape, atom)] = entry;
+  }
+
+  // After the table answered a read the site's own entry missed. A site
+  // of own properties takes the shape beside its others while it has a
+  // place free, and then keeps its four. Any other site keeps its entry,
+  // the table answering for this shape, until this shape has come
+  // SHARED_ADOPT_AFTER times since the entry was written: two shapes
+  // taking turns then leave one of them to the handler, and a shape
+  // that stopped coming gives way. A store's entry is left alone.
+  function sharedAnswered(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    const searches = this.siteCache(fi, nameSlot).searches;
+    if (searches != 0) this.functions[usize(fi)].caches[nameSlot].searches = searches > 4 ? searches - 4 : 0;
+    const kind = this.siteCache(fi, nameSlot).kind;
+    if (kind == CACHE_OWN) {
+      if (this.siteCache(fi, nameSlot).extraCount < 3) this.adoptShared(fi, nameSlot, handle, atom);
+      return;
+    }
+    if (kind == CACHE_TRANSITION || kind == CACHE_DEFINE) return;
+    const count = this.siteCache(fi, nameSlot).extraNext + 1;
+    if (count < SHARED_ADOPT_AFTER) {
+      this.functions[usize(fi)].caches[nameSlot].extraNext = count;
+      return;
+    }
+    this.adoptShared(fi, nameSlot, handle, atom);
+  }
+
+  // Give the site the table's fact for this receiver: beside its others
+  // for a site of own properties, else as its entry.
+  cold function adoptShared(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    const shape = this.sharedShape(handle);
+    const entry = this.sharedLoads[this.sharedIndex(handle, shape, atom)];
+    let cache = this.functions[usize(fi)].caches[nameSlot];
+    if (cache.kind == CACHE_OWN) {
+      if (entry.kind != CACHE_OWN) return;
+      // As populateLoadCache keeps another shape, which stays written
+      // out there for the search of a site with many shapes.
+      const position = cache.extraNext;
+      if (position == 0) {
+        cache.extraClass0 = shape;
+        cache.extraSlot0 = entry.slot;
+      } else if (position == 1) {
+        cache.extraClass1 = shape;
+        cache.extraSlot1 = entry.slot;
+      } else {
+        cache.extraClass2 = shape;
+        cache.extraSlot2 = entry.slot;
+      }
+      if (cache.extraCount < 3) cache.extraCount = cache.extraCount + 1;
+      cache.extraNext = position == 2 ? 0 : position + 1;
+      this.functions[usize(fi)].caches[nameSlot] = cache;
+      return;
+    }
+    let fresh = emptyCache();
+    fresh.kind = entry.kind;
+    fresh.attr = entry.attr;
+    fresh.searches = cache.searches;
+    fresh.depth = entry.kind == CACHE_PROTO || entry.kind == CACHE_INHERITED || entry.kind == CACHE_FUNCTION_PROTO ? 1 : 0;
+    fresh.receiverClass = entry.kind == CACHE_INHERITED ? 0 : shape;
+    fresh.slot = entry.slot;
+    fresh.proto1 = entry.holder;
+    fresh.proto1Class = entry.holderClass;
+    this.functions[usize(fi)].caches[nameSlot] = fresh;
+  }
+
   // loadProp's general path, for a receiver that is not undefined or
-  // null: a function's inherited or computed name through the site's
-  // cache, else the read as getProperty makes it, filling the site's
-  // cache. Out of line, so the handler keeps only reads that call
-  // nothing.
+  // null. Out of line, so the handler keeps only reads that call
+  // nothing. First what is already known (loadKnown): a function's
+  // inherited or computed name, which the handler does not answer
+  // itself, or what the search found before for another shape that
+  // comes to this site (see Shared loads). A site that has recorded
+  // nothing does not look: a name it reads and never finds, or finds
+  // two prototypes away, would pay for the look every time. Nor does a
+  // site the table has failed too often (SHARED_GIVE_UP): one that sees
+  // more shapes than the table holds. Then the read as getProperty makes
+  // it, filling the site's entry and the table.
   function loadPropSlow(inout this, fi: u32, nameSlot: usize, object: Value, atom: u32): Value {
     const isCellValue = isCell(object) && asCell(object) != 0;
-    const kind = this.siteCache(fi, nameSlot).kind;
-    if (isCellValue && (kind == CACHE_FUNCTION_PROTO || kind == CACHE_FUNCTION_VIRTUAL)) {
-      const cached = this.loadCachedFunctionName(fi, nameSlot, asCell(object));
-      if (!isDeleted(cached)) return cached;
+    const hasEntry = isCellValue && this.siteCache(fi, nameSlot).kind != CACHE_EMPTY;
+    const searches: u8 = hasEntry ? this.siteCache(fi, nameSlot).searches : 0;
+    const asks = hasEntry && searches < SHARED_GIVE_UP;
+    if (asks) {
+      const known = this.loadKnown(fi, nameSlot, asCell(object), atom);
+      if (!isDeleted(known)) return known;
     }
     const found = this.getProperty(object, cellValue(atom));
     if (this.pendingThrow || !isCellValue) return found;
+    let recorded = false;
     if (this.heap.isObject(asCell(object))) {
-      this.populateLoadCache(fi, nameSlot, asCell(object), atom);
+      recorded = this.populateLoadCache(fi, nameSlot, asCell(object), atom);
     } else if (!isUndefined(found)) {
       // Nothing found is nothing to record.
-      this.populateInheritedCache(fi, nameSlot, asCell(object), atom);
+      recorded = this.populateInheritedCache(fi, nameSlot, asCell(object), atom);
     }
+    // A site that has stopped asking the table adds nothing to it.
+    if (recorded && searches < SHARED_GIVE_UP) this.recordShared(fi, nameSlot, asCell(object), atom);
+    // One more read the table did not answer. (Every entry written over
+    // a site's entry carries the count on.)
+    if (asks) this.functions[usize(fi)].caches[nameSlot].searches = searches + 1;
     return found;
   }
 
@@ -891,72 +1124,74 @@ export struct Runtime {
   }
 
   // After a slow-path read on a function: remember where the name was
-  // found (see loadCachedFunctionName). An own data property, in its bag;
+  // found (see functionNameLoad). An own data property, in its bag;
   // else a name it computes; else a data property of Function.prototype,
   // unless its bag holds another prototype. An accessor, a deleted name,
   // and a bag in dictionary mode are not recorded.
-  function populateFunctionCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+  function populateFunctionCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): boolean {
     let cache = emptyCache();
+    cache.searches = this.functions[usize(fi)].caches[nameSlot].searches;
     const bag = this.functionBag(handle);
     if (bag != 0) {
-      if (this.heap.isDictionary(bag)) return;
+      if (this.heap.isDictionary(bag)) return false;
       cache.receiverClass = this.heap.objectClass(bag);
       const own = this.heap.objectFindSlot(bag, atom);
       if (own >= 0) {
-        if (isDeleted(this.heap.slot(bag, u32(own)))) return;
+        if (isDeleted(this.heap.slot(bag, u32(own)))) return false;
         cache.attr = this.heap.attrOf(bag, u32(own));
-        if ((cache.attr & PROP_ACCESSOR) != 0) return;
+        if ((cache.attr & PROP_ACCESSOR) != 0) return false;
         cache.kind = CACHE_BAG;
         cache.slot = u32(own);
         this.functions[usize(fi)].caches[nameSlot] = cache;
-        return;
+        return true;
       }
     }
     if (atom == this.atomPrototype || atom == this.atomLength || atom == this.atomName) {
       cache.kind = CACHE_FUNCTION_VIRTUAL;
       cache.slot = atom == this.atomPrototype ? VIRTUAL_PROTOTYPE : atom == this.atomLength ? VIRTUAL_LENGTH : VIRTUAL_NAME;
       this.functions[usize(fi)].caches[nameSlot] = cache;
-      return;
+      return true;
     }
-    if (bag != 0 && this.heap.objectFindSlot(bag, this.atomFunctionProto) >= 0) return;
+    if (bag != 0 && this.heap.objectFindSlot(bag, this.atomFunctionProto) >= 0) return false;
     const protoBag = this.functionBag(this.functionProto);
-    if (protoBag == 0 || this.heap.isDictionary(protoBag)) return;
+    if (protoBag == 0 || this.heap.isDictionary(protoBag)) return false;
     const inherited = this.heap.objectFindSlot(protoBag, atom);
-    if (inherited < 0 || isDeleted(this.heap.slot(protoBag, u32(inherited)))) return;
+    if (inherited < 0 || isDeleted(this.heap.slot(protoBag, u32(inherited)))) return false;
     cache.attr = this.heap.attrOf(protoBag, u32(inherited));
-    if ((cache.attr & PROP_ACCESSOR) != 0) return;
+    if ((cache.attr & PROP_ACCESSOR) != 0) return false;
     cache.kind = CACHE_FUNCTION_PROTO;
     cache.depth = 1;
     cache.slot = u32(inherited);
     cache.proto1Class = this.heap.objectClass(protoBag);
     this.functions[usize(fi)].caches[nameSlot] = cache;
+    return true;
   }
 
-  function populateInheritedCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+  function populateInheritedCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): boolean {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
-      this.populateFunctionCache(fi, nameSlot, handle, atom);
-      return;
+      return this.populateFunctionCache(fi, nameSlot, handle, atom);
     }
     const proto = this.inheritingProto(handle);
-    if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return;
+    if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return false;
     const inherited = this.heap.objectFindSlot(proto, atom);
-    if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
+    if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return false;
     const inheritedAttr = this.heap.attrOf(proto, u32(inherited));
-    if ((inheritedAttr & PROP_ACCESSOR) != 0) return;
+    if ((inheritedAttr & PROP_ACCESSOR) != 0) return false;
     const protoClass = this.heap.objectClass(proto);
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_INHERITED, attr: inheritedAttr, depth: 1, receiverClass: 0, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_INHERITED, attr: inheritedAttr, depth: 1, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: 0, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    return true;
   }
 
-  function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
-    if (this.heap.isDictionary(handle)) return;
+  function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): boolean {
+    if (this.heap.isDictionary(handle)) return false;
     const receiverClass = this.heap.objectClass(handle);
     const own = this.heap.objectFindSlot(handle, atom);
     if (own >= 0) {
-      if (isDeleted(this.heap.slot(handle, u32(own)))) return;
+      if (isDeleted(this.heap.slot(handle, u32(own)))) return false;
       // An accessor is not cached: a hit reads the slot as data.
       const ownAttr = this.heap.attrOf(handle, u32(own));
-      if ((ownAttr & PROP_ACCESSOR) != 0) return;
+      if ((ownAttr & PROP_ACCESSOR) != 0) return false;
       if (this.functions[usize(fi)].caches[nameSlot].kind == CACHE_OWN && this.functions[usize(fi)].caches[nameSlot].receiverClass != receiverClass) {
         // Another shape at an own-property site: kept beside the first.
         let cache = this.functions[usize(fi)].caches[nameSlot];
@@ -974,19 +1209,20 @@ export struct Runtime {
         if (cache.extraCount < 3) cache.extraCount = cache.extraCount + 1;
         cache.extraNext = position == 2 ? 0 : position + 1;
         this.functions[usize(fi)].caches[nameSlot] = cache;
-        return;
+        return true;
       }
-      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, attr: ownAttr, depth: 0, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
-      return;
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, attr: ownAttr, depth: 0, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: receiverClass, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+      return true;
     }
     const proto = this.heap.objectProto(handle);
-    if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return;
+    if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return false;
     const inherited = this.heap.objectFindSlot(proto, atom);
-    if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return;
+    if (inherited < 0 || isDeleted(this.heap.slot(proto, u32(inherited)))) return false;
     const inheritedAttr = this.heap.attrOf(proto, u32(inherited));
-    if ((inheritedAttr & PROP_ACCESSOR) != 0) return;
+    if ((inheritedAttr & PROP_ACCESSOR) != 0) return false;
     const protoClass = this.heap.objectClass(proto);
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, attr: inheritedAttr, depth: 1, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, attr: inheritedAttr, depth: 1, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    return true;
   }
 
   // A cached store; false for a miss.
@@ -1034,7 +1270,7 @@ export struct Runtime {
     if (classAfter == classBefore || !this.heap.isTransitionOf(classAfter, classBefore, atom)) return;
     const slot = this.heap.objectFindSlot(handle, atom);
     if (slot < 0) return;
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_DEFINE, attr: 0, depth: 0, receiverClass: classBefore, slot: u32(slot), targetClass: classAfter, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_DEFINE, attr: 0, depth: 0, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: classBefore, slot: u32(slot), targetClass: classAfter, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   // After a slow-path store on an object: remember an own writable data
@@ -1049,7 +1285,7 @@ export struct Runtime {
     if (isDeleted(this.heap.slot(handle, u32(own)))) return;
     const classAfter = this.heap.objectClass(handle);
     if (classAfter == classBefore) {
-      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, attr: attr, depth: 0, receiverClass: classAfter, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_OWN, attr: attr, depth: 0, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: classAfter, slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
       return;
     }
     if (!this.heap.isTransitionOf(classAfter, classBefore, atom)) return;
@@ -1074,7 +1310,7 @@ export struct Runtime {
       proto = this.heap.objectProto(proto);
     }
     if (proto != 0) return;
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, attr: 0, depth: depth, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, attr: 0, depth: depth, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
   function functionValue(inout this, index: u32): Value {
@@ -10061,7 +10297,7 @@ export function createRuntime(): Runtime {
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
-    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseState: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, gcPauses: Array<f64>(), resumeDone: false,
+    mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseState: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, sharedLoads: Array<SharedLoad>(), gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
     symbolIterator: undefinedValue(), symbolToPrimitive: undefinedValue(), symbolToStringTag: undefinedValue(), symbolHasInstance: undefinedValue(), symbolSpecies: undefinedValue(), symbolIsConcatSpreadable: undefinedValue(), symbolUnscopables: undefinedValue(),
   });

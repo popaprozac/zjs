@@ -39,12 +39,15 @@ same run, and about 1.9, 1.7, and 1.6 times faster than QuickJS, Hermes,
 and Hermes on precompiled bytecode on their 2026-09-29 figures. Startup is
 3.5 ms against 6.9 and 30.7.
 
-A thirteenth kernel, `borrowed-methods` (2026-11-15: names read off
-functions, and calls made through `call` and `apply`), is not in this
-table. On it the engine is behind every engine measured: 2.43 times V8
-jitless's time, 2.74 times JavaScriptCore's interpreter's, and 1.81 times
-QuickJS's, after the reads were cached (2.78, 3.14, and 2.07 before;
-`bench/gc/results/function-inherited-reads.json`).
+Two kernels added on 2026-11-15 are not in this table:
+`borrowed-methods` (names read off functions, and calls made through
+`call` and `apply`) and `method-shapes` (one name read off receivers of
+several shapes). On both the engine is behind every engine measured: on
+the first 1.50 times V8 jitless's time, 1.76 times JavaScriptCore's
+interpreter's, and 1.16 times QuickJS's; on the second 1.21, 1.35, and
+1.13 (`bench/gc/results/shared-loads.json`). The first was at 2.78,
+3.14, and 2.07 two changes earlier (`function-inherited-reads.json`),
+the second at 2.41, 2.69, and 2.25 one change earlier.
 
 The day before the margins were 1.28 over JavaScriptCore and 1.42 over V8
 (geometric mean of engine time over zjsz time, within one run). Behind on
@@ -58,7 +61,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 
 | Lever | Moves | Size | Cost | Status |
 |---|---|---|---|---|
-| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`) |
+| Object model | properties, polymorphic, arrays, allocation, json | smaller | 2-3 days | attributes in shapes done; header, slot, and site-cache reads unchecked (properties -10%); slots beside the header measured at most -3%, not taken (`docs/heap-layout.md`); a shape a site's entry does not hold answered from a table all sites share (`method-shapes` -50%, `borrowed-methods` -35%) |
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
@@ -130,6 +133,50 @@ instead of two, measured from the other side on 2026-10-15: one more
 level in every slot access cost properties 2.5 to 3.3%, helpers 3.5 to
 4%, closures 2%, polymorphic 1 to 1.6%, so the redesign it needs is not
 worth it for speed alone (`docs/heap-layout.md`).
+One name on several shapes (2026-11-15). A site's entry holds four
+shapes of an own property and one of anything else, and a function's
+sites of one name share the entry. So a method called on two classes'
+objects took the general path at every other call or at every call (82
+cycles a call at one site, against 36 for one class; 149 for two sites,
+against 57), and an array's and a string's method of one name in one
+function at every read (`list.indexOf` beside `text.indexOf`: 730
+cycles, V8 87). What the general path finds it now also keeps in one
+table for the runtime, 512 facts found by shape and name (12 KB, made
+when the first is kept), and it looks there before it searches when the
+site's entry is for another shape. A fact says what a site's entry says
+and is checked against the receiver the same way, so it answers for any
+site and nothing invalidates it. A plain object's class does not say
+what its prototype is (every instance of a class with no fields of its
+own has the root class), so the prototype takes part in where a fact is
+kept. The handler is untouched; the look is in loadProp's general path.
+A site keeps its entry while shapes take turns and gives it up to one
+that has come sixteen times; a site of own properties takes the shape
+beside its others while it has a place; a site that has recorded
+nothing does not look, since a name it never finds would pay for the
+look every time; and a site the table fails 255 times, less four for
+each answer, stops asking. Over eight placements `method-shapes`,
+written for this, is -49.6% and `borrowed-methods` -34.7%,
+long-strings -2.2%, the other eleven kernels within 1.3%, `big-program`
++2.3% (`shared-loads.txt`, `shared-loads.json`). A method on two classes at one site now takes 51
+cycles (V8 66, QuickJS 55) and at two sites 88 (V8 96); the array's and
+the string's `indexOf` 183; a field on six shapes 28, from 58. Costs:
+`big-program` reads one field off 4,000 shapes at one site, more than
+the table serves, and such a read goes from 635 instructions to 660; a
+function's inherited or computed name goes from 236 to 265, answered
+now by the code that answers the table's facts; `__text` +3.1 KB. Tried
+on the way: a place per shape without the prototype (two classes'
+instances evicted each other, and the method call went from 83 cycles
+to 101); a site of own properties sent to search for a shape the table
+had, so that the search would add it to the site (splay +3.9% in
+instructions: its loads and stores of `left` and `right` share entries,
+a store writes over the entry, and each load after it searched for and
+kept a fact the table had); stopping after 64 failures (a site's shapes
+all fail once before any is answered, so a site of 150 would stop in
+its first pass). Left, in the same file: a name two prototypes away (a
+base class's method on a subclass's object, 62 cycles against 36 for
+one prototype; V8 41) and a name found nowhere (113 cycles; V8 5) are
+searched for on every read, and the search itself walks the class
+chain.
 
 **Allocator and collector.** A cell is a header pushed into a table and
 slots pushed into an arena one at a time; every string is its own
@@ -659,13 +706,17 @@ read 10 instructions, where this way the handler's own reads are 3 to 4
 shorter. A read of these names takes 196 to 296 instructions. A kernel
 written for them, `borrowed-methods`, is -15.1% over eight placements,
 closures -2.2%, the other eleven within 1% (`function-inherited-reads.txt`,
-`function-inherited-reads.json`). `__text` grows 704 bytes. Left: that
-kernel still takes 7,525 instructions a pass, about 1,900 of them its
-eight reads on functions and the rest mostly five calls through `call`
-and `apply`; a read on a function that finds nothing (`type.defaultProps`)
-walks to Object.prototype every time, 1,010 instructions; resuming
-copies the registers back one checked store at a time; and a generator
-object still keeps its record in a second cell.
+`function-inherited-reads.json`). `__text` grows 704 bytes. That kernel
+took 7,525 instructions a pass, 1,777 of them `Object.prototype` and
+`Array.prototype` evicting each other from the one entry a function has
+for a name, which the shared table ended (Object model, above): 6,200
+now. Left: `apply` builds a list and enters a second interpreter loop
+(1,612 instructions against 140 for the call written out), array
+`indexOf` takes 99 cycles on two elements against V8's 24, and `bind`
+is 6 times V8's; a read on a function that finds nothing
+(`type.defaultProps`) walks to Object.prototype every time, 1,019
+instructions; resuming copies the registers back one checked store at
+a time; and a generator object still keeps its record in a second cell.
 
 **Precompiled bytecode.** Hermes compiles at the application's build
 time and ships bytecode, so it pays no parse on the device and can
@@ -744,6 +795,12 @@ profile through `z build` (or a build step compiling the emitted C).
 
 ## Tried and not kept
 
+- Second chances for a shape a site does not hold, three ways that
+  lost (2026-11-15, the Object model passage on one name and several
+  shapes): keyed without the prototype, an own-property site sent to
+  search, and giving up after 64 failures. Before them, the reads on
+  functions inlined in the loadProp handler: every cached read 10
+  instructions longer (103 to 113).
 - Testing for a cell before the write barrier's call (2026-11-15,
   `bench/gc/results/promise-suspend.json`, build `cells`). A number
   stored into an old cell calls the barrier's slow half only to return.

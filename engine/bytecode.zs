@@ -833,6 +833,10 @@ export struct PropertyCache {
   // The attributes of the property the first entry found, fixed by its
   // class: a hit needs no attribute check.
   attr: u8;
+  // Reads at the site that went to the runtime's shared table and were
+  // not answered there, less four for each that was: a site of more
+  // shapes than the table holds stops asking (SHARED_GIVE_UP).
+  searches: u8;
   receiverClass: u32;
   slot: u32;
   targetClass: u32;
@@ -843,6 +847,9 @@ export struct PropertyCache {
   // A read site that sees own properties on several shapes keeps up to
   // three more (class, slot) pairs beside the first, replaced in turn
   // once full: a polymorphic site stops missing.
+  // For an entry of another kind, extraNext counts the reads the
+  // runtime's shared table has answered for the site since the entry
+  // was written.
   extraCount: u8;
   extraNext: u8;
   extraClass0: u32;
@@ -854,7 +861,7 @@ export struct PropertyCache {
 }
 
 export function emptyCache(): PropertyCache {
-  return PropertyCache({ kind: CACHE_EMPTY, attr: 0, depth: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+  return PropertyCache({ kind: CACHE_EMPTY, attr: 0, depth: 0, searches: 0, receiverClass: 0, slot: 0, targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
 }
 
 // What a direct eval call sees: the scopes around it as the compiler saw

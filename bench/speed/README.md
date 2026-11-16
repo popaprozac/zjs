@@ -1,7 +1,7 @@
 # Jitless speed
 
 The Z engine against the jit-less engines an embedder would otherwise
-choose, on thirteen small kernels. The engine's goal is to be the fastest
+choose, on fourteen small kernels. The engine's goal is to be the fastest
 engine that runs without a JIT, which is what every iOS app gets; these
 kernels are how that is tracked.
 
@@ -43,6 +43,11 @@ loop -- arithmetic helpers, a predicate, a property accessor -- which
 through them, as library code does: a builtin's prototype method borrowed
 with `call`, a function called with `call` and `apply`, a function's
 `length` and `name`. Recorded runs before that date have twelve kernels.
+`method-shapes` (added the same day) reads one name off receivers of
+several shapes: a method on objects of two classes and of four, an
+array's and a string's method of one name in one function, a field on
+six shapes. `polymorphic` reads a field off four shapes, which is what
+one site keeps.
 
 The `vs zjsz` row is the geometric mean over the kernels of each engine's
 time divided by the Z engine's: below 1 means that engine is faster.

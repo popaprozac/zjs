@@ -1,0 +1,34 @@
+one site: circle,square,circle,square,undefined,circle,square,circle,square,undefined
+two sites: circle+square square+circle circle+circle square+square
+one changed: circle,square changed,circle,square changed circle+square changed
+one an accessor: circle through a getter,square changed,circle through a getter,square changed circle through a getter+square changed
+data again: circle again,square changed,circle again,square changed
+an own one: this circle's own,square changed,circle again,this circle's own,square changed,circle again
+one deleted: circle again,undefined,circle again,undefined
+another prototype: circle again,circle again,square back,circle again,circle again,square back
+and back: circle again,square back,circle again,square back
+turns: first second second second first first
+taking turns: second changed first changed second changed first changed second changed first changed
+another site: first changed second changed first changed second changed
+after a change: second through a getter second through a getter first changed first changed second through a getter
+after a delete: undefined undefined second through a getter second through a getter
+array and string: 1 2 2 1 8 8 8 8
+the array's replaced: replaced 2 replaced 2
+the string's an accessor: 1 string getter 1 string getter
+an array with its own: this array's own 1 1 this array's own 2
+prototypes: true,true,true,true,true,true,true,true true true
+call: call,call,an object's,undefined,undefined,call,call,an object's,call
+statics: left right left right
+statics changed: left again right changed left again right changed
+seven shapes: 168 1,2,3,4,5,6,7
+at another site: 1 2 2 4 4 7 2 1 4
+after changes: 1/1,2/2,30/30,4/4,undefined/undefined,60/60,7/7
+read and written: 1,11,21,2,12,22,3,13,23
+many: 1964000 70 19570
+many changed: 2056 NaN 3570 2056
+fifty names on seven shapes: 4234300 60245 235
+after changes: NaN 22221 NaN
+one field on many shapes: 89400 149 3
+three hundred shapes: 179400 0 299
+after changes: -10 -9 undefined 12 undefined -10
+the first sites still: circle again,square back 1 2 2 second through a getter

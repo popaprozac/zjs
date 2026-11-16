@@ -546,7 +546,13 @@ receiver's hidden class and where the property was found -- an own
 slot, a slot on the direct prototype, or the class transition that adds
 it, with the prototype chain (at most two objects, then null) recorded
 so a later setter is noticed. Validation is by class, so nothing is
-invalidated and a reused handle cannot alias. Constructing two million
+invalidated and a reused handle cannot alias. An entry holds four
+shapes of an own property and one of anything else, and a function's
+sites of one name share it; for a shape the entry does not hold, the
+general path looks in a table of 512 facts the whole runtime shares,
+found by shape and name and checked the same way, before it searches
+(a method called on two classes' objects, an array's and a string's
+method of one name). Constructing two million
 objects went from 0.46 s to 0.23 s, ahead of the reference's 0.24; a
 property-read loop from 0.59 to 0.34 (reference 0.19). The remaining
 gap is per-instruction overhead -- about thirty instructions of loop,
