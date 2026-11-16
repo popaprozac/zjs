@@ -1,7 +1,7 @@
 # Jitless speed
 
 The Z engine against the jit-less engines an embedder would otherwise
-choose, on fifteen small kernels. The engine's goal is to be the fastest
+choose, on sixteen small kernels. The engine's goal is to be the fastest
 engine that runs without a JIT, which is what every iOS app gets; these
 kernels are how that is tracked.
 
@@ -52,6 +52,10 @@ one site keeps.
 object's first prototype or nowhere: a base class's method on a
 subclass's object, a method two classes up, `hasOwnProperty` on an
 instance, and options an object does not have.
+`array-methods` (added the same day) calls the array methods that take
+no callback, on 64 numbers and 64 strings: `indexOf`, `lastIndexOf`,
+`includes`, `slice`, `concat`, `reverse`. `arrays` has the ones that
+take one.
 
 The `vs zjsz` row is the geometric mean over the kernels of each engine's
 time divided by the Z engine's: below 1 means that engine is faster.

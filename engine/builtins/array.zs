@@ -72,6 +72,14 @@ function ownElement(in runtime: Runtime, object: Value, index: f64): Value {
   return runtime.heap.dataElement(asCell(object), u32(index));
 }
 
+// The array a walk over `object` may read in place, 0 for anything else:
+// each element then comes from heap.dataElement, and a hole, an accessor,
+// or an index past the end reads as deleted and takes the general path.
+// Whether a cell is an array cannot change during a walk.
+function arrayInPlace(in runtime: Runtime, object: Value, length: f64): u32 {
+  return isArrayValue(in runtime, object) && length <= 4294967295.0 ? asCell(object) : u32(0);
+}
+
 // Set(O, P, V, true).
 function setKey(inout runtime: Runtime, object: Value, key: Value, value: Value): boolean {
   const done = runtime.setProperty(object, key, value);
@@ -391,8 +399,23 @@ function arrayReverse(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   const middle = truncateDouble(length / 2.0);
   let lower = 0.0;
   let ok = true;
+  const array = arrayInPlace(in runtime, object, length);
   while (ok && lower != middle) {
     const upper = length - lower - 1.0;
+    // An array with no flag set has only writable data elements, so two
+    // that are present are swapped in place: the two assignments. (Not
+    // heap.writableElement: the element store's handler is its one
+    // caller and has it inlined.)
+    if (array != 0 && runtime.heap.flagsOf(array) == 0) {
+      const lowerHeld = runtime.heap.dataElement(array, u32(lower));
+      const upperHeld = runtime.heap.dataElement(array, u32(upper));
+      if (!isDeleted(lowerHeld) && !isDeleted(upperHeld)) {
+        runtime.heap.setSlot(array, u32(lower), upperHeld);
+        runtime.heap.setSlot(array, u32(upper), lowerHeld);
+        lower = lower + 1.0;
+        continue;
+      }
+    }
     const lowerExists = hasIndex(inout runtime, object, lower);
     if (runtime.pendingThrow) { ok = false; break; }
     let lowerValue = undefinedValue();
@@ -508,13 +531,25 @@ function arrayIndexOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   }
   const target = runtime.argument(argsBase, argc, 0);
   let found = -1.0;
+  const array = arrayInPlace(in runtime, object, length);
   while (found < 0.0 && k < length) {
-    const present = hasIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) break;
-    if (present) {
-      const element = getIndex(inout runtime, object, k);
+    const held = array != 0 ? runtime.heap.dataElement(array, u32(k)) : deletedValue();
+    if (!isDeleted(held)) {
+      // Two int32s are compared here: a call for each element is most
+      // of what a search of numbers costs.
+      if (isInt32(held) && isInt32(target)) {
+        if (asInt32(held) == asInt32(target)) found = k;
+      } else if (runtime.strictEquals(held, target)) {
+        found = k;
+      }
+    } else {
+      const present = hasIndex(inout runtime, object, k);
       if (runtime.pendingThrow) break;
-      if (runtime.strictEquals(element, target)) found = k;
+      if (present) {
+        const element = getIndex(inout runtime, object, k);
+        if (runtime.pendingThrow) break;
+        if (runtime.strictEquals(element, target)) found = k;
+      }
     }
     k = k + 1.0;
   }
@@ -542,13 +577,25 @@ function arrayLastIndexOf(inout runtime: Runtime, thisValue: Value, argsBase: u3
   }
   const target = runtime.argument(argsBase, argc, 0);
   let found = -1.0;
+  const array = arrayInPlace(in runtime, object, length);
   while (found < 0.0 && k >= 0.0) {
-    const present = hasIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) break;
-    if (present) {
-      const element = getIndex(inout runtime, object, k);
+    const held = array != 0 ? runtime.heap.dataElement(array, u32(k)) : deletedValue();
+    if (!isDeleted(held)) {
+      // Two int32s are compared here: a call for each element is most
+      // of what a search of numbers costs.
+      if (isInt32(held) && isInt32(target)) {
+        if (asInt32(held) == asInt32(target)) found = k;
+      } else if (runtime.strictEquals(held, target)) {
+        found = k;
+      }
+    } else {
+      const present = hasIndex(inout runtime, object, k);
       if (runtime.pendingThrow) break;
-      if (runtime.strictEquals(element, target)) found = k;
+      if (present) {
+        const element = getIndex(inout runtime, object, k);
+        if (runtime.pendingThrow) break;
+        if (runtime.strictEquals(element, target)) found = k;
+      }
     }
     k = k - 1.0;
   }
@@ -575,10 +622,18 @@ function arrayIncludes(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   }
   const target = runtime.argument(argsBase, argc, 0);
   let found = false;
+  const array = arrayInPlace(in runtime, object, length);
   while (!found && k < length) {
-    const element = getIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) break;
-    if (runtime.sameValueZero(element, target)) found = true;
+    let element = array != 0 ? runtime.heap.dataElement(array, u32(k)) : deletedValue();
+    if (isDeleted(element)) {
+      element = getIndex(inout runtime, object, k);
+      if (runtime.pendingThrow) break;
+    }
+    if (isInt32(element) && isInt32(target)) {
+      if (asInt32(element) == asInt32(target)) found = true;
+    } else if (runtime.sameValueZero(element, target)) {
+      found = true;
+    }
     k = k + 1.0;
   }
   runtime.popTempRoot();
@@ -687,9 +742,7 @@ function walkArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   let to = 0.0;
   let k = 0.0;
   let stop = false;
-  // An array's elements are read in place (a hole or an accessor takes
-  // the general path); whether it is one cannot change during the walk.
-  const array: u32 = isArrayValue(in runtime, object) && length <= 4294967295.0 ? asCell(object) : u32(0);
+  const array = arrayInPlace(in runtime, object, length);
   while (!stop && k < length) {
     let element = array != 0 ? runtime.heap.dataElement(array, u32(k)) : deletedValue();
     let present = !isDeleted(element);
@@ -848,13 +901,19 @@ function arraySlice(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   runtime.pushTempRoot(result);
   let n = 0.0;
   let ok = true;
+  const array = arrayInPlace(in runtime, object, length);
   while (ok && k < end) {
-    const present = hasIndex(inout runtime, object, k);
-    if (runtime.pendingThrow) { ok = false; break; }
-    if (present) {
-      const element = getIndex(inout runtime, object, k);
+    const held = array != 0 ? runtime.heap.dataElement(array, u32(k)) : deletedValue();
+    if (!isDeleted(held)) {
+      ok = createIndex(inout runtime, result, n, held);
+    } else {
+      const present = hasIndex(inout runtime, object, k);
       if (runtime.pendingThrow) { ok = false; break; }
-      ok = createIndex(inout runtime, result, n, element);
+      if (present) {
+        const element = getIndex(inout runtime, object, k);
+        if (runtime.pendingThrow) { ok = false; break; }
+        ok = createIndex(inout runtime, result, n, element);
+      }
     }
     k = k + 1.0;
     n = n + 1.0;
@@ -995,13 +1054,19 @@ function arrayConcat(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
         break;
       }
       let k = 0.0;
+      const array = arrayInPlace(in runtime, item, length);
       while (ok && k < length) {
-        const present = hasIndex(inout runtime, item, k);
-        if (runtime.pendingThrow) { ok = false; break; }
-        if (present) {
-          const element = getIndex(inout runtime, item, k);
+        const held = array != 0 ? runtime.heap.dataElement(array, u32(k)) : deletedValue();
+        if (!isDeleted(held)) {
+          ok = createIndex(inout runtime, result, n, held);
+        } else {
+          const present = hasIndex(inout runtime, item, k);
           if (runtime.pendingThrow) { ok = false; break; }
-          ok = createIndex(inout runtime, result, n, element);
+          if (present) {
+            const element = getIndex(inout runtime, item, k);
+            if (runtime.pendingThrow) { ok = false; break; }
+            ok = createIndex(inout runtime, result, n, element);
+          }
         }
         n = n + 1.0;
         k = k + 1.0;

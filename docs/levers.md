@@ -39,18 +39,20 @@ same run, and about 1.9, 1.7, and 1.6 times faster than QuickJS, Hermes,
 and Hermes on precompiled bytecode on their 2026-09-29 figures. Startup is
 3.5 ms against 6.9 and 30.7.
 
-Three kernels added on 2026-11-15 are not in this table:
+Four kernels added on 2026-11-15 are not in this table:
 `borrowed-methods` (names read off functions, and calls made through
 `call` and `apply`), `method-shapes` (one name read off receivers of
-several shapes), and `prototype-chains` (names found past an object's
-first prototype, or nowhere). The engine is behind V8 jitless and
-JavaScriptCore's interpreter on all three, and behind QuickJS on the
-first two: on `borrowed-methods` 1.52 times V8's time, 1.72 times
-JavaScriptCore's, and 1.13 times QuickJS's; on `method-shapes` 1.33,
-1.36, and 1.16; on `prototype-chains` 1.26, 1.03, and 0.92
-(`bench/gc/results/prototype-chains.json`). When each was added the
-figures were 2.78, 3.14, and 2.07 (`function-inherited-reads.json`),
-2.41, 2.69, and 2.25 (`shared-loads.json`), and 2.07, 1.69, and 1.51.
+several shapes), `prototype-chains` (names found past an object's first
+prototype, or nowhere), and `array-methods` (the array methods that
+take no callback, on 64 elements). The engine is behind V8 jitless and
+JavaScriptCore's interpreter on all four, far behind on the last: on
+`borrowed-methods` 1.41 times V8's time, 1.60 times JavaScriptCore's,
+and 1.06 times QuickJS's; on `method-shapes` 1.15, 1.18, and 1.00; on
+`prototype-chains` 1.23, 1.04, and 0.92; on `array-methods` 4.72, 4.36,
+and 0.41 (`bench/gc/results/array-methods.json`). When each was added
+the figures were 2.78, 3.14, and 2.07 (`function-inherited-reads.json`),
+2.41, 2.69, and 2.25 (`shared-loads.json`), 2.07, 1.69, and 1.51
+(`prototype-chains.json`), and 11.64, 10.76, and 1.01.
 
 The day before the margins were 1.28 over JavaScriptCore and 1.42 over V8
 (geometric mean of engine time over zjsz time, within one run). Behind on
@@ -68,7 +70,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
-| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third, await-fresh -19% over a fourth); names read off functions cached (`borrowed-methods` -15%) |
+| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third, await-fresh -19% over a fourth); names read off functions cached (`borrowed-methods` -15%); the array methods without a callback read elements in place (`array-methods` -58%) |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's calls done; a core context running bytecode links no front end, 393 KB of `__TEXT` against 573 KB (`docs/bytecode-files.md`); load time and the compiler's spare time next |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -754,6 +756,41 @@ is 6 times V8's; a read on a function that finds nothing
 (`type.defaultProps`) walks to Object.prototype every time, 1,023
 instructions; resuming copies the registers back one checked store at
 a time; and a generator object still keeps its record in a second cell.
+
+Array methods that take no callback (2026-11-15). A call to a built-in
+costs what it should (`Math.abs` 37 cycles a pass, V8 31), so
+`list.indexOf` at four times V8 was not the call. `indexOf`,
+`lastIndexOf`, `includes`, `slice`, `concat`, and `reverse` took the
+specification's steps for each element through the general property
+paths: is the index there, read it, compare or define it, each step
+converting the index to a key. 269 instructions an element in `indexOf`,
+385 in `slice`, 411 in `reverse`; on 64 elements 8 to 25 times V8,
+where the methods that take a callback, which already read in place,
+are level with it. The six now read as those do: a present data
+element comes from the heap, and a hole, an accessor, or a receiver
+that is no array takes the steps as before, index by index, so an
+accessor that changes the array as it runs is seen. `reverse` swaps in
+place two present elements of an array with no flag set. Two int32s
+are compared in the loop without a call. Over eight placements
+`array-methods`, written for this, is -58.1%, `method-shapes` -14.2%,
+`borrowed-methods` -6.5%, the other thirteen kernels within 1.0%
+(`array-methods.txt`, `array-methods.json`). On 64 numbers `indexOf`
+goes from 2,191 cycles to 455 (V8 72), `reverse` from 3,300 to 440 (V8
+120), `slice` from 3,470 to 1,790 (V8 150), `concat` of two from 7,080
+to 3,580; on three, `indexOf` from 134 to 51 (V8 32). `__text` +1.1 KB.
+One cost found by the full run and removed: `reverse` had called
+`heap.writableElement`, which the element store's handler had inlined
+as its one caller, and fifo paid a call on every store (+0.9% in
+instructions). Left, from the same profile: a search is still a call
+to read each element and 48 instructions an element, 6 times V8 on 64;
+every `slice`, `map`, `filter`, and `concat` of an ordinary array asks
+for its species through the general paths first, about 600 cycles
+(`list.slice(1)` is 757 a pass, V8 71), which is what the promise
+species change removed for promises; spread and `Array.from` of an
+array run the iterator protocol for each element, 47 and 32 times V8;
+`Object.keys` is 28 times V8 and over half of it is allocating and
+freeing lists; `class X extends Array` makes instances that are not
+instances of X.
 
 **Precompiled bytecode.** Hermes compiles at the application's build
 time and ships bytecode, so it pays no parse on the device and can
