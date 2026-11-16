@@ -29,6 +29,22 @@ map arguments: a0102,b1102
 map throws: stop at 3 made 3 closed 1
 map throws, return throws: from map closed 1
 not callable: TypeError
+Symbol.iterator undefined or null: a,b a,b
+Symbol.iterator not callable: TypeError TypeError TypeError TypeError TypeError
+not callable, before the receiver is constructed: TypeError 0
+a define that throws, iterable: TypeError calls 2 closed 1
+a define that throws, mapped: TypeError calls 2 closed 1 map 0,map 1
+a define that throws, array-like: TypeError map 0,map 1
+a define that throws, return throws: TypeError
+order, iterable: construct 0, iterator, step 0, map 0, step 1, map 1, step 2, length=2 -> 0,1 0 10
+order, array-like: construct 1, get 0, map 0, get 1, map 1, length=2 -> 0,1
+a define that throws, array: TypeError map 0,map 1
+order, array: construct 0, map 0, map 1, length=2 -> 0,1 50 60
+frozen: TypeError calls 1 closed 1
+a define that throws, array, with a return: TypeError closed, next would give 30
+read-only length: TypeError calls 3 closed 0
+subclass: true 3 2,3,4 x,y 0
+not a constructor: true a,b 1
 Symbol.iterator reads, Array.from: 1
 Symbol.iterator reads, Array.from mapped: 1
 Symbol.iterator reads, for-of: 1

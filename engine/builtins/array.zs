@@ -97,7 +97,7 @@ function setIndex(inout runtime: Runtime, object: Value, index: f64, value: Valu
   return setKey(inout runtime, object, indexKey(index), value);
 }
 
-function setLength(inout runtime: Runtime, object: Value, length: f64): boolean {
+export function setLength(inout runtime: Runtime, object: Value, length: f64): boolean {
   const atomLength = runtime.atomLength;
   return setKey(inout runtime, object, cellValue(atomLength), doubleValue(length));
 }
@@ -116,7 +116,7 @@ function deleteIndex(inout runtime: Runtime, object: Value, index: f64): boolean
 }
 
 // CreateDataPropertyOrThrow.
-function createIndex(inout runtime: Runtime, object: Value, index: f64, value: Value): boolean {
+export function createIndex(inout runtime: Runtime, object: Value, index: f64, value: Value): boolean {
   if (isCell(object) && runtime.heap.isArray(asCell(object)) && index < MAX_ARRAY_LENGTH && runtime.heap.flagsOf(asCell(object)) == 0) {
     runtime.heap.arraySet(asCell(object), u32(index), value);
     return true;
@@ -269,8 +269,8 @@ export function constructReceiver(inout runtime: Runtime, receiver: Value, lengt
   return runtime.constructValue(receiver, move args, receiver);
 }
 
-// What Array.from and Array.of return once the plain array `source`
-// holds the elements: `source` itself for a plain receiver (no target),
+// What Array.of returns once the plain array `source` holds the
+// elements: `source` itself for a plain receiver (no target),
 // else the target, given each element by CreateDataPropertyOrThrow and
 // then `length` by Set. Undefined with a throw pending.
 export function fillReceiver(inout runtime: Runtime, target: Value, source: u32): Value {

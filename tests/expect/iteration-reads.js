@@ -4,6 +4,8 @@
 // as that value is produced.
 // A string's iterator reads a `next` of its own.
 // Closing an iterator reads its `return`.
+// Array.from reads Symbol.iterator as a method, and defines each value on
+// its result as that value is produced.
 
 // An iterable that counts each read of Symbol.iterator and of `next`,
 // each call of `next`, and each call of `return`.
@@ -90,6 +92,62 @@ endless[Symbol.iterator] = function () {
 };
 try { Array.from(endless, function (x) { throw new RangeError("from map"); }); } catch (e) { console.log("map throws, return throws:", e.message, "closed", endless.closed); }
 console.log("not callable:", (function () { try { Array.from([1], 5); } catch (e) { return e.constructor.name; } })());
+
+// --- Array.from: Symbol.iterator is read as a method ---
+function withIterator(value) { var o = { length: 2, 0: "a", 1: "b" }; o[Symbol.iterator] = value; return o; }
+console.log("Symbol.iterator undefined or null:", attempt(function () { return Array.from(withIterator(undefined)); }), attempt(function () { return Array.from(withIterator(null)); }));
+console.log("Symbol.iterator not callable:", attempt(function () { return Array.from(withIterator(5)); }), attempt(function () { return Array.from(withIterator(0)); }), attempt(function () { return Array.from(withIterator("")); }), attempt(function () { return Array.from(withIterator(false)); }), attempt(function () { return Array.from(withIterator({})); }));
+var builds = 0;
+function Counting() { builds++; return []; }
+console.log("not callable, before the receiver is constructed:", attempt(function () { return Array.from.call(Counting, withIterator(5)); }), builds);
+
+// --- Array.from on a receiver other than Array: each value is defined
+// on the receiver's object as it is produced ---
+var events = [];
+function Fixed() { return Object.defineProperty({}, "1", { value: "fixed", writable: false, configurable: false }); }
+c = counted([10, 20, 30]);
+console.log("a define that throws, iterable:", attempt(function () { return Array.from.call(Fixed, c); }), "calls", c.log.calls, "closed", c.log.closed);
+c = counted([10, 20, 30]);
+console.log("a define that throws, mapped:", attempt(function () { return Array.from.call(Fixed, c, function (x, i) { events.push("map " + i); return x; }); }), "calls", c.log.calls, "closed", c.log.closed, events.join());
+events = [];
+console.log("a define that throws, array-like:", attempt(function () { return Array.from.call(Fixed, { length: 3, 0: "a", 1: "b", 2: "c" }, function (x, i) { events.push("map " + i); return x; }); }), events.join());
+// The close's own throw does not replace the define's, and an endless
+// source is no obstacle here either.
+endless = { [Symbol.iterator]: function () { return { next: function () { return { value: 1, done: false }; }, return: function () { throw new EvalError("from return"); } }; } };
+console.log("a define that throws, return throws:", attempt(function () { return Array.from.call(Fixed, endless); }));
+// The order: construct, then for each value step, map, define; `length` last.
+events = [];
+function Traced() {
+  events.push("construct " + arguments.length);
+  return Object.defineProperty({}, "length", { set: function (v) { events.push("length=" + v); }, get: function () { return 0; }, configurable: true });
+}
+var stepped = { [Symbol.iterator]: function () { events.push("iterator"); var i = 0; return { next: function () { events.push("step " + i); return i < 2 ? { value: i++, done: false } : { done: true }; } }; } };
+var filled = Array.from.call(Traced, stepped, function (x, i) { events.push("map " + i); return x * 10; });
+console.log("order, iterable:", events.join(", "), "->", Object.keys(filled).join(), filled[0], filled[1]);
+events = [];
+filled = Array.from.call(Traced, { length: 2, get 0() { events.push("get 0"); return "a"; }, get 1() { events.push("get 1"); return "b"; } }, function (x, i) { events.push("map " + i); return x; });
+console.log("order, array-like:", events.join(", "), "->", Object.keys(filled).join());
+// The same from an array, which is read without making its iterator.
+events = [];
+console.log("a define that throws, array:", attempt(function () { return Array.from.call(Fixed, [10, 20, 30], function (x, i) { events.push("map " + i); return x; }); }), events.join());
+events = [];
+filled = Array.from.call(Traced, [5, 6], function (x, i) { events.push("map " + i); return x * 10; });
+console.log("order, array:", events.join(", "), "->", Object.keys(filled).join(), filled[0], filled[1]);
+// A frozen receiver's object: the first define throws, after one step.
+c = counted([1, 2, 3]);
+console.log("frozen:", attempt(function () { return Array.from.call(function () { return Object.freeze({}); }, c); }), "calls", c.log.calls, "closed", c.log.closed);
+Object.getPrototypeOf([][Symbol.iterator]()).return = function () { events.push("closed, next would give " + this.next().value); return {}; };
+events = [];
+console.log("a define that throws, array, with a return:", attempt(function () { return Array.from.call(Fixed, [10, 20, 30]); }), events.join());
+delete Object.getPrototypeOf([][Symbol.iterator]()).return;
+// A length that cannot be set throws once every value is defined.
+function ReadOnlyLength() { return Object.defineProperty({}, "length", { value: 0, writable: false }); }
+c = counted([1, 2]);
+console.log("read-only length:", attempt(function () { return Array.from.call(ReadOnlyLength, c); }), "calls", c.log.calls, "closed", c.log.closed);
+// A subclass, and receivers that are not constructors.
+stacked = Stack.from(counted([1, 2, 3]), function (x) { return x + 1; });
+console.log("subclass:", stacked instanceof Stack, stacked.length, stacked.join(), Stack.from({ length: 2, 0: "x", 1: "y" }).join(), Stack.from([]).length);
+console.log("not a constructor:", Array.isArray(Array.from.call({}, [1, 2])), Array.from.call(undefined, "ab").join(), Array.from.call(Math.max, [3]).length);
 
 // --- Symbol.iterator on Array.prototype, as a getter ---
 var reads = 0, values = Array.prototype[Symbol.iterator];
