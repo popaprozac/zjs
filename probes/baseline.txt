@@ -1,4 +1,4 @@
-# probe status at z-lang e50e06ea (clean). Written by run.sh --record.
+# probe status at z-lang c9d1bf09 (clean). Written by run.sh --record.
 array-append-repeated LANDED
 array-append-slice LANDED
 array-capacity-read LANDED
@@ -29,6 +29,7 @@ self-parameter-name LANDED
 shareable-once-root LANDED
 string-from-bytes LANDED
 string-to-native COMPILER-REJECTED
+struct-slice-range LANDED
 ternary-in-arithmetic LANDED
 truncating-conversion LANDED
 unchecked-index LANDED

@@ -2302,6 +2302,34 @@ Stage 0 build's (55,610 tests). The eight commits between the old pin and
 the fix change nothing Stage 0 emits for the engine: its `zjsz` is the
 same file, byte for byte, at both pins.
 
+## G64 — Stage 0: a range of an array of structs fails in clang
+
+**Status:** `consumer-verified` — z-lang `c9d1bf09` (the pin; merged to
+z-lang `main` as `47884d1b`, the same tree) · **Size:** small ·
+**Confirmed:** Stage 0 at `f9ef0733`; the native compiler builds it ·
+**Blocked:** the Stage 0 build of the engine, from the bulk save of
+a generator's registers, until the pin moved
+
+```
+error: arithmetic on a pointer to an incomplete type 'Z_Pair'
+  return (Z_Slice_Pair){ .data = items.data == NULL ? NULL : items.data + start, ... };
+```
+
+`values.slice(start, end)` passed where a `Slice` is expected is a
+call-scoped range. For an array of structs Stage 0 checked it clean and
+emitted C that clang refused: each range helper was written right after
+the Slice structs, where a struct or enum element type is only
+forward-declared, and the helper adds `start` to a pointer to it. A
+builtin element type is complete there, so ranges of integers and bytes,
+the only ones the engine had used, worked. Implemented: Stage 0 emits the
+helpers after the aggregate definitions, as the native compiler does.
+z-lang's `slice-range` fixture, built and run by both compilers, gains a
+range of an array of structs; probe `struct-slice-range`.
+
+At the pin (2026-11-15): the engine at the commit before this use is the
+same `zjsz`, byte for byte, built by Stage 0 at both pins, and the native
+compiler bootstrapped at the new pin is the same file as at the old one.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic
