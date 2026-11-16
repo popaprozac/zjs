@@ -53,3 +53,13 @@ next getter throws, no step: next getter
 next getter throws, Array.from: next getter
 for await, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 6
 async yield*, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,2,3
+for await, async iterable: Symbol.asyncIterator 1 next 1 calls 4 closed 0 arguments 0000 -> 6
+for await, break: Symbol.asyncIterator 1 next 1 calls 1 closed 1 arguments 0 -> 1
+async yield*, async iterable: Symbol.asyncIterator 1 next 1 calls 4 closed 0 arguments 1111 -> 1,2,3
+async next replaced mid-loop: 0,1,2
+async next replaced mid-delegation: 0,1,2
+async order: get @@asyncIterator, call @@asyncIterator, get next, call next, body 0, call next, body 1, call next
+async, no next, for await: TypeError: not a function
+async, no next, yield*: TypeError: not a function
+async, next getter throws, for await: RangeError: next getter
+async, next getter throws, yield*: RangeError: next getter

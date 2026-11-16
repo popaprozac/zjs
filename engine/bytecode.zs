@@ -199,7 +199,7 @@ export enum Op {
   iterThrowWith,   // a = result, b = iterator, c = value: iterator.throw(value); without one, closes the iterator and throws a TypeError.
   iterReturnWith,  // a = result, b = iterator, c = value: iterator.return(value); without one, a done result holding the value.
   jmpIfNotReturn,  // bc = offset: jumps unless the generator's last resumption was a return (after a plain yield: fall through into the return).
-  iterCallNext,    // a = result, b = iterator, c = value: iterator.next(value) as returned, unchecked (an async delegation awaits it first).
+  iterCallNext,    // a = result, b = iterator, c = value, d = the iterator's `next`, read when the iterator was got: next.call(iterator, value) as returned, unchecked (an async delegation awaits it first).
   iterCallThrow,   // a = result, b = iterator, c = value: iterator.throw(value) as returned, or the deleted marker when there is no such method.
   iterCallReturn,  // a = result, b = iterator, c = value: iterator.return(value) as returned, or the deleted marker when there is no such method.
   isAbsent,        // a = dst, b = src: whether src holds the deleted marker.
@@ -791,7 +791,7 @@ export function opsByCode(): Array<Op> {
 // operands, and what each does. Moves whenever any of them changes, so a
 // file from another engine is refused rather than misread; the test
 // below pins it beside the opcode count, which a new opcode changes.
-export const INSTRUCTION_SET_VERSION: u32 = 4;
+export const INSTRUCTION_SET_VERSION: u32 = 5;
 
 // One property access site's inline cache, kept per property name of a
 // function: the receiver's hidden class and where the property was
@@ -993,7 +993,7 @@ test "the instruction set version moves with the opcodes" {
   // A new opcode lands here first: move INSTRUCTION_SET_VERSION with it.
   const ops = opsByCode();
   expect(ops.length).toEqual(205);
-  expect(INSTRUCTION_SET_VERSION).toEqual(4);
+  expect(INSTRUCTION_SET_VERSION).toEqual(5);
   let code: usize = 0;
   while (code < ops.length) {
     expect(opCode(ops[code])).toEqual(i32(code));

@@ -2448,16 +2448,26 @@ export struct Compiler {
     return this.compileExpr(in parser, inout runtime, node);
   }
 
-  // One step of an async iterator: `result = await iterator.next(sent)`
-  // (no argument when `withArgument` is false).
-  function emitAsyncIteratorStep(inout this, inout runtime: Runtime, iterator: u8, sent: u8, withArgument: boolean, result: u8): void {
+  // An async iterator's `next`, read once, when the iterator is got,
+  // into a register that holds it for every step.
+  function emitAsyncIteratorNext(inout this, inout runtime: Runtime, iterator: u8): u8 {
+    const next = this.allocReg();
+    const nextText: String = "next";
+    const nextAtom = runtime.atomOf(in nextText);
+    this.emitLoadNamed(next, iterator, nextAtom);
+    this.nextReg = next + 1;
+    return next;
+  }
+
+  // One step of an async iterator: `result = await next.call(iterator,
+  // sent)` (no argument when `withArgument` is false), `next` the
+  // register emitAsyncIteratorNext filled.
+  function emitAsyncIteratorStep(inout this, iterator: u8, next: u8, sent: u8, withArgument: boolean, result: u8): void {
     const base = this.allocReg();
     this.allocReg();
     this.allocReg();
     this.emit(instAB(Op.mov, base + 1, iterator));
-    const nextText: String = "next";
-    const nextAtom = runtime.atomOf(in nextText);
-    this.emitLoadNamed(base, base + 1, nextAtom);
+    this.emit(instAB(Op.mov, base, next));
     if (withArgument) {
       this.emit(instAB(Op.mov, base + 2, sent));
       this.emit(instABCD(Op.methodInvoke, base, base, base + 1, 1));
@@ -3902,6 +3912,7 @@ export struct Compiler {
         const iterable = this.compileExpr(in parser, inout runtime, n.left);
         const iterator = this.allocReg();
         this.emit(instAB(Op.iterGetAsync, iterator, iterable));
+        const next = this.emitAsyncIteratorNext(inout runtime, iterator);
         const received = this.allocReg();
         const mode = this.allocReg();
         const result = this.allocReg();
@@ -3924,7 +3935,7 @@ export struct Compiler {
         this.emit(instABC(Op.cmpStrictEq, isReturn, mode, two));
         const toReturn = this.emit(instAI16(Op.jmpIfTrue, isReturn, 0));
         // next: the call, awaited, checked.
-        this.emit(instABC(Op.iterCallNext, result, iterator, received));
+        this.emit(instABCD(Op.iterCallNext, result, iterator, received, next));
         this.emit(instAB(Op.awaitOp, result, result));
         this.emit(instA(Op.requireIterResult, result));
         const toCheck = this.emit(instI16(Op.jmp, 0));
@@ -5210,6 +5221,8 @@ export struct Compiler {
     const source = this.compileExpr(in parser, inout runtime, n.right);
     const iterator = this.allocReg();
     this.emit(instAB(isAwait ? Op.iterGetAsync : Op.iterGet, iterator, source));
+    let asyncNext: u8 = 0;
+    if (isAwait) asyncNext = this.emitAsyncIteratorNext(inout runtime, iterator);
     const done = this.allocReg();
     const value = this.allocReg();
     const result = this.allocReg();
@@ -5222,7 +5235,7 @@ export struct Compiler {
     this.loopSetContinue(loopTop);
     if (captures.length > 0) this.renewIterationEnv(iterReg, captures.length);
     if (isAwait) {
-      this.emitAsyncIteratorStep(inout runtime, iterator, value, false, result);
+      this.emitAsyncIteratorStep(iterator, asyncNext, value, false, result);
       const doneText: String = "done";
       const doneAtom = runtime.atomOf(in doneText);
       this.emitLoadNamed(done, result, doneAtom);

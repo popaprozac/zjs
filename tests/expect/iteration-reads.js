@@ -155,7 +155,29 @@ var throwingNext = { [Symbol.iterator]: function () { return { get next() { thro
 console.log("next getter throws, no step:", (function () { try { var [] = throwingNext; return "ran"; } catch (e) { return e.message; } })());
 console.log("next getter throws, Array.from:", (function () { try { return Array.from(throwingNext); } catch (e) { return e.message; } })());
 
-// --- for await over a sync iterable goes through the same iteration ---
+// --- for await and async yield*: a sync iterable goes through the same
+// iteration, and an async iterator's `next` is read once as well ---
+function countedAsync(values) {
+  var log = { iterator: 0, next: 0, calls: 0, closed: 0, passed: [] };
+  var iterable = { log: log };
+  Object.defineProperty(iterable, Symbol.asyncIterator, { get: function () {
+    log.iterator++;
+    return function () {
+      var i = 0, iterator = { return: async function () { log.closed++; return {}; } };
+      Object.defineProperty(iterator, "next", { get: function () {
+        log.next++;
+        return async function () { log.calls++; log.passed.push(arguments.length); return i < values.length ? { value: values[i++], done: false } : { value: undefined, done: true }; };
+      } });
+      return iterator;
+    };
+  } });
+  return iterable;
+}
+function showAsync(label, iterable, result) {
+  var log = iterable.log;
+  console.log(label + ":", "Symbol.asyncIterator", log.iterator, "next", log.next, "calls", log.calls, "closed", log.closed, "arguments", log.passed.join(""), "->", String(result));
+}
+async function attemptAsync(f) { try { return String(await f()); } catch (e) { return e.constructor.name + ": " + e.message.replace(/.* is not a function/, "not a function"); } }
 (async function () {
   var c = counted([1, 2, 3]), sum = 0;
   for await (var v of c) sum += v;
@@ -165,4 +187,50 @@ console.log("next getter throws, Array.from:", (function () { try { return Array
   var got = [];
   for await (var v of through()) got.push(v);
   show("async yield*, sync iterable", c, got);
+
+  c = countedAsync([1, 2, 3]); sum = 0;
+  for await (var v of c) sum += v;
+  showAsync("for await, async iterable", c, sum);
+  c = countedAsync([1, 2, 3]);
+  for await (var v of c) break;
+  showAsync("for await, break", c, v);
+  c = countedAsync([1, 2, 3]);
+  async function* throughAsync() { return yield* c; }
+  got = [];
+  for await (var v of throughAsync()) got.push(v);
+  showAsync("async yield*, async iterable", c, got);
+
+  // The `next` read when the iterator was got is the one every step calls.
+  var own = { i: 0, [Symbol.asyncIterator]: function () { return this; }, next: async function () { return this.i < 3 ? { value: this.i++, done: false } : { done: true }; } };
+  got = [];
+  for await (var v of own) { got.push(v); own.next = async function () { return { done: true }; }; }
+  console.log("async next replaced mid-loop:", got.join());
+  own = { i: 0, [Symbol.asyncIterator]: function () { return this; }, next: async function () { return this.i < 3 ? { value: this.i++, done: false } : { done: true }; } };
+  async function* delegating() { yield* own; }
+  got = [];
+  for await (var v of delegating()) { got.push(v); own.next = async function () { return { done: true }; }; }
+  console.log("async next replaced mid-delegation:", got.join());
+
+  // When it is read: once the iterator is got, before any step.
+  var order = [], traced = {};
+  Object.defineProperty(traced, Symbol.asyncIterator, { get: function () {
+    order.push("get @@asyncIterator");
+    return function () {
+      order.push("call @@asyncIterator");
+      var i = 0, iterator = {};
+      Object.defineProperty(iterator, "next", { get: function () { order.push("get next"); return async function () { order.push("call next"); return { value: i, done: i++ == 2 }; }; } });
+      return iterator;
+    };
+  } });
+  for await (var v of traced) order.push("body " + v);
+  console.log("async order:", order.join(", "));
+
+  // A `next` that is not callable fails at the first step; a `next`
+  // getter that throws fails when the iterator is got.
+  var noNext = { [Symbol.asyncIterator]: function () { return {}; } };
+  console.log("async, no next, for await:", await attemptAsync(async function () { for await (var v of noNext) {} return "ran"; }));
+  console.log("async, no next, yield*:", await attemptAsync(async function () { async function* g() { yield* noNext; } for await (var v of g()) {} return "ran"; }));
+  var throwingNext = { [Symbol.asyncIterator]: function () { return { get next() { throw new RangeError("next getter"); } }; } };
+  console.log("async, next getter throws, for await:", await attemptAsync(async function () { for await (var v of throwingNext) {} return "ran"; }));
+  console.log("async, next getter throws, yield*:", await attemptAsync(async function () { async function* g() { yield* throwingNext; } for await (var v of g()) {} return "ran"; }));
 })();

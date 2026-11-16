@@ -4513,22 +4513,16 @@ export struct Runtime {
     return result;
   }
 
-  // iterator.<method>(value) as returned, for an async delegation that
-  // awaits and checks the result itself: `absent` when there is no such
-  // method (next must exist), the deleted marker on a throw (pending).
-  function iteratorCallRaw(inout this, iterator: Value, in name: String, value: Value, mustExist: boolean, inout absent: boolean): Value {
+  // iterator.<method>(value) as returned, for an async delegation's
+  // throw and return, which it awaits and checks itself: `absent` when
+  // there is no such method, the deleted marker on a throw (pending).
+  function iteratorCallRaw(inout this, iterator: Value, in name: String, value: Value, inout absent: boolean): Value {
     absent = false;
     const key = this.iteratorMethodKey(in name);
     const method = this.getProperty(iterator, key);
     if (this.pendingThrow) return deletedValue();
     if (isUndefined(method) || isNull(method)) {
-      if (!mustExist) {
-        absent = true;
-        return deletedValue();
-      }
-      const missing: String = `iterator.${name} is not a function`;
-      const error = this.typeError(in missing);
-      this.raise(error);
+      absent = true;
       return deletedValue();
     }
     if (!this.isCallable(method)) {
@@ -8019,15 +8013,23 @@ export struct Runtime {
         }
       }
       iterCallNext => {
+        // The `next` in d is the one read when the iterator was got.
         const iterator = this.reg(base, inst.b);
         const value = this.reg(base, inst.c);
-        const nextText: String = "next";
-        let absent = false;
-        const produced = this.iteratorCallRaw(iterator, in nextText, value, true, inout absent);
-        if (this.pendingThrow) {
-          // The throw stays pending for the loop to take.
+        const next = this.reg(base, inst.d);
+        if (!this.isCallable(next)) {
+          const message: String = "iterator.next is not a function";
+          {
+            const raised = this.typeError(in message);
+            this.raise(raised);
+          }
         } else {
-          this.setReg(base, inst.a, produced);
+          const produced = this.callValue1(next, iterator, value);
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else {
+            this.setReg(base, inst.a, produced);
+          }
         }
       }
       iterCallThrow => {
@@ -8035,7 +8037,7 @@ export struct Runtime {
         const value = this.reg(base, inst.c);
         const throwText: String = "throw";
         let absent = false;
-        const produced = this.iteratorCallRaw(iterator, in throwText, value, false, inout absent);
+        const produced = this.iteratorCallRaw(iterator, in throwText, value, inout absent);
         if (this.pendingThrow) {
           // The throw stays pending for the loop to take.
         } else {
@@ -8047,7 +8049,7 @@ export struct Runtime {
         const value = this.reg(base, inst.c);
         const returnText: String = "return";
         let absent = false;
-        const produced = this.iteratorCallRaw(iterator, in returnText, value, false, inout absent);
+        const produced = this.iteratorCallRaw(iterator, in returnText, value, inout absent);
         if (this.pendingThrow) {
           // The throw stays pending for the loop to take.
         } else {
