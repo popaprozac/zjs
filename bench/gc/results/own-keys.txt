@@ -1,0 +1,96 @@
+bench/speed/placements.py compare, 2026-11-16, z-lang c9d1bf09 (Stage 0), load about 5.
+Eight placements of the dispatch loop each: the engine at 3635b34, then the
+one that lists and copies a plain object's own properties from its slots,
+with no temporary lists. Columns: median cycles before and after, the
+change (geometric mean over placements), and its spread. `own-keys` is
+the kernel added with this change.
+
+allocation         59387552     58531053   -1.4%   over placements -4.1..-0.1%
+array-methods     132230108    132712148   +0.3%   over placements -0.3..+1.1%
+array-spread       73825222     74367373   +0.5%   over placements -2.6..+3.0%
+arrays            281331240    283245679   +0.3%   over placements -3.1..+4.7%
+borrowed-methods    241467681    239879307   -0.3%   over placements -3.0..+1.7%
+calls              42052838     41676976   -1.1%   over placements -3.0..+1.1%
+closures           59769759     59660806   -0.3%   over placements -2.7..+1.0%
+helpers            72232340     72424390   +0.1%   over placements -1.9..+1.6%
+json               53779102     54637838   +2.0%   over placements -0.0..+5.8%
+long-strings       17364652     17352490   +0.3%   over placements -6.9..+8.2%
+maps              150055149    150052228   -0.1%   over placements -0.9..+1.3%
+method-shapes     158448686    156251074   -1.0%   over placements -2.1..+0.3%
+own-keys          271943372     83299724  -69.4%   over placements -69.9..-68.4%
+polymorphic        38673974     38487936   -0.6%   over placements -1.7..+1.2%
+properties         98194466     97918686   -0.1%   over placements -1.5..+1.2%
+prototype-chains    147514514    147842698   +1.3%   over placements -0.9..+9.8%
+regexp             86687975     86407709   -0.3%   over placements -1.7..+0.7%
+strings            39289404     39411388   -0.1%   over placements -2.6..+2.8%
+fifo              530579210    529747416   -0.4%   over placements -2.1..+1.6%
+
+An object's own properties by what lists or copies them, 2026-11-16, load
+about 5. Per pass of a loop of a million: instructions on the engine before
+and after; cycles (the least of five runs, less the first line's loop)
+before, after, and on V8 jitless, QuickJS, and JavaScriptCore without its
+JIT; then the engine's cycles over each of theirs. JSON.stringify, which
+already walked an object's slots, is there for comparison.
+
+The program, with BODY one of the lines after it; the first is the loop every
+other is measured against:
+
+  function run() {
+    function Point(x, y) { this.x = x; this.y = y; }
+    var record = { id: 1, name: "n", kind: "k", size: 4, tags: null, open: true, left: 7, top: 8 };
+    var small = { x: 1, y: 2, z: 3 }, point = new Point(1, 2);
+    var loose = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, gone: 9 };
+    delete loose.a; loose.a = 1; delete loose.gone;
+    var total = 0;
+    for (var i = 0; i < 1000000; i++) {
+      BODY
+    }
+    return total;
+  }
+  var result = run();
+  (typeof console !== "undefined" ? console.log : print)(String(result));
+
+  empty loop:                          total = (total + (i & 7)) | 0;
+  Object.keys(record), 8 keys:         total = (total + Object.keys(record).length) | 0;
+  Object.keys(small), 3 keys:          total = (total + Object.keys(small).length) | 0;
+  Object.values(record):               total = (total + Object.values(record).length) | 0;
+  Object.entries(record):              total = (total + Object.entries(record).length) | 0;
+  Object.getOwnPropertyNames(record):  total = (total + Object.getOwnPropertyNames(record).length) | 0;
+  Object.keys(loose), after deletes:   total = (total + Object.keys(loose).length) | 0;
+  for-in over record:                  for (var k in record) total = (total + k.length) | 0;
+  for-in over small:                   for (var s in small) total = (total + s.length) | 0;
+  for-in over point, an instance:      for (var p in point) total = (total + p.length) | 0;
+  Object.assign({}, record):           total = (total + Object.assign({}, record).id) | 0;
+  ({ ...record }):                     total = (total + ({ ...record }).id) | 0;
+  JSON.stringify(record):              total = (total + JSON.stringify(record).length) | 0;
+
+per pass                             instructions before  after | cycles before after    v8   qjs   jsc | new/v8 new/qjs new/jsc
+Object.keys(record), 8 keys                        13169   2098 |         1756   286    46   957    49 |   6.18    0.30    5.81
+Object.keys(small), 3 keys                          5447   1144 |          695   152    42   443    51 |   3.61    0.34    3.02
+Object.values(record)                              14928   2102 |         1985   287   283   969   148 |   1.02    0.30    1.94
+Object.entries(record)                             16017   3530 |         2169   478   811  2625   487 |   0.59    0.18    0.98
+Object.getOwnPropertyNames(record)                 11227   2090 |         1505   285    42   852    49 |   6.82    0.33    5.76
+Object.keys(loose), after deletes                  12268   2076 |         1625   288   311   947    47 |   0.93    0.30    6.12
+for-in over record                                  9840   4820 |         1298   641   347  1229   512 |   1.85    0.52    1.25
+for-in over small                                   3960   2041 |          519   291   131   885   218 |   2.23    0.33    1.34
+for-in over point, an instance                      5962   2139 |          807   308    83  1276   163 |   3.69    0.24    1.88
+Object.assign({}, record)                          18820   6241 |         2822  1024   245  1083   237 |   4.18    0.95    4.31
+({ ...record })                                    16290   3291 |         2187   456    39  1168    66 |  11.59    0.39    6.90
+JSON.stringify(record)                              6301   6298 |          964   969   342  3455   366 |   2.83    0.28    2.65
+
+Instructions for each property, from loops of 200,000 over objects of
+none, 8, and 32 properties (the difference from the empty object, over
+the count), before and after:
+
+per property            8: before      after   32: before      after
+Object.keys(record)           1551        184       1191        181
+for-in over record            1211        562        923        559
+{ ...record }                 2006        353       1841        452
+Object.assign({}, r)          2294        707       2390       1044
+
+What a call still pays, from a sample of the Object.keys line: two thirds
+of it is making the list of names again from the object's class on every
+call (the walk up the class chain, turning it around, and passing over it
+once more for hidden and index names), an eighth the appends to the
+result. For the spread line half is the defines on the new object, one
+class step each.

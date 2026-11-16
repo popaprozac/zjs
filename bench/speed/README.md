@@ -1,7 +1,7 @@
 # Jitless speed
 
 The Z engine against the jit-less engines an embedder would otherwise
-choose, on seventeen small kernels. The engine's goal is to be the fastest
+choose, on eighteen small kernels. The engine's goal is to be the fastest
 engine that runs without a JIT, which is what every iOS app gets; these
 kernels are how that is tracked.
 
@@ -59,6 +59,9 @@ take one.
 `array-spread` (added 2026-11-16) spreads arrays of 4 and 64 elements
 into array literals and into calls, and copies them with `Array.from`,
 with a function and without.
+`own-keys` (added the same day) lists and copies an object's own
+properties, on objects of eight and three: `Object.keys`, `values`,
+`entries`, `for`-`in`, `Object.assign`, and spread.
 
 The `vs zjsz` row is the geometric mean over the kernels of each engine's
 time divided by the Z engine's: below 1 means that engine is faster.

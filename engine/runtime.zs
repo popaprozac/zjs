@@ -196,6 +196,21 @@ export struct PropertyDescriptor {
   attr: u8;
 }
 
+// What a walk over an object's own properties makes of each (walkOwn):
+// the first four append to an array (its name whether enumerable or
+// not, its name, its value, a [name, value] pair), the last two write
+// it onto an object (defined, or set).
+export const WALK_NAMES: u32 = 0;
+export const WALK_KEYS: u32 = 1;
+export const WALK_VALUES: u32 = 2;
+export const WALK_ENTRIES: u32 = 3;
+export const WALK_DEFINE: u32 = 4;
+export const WALK_ASSIGN: u32 = 5;
+// What orderedOwnNames passed over: the key a wrapper keeps its
+// primitive under, and a symbol key.
+const OWN_WRAPS: u32 = 1;
+const OWN_SYMBOLS: u32 = 2;
+
 export function absentProperty(): PropertyDescriptor {
   return PropertyDescriptor({ present: false, value: undefinedValue(), getter: undefinedValue(), setter: undefinedValue(), attr: 0 });
 }
@@ -712,6 +727,12 @@ export struct Runtime {
   // it, and the slot found (-1 for none): see arrayIterationPristine.
   arrayIterSlotClass: u32 = 0;
   arrayIterSlot: i32 = -1;
+  // The names and value slots of the object a key walk is on (walkOwn,
+  // enumerateKeys), kept from one walk to the next so that a walk
+  // allocates nothing. A walk takes them out while it runs: one begun
+  // inside it, by a getter, finds none and makes its own.
+  keyNames: Array<u32> = Array<u32>();
+  keySlots: Array<u32> = Array<u32>();
   throwTypeErrorFn: u32 = 0;
   modules: Array<ModuleRecord> = Array<ModuleRecord>();
   // A compile asked for a global slot past the last (globalSlotAtom).
@@ -3624,60 +3645,163 @@ export struct Runtime {
     keys.push(cellValue(this.atomLength));
   }
 
-  // An object cell's own live keys: index-like names ascending first,
-  // then the rest in insertion order.
   // An object's own string-named properties in the order the language
-  // lists them, with their slots: array-index names ascending, then the
-  // rest in insertion order. Hidden atoms (symbol keys among them) are
-  // left out; `skipIndices` leaves out the index names too.
-  function orderedOwnNames(inout this, object: u32, skipIndices: boolean, inout names: Array<u32>, inout slots: Array<u32>): void {
-    let allNames = Array<u32>();
-    let allSlots = Array<u32>();
-    this.heap.objectNamedSlots(object, inout allNames, inout allSlots);
-    let indexNames = Array<u32>();
-    let indexSlots = Array<u32>();
-    let indexValues = Array<u32>();
-    let i: usize = 0;
-    while (i < allNames.length) {
-      const flags = this.heap.flagsOf(allNames[i]) & (FLAG_INDEX_KEY | FLAG_HIDDEN);
-      if (flags == FLAG_INDEX_KEY && !skipIndices) {
-        const index = this.indexNameValue(allNames[i]);
-        if (index >= 0) {
-          // Insertion sort by index as they arrive: index keys are few.
-          indexNames.push(allNames[i]);
-          indexSlots.push(allSlots[i]);
-          indexValues.push(u32(index));
-          let position = indexValues.length - 1;
-          while (position > 0 && indexValues[position - 1] > indexValues[position]) {
-            const value = indexValues[position - 1];
-            indexValues[position - 1] = indexValues[position];
-            indexValues[position] = value;
-            const name = indexNames[position - 1];
-            indexNames[position - 1] = indexNames[position];
-            indexNames[position] = name;
-            const slot = indexSlots[position - 1];
-            indexSlots[position - 1] = indexSlots[position];
-            indexSlots[position] = slot;
-            position = position - 1;
-          }
+  // lists them, with their slots, appended to `names` and `slots`:
+  // array-index names ascending, then the rest in insertion order.
+  // Hidden atoms (symbol keys among them) are left out; `skipIndices`
+  // leaves out the index names too. Nothing is allocated but room in the
+  // two lists. The result says what was passed over: OWN_WRAPS for the
+  // key a wrapper keeps its primitive under, OWN_SYMBOLS for a symbol
+  // key.
+  function orderedOwnNames(inout this, object: u32, skipIndices: boolean, inout names: Array<u32>, inout slots: Array<u32>): u32 {
+    const start = names.length;
+    this.heap.appendOwnNamedSlots(object, inout names, inout slots);
+    let saw: u32 = 0;
+    let indices = false;
+    let write = start;
+    let read = start;
+    while (read < names.length) {
+      const name = names[read];
+      const flags = this.heap.flagsOf(name) & (FLAG_INDEX_KEY | FLAG_HIDDEN);
+      let keep = flags == 0;
+      if (flags == FLAG_INDEX_KEY) {
+        if (!skipIndices && this.indexNameValue(name) >= 0) {
+          keep = true;
+          indices = true;
+        }
+      } else if (flags != 0) {
+        if (name == this.atomPrimitive) {
+          saw = saw | OWN_WRAPS;
+        } else if (this.isSymbolKeyAtom(name) && !this.isPrivateKeyAtom(name)) {
+          saw = saw | OWN_SYMBOLS;
         }
       }
-      i = i + 1;
-    }
-    i = 0;
-    while (i < indexNames.length) {
-      names.push(indexNames[i]);
-      slots.push(indexSlots[i]);
-      i = i + 1;
-    }
-    i = 0;
-    while (i < allNames.length) {
-      if ((this.heap.flagsOf(allNames[i]) & (FLAG_INDEX_KEY | FLAG_HIDDEN)) == 0) {
-        names.push(allNames[i]);
-        slots.push(allSlots[i]);
+      if (keep) {
+        names[write] = name;
+        slots[write] = slots[read];
+        write = write + 1;
       }
-      i = i + 1;
+      read = read + 1;
     }
+    while (names.length > write) {
+      names.pop();
+      slots.pop();
+    }
+    if (!indices) return saw;
+    // Index names go first, ascending: each is moved back past the names
+    // that follow it in that order. They are few.
+    let at = start + 1;
+    while (at < names.length) {
+      let position = at;
+      at = at + 1;
+      if ((this.heap.flagsOf(names[position]) & FLAG_INDEX_KEY) == 0) continue;
+      const value = this.indexNameValue(names[position]);
+      while (position > start && ((this.heap.flagsOf(names[position - 1]) & FLAG_INDEX_KEY) == 0 || this.indexNameValue(names[position - 1]) > value)) {
+        const name = names[position - 1];
+        names[position - 1] = names[position];
+        names[position] = name;
+        const slot = slots[position - 1];
+        slots[position - 1] = slots[position];
+        slots[position] = slot;
+        position = position - 1;
+      }
+    }
+    return saw;
+  }
+
+  // Visit the own string-named properties of an ordinary object in the
+  // language's order, for the builtins that list or copy them (`mode` is
+  // one of the WALK_ values, `sink` the array or object written). The
+  // names are taken first, as the specification takes its key list, and
+  // each property is looked at when it is reached. Until something a
+  // program wrote may have run (a getter here, a setter on the object an
+  // assign writes), and after that while the object still has the class
+  // it had, a property is read straight from its slot; otherwise it is
+  // found again by name. `excluded` is an array of keys to leave out, or
+  // 0. False, with nothing done, for what needs the general walk:
+  // anything but a plain object, the global object, a namespace, a
+  // wrapper, an object with symbol keys when those would be copied, and
+  // a dictionary when values are read (a getter may drop a name that
+  // only the dictionary held). A throw is left pending.
+  function walkOwn(inout this, source: Value, mode: u32, sink: Value, excluded: u32): boolean {
+    if (!isCell(source) || asCell(source) == 0) return false;
+    const handle = asCell(source);
+    if (this.heap.tagOf(handle) != TAG_OBJECT || handle == this.globalObject || (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) return false;
+    if (mode >= WALK_VALUES && this.heap.isDictionary(handle)) return false;
+    let names = replace(inout this.keyNames, Array<u32>());
+    let slots = replace(inout this.keySlots, Array<u32>());
+    names.clear();
+    slots.clear();
+    const saw = this.orderedOwnNames(handle, false, inout names, inout slots);
+    const plain = (saw & OWN_WRAPS) == 0 && (mode < WALK_DEFINE || (saw & OWN_SYMBOLS) == 0);
+    const shape = this.heap.objectClass(handle);
+    let ran = false;
+    let index: usize = 0;
+    while (plain && index < names.length) {
+      const name = names[index];
+      const slot = slots[index];
+      index = index + 1;
+      const key = cellValue(name);
+      if (excluded != 0 && this.keyListed(excluded, name)) continue;
+      let held = deletedValue();
+      let attr: u8 = PROP_NONE;
+      if (!ran || this.heap.objectClass(handle) == shape) {
+        held = this.heap.slot(handle, slot);
+        attr = this.heap.objectAttrOf(handle, slot);
+      } else {
+        const desc = this.getOwnDescriptor(source, key);
+        if (desc.present) {
+          held = desc.value;
+          attr = desc.attr;
+        }
+      }
+      if (isDeleted(held) || (mode != WALK_NAMES && (attr & PROP_ENUMERABLE) == 0)) continue;
+      let value = key;
+      if (mode >= WALK_VALUES) {
+        value = held;
+        if ((attr & PROP_ACCESSOR) != 0) {
+          value = this.getProperty(source, key);
+          ran = true;
+          if (this.pendingThrow) break;
+        }
+      }
+      if (mode == WALK_DEFINE) {
+        this.heap.objectDefine(asCell(sink), name, value, PROP_DEFAULT);
+      } else if (mode == WALK_ASSIGN) {
+        const accepted = this.setProperty(sink, key, value);
+        ran = true;
+        if (this.pendingThrow) break;
+        if (!accepted) {
+          const message: String = "Cannot assign to read only property";
+          const error = this.typeError(in message);
+          this.raise(error);
+          break;
+        }
+      } else {
+        if (mode == WALK_ENTRIES) {
+          const pair = this.heap.allocateArray(2);
+          this.heap.setSlot(pair, 0, key);
+          this.heap.setSlot(pair, 1, value);
+          value = cellValue(pair);
+        }
+        const result = asCell(sink);
+        this.heap.arraySet(result, this.heap.arrayLength(result), value);
+      }
+    }
+    const noNames = replace(inout this.keyNames, move names);
+    const noSlots = replace(inout this.keySlots, move slots);
+    return plain;
+  }
+
+  // Whether `name` is among the keys in the array `list`.
+  function keyListed(inout this, list: u32, name: u32): boolean {
+    const count = this.heap.arrayLength(list);
+    let at: u32 = 0;
+    while (at < count) {
+      if (this.propertyKey(this.heap.arrayGet(list, at)) == name) return true;
+      at = at + 1;
+    }
+    return false;
   }
 
   function pushObjectKeys(inout this, inout keys: Array<Value>, object: u32, skipIndices: boolean): void {
@@ -4116,9 +4240,11 @@ export struct Runtime {
       let current = handle;
       let seen = Array<u32>();
       let first = true;
+      let names = replace(inout this.keyNames, Array<u32>());
+      let slots = replace(inout this.keySlots, Array<u32>());
       while (current != 0 && current != this.objectProto) {
-        let names = Array<u32>();
-        let slots = Array<u32>();
+        names.clear();
+        slots.clear();
         this.orderedOwnNames(current, false, inout names, inout slots);
         const next = this.heap.objectProto(current);
         const remember = next != 0 && next != this.objectProto;
@@ -4150,6 +4276,8 @@ export struct Runtime {
           break;
         }
       }
+      const noNames = replace(inout this.keyNames, move names);
+      const noSlots = replace(inout this.keySlots, move slots);
       return cellValue(keys);
     }
     return cellValue(keys);
@@ -4613,21 +4741,12 @@ export struct Runtime {
   // (an array of key values, or 0). Null and undefined sources copy nothing.
   function copyDataProperties(inout this, target: u32, source: Value, excluded: u32): void {
     if (isUndefined(source) || isNull(source)) return;
+    if (this.walkOwn(source, WALK_DEFINE, cellValue(target), excluded)) return;
     const keys = this.ownKeys(source);
     let index: usize = 0;
     while (index < keys.length) {
       const key = keys[index];
-      let skip = false;
-      if (excluded != 0) {
-        const count = this.heap.arrayLength(excluded);
-        let e: u32 = 0;
-        while (e < count) {
-          const candidate = this.heap.arrayGet(excluded, e);
-          if (this.propertyKey(candidate) == this.propertyKey(key)) skip = true;
-          e = e + 1;
-        }
-      }
-      if (!skip) {
+      if (excluded == 0 || !this.keyListed(excluded, this.propertyKey(key))) {
         const desc = this.getOwnDescriptor(source, key);
         if (desc.present && (desc.attr & PROP_ENUMERABLE) != 0) {
           const value = this.getProperty(source, key);

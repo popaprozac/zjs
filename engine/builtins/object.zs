@@ -2,7 +2,7 @@
 // keys, prototypes, extensibility.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isTrue } from "../value.zs";
-import { Runtime, PropertyDescriptor, DescriptorInput, emptyDescriptorInput, absentProperty } from "../runtime.zs";
+import { Runtime, PropertyDescriptor, DescriptorInput, emptyDescriptorInput, absentProperty, WALK_ASSIGN } from "../runtime.zs";
 import { PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_METHOD, PROP_DEFAULT } from "../heap.zs";
 
 function requireObject(inout runtime: Runtime, value: Value, in method: String): boolean {
@@ -202,6 +202,8 @@ function objectGetOwnPropertyDescriptors(inout runtime: Runtime, thisValue: Valu
 }
 
 // keys / values / entries / getOwnPropertyNames share one walk.
+// The first four are, by value, the modes of the runtime's walk over a
+// plain object (WALK_NAMES, WALK_KEYS, WALK_VALUES, WALK_ENTRIES).
 const KEYS_NAMES: u32 = 0;
 const KEYS_ENUMERABLE: u32 = 1;
 const KEYS_VALUES: u32 = 2;
@@ -218,6 +220,12 @@ function collectKeys(inout runtime: Runtime, argsBase: u32, argc: u32, mode: u32
   }
   const result = runtime.heap.allocateArray(0);
   runtime.pushTempRoot(cellValue(result));
+  // A plain object: straight from its slots.
+  if (mode != KEYS_SYMBOLS && runtime.walkOwn(target, mode, cellValue(result), 0)) {
+    runtime.popTempRoot();
+    if (runtime.pendingThrow) return undefinedValue();
+    return cellValue(result);
+  }
   const keys = runtime.ownKeys(target);
   let index: usize = 0;
   while (index < keys.length) {
@@ -493,6 +501,11 @@ function objectAssign(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   while (sourceIndex < argc) {
     const source = runtime.argument(argsBase, argc, sourceIndex);
     if (!isUndefined(source) && !isNull(source)) {
+      if (runtime.walkOwn(source, WALK_ASSIGN, target, 0)) {
+        if (runtime.pendingThrow) return undefinedValue();
+        sourceIndex = sourceIndex + 1;
+        continue;
+      }
       const keys = runtime.ownKeys(source);
       let index: usize = 0;
       while (index < keys.length) {
