@@ -91,6 +91,29 @@ function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
     const target = constructReceiver(inout runtime, thisValue, -1.0);
     if (runtime.pendingThrow) return undefinedValue();
     runtime.pushTempRoot(target);
+    if (isCell(usingIterator) && asCell(usingIterator) == runtime.arrayValuesFn && runtime.arrayIterationPristine(items)) {
+      // An ordinary array, and the method read is the one that iterates
+      // it: its elements as that iterator would read them, each when
+      // reached, without making the iterator. Asked only here, since
+      // making the receiver's object may have changed the iterator's
+      // `next`.
+      const source = asCell(items);
+      let at: u32 = 0;
+      while (at < runtime.heap.arrayLength(source)) {
+        let element = runtime.heap.dataElement(source, at);
+        if (isDeleted(element)) {
+          element = runtime.getProperty(items, int32Value(i32(at)));
+          if (runtime.pendingThrow) return undefinedValue();
+        }
+        if (mapping) {
+          element = runtime.callValue2(mapFn, thisArg, element, int32Value(i32(at)));
+          if (runtime.pendingThrow) return undefinedValue();
+        }
+        runtime.heap.arraySet(array, at, element);
+        at = at + 1;
+      }
+      return fillReceiver(inout runtime, target, array);
+    }
     const iteration = runtime.getIteratorFromMethod(items, usingIterator);
     if (runtime.pendingThrow) return undefinedValue();
     runtime.pushTempRoot(iteration);

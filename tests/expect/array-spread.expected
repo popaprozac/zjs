@@ -1,0 +1,50 @@
+spread: [1,two,null,undefined,4.5] [0,1,two,null,undefined,4.5,9] [1,two,null,undefined,4.5,1,two,null,undefined,4.5] false [] [1,2]
+in calls: 1/two///4.5 10 9 2 3 hi
+Array.from: [1,two,null,undefined,4.5] false [0:1,1:two,2:null,3:undefined,4:4.5] [] 10,20,30
+long: 3000 2999 3000 3000 6000
+holes: [1,undefined,3,undefined] true [1,undefined,3,undefined] 4 1//3/
+filled by the prototype: [1,filled,3,undefined] [1,filled,3,undefined] 1/filled/3/
+an accessor: [10,21,30] [10,21,30] get 1,get 1
+a getter that lengthens: [1,2,3,late3] 4
+a getter that shortens: [1,got,3] [1,got,3]
+a getter that changes a later one: [1,2,3,changed] [1,2,3,changed]
+a getter that throws: RangeError RangeError RangeError
+frozen: [1,2,3] false [1,2,3]
+its own iterator: [own,iterator] [own,iterator] own/iterator
+deleted: [1,2,3]
+another property of its own: [1,2,3] undefined [1,2,3]
+another prototype: [from another prototype] [from another prototype]
+and back: [1,2,3]
+none: TypeError [1,2]
+wrapped: [1,two,null,undefined,4.5] [1,two,null,undefined,4.5] 1/2 3
+replaced: [replaced] [replaced] 1
+a getter: [7,8] [7,8] 2
+restored: [1,two,null,undefined,4.5] [1,two,null,undefined,4.5]
+values replaced, which spread does not read: [1,2] [1,2]
+next wrapped: [stepped 1,stepped 2] [stepped 3] stepped 4 7
+next that ends at once: [] [] 0
+next as a getter: [1,2,3] 1
+next deleted: TypeError TypeError
+next restored: [1,two,null,undefined,4.5] [1,two,null,undefined,4.5] 1/2
+a function that lengthens: [1,2,3,late0,late1,late2] 6
+that shortens: [1,2,3]
+that changes later ones: [1,undefined,3,changed]
+that throws: RangeError
+that replaces the iterator and its next: [2,4,6] [not read again]
+put back: [2,3,4] [1,2,3]
+a receiver that restores the iterator: [read before the receiver ran] [1,2]
+one that replaces it: [1,2] [not this one]
+one that replaces next: []
+and all put back: [1,2] [3,6]
+a method added: [1,2] [1,2]
+then the iterator replaced: [replaced after] [replaced after]
+a crowded prototype: [1,2] [1,2] 79
+its iterator replaced: [replaced in the crowd] [replaced in the crowd]
+uncrowded: [1,2] [1,2] 1/2
+deleted: TypeError [5,6] TypeError
+deleted, and the prototype packed down: TypeError 2
+another put back: [found again] 1
+and the first: [1,2] [1,2] 1/2
+others: [h,é,l,l,o] [1,2,3] [1,2] [1,2,3] [a,b] [a,b] [8,10]
+arguments: [1,2,3] [1,2,3] 3
+not iterable: TypeError TypeError TypeError [] TypeError

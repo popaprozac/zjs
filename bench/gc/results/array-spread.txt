@@ -1,0 +1,89 @@
+bench/speed/placements.py compare, 2026-11-16, z-lang c9d1bf09 (Stage 0), load about 5.
+Eight placements of the dispatch loop each: the engine at 623ed74, then the
+one that copies an ordinary array's elements for a spread or for Array.from
+without running the iterator protocol. Columns: median cycles before and
+after, the change (geometric mean over placements), and its spread.
+`array-spread` is the kernel added with this change.
+
+allocation         59708780     60272778   +0.6%   over placements -0.5..+3.5%
+array-methods     134109649    133385350   -0.6%   over placements -1.2..-0.0%
+array-spread      309506078     74306638  -76.2%   over placements -77.0..-75.5%
+arrays            286878204    285935921   -0.5%   over placements -2.9..+1.9%
+borrowed-methods    242627268    245168136   +0.6%   over placements -1.8..+3.0%
+calls              42189294     42092260   +0.8%   over placements -2.2..+10.3%
+closures           59551565     59462740   +0.1%   over placements -1.3..+3.3%
+helpers            71890820     72014635   +0.0%   over placements -1.2..+1.2%
+json               54966782     54995495   -0.4%   over placements -5.6..+2.3%
+long-strings       18817430     19042220   +0.8%   over placements -5.0..+8.0%
+maps              153364527    152566144   -0.6%   over placements -1.7..+0.5%
+method-shapes     157552132    158093532   +0.4%   over placements -0.4..+2.1%
+polymorphic        38681937     38539597   -0.1%   over placements -2.2..+1.7%
+properties         98107724     97823104   -0.2%   over placements -1.2..+0.6%
+prototype-chains    149132304    147975241   -0.6%   over placements -2.5..+0.6%
+regexp             85975218     86086822   +0.3%   over placements -1.1..+3.1%
+strings            38952632     38967872   -0.0%   over placements -2.3..+2.8%
+fifo              544319326    546279666   +0.5%   over placements -0.6..+2.3%
+
+Spread and Array.from by what is spread, 2026-11-16, load about 5. Per pass
+of a loop of a million: instructions on the engine before and after; cycles
+(the least of five runs, less the first line's loop) before, after, and on V8
+jitless, QuickJS, and JavaScriptCore without its JIT; then the engine's
+cycles over each of theirs. The first eight lines are what this changes; a
+string, a Set, for-of, and destructuring still run the protocol.
+
+The program, with BODY one of the lines after it; the first is the loop every
+other is measured against:
+
+  function run() {
+    function sum3(a, b, c) { return a + b + c; }
+    function twice(x) { return x * 2; }
+    var list = [3, 1, 2], big = [], text = "abc", seen = new Set([1, 2, 3]);
+    for (var k = 0; k < 64; k++) big.push(k);
+    var total = 0;
+    for (var i = 0; i < 1000000; i++) {
+      BODY
+    }
+    return total;
+  }
+  var result = run();
+  (typeof console !== "undefined" ? console.log : print)(String(result));
+
+  empty loop:                    total = (total + (i & 7)) | 0;
+  [...list], 3 elements:         total = (total + [...list].length) | 0;
+  [0, ...list, 4]:               total = (total + [0, ...list, 4].length) | 0;
+  sum3(...list):                 total = (total + sum3(...list)) | 0;
+  Math.max(...list):             total = (total + Math.max(...list)) | 0;
+  Array.from(list):              total = (total + Array.from(list).length) | 0;
+  Array.from(list, twice):       total = (total + Array.from(list, twice).length) | 0;
+  [...big], 64 elements:         total = (total + [...big].length) | 0;
+  Array.from(big):               total = (total + Array.from(big).length) | 0;
+  [...text], a string:           total = (total + [...text].length) | 0;
+  [...seen], a Set:              total = (total + [...seen].length) | 0;
+  for-of over list:              for (var x of list) total = (total + x) | 0;
+  for-of over big:               for (var y of big) total = (total + y) | 0;
+  destructuring [a, b] = list:   var [a, b] = list; total = (total + a + b) | 0;
+
+per pass                             instructions before  after | cycles before after    v8   qjs   jsc | new/v8 new/qjs new/jsc
+[...list], 3 elements                               3398    665 |          421    79    35   440    67 |   2.28    0.18    1.19
+[0, ...list, 4]                                     3777    938 |          470   112   382   546   132 |   0.29    0.21    0.85
+sum3(...list)                                       3964   1231 |          493   146    74   592   137 |   1.97    0.25    1.07
+Math.max(...list)                                   3914   1182 |          493   147    36   550   120 |   4.09    0.27    1.22
+Array.from(list)                                    3267   1167 |          400   148    50   717   195 |   2.93    0.21    0.76
+Array.from(list, twice)                             3972   1857 |          484   233   522   817  2852 |   0.45    0.29    0.08
+[...big], 64 elements                              31302   5573 |         4106   730   112  3626   293 |   6.53    0.20    2.50
+Array.from(big)                                    27261   6199 |         3607   855   130  6820   384 |   6.56    0.13    2.22
+[...text], a string                                 4644   4702 |          605   606    49   567    68 |  12.48    1.07    8.95
+[...seen], a Set                                    5310   5369 |          704   713    48   488    69 |  14.94    1.46   10.26
+for-of over list                                    3308   3308 |          430   410   334   378   202 |   1.23    1.08    2.03
+for-of over big                                    37175  37176 |         4489  4528  4750  4037  2824 |   0.95    1.12    1.60
+destructuring [a, b] = list                         2569   2569 |          327   321   199   283   161 |   1.61    1.14    1.99
+
+Instructions for each element copied, from loops of 200,000 over arrays of
+none, 64, and 1,024 numbers (the difference from the empty array, over the
+length):
+
+                      64 elements        1,024 elements
+                      before  after      before  after
+  [...big]               457     80         445     76
+  Array.from(big)        393     83         387     78
+  big.slice()            121    121         120    120

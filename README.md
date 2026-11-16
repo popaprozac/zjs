@@ -165,7 +165,11 @@ and held with it for every step; spread in array literals, calls, and
 `new`; array iterators (values / keys / entries, stepped without an
 allocation when the `next` got with them is the builtin's),
 `String.prototype[@@iterator]`, `Array.from` / `of` (the mapping
-function called on each value as it is produced).
+function called on each value as it is produced). A spread of an
+ordinary array, and `Array.from` of one, copy its elements without the
+protocol while `Array.prototype[@@iterator]` and the array iterator's
+`next` are the ones installed and the array has no named properties of
+its own.
 Destructuring in every position -- declarations, parameters (with
 defaults), catch parameters, loop heads, and assignment -- with nested
 patterns, defaults, holes, rest elements, object rest, and computed keys,

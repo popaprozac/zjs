@@ -708,6 +708,10 @@ export struct Runtime {
   // the iteration builtins install it), and %ThrowTypeError%, a strict
   // arguments object's `callee` (made the first time one is).
   arrayValuesFn: u32 = 0;
+  // Array.prototype's class when Symbol.iterator was last looked for on
+  // it, and the slot found (-1 for none): see arrayIterationPristine.
+  arrayIterSlotClass: u32 = 0;
+  arrayIterSlot: i32 = -1;
   throwTypeErrorFn: u32 = 0;
   modules: Array<ModuleRecord> = Array<ModuleRecord>();
   // A compile asked for a global slot past the last (globalSlotAtom).
@@ -4322,6 +4326,40 @@ export struct Runtime {
     return cellValue(pair);
   }
 
+  // Whether iterating this value can only be the array iterator walking
+  // an array, with nothing a program could observe along the way but
+  // the element reads themselves. The value is an array with no named
+  // properties of its own, so its Symbol.iterator is Array.prototype's;
+  // that is still `values`; and the iterator's `next` is still the
+  // builtin. A property made an accessor holds an accessor, never the
+  // function compared with, so the comparisons cover that too. Where
+  // Symbol.iterator sits is remembered for the shape Array.prototype
+  // has, as for `constructor` in arraySpeciesPristine.
+  function arrayIterationPristine(inout this, value: Value): boolean {
+    if (!isCell(value) || asCell(value) == 0 || !this.heap.isArray(asCell(value)) || this.heap.linkOf(asCell(value)) != 0) return false;
+    if (this.arrayValuesFn == 0) return false;
+    const proto = this.arrayProto;
+    const protoClass = this.heap.objectClass(proto);
+    let slot = this.arrayIterSlot;
+    if (protoClass != this.arrayIterSlotClass) {
+      const symbolIterator = this.symbolIterator;
+      const key = this.propertyKey(symbolIterator);
+      slot = this.heap.objectFindSlot(proto, key);
+      if (!this.heap.isDictionary(proto)) {
+        this.arrayIterSlotClass = protoClass;
+        this.arrayIterSlot = slot;
+      }
+    }
+    if (slot < 0) return false;
+    const method = this.heap.slot(proto, u32(slot));
+    if (!isCell(method) || asCell(method) != this.arrayValuesFn) return false;
+    const iteratorProto = this.arrayIteratorProto;
+    const nextSlot = this.heap.objectFindSlot(iteratorProto, this.atomNext);
+    if (nextSlot < 0) return false;
+    const next = this.heap.slot(iteratorProto, u32(nextSlot));
+    return isCell(next) && asCell(next) == this.arrayIteratorNext;
+  }
+
   // Whether an iterator is a pristine array iterator: its own state, and
   // `next` still the builtin, found through its prototype.
   function isPristineArrayIterator(inout this, iterator: Value): boolean {
@@ -4602,10 +4640,35 @@ export struct Runtime {
     }
   }
 
+  // Append to `target` what the iterator of `iterable` would yield, for
+  // an array whose iteration is pristine (arrayIterationPristine). Read
+  // as the iterator reads: the length and each element as they are when
+  // reached, since a getter among the elements may change either. A
+  // throw is left pending.
+  function appendArrayElements(inout this, target: u32, iterable: Value): void {
+    const source = asCell(iterable);
+    let index: u32 = 0;
+    while (index < this.heap.arrayLength(source)) {
+      let element = this.heap.dataElement(source, index);
+      if (isDeleted(element)) {
+        element = this.getProperty(iterable, int32Value(i32(index)));
+        if (this.pendingThrow) return;
+      }
+      this.heap.arraySet(target, this.heap.arrayLength(target), element);
+      index = index + 1;
+    }
+  }
+
   // Every value an iterable yields, as an array. A throw is left pending.
   function iterateToArray(inout this, iterable: Value): Value {
     const array = this.heap.allocateArray(0);
     this.pushTempRoot(cellValue(array));
+    if (this.arrayIterationPristine(iterable)) {
+      this.appendArrayElements(array, iterable);
+      this.popTempRoot();
+      if (this.pendingThrow) return undefinedValue();
+      return cellValue(array);
+    }
     const iterator = this.getIterator(iterable);
     if (this.pendingThrow) {
       this.popTempRoot();
@@ -8216,17 +8279,22 @@ export struct Runtime {
         // Append everything the iterable in b yields to the array in a.
         const array = this.reg(base, inst.a);
         const iterable = this.reg(base, inst.b);
-        const items = this.iterateToArray(iterable);
-        if (!this.pendingThrow) {
-          const target = asCell(array);
-          const source = asCell(items);
-          const count = this.heap.arrayLength(source);
-          let index: u32 = 0;
-          while (index < count) {
-            const element = this.heap.arrayGet(source, index);
-            const length = this.heap.arrayLength(target);
-            this.heap.arraySet(target, length, element);
-            index = index + 1;
+        if (this.arrayIterationPristine(iterable)) {
+          // An ordinary array: straight into the literal.
+          this.appendArrayElements(asCell(array), iterable);
+        } else {
+          const items = this.iterateToArray(iterable);
+          if (!this.pendingThrow) {
+            const target = asCell(array);
+            const source = asCell(items);
+            const count = this.heap.arrayLength(source);
+            let index: u32 = 0;
+            while (index < count) {
+              const element = this.heap.arrayGet(source, index);
+              const length = this.heap.arrayLength(target);
+              this.heap.arraySet(target, length, element);
+              index = index + 1;
+            }
           }
         }
       }

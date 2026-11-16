@@ -39,21 +39,27 @@ same run, and about 1.9, 1.7, and 1.6 times faster than QuickJS, Hermes,
 and Hermes on precompiled bytecode on their 2026-09-29 figures. Startup is
 3.5 ms against 6.9 and 30.7.
 
-Four kernels added on 2026-11-15 are not in this table:
+Five kernels added on 2026-11-15 and 16 are not in this table:
 `borrowed-methods` (names read off functions, and calls made through
 `call` and `apply`), `method-shapes` (one name read off receivers of
 several shapes), `prototype-chains` (names found past an object's first
-prototype, or nowhere), and `array-methods` (the array methods that
-take no callback, on 64 elements). The engine is behind V8 jitless and
-JavaScriptCore's interpreter on all four, far behind on the last: on
-`borrowed-methods` 1.42 times V8's time, 1.66 times JavaScriptCore's,
-and 1.08 times QuickJS's; on `method-shapes` 1.08, 1.18, and 0.99; on
-`prototype-chains` 1.17, 1.03, and 0.92; on `array-methods` 3.84, 3.77,
-and 0.34 (`bench/gc/results/array-species.json`). When each was added
-the figures were 2.78, 3.14, and 2.07 (`function-inherited-reads.json`),
-2.41, 2.69, and 2.25 (`shared-loads.json`), 2.07, 1.69, and 1.51
-(`prototype-chains.json`), and 11.64, 10.76, and 1.01
-(`array-methods.json`).
+prototype, or nowhere), `array-methods` (the array methods that take no
+callback, on 64 elements), and `array-spread` (arrays of 4 and 64
+elements spread and copied with `Array.from`). The engine is behind V8
+jitless and JavaScriptCore's interpreter on the first four, far behind
+on the fourth: on `borrowed-methods` 1.42 times V8's time, 1.64 times
+JavaScriptCore's, and 1.05 times QuickJS's; on `method-shapes` 1.10,
+1.17, and 0.99; on `prototype-chains` 1.22, 1.02, and 0.91; on
+`array-methods` 3.99, 3.80, and 0.34. On `array-spread` it is 0.32,
+0.57, and 0.19 (`bench/gc/results/array-spread.json`): ahead on the
+kernel, where V8's interpreter is slow at a literal with elements
+beside the spread and at `Array.from` with a function, and still behind
+on a spread alone, 2.3 times V8 on three elements and 6.5 on 64
+(`array-spread.txt`). When each was added the figures were 2.78, 3.14,
+and 2.07 (`function-inherited-reads.json`), 2.41, 2.69, and 2.25
+(`shared-loads.json`), 2.07, 1.69, and 1.51 (`prototype-chains.json`),
+11.64, 10.76, and 1.01 (`array-methods.json`), and 1.44, 2.58, and 0.86
+(the `base` of `array-spread.json`).
 
 The day before the margins were 1.28 over JavaScriptCore and 1.42 over V8
 (geometric mean of engine time over zjsz time, within one run). Behind on
@@ -71,7 +77,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
-| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third, await-fresh -19% over a fourth); names read off functions cached (`borrowed-methods` -15%); the array methods without a callback read elements in place (`array-methods` -58%); an ordinary array's species found without asking (`list.slice(1)` -77%) |
+| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third, await-fresh -19% over a fourth); names read off functions cached (`borrowed-methods` -15%); the array methods without a callback read elements in place (`array-methods` -58%); an ordinary array's species found without asking (`list.slice(1)` -77%); an ordinary array spread or given to `Array.from` copied without the iterator protocol (`array-spread` -76%) |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's calls done; a core context running bytecode links no front end, 393 KB of `__TEXT` against 573 KB (`docs/bytecode-files.md`); load time and the compiler's spare time next |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -800,14 +806,37 @@ searched once. `list.slice(1)` goes from 752 cycles a pass to 175 (V8
 `slice` from 1,780 to 1,180 and `map` from 3,490 to 2,730 (V8 2,480).
 Over eight placements `array-methods` is -15.7%, the other fifteen
 kernels within 1.5%; their arrays are long, and the saving is per call
-(`array-species.txt`, `array-species.json`). `__text` +1.0 KB. Left,
+(`array-species.txt`, `array-species.json`). `__text` +1.0 KB. A
+spread of an array, and `Array.from` of one, ran the iterator protocol
+for every element: an iterator made, `next` called, a result object
+read for `done` and `value`, about 450 instructions an element. For an
+ordinary array a program can observe none of it but the element reads,
+so the elements are copied as the iterator would read them, the length
+and each element as they are when reached, with a hole or an accessor
+read as a property. That holds while the array has no named properties
+of its own (no Symbol.iterator, and Array.prototype for a prototype),
+Array.prototype's Symbol.iterator is still the `values` it was
+installed with, and the array iterator's `next` is still the builtin;
+where Symbol.iterator sits on Array.prototype is remembered for the
+shape the prototype has, as `constructor` is for the species. A spread
+appends straight into the literal or argument list being built.
+`Array.from` copies the same way in a loop of its own, once the method
+it read is that `values` and the receiver's object is made, and calls
+its function, when it has one, between the reads. An element copied is
+about 80 instructions where it was 390 to 460; `[...list]` of three
+goes from 421 cycles a pass to 79 (V8 35), `Math.max(...list)` from 493
+to 147 (V8 36), `Array.from(list)` from 400 to 148 (V8 50), and on 64
+elements a spread from 4,110 to 730 (V8 112) and `Array.from` from
+3,610 to 860 (V8 130). Over eight placements `array-spread`, written
+for this, is -76.2%, the other sixteen kernels within 0.8%
+(`array-spread.txt`, `array-spread.json`). `__text` +576 bytes. Left,
 from the same profile: a search is still a call to read each element
 and 48 instructions an element, 6 times V8 on 64; `list.slice(1)` is
-still 1,418 instructions for two elements; spread and `Array.from` of
-an array run the iterator protocol for each element, 47 and 32 times
-V8; `Object.keys` is 28 times V8 and over half of it is allocating and
-freeing lists; `class X extends Array` makes instances that are not
-instances of X.
+still 1,418 instructions for two elements; a copy, by spread, `slice`,
+or `Array.from`, is still an element at a time, 76 to 121 instructions
+each; a spread of a string or a Set still runs the protocol, 12 and 15
+times V8; `Object.keys` is 28 times V8 and over half of it is
+allocating and freeing lists.
 
 **Precompiled bytecode.** Hermes compiles at the application's build
 time and ships bytecode, so it pays no parse on the device and can
