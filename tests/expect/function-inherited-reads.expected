@@ -1,0 +1,49 @@
+call on every kind: 10 10
+called through them: 27 27 15 68
+absent: undefined undefined undefined undefined
+added to Function.prototype: inherited inherited inherited inherited inherited inherited inherited inherited inherited inherited
+changed there: changed changed changed changed
+own hides it: own own changed changed
+own deleted: changed changed
+an accessor there: getter on plain getter on plain getter elsewhere getter elsewhere 4
+data again: data again data again data again data again
+before: data again data again
+another prototype: another prototype's another prototype's data again data again
+back: data again data again
+none: undefined undefined undefined
+through a parent class: data again data again data again data again
+the parent's own: base's base's base's base's
+with other properties: data again data again
+with more: data again data again
+after losing one: data again data again b
+with 200: data again data again
+and its own: crowded's own crowded's own
+mixed: data again | object's | data again | array's | undefined | owner's | undefined | undefined | data again | base's | owner's | data again
+on neither: undefined undefined
+on Object.prototype: Object.prototype's Object.prototype's Object.prototype's
+hidden by Function.prototype: Function.prototype's Function.prototype's Function.prototype's
+shown again: Object.prototype's Object.prototype's
+gone: undefined undefined
+made on first use: object true true true
+another function at the same site: true true false true
+functions without one: undefined undefined undefined undefined undefined undefined
+a generator function's: object true true
+a builtin's and a class's: true true true true
+assigned: true false true
+defined: true true
+mixed: object,undefined,object,object,undefined,object,object
+names: plain inferred arrow Shape bound plain Object max m
+no name: "" ""
+defined: renamed renamed inferred
+deleted: "" "" inferred
+deleted on another: "" Shape an object's Shape
+lengths: 2 2 0 1 2 3 1
+beside arrays and strings: 3 2 4 9 2 0
+defined: 7 7
+deleted: 0 0 2
+elements: "","an object","arrow","Shape","sum",function,undefined,function,function,function
+errors: TypeError TypeError RangeError function RangeError
+element errors: TypeError function TypeError
+a crowded Function.prototype: data again data again data again data again function true 199
+changed there: changed in the crowd changed in the crowd changed in the crowd changed in the crowd
+after it lost an earlier one: changed in the crowd changed in the crowd changed in the crowd changed in the crowd undefined 7

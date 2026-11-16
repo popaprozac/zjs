@@ -15,3 +15,4 @@ tests: 55610  regressions: 0  fixes: 0   3c16de6 -> a promise's fields in the ob
 tests: 55610  regressions: 0  fixes: 0   771b5d6 -> a suspension's registers saved as one run; a generator record's numbers stored with no barrier
 tests: 55610  regressions: 0  fixes: 0   that binary -> the same run with --gc-nursery 64 --gc-slice 16
 tests: 55610  regressions: 0  fixes: 0   1a3cb32 -> a function's own data property read through the site's cache
+tests: 55610  regressions: 0  fixes: 0   a96be99 -> a function's inherited and computed names read through the site's cache; loadProp's general path one function

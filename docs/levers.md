@@ -39,6 +39,13 @@ same run, and about 1.9, 1.7, and 1.6 times faster than QuickJS, Hermes,
 and Hermes on precompiled bytecode on their 2026-09-29 figures. Startup is
 3.5 ms against 6.9 and 30.7.
 
+A thirteenth kernel, `borrowed-methods` (2026-11-15: names read off
+functions, and calls made through `call` and `apply`), is not in this
+table. On it the engine is behind every engine measured: 2.43 times V8
+jitless's time, 2.74 times JavaScriptCore's interpreter's, and 1.81 times
+QuickJS's, after the reads were cached (2.78, 3.14, and 2.07 before;
+`bench/gc/results/function-inherited-reads.json`).
+
 The day before the margins were 1.28 over JavaScriptCore and 1.42 over V8
 (geometric mean of engine time over zjsz time, within one run). Behind on
 five: json 1.7x (was 2.4x) and long-strings 1.2x (JavaScriptCore), regexp
@@ -55,7 +62,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
-| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third, await-fresh -19% over a fourth) |
+| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third, await-fresh -19% over a fourth); names read off functions cached (`borrowed-methods` -15%) |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's calls done; a core context running bytecode links no front end, 393 KB of `__TEXT` against 573 KB (`docs/bytecode-files.md`); load time and the compiler's spare time next |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -595,7 +602,8 @@ build a match array only when a program sees it.
 Promises and async (2026-11-15). A sample profile of the promise loops
 in `bench/alloc/workloads` put 70 to 90% of their time in the runtime's
 own promise machinery, 10 to 31% in bytecode handlers, and 2 to 5% in
-the collector. Four changes so far. `then` and `finally` skip the
+the collector. Five changes so far, the last two in how a function's
+properties are read. `then` and `finally` skip the
 `constructor` and species reads when no program could observe them, and
 an anonymous builtin function takes its name from an atom the runtime
 holds, where each had looked the empty string up (then-loop -13%;
@@ -636,12 +644,28 @@ placements await-fresh -18.8% and combinators -3.1%; in instructions
 -10.6% and -2.3%, and no other workload moves beyond what its own runs
 differ by (`function-own-reads.json`, `function-own-reads.txt`). Against
 V8's interpreter await-fresh goes from 1.22 times its time to 0.98.
-`__text` grows 576 bytes. Left: a read on a function of a name it
-inherits (`f.call`) or has without storing (`prototype`, `name`,
-`length`) still takes the general path, 354 to 518 instructions and 22
-more than before for looking whether to record it; resuming copies the
-registers back one checked store at a time; and a generator object
-still keeps its record in a second cell.
+`__text` grows 576 bytes. The names a function inherits from
+Function.prototype (`call`, `apply`, `bind`) and the ones it computes
+(`prototype`, `length`, `name`) took the general path as well: 353 to
+541 instructions, and 1,441 for `Object.prototype`, three searches of a
+builtin's many properties. For these the site records the class of the
+function's bag (the root class for no bag), which fixes that the
+function holds neither the name nor a prototype other than
+Function.prototype, and with it the class of Function.prototype's bag
+and the slot there, or which name to compute. They are answered in
+loadProp's general path, which is now one function out of line that
+also fills the cache: inlined in the handler they cost every cached
+read 10 instructions, where this way the handler's own reads are 3 to 4
+shorter. A read of these names takes 196 to 296 instructions. A kernel
+written for them, `borrowed-methods`, is -15.1% over eight placements,
+closures -2.2%, the other eleven within 1% (`function-inherited-reads.txt`,
+`function-inherited-reads.json`). `__text` grows 704 bytes. Left: that
+kernel still takes 7,525 instructions a pass, about 1,900 of them its
+eight reads on functions and the rest mostly five calls through `call`
+and `apply`; a read on a function that finds nothing (`type.defaultProps`)
+walks to Object.prototype every time, 1,010 instructions; resuming
+copies the registers back one checked store at a time; and a generator
+object still keeps its record in a second cell.
 
 **Precompiled bytecode.** Hermes compiles at the application's build
 time and ships bytecode, so it pays no parse on the device and can

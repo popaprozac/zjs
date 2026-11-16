@@ -17,7 +17,7 @@ import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, i
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -813,6 +813,62 @@ export struct Runtime {
     return 0;
   }
 
+  // A cached read on a function of a name its own properties lack
+  // (CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL); deleted for a miss.
+  // A function answers a read from its own properties first, and its
+  // bag's class says what they are: no bag reads as the root class,
+  // which holds none. Then come the names it computes, then
+  // Function.prototype's, which is its prototype while its bag holds no
+  // other.
+  function loadCachedFunctionName(fi: u32, nameSlot: usize, handle: u32): Value {
+    const cache = this.siteCache(fi, nameSlot);
+    const tag = this.heap.tagOf(handle);
+    if (tag != TAG_FUNCTION && tag != TAG_HOST_FUNCTION && tag != TAG_CLOSURE) return deletedValue();
+    const bag = this.functionBag(handle);
+    const bagClass: u32 = bag == 0 ? 0 : this.heap.objectClass(bag);
+    if (bagClass != cache.receiverClass) return deletedValue();
+    if (cache.kind == CACHE_FUNCTION_PROTO) {
+      const protoBag = this.functionBag(this.functionProto);
+      if (protoBag == 0 || this.heap.objectClass(protoBag) != cache.proto1Class) return deletedValue();
+      return this.heap.slot(protoBag, cache.slot);
+    }
+    if (cache.slot == VIRTUAL_PROTOTYPE) {
+      // Only one already made: the general path makes it on first use.
+      if (!this.functionHasPrototype(cellValue(handle))) return deletedValue();
+      const made = this.madePrototype(handle);
+      return made == 0 ? deletedValue() : cellValue(made);
+    }
+    if (tag == TAG_HOST_FUNCTION) return this.heap.slot(handle, cache.slot == VIRTUAL_LENGTH ? 1 : 2);
+    const code = this.heap.functionIndex(handle);
+    if (cache.slot == VIRTUAL_LENGTH) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
+    // As functionName.
+    const nameAtom = this.functions[usize(code)].nameAtom;
+    return cellValue(nameAtom == 0 ? this.atomEmpty : nameAtom);
+  }
+
+  // loadProp's general path, for a receiver that is not undefined or
+  // null: a function's inherited or computed name through the site's
+  // cache, else the read as getProperty makes it, filling the site's
+  // cache. Out of line, so the handler keeps only reads that call
+  // nothing.
+  function loadPropSlow(inout this, fi: u32, nameSlot: usize, object: Value, atom: u32): Value {
+    const isCellValue = isCell(object) && asCell(object) != 0;
+    const kind = this.siteCache(fi, nameSlot).kind;
+    if (isCellValue && (kind == CACHE_FUNCTION_PROTO || kind == CACHE_FUNCTION_VIRTUAL)) {
+      const cached = this.loadCachedFunctionName(fi, nameSlot, asCell(object));
+      if (!isDeleted(cached)) return cached;
+    }
+    const found = this.getProperty(object, cellValue(atom));
+    if (this.pendingThrow || !isCellValue) return found;
+    if (this.heap.isObject(asCell(object))) {
+      this.populateLoadCache(fi, nameSlot, asCell(object), atom);
+    } else if (!isUndefined(found)) {
+      // Nothing found is nothing to record.
+      this.populateInheritedCache(fi, nameSlot, asCell(object), atom);
+    }
+    return found;
+  }
+
   // A cached read of an inherited name on an array or a string (see
   // inheritingProto), or of a function's own data property; deleted for
   // a miss.
@@ -834,18 +890,52 @@ export struct Runtime {
     return this.heap.slot(proto, cache.slot);
   }
 
+  // After a slow-path read on a function: remember where the name was
+  // found (see loadCachedFunctionName). An own data property, in its bag;
+  // else a name it computes; else a data property of Function.prototype,
+  // unless its bag holds another prototype. An accessor, a deleted name,
+  // and a bag in dictionary mode are not recorded.
+  function populateFunctionCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    let cache = emptyCache();
+    const bag = this.functionBag(handle);
+    if (bag != 0) {
+      if (this.heap.isDictionary(bag)) return;
+      cache.receiverClass = this.heap.objectClass(bag);
+      const own = this.heap.objectFindSlot(bag, atom);
+      if (own >= 0) {
+        if (isDeleted(this.heap.slot(bag, u32(own)))) return;
+        cache.attr = this.heap.attrOf(bag, u32(own));
+        if ((cache.attr & PROP_ACCESSOR) != 0) return;
+        cache.kind = CACHE_BAG;
+        cache.slot = u32(own);
+        this.functions[usize(fi)].caches[nameSlot] = cache;
+        return;
+      }
+    }
+    if (atom == this.atomPrototype || atom == this.atomLength || atom == this.atomName) {
+      cache.kind = CACHE_FUNCTION_VIRTUAL;
+      cache.slot = atom == this.atomPrototype ? VIRTUAL_PROTOTYPE : atom == this.atomLength ? VIRTUAL_LENGTH : VIRTUAL_NAME;
+      this.functions[usize(fi)].caches[nameSlot] = cache;
+      return;
+    }
+    if (bag != 0 && this.heap.objectFindSlot(bag, this.atomFunctionProto) >= 0) return;
+    const protoBag = this.functionBag(this.functionProto);
+    if (protoBag == 0 || this.heap.isDictionary(protoBag)) return;
+    const inherited = this.heap.objectFindSlot(protoBag, atom);
+    if (inherited < 0 || isDeleted(this.heap.slot(protoBag, u32(inherited)))) return;
+    cache.attr = this.heap.attrOf(protoBag, u32(inherited));
+    if ((cache.attr & PROP_ACCESSOR) != 0) return;
+    cache.kind = CACHE_FUNCTION_PROTO;
+    cache.depth = 1;
+    cache.slot = u32(inherited);
+    cache.proto1Class = this.heap.objectClass(protoBag);
+    this.functions[usize(fi)].caches[nameSlot] = cache;
+  }
+
   function populateInheritedCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
-      // A function's own data property, in its bag. An accessor, a
-      // deleted name, and a bag in dictionary mode are not recorded.
-      const bag = this.functionBag(handle);
-      if (bag == 0 || this.heap.isDictionary(bag)) return;
-      const own = this.heap.objectFindSlot(bag, atom);
-      if (own < 0 || isDeleted(this.heap.slot(bag, u32(own)))) return;
-      const ownAttr = this.heap.attrOf(bag, u32(own));
-      if ((ownAttr & PROP_ACCESSOR) != 0) return;
-      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_BAG, attr: ownAttr, depth: 0, receiverClass: this.heap.objectClass(bag), slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+      this.populateFunctionCache(fi, nameSlot, handle, atom);
       return;
     }
     const proto = this.inheritingProto(handle);
@@ -1917,6 +2007,16 @@ export struct Runtime {
     return dataProperty(value, attr);
   }
 
+  // The `prototype` object made for a function on its first use, 0
+  // before: a closure keeps it in slot 1, any other function in `link`.
+  function madePrototype(fn: u32): u32 {
+    if (this.heap.isClosure(fn)) {
+      const held = this.heap.slot(fn, 1);
+      return isCell(held) ? asCell(held) : 0;
+    }
+    return this.heap.linkOf(fn);
+  }
+
   // A function's `prototype` object, created on first use with a
   // `constructor` back-reference.
   function prototypeOf(inout this, fn: u32): u32 {
@@ -1927,13 +2027,8 @@ export struct Runtime {
     if (this.isObjectLike(defined)) return asCell(defined);
     if (this.functionBagHas(fn, atomPrototype)) return this.objectProto;
     const closure = this.heap.isClosure(fn);
-    if (closure) {
-      const held = this.heap.slot(fn, 1);
-      if (isCell(held) && asCell(held) != 0) return asCell(held);
-    } else {
-      const existing = this.heap.linkOf(fn);
-      if (existing != 0) return existing;
-    }
+    const made = this.madePrototype(fn);
+    if (made != 0) return made;
     // A generator function's prototype inherits %GeneratorPrototype% and
     // has no constructor.
     let isGeneratorFunction = false;
@@ -4959,16 +5054,7 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    const found = this.getProperty(element, cellValue(atom));
-    if (this.pendingThrow) return undefinedValue();
-    if (isCell(element) && asCell(element) != 0) {
-      if (this.heap.isObject(asCell(element))) {
-        this.populateLoadCache(fi, nameSlot, asCell(element), atom);
-      } else {
-        this.populateInheritedCache(fi, nameSlot, asCell(element), atom);
-      }
-    }
-    return found;
+    return this.loadPropSlow(fi, nameSlot, element, atom);
   }
 
   // A leaf's property read: loadCached's own-property hit for the site's
@@ -9418,18 +9504,13 @@ export struct Runtime {
                 throwing = true;
                 break;
               } else {
-                const found = this.getProperty(object, cellValue(atom));
+                const found = this.loadPropSlow(fi, nameSlot, object, atom);
                 if (this.pendingThrow) {
                   thrown = this.takePending();
                   throwing = true;
                   break;
                 } else {
                   this.setReg(base, inst.a, found);
-                  if (isPlainObject) {
-                    this.populateLoadCache(fi, nameSlot, asCell(object), atom);
-                  } else if (isCellValue) {
-                    this.populateInheritedCache(fi, nameSlot, asCell(object), atom);
-                  }
                 }
               }
             }

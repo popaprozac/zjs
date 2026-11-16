@@ -813,6 +813,19 @@ export const CACHE_DEFINE: u8 = 5;
 // A read on a function of an own data property, which a function keeps
 // in its bag of named properties: the bag's class and the slot there.
 export const CACHE_BAG: u8 = 6;
+// A read on a function of a name its own properties lack and
+// Function.prototype holds as data, while that is the function's
+// prototype: the class of the function's bag, which fixes both (no bag
+// reads as the root class), and the class of Function.prototype's bag
+// with the slot there.
+export const CACHE_FUNCTION_PROTO: u8 = 7;
+// A read on a function of a name it computes (`prototype`, `length`,
+// `name`) while its own properties lack it: the class of its bag, and
+// in `slot` which of the three.
+export const CACHE_FUNCTION_VIRTUAL: u8 = 8;
+export const VIRTUAL_PROTOTYPE: u32 = 0;
+export const VIRTUAL_LENGTH: u32 = 1;
+export const VIRTUAL_NAME: u32 = 2;
 
 export struct PropertyCache {
   kind: u8;

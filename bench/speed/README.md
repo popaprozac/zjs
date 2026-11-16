@@ -1,7 +1,7 @@
 # Jitless speed
 
 The Z engine against the jit-less engines an embedder would otherwise
-choose, on twelve small kernels. The engine's goal is to be the fastest
+choose, on thirteen small kernels. The engine's goal is to be the fastest
 engine that runs without a JIT, which is what every iOS app gets; these
 kernels are how that is tracked.
 
@@ -39,6 +39,10 @@ string's bytes as blocks.
 `helpers` (added 2026-09-28) calls small non-recursive functions from a
 loop -- arithmetic helpers, a predicate, a property accessor -- which
 `calls`, a recursion, does not.
+`borrowed-methods` (added 2026-11-15) reads names off functions and calls
+through them, as library code does: a builtin's prototype method borrowed
+with `call`, a function called with `call` and `apply`, a function's
+`length` and `name`. Recorded runs before that date have twelve kernels.
 
 The `vs zjsz` row is the geometric mean over the kernels of each engine's
 time divided by the Z engine's: below 1 means that engine is faster.
