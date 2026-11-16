@@ -4,6 +4,7 @@ import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted } from "../value.zs";
 import { Runtime } from "../runtime.zs";
 import { PROP_METHOD, PROP_CONFIGURABLE } from "../heap.zs";
+import { constructReceiver, fillReceiver } from "./array.zs";
 
 // %IteratorPrototype%[Symbol.iterator]: itself.
 function iteratorSelf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -75,7 +76,14 @@ function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   if (!isUndefined(items) && !isNull(items)) usingIterator = runtime.getProperty(items, symbolIterator);
   if (runtime.pendingThrow) return undefinedValue();
   let source = undefinedValue();
+  // The receiver's own object when it is a constructor other than Array:
+  // made before the items are read, filled once they are gathered, and
+  // rooted until the builtin returns (callHost pops it).
+  let target = undefinedValue();
   if (runtime.isCallable(usingIterator)) {
+    target = constructReceiver(inout runtime, thisValue, -1.0);
+    if (runtime.pendingThrow) return undefinedValue();
+    runtime.pushTempRoot(target);
     source = runtime.iterateToArray(items);
     if (runtime.pendingThrow) return undefinedValue();
   } else {
@@ -85,15 +93,16 @@ function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
       runtime.raise(error);
       return undefinedValue();
     }
-    const gathered = runtime.heap.allocateArray(0);
-    runtime.pushTempRoot(cellValue(gathered));
     const lengthKey = cellValue(runtime.atomLength);
     const lengthValue = runtime.getProperty(items, lengthKey);
-    if (runtime.pendingThrow) {
-      runtime.popTempRoot();
-      return undefinedValue();
-    }
+    if (runtime.pendingThrow) return undefinedValue();
     const length = runtime.toLength(lengthValue);
+    if (runtime.pendingThrow) return undefinedValue();
+    target = constructReceiver(inout runtime, thisValue, f64(length));
+    if (runtime.pendingThrow) return undefinedValue();
+    runtime.pushTempRoot(target);
+    const gathered = runtime.heap.allocateArray(0);
+    runtime.pushTempRoot(cellValue(gathered));
     let index: u32 = 0;
     while (index < length) {
       const element = runtime.getProperty(items, int32Value(i32(index)));
@@ -107,7 +116,7 @@ function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
     runtime.popTempRoot();
     source = cellValue(gathered);
   }
-  if (isUndefined(mapFn)) return source;
+  if (isUndefined(mapFn)) return fillReceiver(inout runtime, target, asCell(source));
   const array = asCell(source);
   runtime.pushTempRoot(source);
   const count = runtime.heap.arrayLength(array);
@@ -122,10 +131,12 @@ function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
     index = index + 1;
   }
   runtime.popTempRoot();
-  return source;
+  return fillReceiver(inout runtime, target, array);
 }
 
 function arrayOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const target = constructReceiver(inout runtime, thisValue, f64(argc));
+  if (runtime.pendingThrow) return undefinedValue();
   const array = runtime.heap.allocateArray(argc);
   let index: u32 = 0;
   while (index < argc) {
@@ -133,7 +144,7 @@ function arrayOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: 
     runtime.heap.setSlot(array, index, element);
     index = index + 1;
   }
-  return cellValue(array);
+  return fillReceiver(inout runtime, target, array);
 }
 
 export function installIteration(inout runtime: Runtime): void {

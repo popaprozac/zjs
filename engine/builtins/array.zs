@@ -211,8 +211,28 @@ function callWith3(inout runtime: Runtime, callback: Value, receiver: Value, a: 
 
 // --- The constructor and statics ---
 
-// new Array(n) / Array(a, b, c)
+// The array a construct just made, inheriting from the `prototype` its
+// new target held when that is an object (Array.prototype otherwise).
+function withProto(inout runtime: Runtime, array: u32, proto: Value): Value {
+  const made = cellValue(array);
+  if (runtime.isObjectLike(proto)) {
+    const kept = runtime.setPrototypeOfValue(made, proto);
+  }
+  return made;
+}
+
+// new Array(n) / Array(a, b, c). The constructor makes its own object,
+// so a new target other than Array itself (a subclass, or the one
+// Reflect.construct names) gives the array its `prototype`, which is
+// read before the length is checked.
 function constructArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const newTarget = runtime.takeHostNewTarget();
+  let proto = undefinedValue();
+  if (!isUndefined(newTarget) && asCell(newTarget) != callee) {
+    const atomPrototype = runtime.atomPrototype;
+    proto = runtime.getProperty(newTarget, cellValue(atomPrototype));
+    if (runtime.pendingThrow) return undefinedValue();
+  }
   if (argc == 1) {
     // One number is a length; it must be a non-negative integer.
     const first = runtime.argument(argsBase, argc, 0);
@@ -224,7 +244,7 @@ function constructArray(inout runtime: Runtime, thisValue: Value, argsBase: u32,
         runtime.raise(error);
         return undefinedValue();
       }
-      return cellValue(runtime.heap.allocateArrayOfLength(u32(number)));
+      return withProto(inout runtime, runtime.heap.allocateArrayOfLength(u32(number)), proto);
     }
   }
   const array = runtime.heap.allocateArray(argc);
@@ -234,7 +254,40 @@ function constructArray(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     runtime.heap.setSlot(array, index, element);
     index = index + 1;
   }
-  return cellValue(array);
+  return withProto(inout runtime, array, proto);
+}
+
+// What Array.from and Array.of fill when their receiver is a constructor
+// other than Array itself (a subclass, usually): the object constructing
+// it makes, with the length as the argument when that is known up front
+// (negative when it is not). Undefined for any other receiver, whose
+// result is a plain array, and with a throw pending.
+export function constructReceiver(inout runtime: Runtime, receiver: Value, length: f64): Value {
+  if (!runtime.isConstructorValue(receiver) || asCell(receiver) == runtime.arrayCtor) return undefinedValue();
+  let args = Array<Value>();
+  if (length >= 0.0) args.push(integerValue(length));
+  return runtime.constructValue(receiver, move args, receiver);
+}
+
+// What Array.from and Array.of return once the plain array `source`
+// holds the elements: `source` itself for a plain receiver (no target),
+// else the target, given each element by CreateDataPropertyOrThrow and
+// then `length` by Set. Undefined with a throw pending.
+export function fillReceiver(inout runtime: Runtime, target: Value, source: u32): Value {
+  if (isUndefined(target)) return cellValue(source);
+  runtime.pushTempRoot(target);
+  runtime.pushTempRoot(cellValue(source));
+  const count = runtime.heap.arrayLength(source);
+  let ok = true;
+  let index: u32 = 0;
+  while (ok && index < count) {
+    ok = createIndex(inout runtime, target, f64(index), runtime.heap.arrayGet(source, index));
+    index = index + 1;
+  }
+  if (ok) ok = setLength(inout runtime, target, f64(count));
+  runtime.popTempRoot();
+  runtime.popTempRoot();
+  return ok ? target : undefinedValue();
 }
 
 function arrayIsArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1671,7 +1724,7 @@ function unscopable(inout runtime: Runtime, target: u32, in name: String): void 
 export function installArray(inout runtime: Runtime): void {
   const arrayProto = runtime.arrayProto;
   const arrayText: String = "Array";
-  const ctor = runtime.defineConstructor(constructArray, undefinedValue(), 1, in arrayText);
+  const ctor = runtime.defineAllocatingConstructor(constructArray, undefinedValue(), 1, in arrayText);
   runtime.heap.setLink(ctor, arrayProto);
   const atomConstructor = runtime.atomConstructor;
   runtime.defineOwnAttr(arrayProto, atomConstructor, cellValue(ctor), PROP_METHOD);

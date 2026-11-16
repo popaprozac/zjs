@@ -628,8 +628,9 @@ export struct Runtime {
   atomHome: u32;
   atomNewTarget: u32;
   atomFunctionProto: u32;
-  // In an array's bag: its [[Prototype]] once setPrototypeOf has given it
-  // one other than Array.prototype (null for none).
+  // In an array's bag: its [[Prototype]] once setPrototypeOf, or a
+  // construct whose new target is not Array, has given it one other than
+  // Array.prototype (null for none).
   atomArrayProto: u32;
   // Promises: %Promise.prototype%, the hidden key of a promise's record,
   // and the job queue (each job a heap array) with its read cursor.
@@ -1567,9 +1568,10 @@ export struct Runtime {
     return this.functionProto;
   }
 
-  // An array's [[Prototype]]: Array.prototype unless setPrototypeOf gave
-  // it another, which is kept under a hidden key in the array's bag (so
-  // the collector reaches it through the array). 0 for none.
+  // An array's [[Prototype]]: Array.prototype unless setPrototypeOf, or
+  // the new target it was constructed with, gave it another, which is
+  // kept under a hidden key in the array's bag (so the collector reaches
+  // it through the array). 0 for none.
   function arrayProtoOf(handle: u32): u32 {
     const bag = this.heap.linkOf(handle);
     if (bag == 0) return this.arrayProto;

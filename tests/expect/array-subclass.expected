@@ -1,0 +1,46 @@
+new: [true,true,true,0,3,false,"1,2,3",1,"x",true,true,"[object Array]"]
+new with a negative length: throws RangeError
+new with a fractional length: throws RangeError
+called without new: throws TypeError
+push, pop, and length: [3,3,3,2,6,false,"1",true,[1]]
+own keys: [["0","1","extra"],["0","1","length","extra"],4,["0","1","extra"],[7,8]]
+statics the subclass inherits: [true,true,true,"Stack",0,true,true,true]
+from an array: [true,true,3,[1,2,3],3]
+from other iterables: [true,[4,5],true,["h","e","y"],true,["a","b","c"]]
+from an array-like: [true,3,["p",null,"r"],true]
+from with a mapping function: [true,[10,21,32]]
+from nothing: throws TypeError
+from with a mapping that is not a function: throws TypeError
+of: [true,[1,2,3],true,1,[7],true,0]
+from constructs before it reads the items: ["construct ","iterate","length","construct 2","construct 3"]
+from when the constructor throws: ["EvalError",false]
+from and of set the length: [true,2,[1,2],3,[1,2,3]]
+from and of define, they do not assign: [["a","b"],["c","d"],true,0,["set y"],2,"inherited",false]
+from and of on a constructor that is not a subclass: [true,false,"no arguments","x","y",2,2,"q",2,true,3,9,3]
+from and of on a receiver that is not a constructor: [true,[1],true,[1,2],true,["a","b"],true,[3],true,[4]]
+of on an object that takes no elements: throws TypeError
+of on an object whose element is fixed: throws TypeError
+from on an object whose length is fixed: throws TypeError
+inherited and added methods: [2,3,1,true,true,"1,2,3",true,"3-2-1",[3,1,2],[3,2,1],6,[0,3]]
+overridden methods: [2,3,"<a,b,c>","<a+b+c>","<a,b,c>","<a,b,c>","a,b,c",2,4]
+one site, plain and subclass receivers: [6,"0-1-2-3-4-5","<0-1-2-3-4-5>","0-1-2-3-4-5"]
+a constructor and fields of its own: [true,"first",3,42,3,[1,2,3],"empty",0,["0","1","2","label","count"]]
+this before super: throws ReferenceError
+a subclass of a subclass: [true,true,true,true,"deep 3",3,true,"deep y",true,"deep 9",true,true]
+species: [[true,true,true,true,true,true,true],[[2,3,4],[1,2,3,4,5],[2,4,6,8],[2,4],[2,3],[1,2,[3]],[1,1,4,4]],[1,4],4]
+species of a subclass of a subclass: [true,"deep 4",true,[2,3],true,6]
+species runs the subclass's constructor: [true,[2,4,6],3,0,42,true,0,0]
+species overridden: [true,false,true,true,[1,2]]
+species null and undefined: [true,[1,2],false,true,[1,2]]
+species that is not a constructor: throws TypeError
+constructor that is not an object: throws TypeError
+methods that always make a plain array: [[false,false,false,false,false,false,false],[[1,2,3],[2,1,3],[1,2],[9,1,2],[3,1,2],[3,1,2],[0,3,1,2,4]]]
+Reflect.construct: [true,2,false,true,[1,2],true,true,3,"undefined",true]
+Reflect.construct with a bad length: throws RangeError
+bound constructors: [true,true,[1,2,3],true]
+prototype is read before the length is checked: ["prototype","RangeError","prototype",true,2]
+a subclass written without class: [true,4,2,true,5,9,true]
+an array given the prototype afterwards: [true,3,true,true]
+an instance keeps its class through a collection: ["temp 3","temp 3","Temp",[2,4,6]]
+a prototype nothing else holds: ["fresh",3,[1,2,3],true]
+collecting while from and of fill: [true,[{"w":1},{"w":2}],true,[{"v":3},{"v":4}],true,[{"v":5},{"v":6}]]
