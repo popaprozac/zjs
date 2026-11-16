@@ -705,7 +705,7 @@ function otherHas(inout runtime: Runtime, in other: SetRecord, element: Value): 
   return runtime.toBooleanValue(result);
 }
 
-// The iterator from the other set's `keys`.
+// The iteration the other set's `keys` starts.
 function otherKeys(inout runtime: Runtime, in other: SetRecord): Value {
   const iterator = runtime.callValue0(other.keys, other.set);
   if (runtime.pendingThrow) return undefinedValue();
@@ -715,7 +715,7 @@ function otherKeys(inout runtime: Runtime, in other: SetRecord): Value {
     runtime.raise(error);
     return undefinedValue();
   }
-  return iterator;
+  return runtime.iterationOf(iterator);
 }
 
 // A fresh Set holding the live elements of `record`, in order.

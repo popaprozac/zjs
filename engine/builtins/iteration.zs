@@ -62,75 +62,79 @@ function stringIterator(inout runtime: Runtime, thisValue: Value, argsBase: u32,
 }
 
 // Array.from(items, mapFn): an iterable, or an array-like by length.
+// Each value is mapped as it is produced, so a mapFn that changes the
+// source sees its change in the values after.
 function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const items = runtime.argument(argsBase, argc, 0);
   const mapFn = runtime.argument(argsBase, argc, 1);
-  if (!isUndefined(mapFn) && !runtime.isCallable(mapFn)) {
+  const mapping = !isUndefined(mapFn);
+  if (mapping && !runtime.isCallable(mapFn)) {
     const message: String = "Array.from: mapFn is not callable";
     const error = runtime.typeError(in message);
     runtime.raise(error);
     return undefinedValue();
   }
+  const thisArg = runtime.argument(argsBase, argc, 2);
+  // Symbol.iterator is read once: the iterator is made from what this
+  // read found.
   const symbolIterator = runtime.symbolIterator;
   let usingIterator = undefinedValue();
   if (!isUndefined(items) && !isNull(items)) usingIterator = runtime.getProperty(items, symbolIterator);
   if (runtime.pendingThrow) return undefinedValue();
-  let source = undefinedValue();
-  // The receiver's own object when it is a constructor other than Array:
-  // made before the items are read, filled once they are gathered, and
-  // rooted until the builtin returns (callHost pops it).
-  let target = undefinedValue();
+  // The values gather in a plain array. The receiver's own object, when
+  // it is a constructor other than Array, is made before the items are
+  // read and filled once they are gathered. Both, and the iteration, are
+  // rooted until the builtin returns (callHost pops them).
+  const array = runtime.heap.allocateArray(0);
+  runtime.pushTempRoot(cellValue(array));
   if (runtime.isCallable(usingIterator)) {
-    target = constructReceiver(inout runtime, thisValue, -1.0);
+    const target = constructReceiver(inout runtime, thisValue, -1.0);
     if (runtime.pendingThrow) return undefinedValue();
     runtime.pushTempRoot(target);
-    source = runtime.iterateToArray(items);
+    const iteration = runtime.getIteratorFromMethod(items, usingIterator);
     if (runtime.pendingThrow) return undefinedValue();
-  } else {
-    if (isUndefined(items) || isNull(items)) {
-      const message: String = "Array.from requires an array-like or iterable";
-      const error = runtime.typeError(in message);
-      runtime.raise(error);
-      return undefinedValue();
-    }
-    const lengthKey = cellValue(runtime.atomLength);
-    const lengthValue = runtime.getProperty(items, lengthKey);
-    if (runtime.pendingThrow) return undefinedValue();
-    const length = runtime.toLength(lengthValue);
-    if (runtime.pendingThrow) return undefinedValue();
-    target = constructReceiver(inout runtime, thisValue, f64(length));
-    if (runtime.pendingThrow) return undefinedValue();
-    runtime.pushTempRoot(target);
-    const gathered = runtime.heap.allocateArray(0);
-    runtime.pushTempRoot(cellValue(gathered));
+    runtime.pushTempRoot(iteration);
     let index: u32 = 0;
-    while (index < length) {
-      const element = runtime.getProperty(items, int32Value(i32(index)));
-      if (runtime.pendingThrow) {
-        runtime.popTempRoot();
-        return undefinedValue();
+    while (true) {
+      let next = runtime.iteratorStep(iteration);
+      if (runtime.pendingThrow) return undefinedValue();
+      if (isDeleted(next)) return fillReceiver(inout runtime, target, array);
+      if (mapping) {
+        next = runtime.callValue2(mapFn, thisArg, next, int32Value(i32(index)));
+        if (runtime.pendingThrow) {
+          runtime.closeAfterThrow(iteration);
+          return undefinedValue();
+        }
       }
-      runtime.heap.arraySet(gathered, index, element);
+      runtime.heap.arraySet(array, index, next);
       index = index + 1;
     }
-    runtime.popTempRoot();
-    source = cellValue(gathered);
   }
-  if (isUndefined(mapFn)) return fillReceiver(inout runtime, target, asCell(source));
-  const array = asCell(source);
-  runtime.pushTempRoot(source);
-  const count = runtime.heap.arrayLength(array);
+  if (isUndefined(items) || isNull(items)) {
+    const message: String = "Array.from requires an array-like or iterable";
+    const error = runtime.typeError(in message);
+    runtime.raise(error);
+    return undefinedValue();
+  }
+  const lengthKey = cellValue(runtime.atomLength);
+  const lengthValue = runtime.getProperty(items, lengthKey);
+  if (runtime.pendingThrow) return undefinedValue();
+  const length = runtime.toLength(lengthValue);
+  if (runtime.pendingThrow) return undefinedValue();
+  const target = constructReceiver(inout runtime, thisValue, f64(length));
+  if (runtime.pendingThrow) return undefinedValue();
+  runtime.pushTempRoot(target);
   let index: u32 = 0;
-  while (index < count) {
-    const mapped = runtime.callValue2(mapFn, runtime.argument(argsBase, argc, 2), runtime.heap.arrayGet(array, index), int32Value(i32(index)));
-    if (runtime.pendingThrow) {
-      runtime.popTempRoot();
-      return undefinedValue();
+  while (index < length) {
+    let element = runtime.getProperty(items, int32Value(i32(index)));
+    if (runtime.pendingThrow) return undefinedValue();
+    if (mapping) {
+      element = runtime.callValue2(mapFn, thisArg, element, int32Value(i32(index)));
+      if (runtime.pendingThrow) return undefinedValue();
     }
-    runtime.heap.arraySet(array, index, mapped);
+    runtime.heap.arraySet(array, index, element);
     index = index + 1;
   }
-  runtime.popTempRoot();
   return fillReceiver(inout runtime, target, array);
 }
 

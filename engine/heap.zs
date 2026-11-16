@@ -50,6 +50,9 @@ export const TAG_WEAK_RECORD: u8 = 16;
 export const TAG_WEAK_ARRAY: u8 = 17;
 // A Map's or Set's entries, kept outside the slot arena: see Tables.
 export const TAG_TABLE: u8 = 18;
+// An iteration under way: slot 0 its iterator, slot 1 that iterator's
+// `next` as read when the iterator was got. No program value is one.
+export const TAG_ITERATION: u8 = 19;
 
 // Beyond the reference's tags: an environment is its own cell here, where
 // the reference keeps captured bindings in a property bag.
@@ -3897,6 +3900,18 @@ export struct Heap {
 
   function isAccessor(handle: u32): boolean {
     return this.cellHeader(handle).tag == TAG_ACCESSOR;
+  }
+
+  // An iteration: its iterator and that iterator's `next`.
+  function allocateIteration(inout this, iterator: Value, next: Value): u32 {
+    const handle = this.allocate(TAG_ITERATION, 2);
+    this.setSlot(handle, 0, iterator);
+    this.setSlot(handle, 1, next);
+    return handle;
+  }
+
+  function isIteration(handle: u32): boolean {
+    return this.cellHeader(handle).tag == TAG_ITERATION;
   }
 
   function marked(handle: u32): boolean {

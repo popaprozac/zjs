@@ -1,0 +1,55 @@
+for-of: Symbol.iterator 1 next 1 calls 4 closed 0 -> 6
+for-of, break: Symbol.iterator 1 next 1 calls 1 closed 1 -> 1
+spread into an array: Symbol.iterator 1 next 1 calls 4 closed 0 -> 0,1,2,3,4
+spread into a call: Symbol.iterator 1 next 1 calls 4 closed 0 -> 3
+destructuring two: Symbol.iterator 1 next 1 calls 2 closed 1 -> 3
+destructuring with a rest: Symbol.iterator 1 next 1 calls 4 closed 0 -> 2,3
+destructuring none: Symbol.iterator 1 next 1 calls 0 closed 1 -> no step
+yield*: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,2,3
+Array.from: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,2,3
+Array.from, mapped: Symbol.iterator 1 next 1 calls 4 closed 0 -> 2,4,6
+new Map: Symbol.iterator 1 next 1 calls 3 closed 0 -> 2
+new Set: Symbol.iterator 1 next 1 calls 4 closed 0 -> 2
+new WeakMap: Symbol.iterator 1 next 1 calls 3 closed 0 -> 2
+new WeakSet: Symbol.iterator 1 next 1 calls 3 closed 0 -> true
+Map.groupBy: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,3
+Object.groupBy: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,3
+AggregateError: Symbol.iterator 1 next 1 calls 3 closed 0 -> 1,2
+Promise.all: Symbol.iterator 1 next 1 calls 3 closed 0 -> started
+Promise.allSettled: Symbol.iterator 1 next 1 calls 3 closed 0 -> started
+Promise.any: Symbol.iterator 1 next 1 calls 3 closed 0 -> started
+Promise.race: Symbol.iterator 1 next 1 calls 3 closed 0 -> started
+Set.prototype.union: Symbol.iterator 1 next 1 calls 6 closed 0 -> 9,1,2,3,4,5
+Set.prototype.isSupersetOf: Symbol.iterator 1 next 1 calls 6 closed 0 -> true
+map between steps, array: 1,2,changed
+map between steps, array-like: 1,2,changed
+map sees a longer source: 1,2,3,4
+map between steps, subclass: true 1,2,changed
+map arguments: a0102,b1102
+map throws: stop at 3 made 3 closed 1
+map throws, return throws: from map closed 1
+not callable: TypeError
+Symbol.iterator reads, Array.from: 1
+Symbol.iterator reads, Array.from mapped: 1
+Symbol.iterator reads, for-of: 1
+Symbol.iterator reads, spread: 1
+Symbol.iterator reads, destructuring: 1
+Symbol.iterator reads, new Set: 1
+next reads, for-of over three: 1 seen 3
+next reads, spread: 1,2,3 1
+next reads, destructuring: 1 2 3,4 1
+next reads, Array.from: 1,2,3 1
+next reads, new Map: 2 1
+next reads, yield*: 1,2,3 1
+next replaced mid-loop, array: 1,2,3
+next replaced mid-loop, own: 0,1,2
+next replaced before the loop: 0
+an own next: 0
+builtin next, wrong receiver: TypeError
+order: get @@iterator, call @@iterator, get next, call next, body 0, call next, body 1, call next
+no next, for-of: TypeError
+no next, no step: ran
+next getter throws, no step: next getter
+next getter throws, Array.from: next getter
+for await, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 6
+async yield*, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,2,3

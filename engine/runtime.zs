@@ -4338,8 +4338,35 @@ export struct Runtime {
     return isCell(held) && asCell(held) == this.arrayIteratorNext;
   }
 
-  // GetIterator: the value's @@iterator method, called; its result must
-  // be an object. A throw is left pending.
+  // What stepping an iterator goes by (the specification's iterator
+  // record): the iterator and its `next`, read here, once, however many
+  // steps follow. An array iterator whose `next` is the builtin's stands
+  // for itself, so an array's iteration allocates nothing more; any other
+  // is a cell holding the two. A throw is left pending.
+  function iterationOf(inout this, iterator: Value): Value {
+    if (this.isPristineArrayIterator(iterator)) return iterator;
+    this.pushTempRoot(iterator);
+    const nextKey = cellValue(this.atomNext);
+    const next = this.getProperty(iterator, nextKey);
+    this.popTempRoot();
+    if (this.pendingThrow) return undefinedValue();
+    return cellValue(this.heap.allocateIteration(iterator, next));
+  }
+
+  // The iterator of an iteration; any other value is the iterator itself.
+  function iteratorOf(held: Value): Value {
+    if (isCell(held) && asCell(held) != 0 && this.heap.isIteration(asCell(held))) return this.heap.slot(asCell(held), 0);
+    return held;
+  }
+
+  // The `next` an iteration was got with.
+  function nextOf(held: Value): Value {
+    if (this.heap.isIteration(asCell(held))) return this.heap.slot(asCell(held), 1);
+    return cellValue(this.arrayIteratorNext);
+  }
+
+  // GetIterator: the iteration the value's @@iterator method starts. A
+  // throw is left pending.
   function getIterator(inout this, value: Value): Value {
     const symbolIterator = this.symbolIterator;
     let method = undefinedValue();
@@ -4351,6 +4378,12 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
+    return this.getIteratorFromMethod(value, method);
+  }
+
+  // GetIteratorFromMethod: the method called on the value, whose result
+  // must be an object, and the iteration of that iterator.
+  function getIteratorFromMethod(inout this, value: Value, method: Value): Value {
     const iterator = this.callValue0(method, value);
     if (this.pendingThrow) return undefinedValue();
     if (!this.isObjectLike(iterator)) {
@@ -4359,11 +4392,11 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    return iterator;
+    return this.iterationOf(iterator);
   }
 
   // GetIterator(value, async): the @@asyncIterator method, else the sync
-  // iterator wrapped so its results arrive through promises.
+  // iteration wrapped so its results arrive through promises.
   function getAsyncIterator(inout this, value: Value): Value {
     const symbolAsyncIterator = this.symbolAsyncIterator;
     let method = undefinedValue();
@@ -4397,7 +4430,7 @@ export struct Runtime {
     return iterator;
   }
 
-  // The sync iterator inside an async-from-sync wrapper, or undefined.
+  // The sync iteration inside an async-from-sync wrapper, or undefined.
   function wrappedSyncIterator(value: Value): Value {
     if (!isCell(value) || asCell(value) == 0 || !this.heap.isObject(asCell(value))) return undefinedValue();
     const slot = this.heap.objectFindSlot(asCell(value), this.atomSyncIterator);
@@ -4405,13 +4438,14 @@ export struct Runtime {
     return this.heap.slot(asCell(value), u32(slot));
   }
 
-  // IteratorStep: the next value, or the deleted marker when done. A
-  // throw is left pending (and reads as done).
-  function iteratorStep(inout this, iterator: Value): Value {
-    if (this.isPristineArrayIterator(iterator)) return this.arrayIteratorStep(asCell(iterator));
-    const nextKey = cellValue(this.atomNext);
-    const next = this.getProperty(iterator, nextKey);
-    if (this.pendingThrow) return deletedValue();
+  // IteratorStep on an iteration (what getIterator returned): the next
+  // value, or the deleted marker when done. A throw is left pending (and
+  // reads as done).
+  function iteratorStep(inout this, iteration: Value): Value {
+    const held = asCell(iteration);
+    if (!this.heap.isIteration(held)) return this.arrayIteratorStep(held);
+    const iterator = this.heap.slot(held, 0);
+    const next = this.heap.slot(held, 1);
     if (!this.isCallable(next)) {
       const message: String = "iterator.next is not a function";
       const error = this.typeError(in message);
@@ -4450,10 +4484,13 @@ export struct Runtime {
     return this.internText(in name);
   }
 
-  function iteratorCallWith(inout this, iterator: Value, in name: String, value: Value, inout absent: boolean): Value {
+  function iteratorCallWith(inout this, iteration: Value, in name: String, value: Value, inout absent: boolean): Value {
     absent = false;
     const key = this.iteratorMethodKey(in name);
-    const method = this.getProperty(iterator, key);
+    // `next` is the one the iteration was got with; the others are read
+    // each time they are wanted.
+    const iterator = this.iteratorOf(iteration);
+    const method = asCell(key) == this.atomNext ? this.nextOf(iteration) : this.getProperty(iterator, key);
     if (this.pendingThrow) return deletedValue();
     if (isUndefined(method) || isNull(method)) {
       absent = true;
@@ -4516,7 +4553,8 @@ export struct Runtime {
     this.raise(thrown);
   }
 
-  function iteratorClose(inout this, iterator: Value): void {
+  function iteratorClose(inout this, iteration: Value): void {
+    const iterator = this.iteratorOf(iteration);
     if (!this.isObjectLike(iterator)) return;
     if (this.isPristineArrayIterator(iterator)) return;
     const returnKey = cellValue(this.atomReturn);
@@ -11359,13 +11397,16 @@ function asyncFromSyncRequest(inout runtime: Runtime, thisValue: Value, argsBase
     runtime.popTempRoot();
     return promise;
   }
+  // The wrapper holds the sync iteration: its `next` is the one it was
+  // got with.
+  const iterator = runtime.iteratorOf(sync);
   let method = undefinedValue();
   if (mode == 0) {
-    method = runtime.getProperty(sync, cellValue(runtime.atomNext));
+    method = runtime.nextOf(sync);
   } else if (mode == 2) {
-    method = runtime.getProperty(sync, cellValue(runtime.atomReturn));
+    method = runtime.getProperty(iterator, cellValue(runtime.atomReturn));
   } else {
-    method = runtime.getProperty(sync, cellValue(runtime.atomThrow));
+    method = runtime.getProperty(iterator, cellValue(runtime.atomThrow));
   }
   let result = undefinedValue();
   if (!runtime.pendingThrow) {
@@ -11380,7 +11421,7 @@ function asyncFromSyncRequest(inout runtime: Runtime, thisValue: Value, argsBase
     } else {
       let args = Array<Value>();
       if (argc > 0) args.push(runtime.argument(argsBase, argc, 0));
-      result = runtime.callValue(method, sync, move args);
+      result = runtime.callValue(method, iterator, move args);
     }
   }
   if (!runtime.pendingThrow && !runtime.isObjectLike(result)) {

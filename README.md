@@ -160,9 +160,12 @@ recursive-descent parser with the reviver walk) and `JSON.stringify`
 (`toJSON`, replacer function and allow-list, indentation, wrappers, cycle
 detection). The iteration protocol: `for`-`of` drives GetIterator /
 IteratorStep and closes the iterator on `break`, `continue` past it, and
-`return`; spread in array literals, calls, and `new`; array iterators
-(values / keys / entries, with an allocation-free step while `next` is
-pristine), `String.prototype[@@iterator]`, `Array.from` / `of`.
+`return`; an iterator's `next` is read once, when the iterator is got,
+and held with it for every step; spread in array literals, calls, and
+`new`; array iterators (values / keys / entries, stepped without an
+allocation when the `next` got with them is the builtin's),
+`String.prototype[@@iterator]`, `Array.from` / `of` (the mapping
+function called on each value as it is produced).
 Destructuring in every position -- declarations, parameters (with
 defaults), catch parameters, loop heads, and assignment -- with nested
 patterns, defaults, holes, rest elements, object rest, and computed keys,
