@@ -4734,12 +4734,41 @@ export struct Runtime {
     this.raise(thrown);
   }
 
+  // GetMethod(iterator, "return") for a close. An array's iterator has
+  // none and is closed by every destructuring that leaves elements
+  // behind, so what the search found for a plain object is kept in the
+  // shared load table (see Shared loads) and answered from there: that
+  // no object along its chain of prototypes has the name, or which one
+  // further along holds it.
+  function iteratorReturn(inout this, iterator: Value): Value {
+    const atom = this.atomReturn;
+    const handle = asCell(iterator);
+    const plain = this.heap.isObject(handle);
+    if (plain && this.sharedLoads.length != 0) {
+      const shape = this.heap.objectClass(handle);
+      const entry = this.sharedLoads[this.sharedIndex(handle, shape, atom)];
+      if (entry.atom == atom && entry.shape == shape && (entry.kind == CACHE_ABSENT || entry.kind == CACHE_CHAIN)) {
+        const known = this.chainLoad(entry.kind, entry.depth, entry.slot, entry.holder, entry.holderClass, entry.class3, entry.class4, handle);
+        if (!isDeleted(known)) return known;
+      }
+    }
+    const found = this.getProperty(iterator, cellValue(atom));
+    // What chainFact asks of its caller: the object and its first
+    // prototype are in class mode and lack the name.
+    if (plain && !this.pendingThrow && !this.heap.isDictionary(handle) && this.heap.objectFindSlot(handle, atom) < 0) {
+      const proto = this.heap.objectProto(handle);
+      if (proto == 0 || (this.heap.isObject(proto) && !this.heap.isDictionary(proto) && this.heap.objectFindSlot(proto, atom) < 0)) {
+        const fact = this.chainFact(handle, atom);
+        if (fact.kind != CACHE_EMPTY) this.keepShared(handle, fact);
+      }
+    }
+    return found;
+  }
+
   function iteratorClose(inout this, iteration: Value): void {
     const iterator = this.iteratorOf(iteration);
     if (!this.isObjectLike(iterator)) return;
-    if (this.isPristineArrayIterator(iterator)) return;
-    const returnKey = cellValue(this.atomReturn);
-    const method = this.getProperty(iterator, returnKey);
+    const method = this.iteratorReturn(iterator);
     if (this.pendingThrow) return;
     if (isUndefined(method) || isNull(method)) return;
     if (!this.isCallable(method)) {

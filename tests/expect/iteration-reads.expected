@@ -64,6 +64,20 @@ string iterator's next, read by an array: 1,2,3 0
 string next replaced before the loop: 0 2
 string next replaced mid-loop: abc
 yield* over a string: h,i
+no return anywhere: 0:
+return on the array iterator's prototype: 3:array,array,array
+deleted again: 0:
+return on the string iterator's prototype: 2:string,string
+return on %IteratorPrototype%: 5:iterator,iterator,iterator,iterator,iterator
+return on Object.prototype: 5:object,object,object,object,object
+none again: 0:
+return as a getter giving undefined: reads 3
+an own return: own
+return gives a non-object: TypeError RangeError
+return throws: EvalError RangeError
+Array.from of an array, the mapping function throws: array, whose next would give 3
+a Map iterator's return: map
+a generator's return: generator finally,generator finally
 for await, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 6
 async yield*, sync iterable: Symbol.iterator 1 next 1 calls 4 closed 0 -> 1,2,3
 for await, async iterable: Symbol.asyncIterator 1 next 1 calls 4 closed 0 arguments 0000 -> 6

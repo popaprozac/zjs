@@ -71,6 +71,19 @@ function stringIterator(inout runtime: Runtime, thisValue: Value, argsBase: u32,
   return runtime.createArrayIterator(text, ITERATOR_OF_STRING);
 }
 
+// Close the array iterator a loop over `items` stood in for, after a
+// throw: the iterator as it would be with `yielded` elements read, so
+// that a `return` a program has given array iterators is found and run
+// as it would have been. The throw stands.
+function closeStandIn(inout runtime: Runtime, items: Value, yielded: u32): void {
+  const iterator = runtime.createArrayIterator(items, 0);
+  runtime.pushTempRoot(iterator);
+  const made = asCell(iterator);
+  const indexSlot = runtime.heap.objectFindSlot(made, runtime.atomIterIndex);
+  runtime.heap.setSlot(made, u32(indexSlot), int32Value(i32(yielded)));
+  runtime.closeAfterThrow(iterator);
+}
+
 // Array.from(items, mapFn): an iterable, or an array-like by length.
 // Each value is mapped as it is produced, so a mapFn that changes the
 // source sees its change in the values after.
@@ -117,7 +130,10 @@ function arrayFrom(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
         }
         if (mapping) {
           element = runtime.callValue2(mapFn, thisArg, element, int32Value(i32(at)));
-          if (runtime.pendingThrow) return undefinedValue();
+          if (runtime.pendingThrow) {
+            closeStandIn(inout runtime, items, at + 1);
+            return undefinedValue();
+          }
         }
         runtime.heap.arraySet(array, at, element);
         at = at + 1;

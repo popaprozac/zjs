@@ -3,6 +3,7 @@
 // steps follow; and Array.from calling its mapping function on each value
 // as that value is produced.
 // A string's iterator reads a `next` of its own.
+// Closing an iterator reads its `return`.
 
 // An iterable that counts each read of Symbol.iterator and of `next`,
 // each call of `next`, and each call of `return`.
@@ -185,6 +186,67 @@ stringIterProto.next = stringNext;
 console.log("string next replaced mid-loop:", seen);
 function* spell() { yield* "hi"; }
 console.log("yield* over a string:", [...spell()].join());
+
+// --- Closing an iterator looks for `return` along its prototypes ---
+var closed = [];
+function closer(where) { return function () { closed.push(where); return {}; }; }
+function closes() {
+  closed = [];
+  for (var x of [1, 2, 3]) break;
+  var [first] = [1, 2];
+  var [p, q] = [1, 2];
+  var [head, ...tail] = [1, 2];
+  for (var y of [1, 2]) {}
+  var [letter] = "abc";
+  for (var z of "abc") break;
+  return closed.length + ":" + closed.join();
+}
+console.log("no return anywhere:", closes());
+arrayIterProto.return = closer("array");
+console.log("return on the array iterator's prototype:", closes());
+delete arrayIterProto.return;
+console.log("deleted again:", closes());
+stringIterProto.return = closer("string");
+console.log("return on the string iterator's prototype:", closes());
+delete stringIterProto.return;
+var iteratorProto = Object.getPrototypeOf(arrayIterProto);
+iteratorProto.return = closer("iterator");
+console.log("return on %IteratorPrototype%:", closes());
+delete iteratorProto.return;
+Object.prototype.return = closer("object");
+console.log("return on Object.prototype:", closes());
+delete Object.prototype.return;
+console.log("none again:", closes());
+reads = 0;
+Object.defineProperty(arrayIterProto, "return", { get: function () { reads++; return undefined; }, configurable: true });
+closes(); console.log("return as a getter giving undefined: reads", reads);
+delete arrayIterProto.return;
+own = [1, 2, 3][Symbol.iterator]();
+own.return = closer("own");
+closed = []; for (var x of own) break; console.log("an own return:", closed.join());
+arrayIterProto.return = function () { return 1; };
+console.log("return gives a non-object:", attempt(function () { for (var x of [1, 2]) break; return "ran"; }), attempt(function () { for (var x of [1, 2]) throw new RangeError("body"); }));
+arrayIterProto.return = function () { throw new EvalError("from return"); };
+console.log("return throws:", attempt(function () { var [only] = [1, 2]; return "ran"; }), attempt(function () { for (var x of [1, 2]) throw new RangeError("body"); }));
+delete arrayIterProto.return;
+// A mapped Array.from of an array makes no iterator, and closes the one
+// it stands in for, where that one would be.
+arrayIterProto.return = function () { closed.push("array, whose next would give " + this.next().value); return {}; };
+closed = []; attempt(function () { return Array.from([1, 2, 3], function (x) { if (x == 2) throw new RangeError("map"); return x; }); });
+attempt(function () { return Array.from([1, 2, 3], function (x) { return x; }); });
+console.log("Array.from of an array, the mapping function throws:", closed.join());
+delete arrayIterProto.return;
+// Other iterators: a Map's has none until it is given one, a generator's
+// is its own.
+var mapIterProto = Object.getPrototypeOf(new Map()[Symbol.iterator]());
+closed = []; for (var e of new Map([[1, 2]])) break;
+mapIterProto.return = closer("map");
+for (var e of new Map([[1, 2]])) break;
+delete mapIterProto.return;
+for (var e of new Map([[1, 2]])) break;
+console.log("a Map iterator's return:", closed.join());
+function* finishing() { try { yield 1; yield 2; } finally { closed.push("generator finally"); } }
+closed = []; for (var g of finishing()) break; for (var g of finishing()) break; console.log("a generator's return:", closed.join());
 
 // --- for await and async yield*: a sync iterable goes through the same
 // iteration, and an async iterator's `next` is read once as well ---
