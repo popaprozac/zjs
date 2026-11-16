@@ -17,7 +17,7 @@ import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, i
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -814,16 +814,40 @@ export struct Runtime {
   }
 
   // A cached read of an inherited name on an array or a string (see
-  // inheritingProto); deleted for a miss.
+  // inheritingProto), or of a function's own data property; deleted for
+  // a miss.
   function loadCachedInherited(fi: u32, nameSlot: usize, handle: u32): Value {
     const cache = this.siteCache(fi, nameSlot);
-    if (cache.kind != CACHE_INHERITED) return deletedValue();
+    if (cache.kind != CACHE_INHERITED) {
+      if (cache.kind != CACHE_BAG) return deletedValue();
+      // An own property of a function wins over its virtual ones and its
+      // prototype's, so the bag's class decides the read. A name the
+      // program deleted holds the deleted marker, which reads as a miss.
+      const tag = this.heap.tagOf(handle);
+      if (tag != TAG_FUNCTION && tag != TAG_HOST_FUNCTION && tag != TAG_CLOSURE) return deletedValue();
+      const bag = this.functionBag(handle);
+      if (bag == 0 || this.heap.objectClass(bag) != cache.receiverClass) return deletedValue();
+      return this.heap.slot(bag, cache.slot);
+    }
     const proto = this.inheritingProto(handle);
     if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return deletedValue();
     return this.heap.slot(proto, cache.slot);
   }
 
   function populateInheritedCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): void {
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) {
+      // A function's own data property, in its bag. An accessor, a
+      // deleted name, and a bag in dictionary mode are not recorded.
+      const bag = this.functionBag(handle);
+      if (bag == 0 || this.heap.isDictionary(bag)) return;
+      const own = this.heap.objectFindSlot(bag, atom);
+      if (own < 0 || isDeleted(this.heap.slot(bag, u32(own)))) return;
+      const ownAttr = this.heap.attrOf(bag, u32(own));
+      if ((ownAttr & PROP_ACCESSOR) != 0) return;
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_BAG, attr: ownAttr, depth: 0, receiverClass: this.heap.objectClass(bag), slot: u32(own), targetClass: 0, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+      return;
+    }
     const proto = this.inheritingProto(handle);
     if (proto == 0 || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return;
     const inherited = this.heap.objectFindSlot(proto, atom);

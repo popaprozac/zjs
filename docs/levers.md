@@ -55,7 +55,7 @@ Hermes VM alone is 2.75 MB, with its compiler 3.34 MB (arm64).
 | Allocator and collector | allocation, strings, json, maps, closures; memory | about even | 3-5 days | young generation done; minor collections cost what survives; full collections in slices (longest pause 1-2 ms where it was 6-55) |
 | Call protocol | calls, closures, arrays, every callback | about even | 2-3 days | frame redesign waits on Z's cold mark; the dispatch loop as tail-called handlers done (calls -9%, helpers -8.5%, closures -7%) |
 | Bytecode quality | all | about even | 1-2 days | calls, stores, loops, first inlining done |
-| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third) |
+| Built-in fast paths | json, strings, regexp, arrays, promises and async | small growth | 1-2 days each | JSON, strings, regexp, arrays done; promises and async under way (the promise and async loops -13 to -27% over two changes, the async ones -3 to -9% more over a third, await-fresh -19% over a fourth) |
 | Precompiled bytecode | startup, and all through better bytecode | much smaller, opt-in | 3-5 days | the format, its loader, and the ABI's calls done; a core context running bytecode links no front end, 393 KB of `__TEXT` against 573 KB (`docs/bytecode-files.md`); load time and the compiler's spare time next |
 | Z upstream | all, 5-13% measured | smaller | upstream | filed |
 
@@ -595,7 +595,7 @@ build a match array only when a program sees it.
 Promises and async (2026-11-15). A sample profile of the promise loops
 in `bench/alloc/workloads` put 70 to 90% of their time in the runtime's
 own promise machinery, 10 to 31% in bytecode handlers, and 2 to 5% in
-the collector. Three changes so far. `then` and `finally` skip the
+the collector. Four changes so far. `then` and `finally` skip the
 `constructor` and species reads when no program could observe them, and
 an anonymous builtin function takes its name from an atom the runtime
 holds, where each had looked the empty string up (then-loop -13%;
@@ -624,11 +624,24 @@ await-fresh -6.6%, await-prim -6.0%, await-settled -5.2%,
 await-suspended -3.4%, five kernels and two promise loops within 0.7%
 (`promise-suspend-placements.txt`); in instructions the five lose 6.5
 to 10.9% and no other workload moves by more than 0.6%
-(`promise-suspend.json`). Left, by
-the profile's shares: a property load on a function (`Promise.resolve`)
-has no cache (8% of await-fresh), resuming copies the registers back one
-checked store at a time, and a generator object still keeps its record
-in a second cell.
+(`promise-suspend.json`). A read of a function's own property
+(`Promise.resolve`, a class's static method) missed its site's cache
+every time, the cache recording plain objects and what arrays and
+strings inherit, and took the general path: 432 instructions for
+`Promise.resolve` where a cached read on an object takes 105. A function
+keeps its own properties in a bag, an object with a class, so the site
+now records the bag's class and the slot, and a hit is a test of the
+cell's tag, the bag, and one comparison: 142 instructions. Over eight
+placements await-fresh -18.8% and combinators -3.1%; in instructions
+-10.6% and -2.3%, and no other workload moves beyond what its own runs
+differ by (`function-own-reads.json`, `function-own-reads.txt`). Against
+V8's interpreter await-fresh goes from 1.22 times its time to 0.98.
+`__text` grows 576 bytes. Left: a read on a function of a name it
+inherits (`f.call`) or has without storing (`prototype`, `name`,
+`length`) still takes the general path, 354 to 518 instructions and 22
+more than before for looking whether to record it; resuming copies the
+registers back one checked store at a time; and a generator object
+still keeps its record in a second cell.
 
 **Precompiled bytecode.** Hermes compiles at the application's build
 time and ships bytecode, so it pays no parse on the device and can

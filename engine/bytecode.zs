@@ -810,6 +810,9 @@ export const CACHE_INHERITED: u8 = 4;
 // An object literal's property defined by a transition: the literal's
 // class before and after, and the slot.
 export const CACHE_DEFINE: u8 = 5;
+// A read on a function of an own data property, which a function keeps
+// in its bag of named properties: the bag's class and the slot there.
+export const CACHE_BAG: u8 = 6;
 
 export struct PropertyCache {
   kind: u8;

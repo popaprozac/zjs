@@ -1,0 +1,34 @@
+kinds: fn:make fn:make plain plain closure closure arrow arrow async async generator generator bound bound
+builtin: true true resolve
+before: 1 1
+assigned: 2 2
+defined: 3 3
+read and written through one name: 1 2 3 11 4
+accessor: getter on Counter getter on Counter 2
+data again: data again data again
+read-only: data again data again
+frozen: data again data again true
+inherited static: fn:make fn:make true
+shadowed: own own
+deleted: fn:make fn:make true
+added again: own again own again
+absent: undefined undefined
+from the prototype: from Function.prototype from Function.prototype
+then own: own own
+then deleted: from Function.prototype from Function.prototype
+then gone: undefined undefined
+name: named named
+defined name: renamed renamed
+deleted name: "" "" false
+prototype: true true
+replaced prototype: true true false
+mixed: A,B,C,object,array,undefined,undefined,A,object,C,B,array,plain
+not a function: plain undefined plain undefined plain undefined undefined
+many properties: crowded crowded
+changed there: crowded changed crowded changed
+before the delete: holed holed
+after it: holed holed make,b
+changed after it: holed changed holed changed
+own: moved moved
+another prototype: moved moved inherited
+its own gone: prototype's prototype's
