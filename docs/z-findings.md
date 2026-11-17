@@ -2330,6 +2330,43 @@ At the pin (2026-11-15): the engine at the commit before this use is the
 same `zjsz`, byte for byte, built by Stage 0 at both pins, and the native
 compiler bootstrapped at the new pin is the same file as at the old one.
 
+## G65 — Native compiler: a closure that captures by borrow, lent to C
+
+**Status:** `consumer-verified` — z-lang `d7d17b46` (the pin; z-lang
+`main`) · **Size:** small · **Confirmed:** native compiler bootstrapped
+from `c9d1bf09` and from `fe3fe441`; Stage 0 accepts and runs it ·
+**Blocked:** host functions at the embedding ABI, before any engine code
+was written
+
+```
+error[Z0212]: borrowed callback cannot enter "spike_call" without a proven
+non-escaping parameter; use a move closure with an owned environment
+```
+
+A host function is the embedder's C called from JavaScript. For the
+length of that call the engine means to lend C a closure that captures
+the `inout runtime` the interpreter holds, so that a `zjs_*` call made
+from inside the callback works on that runtime and never takes the
+context's lock again. The C function's `.zd` contract pairs the `in`
+callback with a context, which is its promise not to keep the callback
+after the call. Stage 0 takes that as leave to capture by borrow. The
+native compiler had three gaps behind one another. Its resolver looked for
+the callee's proven non-escaping parameters, which only a Z body filled.
+Its C emitter threw at every call-scoped callback context. And of the
+values that could then reach the emitter, a named function produced C that
+did not compile and an inline `move` closure dropped its environment at
+the end of the statement, where Stage 0 drops it when the call returns.
+Implemented: the foreign signature lists a call-scoped callback's
+parameter as non-escaping, the emitter passes the address of the closure's
+function value in the caller's frame (nothing boxed, retained, or
+released), and the native tier is a closure written at the call without
+`move`; a named function, a `move` closure, a stored function value, and a
+function type that an any-thread callback also uses stop with an emission
+error. z-lang's `callbacks-borrowed-context` fixture captures an `inout`
+parameter, assigns a captured local, and re-enters C from inside the
+callback, built and run by both compilers; probe
+`native/borrowed-closure-lent-to-c`.
+
 ## G10 — Z is macOS-only
 
 **Status:** `proposed` · **Size:** large · **Priority:** strategic

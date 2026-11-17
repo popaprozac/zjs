@@ -1,0 +1,8 @@
+declare module "lend.h" {
+  export function probe_lend_twice(value: _, context: _, in callback: _): _ {
+    callback callback {
+      context context;
+      invoked repeatedly;
+    }
+  }
+}
