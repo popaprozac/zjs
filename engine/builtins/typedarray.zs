@@ -1,19 +1,20 @@
-// ArrayBuffer and the typed arrays (ECMA-262 25.1 and 23.2), installed by
-// installTypedArrays: zjs_new_context installs them, a core context when
-// zjs_install_typed_arrays asks.
+// ArrayBuffer, DataView, and the typed arrays (ECMA-262 25.1, 25.3, and
+// 23.2), installed by installTypedArrays: zjs_new_context installs them, a
+// core context when zjs_install_typed_arrays asks.
 //
-// An ArrayBuffer and a typed array are ordinary objects with FLAG_BINARY,
+// An ArrayBuffer, a typed array, and a DataView are ordinary objects with
+// FLAG_BINARY,
 // made with a class whose leading slots hold their internal data
 // (runtime.zs, Binary data); a typed array's elements are reached through
 // the runtime's property operations, which ask the runtime for the
 // element when the key is a canonical numeric string. The bytes live in a
 // TAG_BYTES cell the buffer holds; detaching drops the cell.
 //
-// Not here yet: resizable buffers, DataView, Float16Array, and the BigInt
-// element kinds.
+// Not here yet: resizable buffers, Float16Array, and the BigInt element
+// kinds.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isNumber, asInt32 } from "../value.zs";
-import { Runtime, HostFunction, toNumber, truncateDouble, isIntegralDouble, binaryNumber, elementSize, FEATURE_TYPED_ARRAYS, BINARY_BUFFER, BINARY_TYPED, ELEMENT_INT8, ELEMENT_UINT8, ELEMENT_UINT8_CLAMPED, ELEMENT_INT16, ELEMENT_UINT16, ELEMENT_INT32, ELEMENT_UINT32, ELEMENT_FLOAT32, ELEMENT_FLOAT64 } from "../runtime.zs";
+import { Runtime, HostFunction, toNumber, truncateDouble, isIntegralDouble, binaryNumber, elementSize, FEATURE_TYPED_ARRAYS, BINARY_BUFFER, BINARY_TYPED, BINARY_VIEW, ELEMENT_INT8, ELEMENT_UINT8, ELEMENT_UINT8_CLAMPED, ELEMENT_INT16, ELEMENT_UINT16, ELEMENT_INT32, ELEMENT_UINT32, ELEMENT_FLOAT32, ELEMENT_FLOAT64 } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_BINARY } from "../heap.zs";
 import { defineSpecies } from "./collections.zs";
 import { textBuilder, putByte, putString, finishText } from "./builder.zs";
@@ -25,6 +26,18 @@ const MAX_BYTE_LENGTH: f64 = 2147483647.0;
 const ELEMENT_KINDS: i32 = 9;
 // 2^53 - 1, the largest index ToIndex accepts.
 const MAX_INDEX: f64 = 9007199254740991.0;
+
+// The kind's name in DataView's methods: getInt8 ... getFloat64.
+function viewKindName(kind: i32): String {
+  if (kind == ELEMENT_INT8) return "Int8";
+  if (kind == ELEMENT_UINT8) return "Uint8";
+  if (kind == ELEMENT_INT16) return "Int16";
+  if (kind == ELEMENT_UINT16) return "Uint16";
+  if (kind == ELEMENT_INT32) return "Int32";
+  if (kind == ELEMENT_UINT32) return "Uint32";
+  if (kind == ELEMENT_FLOAT32) return "Float32";
+  return "Float64";
+}
 
 function elementName(kind: i32): String {
   if (kind == ELEMENT_INT8) return "Int8Array";
@@ -268,8 +281,12 @@ function bufferTransferToFixedLength(inout runtime: Runtime, thisValue: Value, a
   return copyAndDetach(inout runtime, thisValue, argsBase, argc, in method);
 }
 
+// A typed array or a DataView.
 function bufferIsView(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  return booleanValue(runtime.isTypedArray(runtime.argument(argsBase, argc, 0)));
+  const given = runtime.argument(argsBase, argc, 0);
+  if (!isCell(given) || asCell(given) == 0) return booleanValue(false);
+  const kind = runtime.binaryKind(asCell(given));
+  return booleanValue(kind == BINARY_TYPED || kind == BINARY_VIEW);
 }
 
 // --- %TypedArray% ---
@@ -1399,6 +1416,154 @@ function typedOf(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: 
   return cellValue(target);
 }
 
+// --- DataView ---
+//
+// A view of an ArrayBuffer's bytes read and written as any element kind,
+// in either byte order. It keeps a typed array's leading slots without the
+// element kind (runtime.zs, Binary data); a fixed-length buffer changes
+// length only by being detached, which the view then sees as zero.
+
+function constructDataView(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const newTarget = runtime.takeHostNewTarget();
+  if (isUndefined(newTarget)) {
+    const message: String = "Constructor DataView requires 'new'";
+    return raiseType(inout runtime, in message);
+  }
+  const given = runtime.argument(argsBase, argc, 0);
+  if (!runtime.isArrayBuffer(given)) {
+    const message: String = "First argument to DataView constructor must be an ArrayBuffer";
+    return raiseType(inout runtime, in message);
+  }
+  const buffer = asCell(given);
+  const offset = toIndex(inout runtime, runtime.argument(argsBase, argc, 1));
+  if (runtime.pendingThrow) return undefinedValue();
+  if (runtime.bufferBytes(buffer) == 0) {
+    const message: String = "Cannot construct a DataView on a detached ArrayBuffer";
+    return raiseType(inout runtime, in message);
+  }
+  const available = bufferByteLength(in runtime, buffer);
+  if (offset > available) {
+    const message: String = "Start offset is outside the bounds of the buffer";
+    return raiseRange(inout runtime, in message);
+  }
+  let viewLength = available - offset;
+  const lengthGiven = runtime.argument(argsBase, argc, 2);
+  if (!isUndefined(lengthGiven)) {
+    viewLength = toIndex(inout runtime, lengthGiven);
+    if (runtime.pendingThrow) return undefinedValue();
+    if (offset + viewLength > available) {
+      const message: String = "Invalid DataView length";
+      return raiseRange(inout runtime, in message);
+    }
+  }
+  // Reading new.target's `prototype` can run a getter that detaches the
+  // buffer.
+  const proto = protoFrom(inout runtime, newTarget, runtime.dataViewProto);
+  if (runtime.pendingThrow) return undefinedValue();
+  if (runtime.bufferBytes(buffer) == 0) {
+    const message: String = "Cannot construct a DataView on a detached ArrayBuffer";
+    return raiseType(inout runtime, in message);
+  }
+  const viewClass = runtime.viewClass;
+  const object = runtime.heap.allocateObjectOfClass(proto, viewClass);
+  runtime.heap.setFlags(object, runtime.heap.flagsOf(object) | FLAG_BINARY);
+  runtime.heap.setSlot(object, 0, int32Value(BINARY_VIEW));
+  runtime.heap.setSlot(object, 1, cellValue(buffer));
+  runtime.heap.setSlot(object, 2, binaryNumber(offset));
+  runtime.heap.setSlot(object, 3, binaryNumber(viewLength));
+  return cellValue(object);
+}
+
+// `this` as a DataView, or 0 and a TypeError.
+function thisView(inout runtime: Runtime, thisValue: Value, in method: String): u32 {
+  if (isCell(thisValue) && asCell(thisValue) != 0 && runtime.binaryKind(asCell(thisValue)) == BINARY_VIEW) return asCell(thisValue);
+  const message: String = `${method} called on an object that is not a DataView`;
+  raiseType(inout runtime, in message);
+  return 0;
+}
+
+// `this` as a DataView whose buffer is attached, or 0 and a TypeError.
+function attachedView(inout runtime: Runtime, thisValue: Value, in method: String): u32 {
+  const view = thisView(inout runtime, thisValue, in method);
+  if (view == 0) return 0;
+  if (isDetached(in runtime, view)) {
+    const message: String = `${method} called on a DataView whose buffer is detached`;
+    raiseType(inout runtime, in message);
+    return 0;
+  }
+  return view;
+}
+
+function viewBufferGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "get DataView.prototype.buffer";
+  const view = thisView(inout runtime, thisValue, in method);
+  if (view == 0) return undefinedValue();
+  return runtime.binaryField(view, 1);
+}
+
+function viewByteLengthGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "get DataView.prototype.byteLength";
+  const view = attachedView(inout runtime, thisValue, in method);
+  if (view == 0) return undefinedValue();
+  return runtime.binaryField(view, 3);
+}
+
+function viewByteOffsetGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "get DataView.prototype.byteOffset";
+  const view = attachedView(inout runtime, thisValue, in method);
+  if (view == 0) return undefinedValue();
+  return runtime.binaryField(view, 2);
+}
+
+// The byte in the buffer where an element of kind `kind` at `index` in the
+// view starts, checked against the view's length; -1 with a RangeError.
+function viewPlace(inout runtime: Runtime, view: u32, index: f64, kind: i32): f64 {
+  const viewLength = toNumber(runtime.binaryField(view, 3));
+  if (index + f64(elementSize(kind)) > viewLength) {
+    const message: String = "Offset is outside the bounds of the DataView";
+    raiseRange(inout runtime, in message);
+    return -1.0;
+  }
+  return toNumber(runtime.binaryField(view, 2)) + index;
+}
+
+// GetViewValue: getInt8 ... getFloat64, the element kind bound in the
+// function; big-endian unless the second argument is true.
+function viewGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const kind = asInt32(runtime.heap.slot(callee, 0));
+  const method: String = "DataView.prototype.get";
+  const view = thisView(inout runtime, thisValue, in method);
+  if (view == 0) return undefinedValue();
+  const index = toIndex(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  const little = runtime.toBooleanValue(runtime.argument(argsBase, argc, 1));
+  if (attachedView(inout runtime, thisValue, in method) == 0) return undefinedValue();
+  const at = viewPlace(inout runtime, view, index, kind);
+  if (at < 0.0) return undefinedValue();
+  const bytes = runtime.bufferBytes(runtime.typedBuffer(view));
+  return runtime.readElement(bytes, usize(at), kind, !little);
+}
+
+// SetViewValue: setInt8 ... setFloat64, the value made a number before the
+// buffer is checked.
+function viewSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const kind = asInt32(runtime.heap.slot(callee, 0));
+  const method: String = "DataView.prototype.set";
+  const view = thisView(inout runtime, thisValue, in method);
+  if (view == 0) return undefinedValue();
+  const index = toIndex(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  const number = runtime.toNumberValue(runtime.argument(argsBase, argc, 1));
+  if (runtime.pendingThrow) return undefinedValue();
+  const little = runtime.toBooleanValue(runtime.argument(argsBase, argc, 2));
+  if (attachedView(inout runtime, thisValue, in method) == 0) return undefinedValue();
+  const at = viewPlace(inout runtime, view, index, kind);
+  if (at < 0.0) return undefinedValue();
+  const bytes = runtime.bufferBytes(runtime.typedBuffer(view));
+  runtime.writeElement(bytes, usize(at), kind, number, !little);
+  return undefinedValue();
+}
+
 // --- installation ---
 
 function defineGetter(inout runtime: Runtime, target: u32, in name: String, fn: HostFunction): void {
@@ -1446,6 +1611,7 @@ export function installTypedArrays(inout runtime: Runtime): void {
   const offsetClass = runtime.heap.classTransitionWith(bufferAtClass, offsetAtom, PROP_NONE);
   const lengthClass = runtime.heap.classTransitionWith(offsetClass, lengthAtom, PROP_NONE);
   runtime.typedClass = runtime.heap.classTransitionWith(lengthClass, elementAtom, PROP_NONE);
+  runtime.viewClass = lengthClass;
 
   // ArrayBuffer
   runtime.arrayBufferProto = runtime.heap.allocateObject(objectProto);
@@ -1528,6 +1694,34 @@ export function installTypedArrays(inout runtime: Runtime): void {
   runtime.defineOwnAttr(typedProto, toStringKey, arrayToString, PROP_METHOD);
   const fromText: String = "from"; runtime.defineMethod(typedCtor, in fromText, typedFrom, 1);
   const ofText: String = "of"; runtime.defineMethod(typedCtor, in ofText, typedOf, 0);
+
+  // DataView: getX and setX for each kind, the kind bound in the function.
+  runtime.dataViewProto = runtime.heap.allocateObject(objectProto);
+  const viewProto = runtime.dataViewProto;
+  const viewText: String = "DataView";
+  const viewCtor = runtime.defineAllocatingConstructor(constructDataView, undefinedValue(), 1, in viewText);
+  runtime.heap.setLink(viewCtor, viewProto);
+  runtime.defineOwnAttr(viewProto, atomConstructor, cellValue(viewCtor), PROP_METHOD);
+  runtime.setGlobal("DataView", cellValue(viewCtor));
+  defineGetter(inout runtime, viewProto, in bufferPropText, viewBufferGetter);
+  defineGetter(inout runtime, viewProto, in byteLengthText, viewByteLengthGetter);
+  defineGetter(inout runtime, viewProto, in byteOffsetText, viewByteOffsetGetter);
+  const viewTag = runtime.internText(in viewText);
+  runtime.heap.objectDefine(viewProto, tagKey, viewTag, PROP_CONFIGURABLE);
+  let viewKind: i32 = 0;
+  while (viewKind < ELEMENT_KINDS) {
+    if (viewKind != ELEMENT_UINT8_CLAMPED) {
+      const getName: String = `get${viewKindName(viewKind)}`;
+      const getter = runtime.defineHostFunction(viewGet, int32Value(viewKind), 1, in getName);
+      const getAtom = runtime.atomOf(in getName);
+      runtime.defineOwnAttr(viewProto, getAtom, cellValue(getter), PROP_METHOD);
+      const setName: String = `set${viewKindName(viewKind)}`;
+      const setter = runtime.defineHostFunction(viewSet, int32Value(viewKind), 2, in setName);
+      const setAtom = runtime.atomOf(in setName);
+      runtime.defineOwnAttr(viewProto, setAtom, cellValue(setter), PROP_METHOD);
+    }
+    viewKind = viewKind + 1;
+  }
 
   // The nine kinds: each constructor inherits from %TypedArray%, each
   // prototype from %TypedArray%.prototype.

@@ -438,9 +438,12 @@ export const FEATURE_TYPED_ARRAYS: u32 = 64;
 // leading slots (heap.leadingSlot), the first saying which it is. An
 // ArrayBuffer: [BINARY_BUFFER, its bytes (a TAG_BYTES cell, null once
 // detached), its byte length]. A typed array: [BINARY_TYPED, its
-// ArrayBuffer, byte offset, length in elements, element kind].
+// ArrayBuffer, byte offset, length in elements, element kind]. A DataView:
+// [BINARY_VIEW, its ArrayBuffer, byte offset, byte length], the typed
+// array's slots without the element kind.
 export const BINARY_BUFFER: i32 = 0;
 export const BINARY_TYPED: i32 = 1;
+export const BINARY_VIEW: i32 = 2;
 export const ELEMENT_INT8: i32 = 0;
 export const ELEMENT_UINT8: i32 = 1;
 export const ELEMENT_UINT8_CLAMPED: i32 = 2;
@@ -858,6 +861,8 @@ export struct Runtime {
   typedArrayProto: u32 = 0;
   typedArrayProtos: Array<u32> = Array<u32>();
   typedArrayCtors: Array<u32> = Array<u32>();
+  viewClass: u32 = 0;
+  dataViewProto: u32 = 0;
   // Whether a typed array has been made: until then no prototype chain
   // holds one, and the walks up a chain need not look for one.
   typedArraysMade: boolean = false;
@@ -2952,14 +2957,29 @@ export struct Runtime {
   // The element at a valid index.
   function typedRead(handle: u32, index: f64): Value {
     const element = this.typedElement(handle);
-    const size = elementSize(element);
     const bytes = this.bufferBytes(this.typedBuffer(handle));
-    const at = usize(this.typedByteOffset(handle)) + usize(index) * usize(size);
+    const at = usize(this.typedByteOffset(handle)) + usize(index) * usize(elementSize(element));
+    return this.readElement(bytes, at, element, false);
+  }
+
+  // A number written at a valid index, converted for the element kind.
+  function typedWrite(inout this, handle: u32, index: f64, number: f64): void {
+    const element = this.typedElement(handle);
+    const bytes = this.bufferBytes(this.typedBuffer(handle));
+    const at = usize(this.typedByteOffset(handle)) + usize(index) * usize(elementSize(element));
+    this.writeElement(bytes, at, element, number, false);
+  }
+
+  // GetValueFromBuffer: an element of kind `element` in a bytes cell at
+  // byte `at`, little-endian unless `big`.
+  function readElement(bytes: u32, at: usize, element: i32, big: boolean): Value {
+    const size = elementSize(element);
     let bits: u64 = 0;
-    let k: u32 = size;
-    while (k > 0) {
-      k = k - 1;
-      bits = (bits << 8) | u64(this.heap.byteAt(bytes, at + usize(k)));
+    let k: u32 = 0;
+    while (k < size) {
+      const place = big ? k : size - 1 - k;
+      bits = (bits << 8) | u64(this.heap.byteAt(bytes, at + usize(place)));
+      k = k + 1;
     }
     if (element == ELEMENT_INT8) return int32Value(i32(bits) - (bits >= 128 ? 256 : 0));
     if (element == ELEMENT_INT16) return int32Value(i32(bits) - (bits >= 32768 ? 65536 : 0));
@@ -2970,12 +2990,10 @@ export struct Runtime {
     return int32Value(i32(bits));
   }
 
-  // A number written at a valid index, converted for the element kind.
-  function typedWrite(inout this, handle: u32, index: f64, number: f64): void {
-    const element = this.typedElement(handle);
+  // SetValueInBuffer: a number converted for the element kind and written
+  // at byte `at`, little-endian unless `big`.
+  function writeElement(inout this, bytes: u32, at: usize, element: i32, number: f64, big: boolean): void {
     const size = elementSize(element);
-    const bytes = this.bufferBytes(this.typedBuffer(handle));
-    const at = usize(this.typedByteOffset(handle)) + usize(index) * usize(size);
     let bits: u64 = 0;
     if (element == ELEMENT_FLOAT32) {
       bits = u64(float32Bits(number));
@@ -2988,7 +3006,8 @@ export struct Runtime {
     }
     let k: u32 = 0;
     while (k < size) {
-      this.heap.setByteAt(bytes, at + usize(k), u8(bits & 255));
+      const place = big ? size - 1 - k : k;
+      this.heap.setByteAt(bytes, at + usize(place), u8(bits & 255));
       bits = bits >> 8;
       k = k + 1;
     }
@@ -7080,6 +7099,8 @@ export struct Runtime {
       this.heap.markHandle(typedCtor);
       kind = kind + 1;
     }
+    const dataViewProto = this.dataViewProto;
+    if (dataViewProto != 0) this.heap.markHandle(dataViewProto);
     let job: usize = 0;
     while (job < this.jobEnd) {
       const queued = this.jobs[job];
