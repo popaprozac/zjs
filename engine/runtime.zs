@@ -6074,6 +6074,14 @@ export struct Runtime {
       index = index + 1;
     }
     this.regTop = argsBase + argc;
+    return this.constructPlaced(callee, argsBase, argc, newTarget);
+  }
+
+  // The construct itself for a compiled callee, its arguments already in
+  // registers from argsBase with the stack top above them; the top goes
+  // back to argsBase. The callee and the new target are constructors.
+  inline function constructPlaced(inout this, callee: Value, argsBase: u32, argc: u32, newTarget: Value): Value {
+    let outcome = undefinedValue();
     const entryDepth = this.frameCount;
     // The return handler substitutes the constructed object for a
     // non-object return value, and checks a derived constructor did
@@ -7346,7 +7354,9 @@ export struct Runtime {
   // super(...args) from a derived constructor's frame: construct the
   // parent with the frame's new.target and bind the result as `this`;
   // the compiler places the instance field initializers after the call.
-  function superConstruct(inout this, frameIndex: usize, args: Array<Value>): Value {
+  // The arguments are the elements of array `spread`, or when that is 0
+  // the `argc` registers from `first`.
+  function superConstruct(inout this, frameIndex: usize, first: u32, argc: u32, spread: u32): Value {
     const callee = this.frames[frameIndex].callee;
     if (!isCell(callee) || asCell(callee) == 0) {
       const message: String = "'super' keyword unexpected here";
@@ -7372,7 +7382,39 @@ export struct Runtime {
       return undefinedValue();
     }
     const newTarget = this.frames[frameIndex].newTarget;
-    const result = this.constructValue(parent, move args, newTarget);
+    const count = spread == 0 ? argc : this.heap.arrayLength(spread);
+    let result = undefinedValue();
+    if (this.isHostFunctionValue(parent)) {
+      let args = Array<Value>();
+      let index: u32 = 0;
+      while (index < count) {
+        const passed = spread == 0 ? this.stackAt(usize(first + index)) : this.heap.arrayGet(spread, index);
+        args.push(passed);
+        index = index + 1;
+      }
+      result = this.constructValue(parent, move args, newTarget);
+    } else {
+      // Placed as constructValue places a vector's, with no vector built,
+      // and none of its constructor checks made again: the parent was
+      // found a constructor above, and the new target was one when the
+      // frame was entered. The stack is asked as there: the parent's
+      // frame runs in a dispatch loop of its own.
+      if (this.stackShort(0)) return this.stackOverflow();
+      const argsBase = this.regTop;
+      const needed = usize(argsBase + count);
+      if (this.regStack.length < needed) {
+        if (needed > REGISTER_LIMIT) return this.stackOverflow();
+        this.growRegisters(needed);
+      }
+      let index: u32 = 0;
+      while (index < count) {
+        const passed = spread == 0 ? this.stackAt(usize(first + index)) : this.heap.arrayGet(spread, index);
+        this.setStackAt(usize(argsBase + index), passed);
+        index = index + 1;
+      }
+      this.regTop = argsBase + count;
+      result = this.constructPlaced(parent, argsBase, count, newTarget);
+    }
     if (this.pendingThrow) return undefinedValue();
     // The parent runs first; binding `this` a second time is the error.
     if (!isDeleted(this.frames[frameIndex].constructThis)) {
@@ -9349,26 +9391,9 @@ export struct Runtime {
             this.setFunctionHidden(asCell(fn), atomHome, target);
           }
         } else if (op == Op.superCall || op == Op.spreadSuperCall) {
-          let args = Array<Value>();
-          if (op == Op.superCall) {
-            let index: u32 = 0;
-            while (index < u32(inst.c)) {
-              const passed = this.reg(base, inst.b + u8(index));
-              args.push(passed);
-              index = index + 1;
-            }
-          } else {
-            const spread = this.reg(base, inst.b);
-            const count = this.heap.arrayLength(asCell(spread));
-            let index: u32 = 0;
-            while (index < count) {
-              const passed = this.heap.arrayGet(asCell(spread), index);
-              args.push(passed);
-              index = index + 1;
-            }
-          }
+          const spread = op == Op.spreadSuperCall ? asCell(this.reg(base, inst.b)) : u32(0);
           this.frames[frameIndex].ip = ip;
-          const constructed = this.superConstruct(frameIndex, move args);
+          const constructed = this.superConstruct(frameIndex, base + u32(inst.b), u32(inst.c), spread);
           if (this.pendingThrow) {
             // The throw stays pending for the loop to take.
           } else {

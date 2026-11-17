@@ -1,0 +1,27 @@
+none: 0:
+one: 1:7
+three, a default left out: 1|dflt|3|3
+many: 20:0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19
+spread: 3:a|b|end
+spread of nothing: 0:
+spread with holes: 1|dflt|3|3
+the implicit constructor: x|y|z|3
+a function parent: p|q|2|false|true
+argument order: 3:1|2|3 1,2,3
+locals after super: 2,3,5,10,2 2:2,3|10
+three levels: second|first||2
+a collection in the parent: 1,2!
+Array: 3:1,2,3:true
+Array spread: 4:true
+Map: v
+Error: msg:c:true
+a binding: bound|late|2|false
+re-parented between constructs: A1,B2
+re-parented to a builtin: true:0
+Reflect.construct with another new target: one|two||2:true
+a parent that throws: thrown
+a second super with arguments: 1,2,ReferenceError
+not a constructor: TypeError
+a second super() many times over: {"ReferenceError":60000}
+in a deep recursion: 1:bottom
+a spread too long: RangeError

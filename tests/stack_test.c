@@ -41,6 +41,8 @@ static const char *SETUP =
     "class Sub extends Array { constructor(n) { super(); if (n > 0) Reflect.construct(Sub, [n - 1]); } }"
     "function from(extra, n) { return extra === 0 ? Reflect.construct(Sub, [n]) : [0].map(function () { return from(extra - 1, n); })[0]; }"
     "class Plain { constructor(n) { if (n > 0) Reflect.construct(Plain, [n - 1]); } }"
+    "class Up { constructor(n) { if (n > 0) new Down(n - 1); } }"
+    "class Down extends Up { constructor(n) { super(n); } }"
     "function* nest(n) { yield n === 0 ? 0 : nest(n - 1).next().value + 1; }"
     /* What may run to its end or be refused, as the stack allows. */
     "function sound(what, run) {"
@@ -67,6 +69,7 @@ static const char *SETUP =
     "  limited('the compiler', function () { eval('1' + '+1'.repeat(100000)); });"
     "  limited('a regular expression', function () { new RegExp('(?:'.repeat(100000) + 'a' + ')'.repeat(100000)); });"
     "  limited('Reflect.construct', function () { new Plain(100000); });"
+    "  limited('super()', function () { new Down(100000); });"
     "  limited('a generator', function () { nest(100000).next(); });"
     "  limited('a chain of yield', function () { eval('(function*(){' + 'yield '.repeat(100000) + '1})'); });"
     /* Two thousand classes each extending the next: too deep to parse on
