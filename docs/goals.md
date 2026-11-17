@@ -58,8 +58,7 @@ single optional piece is `libunicode` (60 KB, 38 KB once dead-stripped),
 which only Unicode-aware regular expressions and case mapping need.
 
 Not yet in the engine, and each will add to it: Proxy, BigInt, WeakRef,
-DataView, and the rest of the typed arrays (their prototype methods beyond
-the getters and iterators, `from` and `of`, resizable buffers,
+DataView, and the rest of the typed arrays (resizable buffers,
 Float16Array, the BigInt kinds). ES modules are opt-in by what an embedder
 calls: a front end that compiles only scripts links none of the module
 compiler or linker (under 5 KB of `__TEXT` goes to the parser and

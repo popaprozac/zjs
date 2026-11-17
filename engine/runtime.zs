@@ -849,14 +849,15 @@ export struct Runtime {
   lentLengths: Array<usize> = Array<usize>();
   lentCount: usize = 0;
   // Binary data (builtins/typedarray.zs): the classes its objects are made
-  // with, the prototypes, and the per-kind prototypes of typed arrays by
-  // element kind. 0 until installTypedArrays.
+  // with, the prototypes, and the per-kind prototypes and constructors of
+  // typed arrays by element kind. 0 until installTypedArrays.
   bufferClass: u32 = 0;
   typedClass: u32 = 0;
   arrayBufferProto: u32 = 0;
   arrayBufferCtor: u32 = 0;
   typedArrayProto: u32 = 0;
   typedArrayProtos: Array<u32> = Array<u32>();
+  typedArrayCtors: Array<u32> = Array<u32>();
   // Whether a typed array has been made: until then no prototype chain
   // holds one, and the walks up a chain need not look for one.
   typedArraysMade: boolean = false;
@@ -7071,6 +7072,12 @@ export struct Runtime {
     while (kind < this.typedArrayProtos.length) {
       const typedProto = this.typedArrayProtos[kind];
       this.heap.markHandle(typedProto);
+      kind = kind + 1;
+    }
+    kind = 0;
+    while (kind < this.typedArrayCtors.length) {
+      const typedCtor = this.typedArrayCtors[kind];
+      this.heap.markHandle(typedCtor);
       kind = kind + 1;
     }
     let job: usize = 0;
