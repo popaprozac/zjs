@@ -3711,7 +3711,16 @@ export struct Compiler {
     if (k == NodeKind.logical) {
       // Short-circuit: evaluate the left into dst, skip the right when the
       // operator's outcome is already decided.
-      const dst = this.compileExpr(in parser, inout runtime, n.left);
+      const floorReg = this.nextReg;
+      let dst = this.compileExpr(in parser, inout runtime, n.left);
+      // A register taken before this expression is not its temporary:
+      // `this` is read where it lives, and the right's value must not
+      // land there, so the result gets a register of its own.
+      if (dst < floorReg) {
+        const own = this.allocReg();
+        this.emit(instAB(Op.mov, own, dst));
+        dst = own;
+      }
       let jumpOp = Op.jmpIfFalse;
       if (n.op == TokenKind.pipePipe) jumpOp = Op.jmpIfTrue;
       if (n.op == TokenKind.questionQuestion) jumpOp = Op.jmpIfNotNullish;

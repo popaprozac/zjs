@@ -1,0 +1,19 @@
+conditional operand: 12 12 20 12
+conditional operand, falsy: 2 2 0 2
+beside: 12 3 7 12 12 12 12 2,10 2number
+after: 1 / same true / same true / same
+after, strict and: 1,5 0,0 ,
+after, strict or: 5,5 7,0 7, 7,
+after, strict nullish: 5,5 0,0 7, 7,
+chains: 3,[object Object],[object Object],10,false,10 true,10,1010,1,10,10 1 / same 1 10 true,10 / same
+tests: 10 10 10 30 30 30 10
+tests, falsy: none none 0 0 no object
+defaults: 4,10 / same 3,10,true / same
+arrow, accessors: 2,true true true
+constructor: 1 2
+classes: 1 true true true true 6 true 5,true,true
+statics: 1 true true true function 7 true 0
+generator: 6 / same
+eval: 2,true / same
+top level: object object
+async: 8 / same
