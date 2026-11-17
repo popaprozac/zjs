@@ -1,0 +1,74 @@
+strict n.k = 1 threw TypeError
+strict n.k++ threw TypeError
+strict ++n.k threw TypeError
+strict n.k += 1 threw TypeError
+strict n.k ||= 5 threw TypeError
+strict n.k ??= 5 threw TypeError
+strict n.k &&= 5, not assigned -> no throw
+strict n['k'] = 1 threw TypeError
+strict n[0] = 1 threw TypeError
+strict n[sym] = 1 threw TypeError
+strict [n.k] = [1] threw TypeError
+strict ({ a: n.k } = { a: 1 }) threw TypeError
+strict for (n.k of [1]) threw TypeError
+strict for (n.k in { a: 1 }) threw TypeError
+strict s.k = 1 threw TypeError
+strict b.k = 1 threw TypeError
+strict y.k = 1 threw TypeError
+strict y.description = 1 threw TypeError
+strict (1).k = 1 threw TypeError
+strict (1.5).k = 1 threw TypeError
+strict NaN.k = 1 threw TypeError
+strict 'x'.k = 1 threw TypeError
+strict s.length = 1 threw TypeError
+strict s[0] = 'x' threw TypeError
+strict s['1'] = 'x' threw TypeError
+strict s[5] = 'x' threw TypeError
+strict s[7] = 'x', a setter -> no throw
+strict n.viaSetter = 7 -> no throw
+strict s.viaSetter = 8 -> no throw
+strict b.viaObjectSetter = 1 -> no throw
+strict y.viaObjectSetter = 2 -> no throw
+strict n.viaSetter += 1 -> no throw
+strict n[setterKey] = 3 -> no throw
+strict value of the assignment -> 5
+strict n.getOnly = 7 threw TypeError
+strict n.readOnly = 7 threw TypeError
+strict n.inherited = 2 threw TypeError
+strict n[badKey] = 1 threw RangeError
+strict this.k = 1, this 's' threw TypeError
+strict this.k = 1, this true threw TypeError
+strict this.k = 1, this a symbol threw TypeError
+strict this.k = 1, this an object -> no throw
+strict this.k += 1, this 0 threw TypeError
+strict this.k ||= 5, this 0 threw TypeError
+strict this.k ??= 1, this 0 threw TypeError
+strict this.viaSetter = 9, this 0 -> no throw
+strict null.k = 1 threw TypeError
+strict, the primitives after -> 0 ab 2 true undefined undefined
+sloppy n.k = 1 -> undefined
+sloppy n.k++ -> NaN
+sloppy s.length = 1 -> 2
+sloppy s[0] = 'x' -> ab
+sloppy s[7] = 'x', a setter -> ab
+sloppy b.k = 1 -> undefined
+sloppy sym.k = 1 -> undefined
+sloppy n.viaSetter = 7 -> no throw
+sloppy n.viaObjectSetter = 3 -> no throw
+sloppy n.getOnly = 7 -> 1
+sloppy n.readOnly = 7 -> 1
+sloppy n[plainKey] = 1 -> no throw
+sloppy n[badKey] = 1 threw RangeError
+sloppy this.k += 1, this 0 -> object 2
+index 7 setter string, number:7, string:8, sloppy setter object:1, sloppy setter object:2, number:NaN, number:3, number:5, number:9, index 7 setter string, number:7, sloppy setter object:3
+setterKey, plainKey
+Object.assign(1, { a: 1 }) -> object 1 [a] 1
+Object.assign('ab', { a: 1 }) -> object ab [0,1,a] 1
+Object.assign(true, [1]) -> object true [0] 1
+Object.assign(sym, { a: 1 }) -> object Symbol(s) 1
+Object.assign(1) -> object 1 []
+Object.assign(12, 'aaa', 'bb2b', '1c') -> object 12 [0,1,2,3] 1c2b
+Object.assign(1, a getter that collects) -> object 1 [a,b,c] 1232c
+Object.assign(1, a setter on the prototype) -> object 1 [] object:4
+Object.assign(null, {}) threw TypeError
+Object.assign(undefined) threw TypeError

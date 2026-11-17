@@ -490,12 +490,13 @@ function objectCreate(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 }
 
 function objectAssign(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
-  const target = runtime.argument(argsBase, argc, 0);
-  if (isUndefined(target) || isNull(target)) {
-    const message: String = "Cannot convert undefined or null to object";
-    const error = runtime.typeError(in message);
-    runtime.raise(error);
-    return undefinedValue();
+  let target = runtime.argument(argsBase, argc, 0);
+  if (!runtime.isObjectLike(target)) {
+    // ToObject: a primitive target is assigned to through its wrapper,
+    // which is the result.
+    target = runtime.toObjectValue(target);
+    if (runtime.pendingThrow) return undefinedValue();
+    runtime.pushTempRoot(target);
   }
   let sourceIndex: u32 = 1;
   while (sourceIndex < argc) {

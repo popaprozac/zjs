@@ -2744,8 +2744,6 @@ export struct Runtime {
     return undefinedValue();
   }
 
-  // [[Set]]. Writes to primitives are silently dropped, as in sloppy
-  // mode; attribute and setter checks arrive with property descriptors.
   // [[Set]] of a property the receiver does not own: the first holder of
   // `atom` from `first` along the [[Prototype]] chain, through whatever
   // kinds of cell it passes. A setter there is called with the receiver
@@ -2822,8 +2820,8 @@ export struct Runtime {
 
   // [[Set]]: an own or inherited setter runs; a non-writable property or
   // an unextensible target rejects the write, and the caller decides
-  // whether that is a TypeError (strict code) or silence. Writes to
-  // primitives are dropped.
+  // whether that is a TypeError (strict code) or silence. A primitive
+  // accepts only what a setter takes (setOnPrimitive).
   // `super[key] = value`: [[Set]] from the home object's [[Prototype]]
   // (`first`) with `this` as the receiver. A setter on the way runs; a
   // read-only property or a setterless accessor refuses; otherwise the
@@ -2857,7 +2855,7 @@ export struct Runtime {
   }
 
   function setProperty(inout this, object: Value, key: Value, value: Value): boolean {
-    if (!isCell(object) || asCell(object) == 0) return true;
+    if (!isCell(object) || asCell(object) == 0) return this.setOnPrimitive(object, key, value);
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
@@ -2985,7 +2983,23 @@ export struct Runtime {
       if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0 && this.heap.objectFindSlot(bag, atom) < 0) return false;
       return this.setOnObject(bag, atom, value, object);
     }
-    return true;
+    return this.setOnPrimitive(object, key, value);
+  }
+
+  // [[Set]] on a primitive is its wrapper's, with the primitive as the
+  // receiver: a setter on the prototype chain runs, and nothing else
+  // accepts the write, since no property can be made on the receiver. A
+  // string's own characters and length are read-only.
+  function setOnPrimitive(inout this, object: Value, key: Value, value: Value): boolean {
+    const proto = this.primitiveProto(object);
+    if (proto == 0) return true;
+    const atom = this.propertyKey(key);
+    if (this.pendingThrow) return false;
+    if (this.isStringValue(object)) {
+      const index = this.arrayIndexOf(key);
+      if (atom == this.atomLength || (index >= 0 && usize(index) < this.heap.stringLength(asCell(object)))) return false;
+    }
+    return this.setThroughChain(proto, atom, value, object) == SET_DONE;
   }
 
   // Whether a virtual property of a function (`length`, `name`,
