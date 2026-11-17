@@ -1,0 +1,47 @@
+names by depth: bound g,bound bound g,bound bound bound g,bound bound bound bound bound bound bound g
+a long name: 12001,bound bound b,bound bound f,true
+name descriptor: bound bound bound g,false,false,true,length,name,true
+the same name each read: true,bound bound bound bound g,25
+a wide name: 20,20013,25991,bound bound bound 
+an anonymous target: "bound bound bound "
+a builtin target: bound bound max,bound bound bound Map
+the target renamed afterwards: bound g,bound bound g,bound h
+a link renamed afterwards: x,y,bound bound bound g,bound bound bound bound g,bound y,bound bound x
+a link's name deleted: "",bound bound g,"bound ","bound bound ",false
+a link's name deleted and inherited: proto,bound proto,bound bound proto,true
+a link's name redefined and deleted: "","bound "
+a link's name a getter, read once a bind: bound got1,bound bound got1,bound got2,2
+a link's name not a string: "bound ","bound bound ","bound ","bound bound ","bound ","bound bound ","bound ","bound bound ","bound ","bound bound "
+a link's throwing name getter: throws RangeError
+a link's length getter that renames the link: bound late
+a name assigned: bound bound g,TypeError
+a name made writable: bound bound g,x,bound x
+names read at one site: g|max|bound g|bound bound g|bound max|parseInt|bound bound bound max||g|max|bound g|bound bound g|bound max|parseInt|bound bound bound max||g|max|bound g|bound bound g|bound max|parseInt|bound bound bound max|
+lengths down a chain: 3,2,5,0
+names survive collection: bound bound bound inner,bound bound 
+arguments in order, the innermost this: 1,1,2,3,4,5,6
+no arguments at all: 1,
+call, apply, Reflect.apply: 1,1,2,3,4 / 1,1,2,3,4,5 / 1,1,2,3,4,5,6
+spread through a chain: 302,a,b,299
+a builtin target: 5,1,2,3,4
+a throw comes back up: RangeError,t1
+a generator and an async function: 1,2,true
+an arrow keeps its this: 7,1,2
+a chain as a callback: 11,12,13
+a chain rebound while it runs: 50
+construct down a chain: 1,2,3,true,true,true,true,,,
+the new target named by each link: true,true,1,2,3 / true,true,1,2,3 / true,true,1,2,3
+a new target outside the chain: true,true,1,2,,true,1,,
+a new target above the link constructed: true,false,1,2,
+a class down a chain: 3,4,true,true,true,TypeError
+a derived class down a chain: true,true,true,true
+builtins constructed down a chain: 2,3,2020,m,true
+not constructors: TypeError,TypeError,TypeError,TypeError,TypeError
+instanceof asks each link: true,false,true,false,true,B2,B2
+collections inside construction down a chain: {"a":{"first":1},"b":{"second":2},"c":{"third":3},"list":[{"first":1},{"second":2},{"third":3}]},true,{"a":{"first":1},"b":{"second":2},"c":{"third":3},"list":[{"first":1},{"second":2},{"third":3}]},true
+a chain of 2,000 called: 1
+a chain of 2,000 with an argument a link: 2001,0,1999,7,2666680007
+a chain of 100,000 called: inner,1,2,3
+a chain of 100,000 constructed: 1,2,3,true,true,true,link,bound link
+a chain of 100,000 that throws: RangeError,deep
+and ordinary work after: 3,3,bound g

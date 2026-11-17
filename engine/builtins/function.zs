@@ -1,10 +1,9 @@
 // Function.prototype: call and apply.
-import { unitsOf } from "../text.zs";
 import { appendBytes } from "../runtime.zs";
 import { Value, undefinedValue, nullValue, cellValue, int32Value, doubleValue, booleanValue, asCell, isCell, isUndefined, isNull, isNumber } from "../value.zs";
 import { thread } from "std/thread";
-import { Runtime, HostFunction, HOST_BOUND_TRAMPOLINE, truncateDouble } from "../runtime.zs";
-import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR } from "../heap.zs";
+import { Runtime, HostFunction, HOST_BOUND_TRAMPOLINE, HOST_BOUND_CHAIN, truncateDouble } from "../runtime.zs";
+import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_BOUND } from "../heap.zs";
 
 function functionCall(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   if (!runtime.isCallable(thisValue)) {
@@ -51,14 +50,18 @@ function functionApply(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   return runtime.callValue(thisValue, receiver, move args);
 }
 
-// bind(thisArg, ...args): an instance of the bound trampoline whose
-// bound data is [target, boundThis, args...]. It is constructable exactly
+// bind(thisArg, ...args): an instance of the bound trampoline (of the
+// chain's, when the target is itself a bound function) whose bound
+// data is [target, boundThis, args...]. It is constructable exactly
 // when its target is, inherits from what its target inherits from, and
 // has no `prototype` of its own. `length` comes from the target's own
 // `length` when that is a Number (as an integer, less the bound
 // arguments, never below zero, infinity kept); `name` is "bound " and
 // the target's `name` when that is a String. Both reads are the
-// program's to observe, length first.
+// program's to observe, length first. The name is not made here but
+// where it is read (Runtime.hostFunctionName), from the target's name
+// kept as it was read; a target whose name is itself such a name is not
+// read at all, since nothing can observe that read.
 function functionBind(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   if (!runtime.isCallable(thisValue)) {
     const message: String = "Bind must be called on a function";
@@ -96,21 +99,17 @@ function functionBind(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
       }
     }
   }
-  const nameKey = cellValue(runtime.atomName);
-  const targetName = runtime.getProperty(thisValue, nameKey);
+  let targetName = undefinedValue();
+  if (!runtime.hasBoundName(thisValue)) {
+    const nameKey = cellValue(runtime.atomName);
+    targetName = runtime.getProperty(thisValue, nameKey);
+    if (!runtime.isStringValue(targetName)) targetName = cellValue(runtime.atomEmpty);
+  }
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
-  const prefix: String = "bound ";
-  let nameUnits = unitsOf(in prefix);
-  if (runtime.isStringValue(targetName)) {
-    const more = runtime.heap.stringUnits(asCell(targetName));
-    let k: usize = 0;
-    while (k < more.length) {
-      nameUnits.push(more[k]);
-      k = k + 1;
-    }
-  }
-  const bound = runtime.newSharedHostNamed(HOST_BOUND_TRAMPOLINE, cellValue(record), 0, move nameUnits);
+  const which = runtime.isBoundFunction(thisValue) ? HOST_BOUND_CHAIN : HOST_BOUND_TRAMPOLINE;
+  const bound = runtime.newSharedHostWithName(which, cellValue(record), 0, targetName);
+  runtime.heap.setFlags(bound, FLAG_BOUND);
   if (length <= 2147483647.0) {
     runtime.heap.setSlot(bound, 1, int32Value(i32(length)));
   } else {
@@ -152,6 +151,52 @@ function boundTrampoline(inout runtime: Runtime, thisValue: Value, argsBase: u32
     const forwarded = (isCell(newTarget) && asCell(newTarget) == callee) ? target : newTarget;
     return runtime.constructValue(target, move args, forwarded);
   }
+  return runtime.callValue(target, boundThis, move args);
+}
+
+// The same for a bound function whose target is a bound function, and
+// so on down: one walk to the first target that is not, where calling
+// each in turn would take native stack for every link (a chain of 20,000
+// ran out of it). Each link puts its arguments in front of those of the
+// links before it, so they are gathered back to front and turned round;
+// `this` is the last link's, and the new target moves down from each
+// link it names. It is a builtin of its own so that a bound function
+// whose target is not one, the usual kind, pays nothing for it.
+function boundChain(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const newTarget = runtime.takeHostNewTarget();
+  let args = Array<Value>();
+  let index = argc;
+  while (index > 0) {
+    index = index - 1;
+    args.push(runtime.argument(argsBase, argc, index));
+  }
+  let forwarded = newTarget;
+  let link = callee;
+  let target = undefinedValue();
+  let boundThis = undefinedValue();
+  while (true) {
+    const record = asCell(runtime.heap.slot(link, 0));
+    target = runtime.heap.slot(record, 0);
+    boundThis = runtime.heap.slot(record, 1);
+    index = runtime.heap.arrayLength(record);
+    while (index > 2) {
+      index = index - 1;
+      args.push(runtime.heap.slot(record, index));
+    }
+    if (isCell(forwarded) && asCell(forwarded) == link) forwarded = target;
+    if (!runtime.isBoundFunction(target)) break;
+    link = asCell(target);
+  }
+  let low: usize = 0;
+  let high = args.length;
+  while (low + 1 < high) {
+    high = high - 1;
+    const swapped = args[low];
+    args[low] = args[high];
+    args[high] = swapped;
+    low = low + 1;
+  }
+  if (!isUndefined(newTarget)) return runtime.constructValue(target, move args, forwarded);
   return runtime.callValue(target, boundThis, move args);
 }
 
@@ -238,6 +283,7 @@ function functionToString(inout runtime: Runtime, thisValue: Value, argsBase: u3
 
 export function installFunction(inout runtime: Runtime): void {
   runtime.registerSharedHost(HOST_BOUND_TRAMPOLINE, boundTrampoline);
+  runtime.registerSharedHost(HOST_BOUND_CHAIN, boundChain);
   const functionProto = runtime.functionProto;
   const functionText: String = "Function";
   const ctor = runtime.defineAllocatingConstructor(constructFunction, undefinedValue(), 1, in functionText);

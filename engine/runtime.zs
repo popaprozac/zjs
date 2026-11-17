@@ -15,7 +15,7 @@ import native from "./builtins/clock.h";
 import host from "./native/zjs_host.h";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
+import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CHAIN_LIMIT } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -119,6 +119,9 @@ export const HOST_IMPORT_CONTINUE: usize = 16;
 // through the parameter's environment slot.
 export const HOST_ARGUMENTS_GET: usize = 17;
 export const HOST_ARGUMENTS_SET: usize = 18;
+// A bound function whose target is a bound function: called by one walk
+// down the chain (engine/builtins/function.zs).
+export const HOST_BOUND_CHAIN: usize = 19;
 
 // What a function's [[Prototype]] chain answered to a [[Set]].
 // How far past an array's slots a write may land and still grow them
@@ -984,7 +987,11 @@ export struct Runtime {
       const made = this.madePrototype(handle);
       return made == 0 ? deletedValue() : cellValue(made);
     }
-    if (this.heap.tagOf(handle) == TAG_HOST_FUNCTION) return this.heap.slot(handle, slot == VIRTUAL_LENGTH ? 1 : 2);
+    if (this.heap.tagOf(handle) == TAG_HOST_FUNCTION) {
+      if (slot == VIRTUAL_LENGTH) return this.heap.slot(handle, 1);
+      // A bound function's name is made on each read (hostFunctionName).
+      return this.isBoundFunction(cellValue(handle)) ? deletedValue() : this.heap.slot(handle, 2);
+    }
     const code = this.heap.functionIndex(handle);
     if (slot == VIRTUAL_LENGTH) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
     // As functionName.
@@ -1668,17 +1675,59 @@ export struct Runtime {
     return this.arrayProto;
   }
 
-  // A bound function is an instance of the one bound trampoline; its
-  // bound data is [target, boundThis, arguments...].
+  // A bound function is a host function cell `bind` has marked: an
+  // instance of the bound trampoline, or of the chain's when its target
+  // is a bound function too. Its bound data is [target, boundThis,
+  // arguments...].
   function isBoundFunction(value: Value): boolean {
-    if (!this.isHostFunctionValue(value)) return false;
-    if (this.sharedHosts.length <= HOST_BOUND_TRAMPOLINE) return false;
-    return this.heap.hostFunctionId(asCell(value)) == this.sharedHosts[HOST_BOUND_TRAMPOLINE];
+    return this.isHostFunctionValue(value) && (this.heap.flagsOf(asCell(value)) & FLAG_BOUND) != 0;
   }
 
   function boundTargetOf(value: Value): Value {
     const record = asCell(this.heap.slot(asCell(value), 0));
     return this.heap.slot(record, 0);
+  }
+
+  // Whether a function's `name` is the one a bound function computes
+  // (hostFunctionName): it is a bound function, and the program has
+  // neither redefined nor deleted its `name`.
+  function hasBoundName(value: Value): boolean {
+    if (!this.isBoundFunction(value)) return false;
+    const bag = this.functionBag(asCell(value));
+    return bag == 0 || this.heap.objectFindSlot(bag, this.atomName) < 0;
+  }
+
+  // A host function's `name`: slot 2, except for a bound function, whose
+  // name is "bound " and its target's as `bind` read it. That one is put
+  // together on each read and never kept: the names of a chain of n
+  // binds are 6, 12, ... 6n units longer than the first target's, n
+  // squared in all. A bound function's slot 2 holds the target's name,
+  // or nothing where `bind` found the target's name to be this computed
+  // one (hasBoundName), and then the name goes on into the target's.
+  function hostFunctionName(inout this, handle: u32): Value {
+    let held = this.heap.slot(handle, 2);
+    if (!this.isBoundFunction(cellValue(handle))) return held;
+    let links: usize = 1;
+    let link = handle;
+    while (!isCell(held)) {
+      link = asCell(this.boundTargetOf(cellValue(link)));
+      held = this.heap.slot(link, 2);
+      links = links + 1;
+    }
+    const prefix: String = "bound ";
+    const once = unitsOf(in prefix);
+    const rest = this.heap.stringUnits(asCell(held));
+    let units = Array<u16>.withCapacity(links * once.length + rest.length);
+    while (links > 0) {
+      let index: usize = 0;
+      while (index < once.length) {
+        units.push(once[index]);
+        index = index + 1;
+      }
+      links = links - 1;
+    }
+    appendUnits(inout units, move rest);
+    return this.newStringUnits(move units);
   }
 
   // A private name read or written on a value that does not hold it: a
@@ -2750,7 +2799,7 @@ export struct Runtime {
       if (!this.functionVirtualDeleted(handle, atom)) {
         if (tag == TAG_HOST_FUNCTION) {
           if (atom == this.atomLength) return this.heap.slot(handle, 1);
-          if (atom == this.atomName) return this.heap.slot(handle, 2);
+          if (atom == this.atomName) return this.hostFunctionName(handle);
         } else {
           const code = this.heap.functionIndex(handle);
           if (atom == this.atomLength) return int32Value(i32(this.functions[usize(code)].expectedArgCount));
@@ -3366,7 +3415,7 @@ export struct Runtime {
         return dataProperty(int32Value(i32(this.functions[usize(code)].expectedArgCount)), PROP_CONFIGURABLE);
       }
       if (atom == this.atomName) {
-        if (tag == TAG_HOST_FUNCTION) return dataProperty(this.heap.slot(handle, 2), PROP_CONFIGURABLE);
+        if (tag == TAG_HOST_FUNCTION) return dataProperty(this.hostFunctionName(handle), PROP_CONFIGURABLE);
         return dataProperty(this.functionName(this.heap.functionIndex(handle)), PROP_CONFIGURABLE);
       }
       return absentProperty();
@@ -5298,11 +5347,6 @@ export struct Runtime {
   // atom the runtime holds, not one looked up each time.
   function newSharedHost(inout this, which: usize, bound: Value, length: u32): u32 {
     const name = cellValue(this.atomEmpty);
-    return this.newSharedHostWithName(which, bound, length, name);
-  }
-
-  function newSharedHostNamed(inout this, which: usize, bound: Value, length: u32, nameUnits: Array<u16>): u32 {
-    const name = this.internUnitsValue(move nameUnits);
     return this.newSharedHostWithName(which, bound, length, name);
   }
 
@@ -10975,7 +11019,7 @@ export struct Runtime {
   function notConstructorError(inout this, callee: Value): Value {
     let message = Array<u8>();
     if (this.isHostFunctionValue(callee)) {
-      const name = this.heap.slot(asCell(callee), 2);
+      const name = this.hostFunctionName(asCell(callee));
       if (this.isStringValue(name)) message = this.heap.stringUtf8(asCell(name));
     }
     if (message.length == 0) {

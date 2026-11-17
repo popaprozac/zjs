@@ -112,6 +112,9 @@ export const FLAG_LENT: u8 = 64;
 // otherwise use): its code is a leaf, which a call may run without a
 // frame (the runtime's runLeaf).
 export const FLAG_LEAF: u8 = 16;
+// On a host function cell (the same bit, which only strings otherwise
+// use): a bound function, marked by `bind` when it makes one.
+export const FLAG_BOUND: u8 = 32;
 // A string cell that is the canonical spelling of an array index, set
 // when it is interned: the key it makes names an element.
 export const FLAG_INDEX_KEY: u8 = 128;

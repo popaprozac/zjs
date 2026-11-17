@@ -112,7 +112,11 @@ and `Reflect.setPrototypeOf` refuse a cycle or a non-extensible target,
 one by throwing and the other by answering false. An own property of a
 function hides the virtual `name` / `length` / `prototype` and whatever
 is inherited, even when it holds undefined. A bound function is an
-instance of one trampoline over [target, boundThis, arguments]. Whether
+instance of a trampoline over [target, boundThis, arguments]: one
+trampoline for a target that is not a bound function, and another for
+one that is, which walks down the chain to the first target that is not
+and calls that, so a chain of any length is called on the native stack
+of one call. Whether
 it was called or constructed comes from the construct protocol, which
 hands a builtin its new target, never from the shape of `this`: a call
 uses boundThis, a construct ignores it and constructs the target, with
@@ -122,7 +126,10 @@ what its target inherits from, and has no `prototype` of its own (the
 program may define one; construction never reads it). `length` comes
 from the target's own `length` when that is a Number (infinity kept),
 `name` from the target's `name` when that is a String, read in that
-order. `instanceof` is InstanceofOperator throughout: a bound function
+order. The name is put together when it is read and is not kept: a bound
+function holds its target's name as `bind` read it, or nothing when the
+target's name was itself such a name, which is then not read at all, so
+a chain of n binds holds no names of 6, 12, ... 6n units. `instanceof` is InstanceofOperator throughout: a bound function
 asks its target, a custom `@@hasInstance` included, and any other
 callable's `prototype` is read each time and must be an object. An
 array's [[Prototype]] can be changed too (it is kept under a hidden key

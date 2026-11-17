@@ -55,6 +55,14 @@ out="$("$ZJSZ" run "$HERE/tests/gc/call-depth.js" 2>&1)"
 echo "gc: $out"
 [ "$out" = "call depth limited; same depth 300 of 300; retries no deeper true of 300; constructors and generators no deeper true; arguments passed on RangeError" ] || { echo "gc: FAIL the frame limit moved"; fail=1; }
 
+# A chain of binds keeps no name for its links: each is made when it is
+# read. Kept, the names of 2,000 links would be 12,000 kB of strings.
+out="$("$ZJSZ" run --mem-stats "$HERE/tests/gc/bound-chain.js" 2>&1)"
+strings="$(stat "$out" held-strings-kib)"
+echo "gc: bound chain: $(echo "$out" | head -1); held-strings-kib $strings"
+echo "$out" | grep -q "^chain 1 12001" || { echo "gc: FAIL bound chain result"; fail=1; }
+[ "$strings" -lt 100 ] || { echo "gc: FAIL a chain of binds holds its links' names ($strings kB of strings)"; fail=1; }
+
 # A graph mutated at random and checked every round (recorded from node):
 # the same lines whatever the nursery and the slice of a full collection,
 # down to a collection at every safe point with a cell or two marked at
