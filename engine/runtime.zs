@@ -746,6 +746,13 @@ export struct Runtime {
   // it, and the slot found (-1 for none): see arrayIterationPristine.
   arrayIterSlotClass: u32 = 0;
   arrayIterSlot: i32 = -1;
+  // Values the embedder holds across its calls (zjs.h): pins, a stack
+  // for the length of one of its functions, and roots, a table for as
+  // long as it says, a freed place holding the deleted marker and listed
+  // in hostRootsFree. Every collection starts from both.
+  hostPins: Array<Value> = Array<Value>();
+  hostRoots: Array<Value> = Array<Value>();
+  hostRootsFree: Array<u32> = Array<u32>();
   // The key list of each hidden class an object of which has been
   // listed (KeyPlan), and for a class its list's place in keyPlans plus
   // one, 0 for none yet.
@@ -6343,6 +6350,18 @@ export struct Runtime {
     }
     const hostThis = this.hostThis;
     this.heap.markValue(hostThis);
+    index = 0;
+    while (index < this.hostPins.length) {
+      const pinned = this.hostPins[index];
+      this.heap.markValue(pinned);
+      index = index + 1;
+    }
+    index = 0;
+    while (index < this.hostRoots.length) {
+      const rooted = this.hostRoots[index];
+      this.heap.markValue(rooted);
+      index = index + 1;
+    }
     const pendingValue = this.pendingValue;
     this.heap.markValue(pendingValue);
     const lastError = this.lastError;

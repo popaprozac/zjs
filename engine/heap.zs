@@ -104,6 +104,10 @@ export const FLAG_WIDE: u8 = 16;
 export const FLAG_HIDDEN: u8 = 32;
 // A symbol from the global registry (Symbol.for): not weakly holdable.
 export const FLAG_REGISTERED_SYMBOL: u8 = 64;
+// On a string cell (the same bit, which only symbols otherwise use): the
+// embedder was lent a copy of its text (lendString), which is to be
+// freed when the string dies.
+export const FLAG_LENT: u8 = 64;
 // On a function or closure cell (the same bit, which only strings
 // otherwise use): its code is a leaf, which a call may run without a
 // frame (the runtime's runLeaf).
@@ -398,6 +402,9 @@ export struct Heap {
   // dead atoms, freed once the runtime has dropped them from its table.
   deadYoung: Array<u32>;
   deadAtoms: Array<u32>;
+  // Lent strings (FLAG_LENT) that have died, for whoever holds their
+  // copies to free them and take the handles off.
+  lentDead: Array<u32> = Array<u32>();
   // Young cells that own something outside the arenas (a string's
   // buffer, a table, a dictionary, element attributes) or are atoms: the
   // only dead cells a minor sweep has to do anything for.
@@ -979,7 +986,7 @@ export struct Heap {
         // Only a cell that owns something is given back and rewritten;
         // any other is unmarked, which is all that says a handle is free.
         const tag = header.tag;
-        if ((tag == TAG_OBJECT && (header.payload & DICT_BIT) != 0) || (tag == TAG_STRING && (header.payload & ARENA_BIT) == 0) || tag == TAG_TABLE || (tag == TAG_ARRAY && (header.flags & FLAG_ELEMENT_ATTRS) != 0)) {
+        if ((tag == TAG_OBJECT && (header.payload & DICT_BIT) != 0) || (tag == TAG_STRING && ((header.payload & ARENA_BIT) == 0 || (header.flags & FLAG_LENT) != 0)) || tag == TAG_TABLE || (tag == TAG_ARRAY && (header.flags & FLAG_ELEMENT_ATTRS) != 0)) {
           this.releaseCell(handle, tag);
         } else {
           this.headers[usize(handle)].mark = 0;
@@ -1329,9 +1336,20 @@ export struct Heap {
     if (this.cellHeader(handle).mark == 0) this.youngOwners.push(handle);
   }
 
+  // The embedder is being given a copy of this string's text: the cell
+  // is marked, and listed in lentDead when it dies. A sweep gives back
+  // only cells that own something, so the mark makes it one of those.
+  function lendString(inout this, handle: u32): void {
+    const flags = this.cellHeader(handle).flags;
+    if ((flags & FLAG_LENT) != 0) return;
+    this.headers[usize(handle)].flags = flags | FLAG_LENT;
+    this.ownYoung(handle);
+  }
+
   // Give back what a dead cell owns outside its slots, and free its
   // header. A dead arena string's bytes are simply not copied.
   function releaseCell(inout this, handle: u32, tag: u8): void {
+    if (tag == TAG_STRING && (this.cellHeader(handle).flags & FLAG_LENT) != 0) this.lentDead.push(handle);
     if (tag == TAG_OBJECT && (this.cellHeader(handle).payload & DICT_BIT) != 0) {
       this.releaseDictionary(this.cellHeader(handle).payload & (DICT_BIT - 1));
     }
@@ -3939,6 +3957,15 @@ export struct Heap {
     return this.cellHeader(handle).tag == TAG_FREE || this.cellHeader(handle).mark == 0;
   }
 
+  // Whether a handle from outside the engine may be looked at: inside
+  // the table, and not a header a sweep has written free. It does not
+  // say the cell is alive: a dead cell that owned nothing keeps its
+  // header until the handle is given out again, and nothing in a header
+  // tells it from a live one.
+  function handleInTable(handle: u32): boolean {
+    return handle != 0 && usize(handle) < this.headerCount && this.cellHeader(handle).tag != TAG_FREE;
+  }
+
   // One past the highest handle the table holds.
   function handleExtent(): u32 {
     return u32(this.headerCount);
@@ -5195,6 +5222,41 @@ test "a run of values stored in an old cell is kept: by its listing for a minor 
   young.push(youngHolder);
   collectMinor(inout heap, in young);
   expect(heap.isObject(inner)).toEqual(true);
+}
+
+test "a lent string that dies is listed, young or old, and one that lives is not" {
+  let heap = createHeap();
+  const small: String = "lent";
+  let long = Array<u8>();
+  long.appendRepeated(120, 5000);
+  // Young: a small string (its bytes in the arena), a long one (its own
+  // buffer), and one that is kept.
+  const youngSmall = heap.allocateUtf8(bytesOf(in small));
+  const youngLong = heap.allocateLatin1(move long);
+  const kept = heap.allocateUtf8(bytesOf(in small));
+  const plain = heap.allocateUtf8(bytesOf(in small));
+  expect(heap.handleInTable(plain)).toEqual(true);
+  expect(heap.handleInTable(0)).toEqual(false);
+  expect(heap.handleInTable(heap.handleExtent())).toEqual(false);
+  heap.lendString(youngSmall);
+  heap.lendString(youngLong);
+  heap.lendString(kept);
+  heap.lendString(kept);
+  let roots = Array<u32>();
+  roots.push(kept);
+  collectMinor(inout heap, in roots);
+  expect(heap.lentDead.length).toEqual(2);
+  expect((heap.lentDead[0] == youngSmall && heap.lentDead[1] == youngLong) || (heap.lentDead[0] == youngLong && heap.lentDead[1] == youngSmall)).toEqual(true);
+  heap.lentDead.clear();
+  // Old: the kept one survives a full collection unlisted, and is listed
+  // by the one it does not survive.
+  collectFull(inout heap, in roots);
+  expect(heap.lentDead.length).toEqual(0);
+  expect(heap.stringLength(kept)).toEqual(4);
+  let none = Array<u32>();
+  collectFull(inout heap, in none);
+  expect(heap.lentDead.length).toEqual(1);
+  expect(heap.lentDead[0]).toEqual(kept);
 }
 
 test "a minor collection slides the young ranges still in use down and cuts the arena back" {

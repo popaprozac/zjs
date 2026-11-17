@@ -85,50 +85,170 @@ void zjs_free_context(ZjsContext *ctx) {
   zjs_z_free_context((uintptr_t)ctx);
 }
 
-/* Placeholder return: the engine's NaN-box layout is not mapped onto
-   ZjsValue yet, so every evaluation reports undefined here; the harness
-   reads zjs_had_error. */
+/* --- Values ---
+ *
+ * A ZjsValue's bits are the engine's own for a number, a boolean, null,
+ * and undefined, so those are made and read here with no call into the
+ * engine. A cell is the engine's handle with two things the Z side packs
+ * above it (engine/lib.zs, "Values across the ABI"): the slot of the
+ * context it belongs to, and its kind, which the cell predicates below
+ * read. */
+#define ZJS_NUMBER_TAG    0xFFFE000000000000ULL
+#define ZJS_DOUBLE_OFFSET 0x0002000000000000ULL
+#define ZJS_NOT_CELL      (ZJS_NUMBER_TAG | 2ULL)
+#define ZJS_NULL          2ULL
+#define ZJS_FALSE         6ULL
+#define ZJS_TRUE          7ULL
+#define ZJS_UNDEFINED     10ULL
+#define ZJS_KIND(v)       ((unsigned)(((v).bits >> 45) & 7u))
+#define ZJS_SLOT(v)       ((uint32_t)(((v).bits >> 34) & 2047u))
+enum { ZJS_KIND_STRING = 1, ZJS_KIND_OBJECT = 2, ZJS_KIND_ARRAY = 3, ZJS_KIND_FUNCTION = 4, ZJS_KIND_HOST_FUNCTION = 5 };
+
+static ZjsValue zjs_bits(uint64_t bits) {
+  ZjsValue value;
+  value.bits = bits;
+  return value;
+}
+
+ZjsValue zjs_int32(int32_t i) { return zjs_bits(ZJS_NUMBER_TAG | (uint32_t)i); }
+
+/* Every NaN goes in as the one NaN the engine keeps: another's bits, with
+   the offset added, could read as something that is not a number. */
+ZjsValue zjs_double(double d) {
+  uint64_t bits;
+  if (d != d) return zjs_bits(0x7FF8000000000000ULL + ZJS_DOUBLE_OFFSET);
+  memcpy(&bits, &d, sizeof bits);
+  return zjs_bits(bits + ZJS_DOUBLE_OFFSET);
+}
+
+ZjsValue zjs_bool(int b) { return zjs_bits(b ? ZJS_TRUE : ZJS_FALSE); }
+ZjsValue zjs_null(void) { return zjs_bits(ZJS_NULL); }
+ZjsValue zjs_undefined(void) { return zjs_bits(ZJS_UNDEFINED); }
+
+int zjs_is_int32(ZjsValue v) { return (v.bits & ZJS_NUMBER_TAG) == ZJS_NUMBER_TAG; }
+int zjs_is_double(ZjsValue v) { return (v.bits & ZJS_NUMBER_TAG) != 0 && (v.bits & ZJS_NUMBER_TAG) != ZJS_NUMBER_TAG; }
+int zjs_is_number(ZjsValue v) { return (v.bits & ZJS_NUMBER_TAG) != 0; }
+int zjs_is_bool(ZjsValue v) { return v.bits == ZJS_TRUE || v.bits == ZJS_FALSE; }
+int zjs_is_null(ZjsValue v) { return v.bits == ZJS_NULL; }
+int zjs_is_undefined(ZjsValue v) { return v.bits == ZJS_UNDEFINED; }
+int zjs_is_cell(ZjsValue v) { return (v.bits & ZJS_NOT_CELL) == 0 && v.bits != 0; }
+
+int zjs_is_string(ZjsValue v) { return zjs_is_cell(v) && ZJS_KIND(v) == ZJS_KIND_STRING; }
+int zjs_is_object(ZjsValue v) { return zjs_is_cell(v) && ZJS_KIND(v) == ZJS_KIND_OBJECT; }
+int zjs_is_array(ZjsValue v) { return zjs_is_cell(v) && ZJS_KIND(v) == ZJS_KIND_ARRAY; }
+int zjs_is_function(ZjsValue v) { return zjs_is_cell(v) && ZJS_KIND(v) == ZJS_KIND_FUNCTION; }
+int zjs_is_host_function(ZjsValue v) { return zjs_is_cell(v) && ZJS_KIND(v) == ZJS_KIND_HOST_FUNCTION; }
+int zjs_is_callable(ZjsValue v) { return zjs_is_function(v) || zjs_is_host_function(v); }
+
+int32_t zjs_as_int32(ZjsValue v) { return (int32_t)(uint32_t)v.bits; }
+
+/* An int32 reads as its double too, so that a number is one call to read. */
+double zjs_as_double(ZjsValue v) {
+  double d;
+  uint64_t bits;
+  if (zjs_is_int32(v)) return (double)zjs_as_int32(v);
+  bits = v.bits - ZJS_DOUBLE_OFFSET;
+  memcpy(&d, &bits, sizeof d);
+  return d;
+}
+
+int zjs_as_bool(ZjsValue v) { return v.bits == ZJS_TRUE; }
+
+const char *zjs_version(void) { return "0.1.0"; }
+
+/* --- Evaluation: each returns what the program produced, undefined when
+   it threw (zjs_get_error then has what was thrown). --- */
+
 ZjsValue zjs_eval(ZjsContext *ctx, const char *source) {
-  if (ctx != NULL) zjs_z_eval((uintptr_t)ctx, (const uint8_t *)source, strlen(source));
-  ZjsValue undefined;
-  undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
-  return undefined;
+  if (ctx == NULL || source == NULL) return zjs_undefined();
+  zjs_z_eval((uintptr_t)ctx, (const uint8_t *)source, strlen(source));
+  return zjs_bits(zjs_z_result((uintptr_t)ctx));
 }
 
-/* As zjs_eval: the program's value is not mapped onto ZjsValue yet. A
-   buffer the engine refuses (another engine's, damaged) runs nothing and
-   is not an error. */
+/* A buffer the engine refuses (another engine's, damaged) runs nothing
+   and is not an error. */
 ZjsValue zjs_eval_bytecode(ZjsContext *ctx, const unsigned char *data, size_t len) {
-  if (ctx != NULL && data != NULL) zjs_z_eval_bytecode((uintptr_t)ctx, (const uint8_t *)data, len);
-  ZjsValue undefined;
-  undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
-  return undefined;
+  if (ctx == NULL || data == NULL) return zjs_undefined();
+  zjs_z_eval_bytecode((uintptr_t)ctx, (const uint8_t *)data, len);
+  return zjs_bits(zjs_z_result((uintptr_t)ctx));
 }
 
-/* As zjs_eval: the module's namespace is not mapped onto ZjsValue yet. */
+/* The module's namespace object. */
 ZjsValue zjs_eval_module(ZjsContext *ctx, const char *abs_path) {
-  if (ctx != NULL && abs_path != NULL) zjs_z_eval_module((uintptr_t)ctx, (const uint8_t *)abs_path, strlen(abs_path));
-  ZjsValue undefined;
-  undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
-  return undefined;
+  if (ctx == NULL || abs_path == NULL) return zjs_undefined();
+  zjs_z_eval_module((uintptr_t)ctx, (const uint8_t *)abs_path, strlen(abs_path));
+  return zjs_bits(zjs_z_result((uintptr_t)ctx));
 }
 
 /* As zjs_eval_module, the graph's modules module bytecode files: nothing
    it reaches installs or links the compiler. */
 ZjsValue zjs_eval_module_bytecode(ZjsContext *ctx, const char *abs_path) {
-  if (ctx != NULL && abs_path != NULL) zjs_z_eval_module_bytecode((uintptr_t)ctx, (const uint8_t *)abs_path, strlen(abs_path));
-  ZjsValue undefined;
-  undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
-  return undefined;
+  if (ctx == NULL || abs_path == NULL) return zjs_undefined();
+  zjs_z_eval_module_bytecode((uintptr_t)ctx, (const uint8_t *)abs_path, strlen(abs_path));
+  return zjs_bits(zjs_z_result((uintptr_t)ctx));
 }
 
 ZjsValue zjs_eval_module_source(ZjsContext *ctx, const char *source, size_t source_len, const char *virtual_path) {
-  if (ctx != NULL && source != NULL && virtual_path != NULL) {
-    zjs_z_eval_module_source((uintptr_t)ctx, (const uint8_t *)source, source_len, (const uint8_t *)virtual_path, strlen(virtual_path));
-  }
-  ZjsValue undefined;
-  undefined.bits = 10; /* OTHER_TAG | UNDEFINED_TAG */
-  return undefined;
+  if (ctx == NULL || source == NULL || virtual_path == NULL) return zjs_undefined();
+  zjs_z_eval_module_source((uintptr_t)ctx, (const uint8_t *)source, source_len, (const uint8_t *)virtual_path, strlen(virtual_path));
+  return zjs_bits(zjs_z_result((uintptr_t)ctx));
+}
+
+ZjsValue zjs_get_error(ZjsContext *ctx) {
+  if (ctx == NULL) return zjs_undefined();
+  return zjs_bits(zjs_z_error((uintptr_t)ctx));
+}
+
+/* --- Cells --- */
+
+ZjsValue zjs_new_string(ZjsContext *ctx, const char *data, uint32_t length) {
+  if (ctx == NULL || (data == NULL && length != 0)) return zjs_undefined();
+  return zjs_bits(zjs_z_new_string((uintptr_t)ctx, (const uint8_t *)(data != NULL ? data : ""), length));
+}
+
+/* A UTF-8 copy of the string that the context keeps while the string
+   lives, with a NUL after it (docs/lifecycle.md). */
+const char *zjs_string_bytes(ZjsValue v, uint32_t *out_length) {
+  size_t length = 0;
+  uintptr_t address;
+  if (out_length != NULL) *out_length = 0;
+  if (!zjs_is_string(v)) return NULL;
+  address = zjs_z_string_bytes(ZJS_SLOT(v), v.bits, (uintptr_t)&length);
+  if (address != 0 && out_length != NULL) *out_length = (uint32_t)length;
+  return (const char *)address;
+}
+
+ZjsValue zjs_new_object(ZjsContext *ctx) {
+  if (ctx == NULL) return zjs_undefined();
+  return zjs_bits(zjs_z_new_object((uintptr_t)ctx));
+}
+
+ZjsValue zjs_new_array(ZjsContext *ctx, uint32_t length) {
+  if (ctx == NULL) return zjs_undefined();
+  return zjs_bits(zjs_z_new_array((uintptr_t)ctx, length));
+}
+
+uint32_t zjs_array_length(ZjsValue v) {
+  if (!zjs_is_array(v)) return 0;
+  return zjs_z_array_length(ZJS_SLOT(v), v.bits);
+}
+
+/* --- Values kept across calls --- */
+
+void zjs_pin(ZjsContext *ctx, ZjsValue value) { if (ctx != NULL) zjs_z_pin((uintptr_t)ctx, value.bits); }
+void zjs_unpin(ZjsContext *ctx) { if (ctx != NULL) zjs_z_unpin((uintptr_t)ctx); }
+void zjs_pin_replace(ZjsContext *ctx, ZjsValue value) { if (ctx != NULL) zjs_z_pin_replace((uintptr_t)ctx, value.bits); }
+
+uint32_t zjs_root(ZjsContext *ctx, ZjsValue value) {
+  if (ctx == NULL) return 0;
+  return zjs_z_root((uintptr_t)ctx, value.bits);
+}
+
+void zjs_unroot(ZjsContext *ctx, uint32_t handle) { if (ctx != NULL) zjs_z_unroot((uintptr_t)ctx, handle); }
+
+ZjsValue zjs_root_get(ZjsContext *ctx, uint32_t handle) {
+  if (ctx == NULL) return zjs_undefined();
+  return zjs_bits(zjs_z_root_get((uintptr_t)ctx, handle));
 }
 
 unsigned char *zjs_compile_to_bytecode(ZjsContext *ctx, const char *source, size_t *out_len) {

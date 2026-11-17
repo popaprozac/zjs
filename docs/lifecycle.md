@@ -137,16 +137,59 @@ placeholders).
   evaluation receives a second copy of the script (`sliceToBytes`, then
   `sliceBytes` inside the lock).
 
+## Values
+
+A `ZjsValue` has the engine's own bits for a number, a boolean, null, and
+undefined, so the shim makes and reads those with no call into the
+engine. A cell is the engine's handle with two things packed above it,
+inside the 48 bits the header gives a cell: the slot of the context whose
+heap it is in, and its kind (string, object, array, function, host
+function). The kind makes the header's cell predicates bit tests; the
+slot lets `zjs_string_bytes` and `zjs_array_length`, which are given no
+context, find the heap. A context takes as `undefined` a cell that names
+another context's slot, a handle outside its heap's table, and bits that
+are the engine's own markers. Eleven bits hold the slot, so the cells of
+a context past the 2,047th slot are refused by those two calls.
+
+Lifetime is the header's: a value a call returned is good until the next
+call on its context that can allocate, unless it is reachable from
+JavaScript, pinned (`zjs_pin`, a stack), or rooted (`zjs_root`, a table
+whose freed places are used again). Pins and roots are roots of every
+collection. The engine cannot tell a handle whose cell has died from a
+live one, so a value used past its lifetime reads whatever has the handle
+now.
+
+`zjs_string_bytes` returns a NUL-terminated UTF-8 copy that the context
+owns, not a pointer into the heap: the engine keeps a string as bytes or
+as 16-bit units, and a small string's bytes move when their arena is
+compacted. The copy stays where it is for as long as the string lives.
+The heap marks a string whose text was lent and lists it when it dies
+(`lendString`, `lentDead` in `engine/heap.zs`); the copies of the dead are
+freed before the next is looked up, and all of them with the context.
+
+`zjs_eval` and the other evaluators return what the program produced, or
+`undefined` when it threw; `zjs_get_error` then returns what was thrown.
+
+`tests/abi_values_test.c`, run by `build.sh`, is the evidence: every kind
+of value out of an evaluation and back in, strings in UTF-8 both ways,
+roots and pins across collections, 2,400 strings read with collections
+between, a second context's values refused, and bits no call returned.
+
 ## ABI placeholders
 
-The shim provides `zjs_new_context`, `zjs_free_context`, `zjs_eval`,
-`zjs_had_error`, and nothing else of `zjs.h`. Of those, `zjs_eval` returns
-`undefined` whatever the script produced: the engine's NaN-box layout is
-not yet mapped onto `ZjsValue`, and the harness reads only `zjs_had_error`.
-Everything else in the header -- value constructors and predicates, string
-access, properties, globals, host functions, `zjs_call`, `zjs_throw`,
-`zjs_get_error`, bytecode, modules, GC statistics, `process.argv`, timers
--- is unimplemented and calling it is a link error.
+The shim provides the contexts and their installers, the evaluators and
+`zjs_compile_to_bytecode`, `zjs_had_error` and `zjs_get_error`, the
+interrupt handler, `zjs_version`, and the values of the section above:
+the constructors, predicates, and unboxers, `zjs_new_string`,
+`zjs_string_bytes`, `zjs_new_object`, `zjs_new_array`,
+`zjs_array_length`, pins, and roots. The rest of the header is
+unimplemented, and calling it is a link error: properties, elements, and
+globals; `zjs_call`; host functions (`zjs_register_host_function`,
+`zjs_get_this`, `zjs_throw`); `zjs_drain_microtasks`,
+`zjs_has_pending_work`, and the timers; `zjs_gc`, `zjs_cell_count`, and
+the GC statistics; `zjs_set_process_argv`; `zjs_new_minimal_context`,
+`zjs_install_stdlib_extensions`, the `zjs_install_web_*` installers,
+`zjs_install_node_net_globals`, and `ctx_register_stdlib_modules`.
 
 ## Evidence
 
@@ -209,4 +252,5 @@ contexts are built outside the registry lock again).
 | Init failure and partial teardown safe | Initialization; evidence 4 to 6 |
 | Cycles, contexts, jobs, callbacks exercised | Evidence 1 to 7; callbacks deferred |
 | ABI placeholders tracked | ABI placeholders |
+| Values cross the ABI and outlive collections | Values; `tests/abi_values_test.c` |
 | Stale comments updated | lib.zs and the shim |

@@ -57,6 +57,11 @@ clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" \
   -o "$OUT/module_test" "$ROOT/tests/module_test.c" "$OUT/libzjs.a"
 rm -rf "$OUT/module_test_files" && mkdir -p "$OUT/module_test_files"
 "$OUT/module_test" "$OUT/module_test_files"
+
+echo "[3g/6] values across the public ABI"
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" \
+  -o "$OUT/abi_values_test" "$ROOT/tests/abi_values_test.c" "$OUT/libzjs.a"
+"$OUT/abi_values_test"
 echo "[4/6] test262 runner (unmodified)"
 clang -std=c11 -O2 -I "$ROOT/include" \
   -o "$OUT/test262_runner" "$ROOT/tests/test262_runner.c" "$OUT/libzjs.a"
