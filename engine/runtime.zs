@@ -2864,6 +2864,9 @@ export struct Runtime {
   // either way; otherwise the chain's [[Set]], as for any object but the
   // global object.
   cold function binarySet(inout this, handle: u32, key: Value, value: Value, receiver: Value): boolean {
+    // A number at an int32 key, as the dispatch loop stores it; the
+    // second caller also keeps typedStoreIndex out of storeElem's handler.
+    if (isInt32(key) && this.typedStoreIndex(cellValue(handle), asInt32(key), value)) return true;
     if (this.binaryKind(handle) == BINARY_TYPED) {
       const typed = this.typedKey(key);
       if (typed.numeric) {
@@ -2973,14 +2976,7 @@ export struct Runtime {
   // GetValueFromBuffer: an element of kind `element` in a bytes cell at
   // byte `at`, little-endian unless `big`.
   function readElement(bytes: u32, at: usize, element: i32, big: boolean): Value {
-    const size = elementSize(element);
-    let bits: u64 = 0;
-    let k: u32 = 0;
-    while (k < size) {
-      const place = big ? k : size - 1 - k;
-      bits = (bits << 8) | u64(this.heap.byteAt(bytes, at + usize(place)));
-      k = k + 1;
-    }
+    const bits = this.heap.bytesLoad(bytes, at, elementSize(element), big);
     if (element == ELEMENT_INT8) return int32Value(i32(bits) - (bits >= 128 ? 256 : 0));
     if (element == ELEMENT_INT16) return int32Value(i32(bits) - (bits >= 32768 ? 65536 : 0));
     if (element == ELEMENT_INT32) return int32Value(i32.fromBits(u32(bits)));
@@ -2993,7 +2989,6 @@ export struct Runtime {
   // SetValueInBuffer: a number converted for the element kind and written
   // at byte `at`, little-endian unless `big`.
   function writeElement(inout this, bytes: u32, at: usize, element: i32, number: f64, big: boolean): void {
-    const size = elementSize(element);
     let bits: u64 = 0;
     if (element == ELEMENT_FLOAT32) {
       bits = u64(float32Bits(number));
@@ -3004,13 +2999,7 @@ export struct Runtime {
     } else if (number == number) {
       bits = u64(nativeToUint32(number));
     }
-    let k: u32 = 0;
-    while (k < size) {
-      const place = big ? size - 1 - k : k;
-      this.heap.setByteAt(bytes, at + usize(place), u8(bits & 255));
-      bits = bits >> 8;
-      k = k + 1;
-    }
+    this.heap.bytesStore(bytes, at, elementSize(element), bits, big);
   }
 
   // TypedArrayGetElement.
@@ -3025,6 +3014,49 @@ export struct Runtime {
     const number = this.toNumberValue(value);
     if (this.pendingThrow) return;
     if (this.typedValidIndex(handle, index)) this.typedWrite(handle, index, number);
+  }
+
+  // `ta[i]` in the dispatch loop, after the array path: a typed array's
+  // element by an int32 index (undefined outside its length), without the
+  // property protocol; deleted for anything but a typed array. Outside
+  // dictionary mode its fields are its first slots, read once each.
+  function typedLoadIndex(object: Value, index: i32): Value {
+    if (!isCell(object) || asCell(object) == 0) return deletedValue();
+    const handle = asCell(object);
+    if (this.binaryKind(handle) != BINARY_TYPED) return deletedValue();
+    if (index < 0 || this.heap.isDictionary(handle)) return this.typedGetElement(handle, f64(index));
+    const bytes = this.bufferBytes(asCell(this.heap.slot(handle, 1)));
+    // A detached buffer has no bytes and no elements. The length and
+    // offset are int32s: no buffer is longer than 2^31 - 1 bytes.
+    if (bytes == 0 || index >= asInt32(this.heap.slot(handle, 3))) return undefinedValue();
+    const element = asInt32(this.heap.slot(handle, 4));
+    const at = usize(asInt32(this.heap.slot(handle, 2))) + usize(index) * usize(elementSize(element));
+    return this.readElement(bytes, at, element, false);
+  }
+
+  // typedLoadIndex's element written to a register: false, with nothing
+  // written, for anything but a typed array.
+  function typedLoadInto(inout this, base: u32, target: u8, object: Value, index: i32): boolean {
+    const element = this.typedLoadIndex(object, index);
+    if (isDeleted(element)) return false;
+    this.setReg(base, target, element);
+    return true;
+  }
+
+  // `ta[i] = n` in the dispatch loop, for a number `n` (whose ToNumber runs
+  // nothing): written if the index is valid, and true, since the
+  // assignment succeeds either way. False for anything else, which takes
+  // the property protocol.
+  function typedStoreIndex(inout this, object: Value, index: i32, value: Value): boolean {
+    if (!isNumber(value) || !isCell(object) || asCell(object) == 0) return false;
+    const handle = asCell(object);
+    if (this.binaryKind(handle) != BINARY_TYPED || this.heap.isDictionary(handle)) return false;
+    const bytes = this.bufferBytes(asCell(this.heap.slot(handle, 1)));
+    if (bytes == 0 || index < 0 || index >= asInt32(this.heap.slot(handle, 3))) return true;
+    const element = asInt32(this.heap.slot(handle, 4));
+    const at = usize(asInt32(this.heap.slot(handle, 2))) + usize(index) * usize(elementSize(element));
+    this.writeElement(bytes, at, element, toNumber(value), false);
+    return true;
   }
 
   function wrappedPrimitive(handle: u32): Value {
@@ -6379,6 +6411,10 @@ export struct Runtime {
   // loadElemImm's general path: the element at `index` as loadElem reads
   // it, a TypeError for undefined and null.
   function loadIndexSlow(inout this, object: Value, index: i32): Value {
+    if (this.typedArraysMade) {
+      const element = this.typedLoadIndex(object, index);
+      if (!isDeleted(element)) return element;
+    }
     const key = int32Value(index);
     if (isUndefined(object) || isNull(object)) {
       const keyAtom = this.propertyKey(key);
@@ -11201,6 +11237,10 @@ export struct Runtime {
             if (!isDeleted(direct)) {
               this.setReg(base, inst.a, direct);
               continue;
+            } else if (this.typedArraysMade && isInt32(key) && this.typedLoadInto(base, inst.a, object, asInt32(key))) {
+              // A typed array's element, once any typed array exists. Tested
+              // after the array's hit, so that path stays as it was laid out.
+              continue;
             } else if (isUndefined(object) || isNull(object)) {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, true);
@@ -11238,6 +11278,8 @@ export struct Runtime {
               }
             }
             if (stored) {
+            } else if (this.typedArraysMade && isInt32(key) && this.typedStoreIndex(object, asInt32(key), value)) {
+              // A number into a typed array, once any typed array exists.
             } else if (isUndefined(object) || isNull(object)) {
               const atom = this.propertyKey(key);
               thrown = this.propertyOfNullish(object, atom, false);

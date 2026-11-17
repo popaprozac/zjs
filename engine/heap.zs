@@ -2358,6 +2358,34 @@ export struct Heap {
     this.strings[buffer][index] = value;
   }
 
+  // `size` bytes from `at` as one number, the first byte the most
+  // significant when `big` (an element's bits, for the runtime's
+  // readElement), and the number written back the same way.
+  function bytesLoad(handle: u32, at: usize, size: u32, big: boolean): u64 {
+    return loadBits(this.strings[usize(this.cellHeader(handle).payload)], at, size, big);
+  }
+
+  function bytesStore(inout this, handle: u32, at: usize, size: u32, bits: u64, big: boolean): void {
+    const buffer = usize(this.cellHeader(handle).payload);
+    const end = at + usize(size);
+    let rest = bits;
+    if (big) {
+      let index = end;
+      while (index > at) {
+        index = index - 1;
+        this.strings[buffer][index] = u8(rest & 255);
+        rest = rest >> 8;
+      }
+    } else {
+      let index = at;
+      while (index < end) {
+        this.strings[buffer][index] = u8(rest & 255);
+        rest = rest >> 8;
+        index = index + 1;
+      }
+    }
+  }
+
   // --- Tables ---
   //
   // A Map's or Set's entries live outside the slot arena, in a table that
@@ -4387,6 +4415,27 @@ export function sliceBytes(in bytes: Array<u8>, start: usize, end: usize): Array
   return copied;
 }
 
+// The bytes behind Heap.bytesLoad, read in place, most significant
+// first: from the start when big-endian, from the end otherwise.
+function loadBits(bytes: Slice<u8>, at: usize, size: u32, big: boolean): u64 {
+  const end = at + usize(size);
+  let bits: u64 = 0;
+  if (big) {
+    let index = at;
+    while (index < end) {
+      bits = bits.wrappingShiftLeft(8) | u64(bytes[index]);
+      index = index + 1;
+    }
+  } else {
+    let index = end;
+    while (index > at) {
+      index = index - 1;
+      bits = bits.wrappingShiftLeft(8) | u64(bytes[index]);
+    }
+  }
+  return bits;
+}
+
 export function bytesOf(in text: String): Array<u8> {
   const length = text.byteLength;
   let bytes = Array<u8>.withCapacity(length);
@@ -5574,4 +5623,19 @@ test "an ArrayBuffer's bytes are zero, written in place, counted, and given back
   collectFull(inout heap, in none);
   expect(heap.oldBufferBytes).toEqual(0);
   expect(heap.freeStringCount).toEqual(freeBefore + 2);
+}
+
+test "an element's bits are stored and loaded in either byte order" {
+  let heap = createHeap();
+  const bytes = heap.allocateBytes(8);
+  heap.bytesStore(bytes, 0, 4, 0x01020304, false);
+  heap.bytesStore(bytes, 4, 4, 0x01020304, true);
+  expect(heap.byteAt(bytes, 0)).toEqual(4);
+  expect(heap.byteAt(bytes, 3)).toEqual(1);
+  expect(heap.byteAt(bytes, 4)).toEqual(1);
+  expect(heap.byteAt(bytes, 7)).toEqual(4);
+  expect(heap.bytesLoad(bytes, 0, 4, false)).toEqual(0x01020304);
+  expect(heap.bytesLoad(bytes, 4, 4, true)).toEqual(0x01020304);
+  expect(heap.bytesLoad(bytes, 0, 4, true)).toEqual(0x04030201);
+  expect(heap.bytesLoad(bytes, 2, 1, false)).toEqual(2);
 }
