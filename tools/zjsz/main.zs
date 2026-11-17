@@ -185,7 +185,7 @@ function runBytecode(inout runtime: Runtime, bytes: Slice<u8>): RunResult {
 // reports it.
 function runViaBytecode(inout runtime: Runtime, source: Array<u8>): RunResult {
   let compiling = createEngine();
-  const parsed = parseProgram(move source, false);
+  const parsed = parseProgram(move source, false, compiling.stackFloor());
   if (parsed.hadError) {
     const message: String = "parse error";
     return RunResult({ isThrow: true, value: runtime.syntaxError(in message) });
@@ -314,7 +314,7 @@ function compileFile(in input: String, in output: String, module: boolean): i32 
 function dumpFile(in path: String): i32 throws String {
   const source = try fs.readBytes(path);
   let runtime = createEngine();
-  const parsed = parseProgram(move source, false);
+  const parsed = parseProgram(move source, false, runtime.stackFloor());
   if (parsed.hadError) {
     console.error("zjsz dump: parse error");
     return 1;

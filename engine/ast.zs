@@ -95,6 +95,15 @@ export enum NodeKind {
 
 export const NO_NODE: u32 = 0;
 
+// What one level of the tree is taken to cost a function that walks it by
+// recursion without asking how much native stack is left: the compiler's
+// scans and the parser's checks of a finished tree, some forty of them.
+// The most any puts on the stack a level is 336 bytes (collectChanges, on
+// arm64), so this leaves half as much again. The functions that cost
+// more a level ask as they go, and ask for room for such a walk of the
+// whole tree with it (Ast.walkCost), so none of the forty has to ask.
+export const WALK_LEVEL: usize = 512;
+
 export struct AstNode {
   kind: NodeKind;
   start: u32;
@@ -121,6 +130,41 @@ export struct AstNode {
 export struct Ast {
   nodes: Array<AstNode>;
   children: Array<u32>;
+  // The height of the whole tree (heightOf the program), set when the
+  // parse ends.
+  tallest: u32;
+
+  // How many nodes deep the tree under `root` is, itself counted. It keeps
+  // a list of the nodes still to visit, each with its depth in the high
+  // half, and does not recurse: this is what tells the walks that do
+  // whether they may.
+  function heightOf(root: u32): u32 {
+    let pending = Array<u64>();
+    pending.push(u64(root) | 0x1_0000_0000);
+    let most: u32 = 0;
+    while (pending.length > 0) {
+      const entry = pending[pending.length - 1];
+      const dropped = pending.pop();
+      const index = u32(entry & 0xFFFF_FFFF);
+      if (index == NO_NODE) continue;
+      const depth = u32(entry >> 32);
+      if (depth > most) most = depth;
+      const n = this.nodes[usize(index)];
+      const below = u64(depth + 1) << 32;
+      let k: u32 = 0;
+      while (k < n.childrenCount + 3) {
+        const child = k == 0 ? n.left : k == 1 ? n.right : k == 2 ? n.third : this.children[usize(n.childrenStart + k - 3)];
+        pending.push(u64(child) | below);
+        k = k + 1;
+      }
+    }
+    return most;
+  }
+
+  // The native stack a walk of a tree `height` nodes deep may take.
+  function walkCost(height: u32): usize {
+    return usize(height) * WALK_LEVEL;
+  }
 
   function newNode(inout this, kind: NodeKind, start: u32, end: u32): u32 {
     this.nodes.push(AstNode({
@@ -181,7 +225,7 @@ export function createAst(): Ast {
     boolValue: false, left: NO_NODE, right: NO_NODE, third: NO_NODE,
     childrenStart: 0, childrenCount: 0, nameStart: 0, nameLength: 0, scopeId: 0, conciseMethod: false,
   }));
-  return Ast({ nodes: move nodes, children: Array<u32>() });
+  return Ast({ nodes: move nodes, children: Array<u32>(), tallest: 0 });
 }
 
 // Reference numbering (C enum order in src/ast.zc).
@@ -284,4 +328,27 @@ test "child lists attach as contiguous ranges" {
   expect(ast.node(program).childrenCount).toEqual(2);
   expect(ast.child(program, 0)).toEqual(a);
   expect(ast.child(program, 1)).toEqual(b);
+}
+
+test "a tree's height is counted from its links" {
+  let ast = createAst();
+  const leaf = ast.newNode(NodeKind.numberExpr, 0, 1);
+  expect(ast.heightOf(leaf)).toEqual(1);
+  expect(ast.heightOf(NO_NODE)).toEqual(0);
+  const unary = ast.newNode(NodeKind.unary, 0, 1);
+  ast.setLeft(unary, leaf);
+  const sum = ast.newNode(NodeKind.binary, 0, 1);
+  ast.setLeft(sum, ast.newNode(NodeKind.numberExpr, 0, 1));
+  ast.setRight(sum, unary);
+  expect(ast.heightOf(sum)).toEqual(3);
+  // The deepest branch may be a child, and the third link.
+  const call = ast.newNode(NodeKind.call, 0, 1);
+  let list = Array<u32>();
+  list.push(ast.newNode(NodeKind.numberExpr, 0, 1));
+  list.push(sum);
+  ast.setChildren(call, in list);
+  const conditional = ast.newNode(NodeKind.conditional, 0, 1);
+  ast.setThird(conditional, call);
+  expect(ast.heightOf(conditional)).toEqual(5);
+  expect(ast.walkCost(5)).toEqual(5 * WALK_LEVEL);
 }

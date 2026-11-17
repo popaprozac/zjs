@@ -1150,6 +1150,10 @@ function arrayConcat(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
 
 // FlattenIntoArray; the count of elements written, or -1 on a throw.
 function flattenInto(inout runtime: Runtime, target: Value, source: Value, sourceLength: f64, start: f64, depth: f64, mapper: Value, receiver: Value): f64 {
+  if (runtime.stackShort(0)) {
+    runtime.stackOverflow();
+    return -1.0;
+  }
   let targetIndex = start;
   let sourceIndex = 0.0;
   while (sourceIndex < sourceLength) {

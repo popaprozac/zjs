@@ -97,6 +97,12 @@ int zjs_re_capture_end(uintptr_t context, int group);
    coverage of the out-of-memory paths); it counts from the moment it is
    set. */
 void zjs_re_set_stack_budget(uintptr_t context, uintptr_t bytes);
+/* The stack the engine measured, `size` bytes up from `low`, and the
+   lowest address a call entered on that stack may reach (`floor`): it
+   stops there even with budget left, so a match started near the stack's
+   end does not run past it. A call entered anywhere else has its budget
+   only. A size of 0 for none. */
+void zjs_re_set_stack(uintptr_t context, uintptr_t low, uintptr_t size, uintptr_t floor);
 void zjs_re_set_step_budget(uintptr_t context, uintptr_t checks);
 /* The embedder's interrupt handler (zjs_host_interrupt), asked every
    time libregexp checks its timeout; 0 for none. */

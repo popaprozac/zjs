@@ -15,6 +15,9 @@
 typedef struct {
   /* Limits and the state of the call in progress. */
   uintptr_t stack_budget;
+  uintptr_t stack_low;
+  uintptr_t stack_size;
+  uintptr_t stack_reach;
   uintptr_t stack_floor;
   uintptr_t step_budget;
   uintptr_t steps_left;
@@ -116,6 +119,7 @@ static void enter(Context *context) {
   char probe;
   uintptr_t here = (uintptr_t)&probe;
   context->stack_floor = here > context->stack_budget ? here - context->stack_budget : 1;
+  if (here - context->stack_low < context->stack_size && context->stack_floor < context->stack_reach) context->stack_floor = context->stack_reach;
   context->steps_left = context->step_budget;
   context->last_failure = 0;
   context->allocation_failed = false;
@@ -152,6 +156,13 @@ uintptr_t zjs_re_live_contexts(void) {
 
 void zjs_re_set_stack_budget(uintptr_t handle, uintptr_t bytes) {
   ((Context *)handle)->stack_budget = bytes;
+}
+
+void zjs_re_set_stack(uintptr_t handle, uintptr_t low, uintptr_t size, uintptr_t floor) {
+  Context *context = (Context *)handle;
+  context->stack_low = low;
+  context->stack_size = size;
+  context->stack_reach = floor;
 }
 
 void zjs_re_set_interrupt(uintptr_t handle, uintptr_t handler, uintptr_t opaque) {

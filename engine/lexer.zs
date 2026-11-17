@@ -19,6 +19,7 @@ import { expect } from "std/test";
 import { TextBuffer } from "std/text";
 import { TokenKind, Token, tokenEof, tokenInvalid, expectRegexAfter } from "./token.zs";
 import { bytesOf, sliceBytes } from "./heap.zs";
+import { stackAddress } from "./stack.zs";
 
 // --- Bytes ------------------------------------------------------------------
 
@@ -220,6 +221,10 @@ export struct Lexer {
   // Kind of the most recent token, for the `} /re/` newline refinement.
   prevKind: TokenKind;
   crossedNewline: boolean;
+  // The lowest address the native stack may reach (Runtime.stackFloor),
+  // and whether templates nested deep enough to reach it.
+  stackFloor: usize;
+  stackSpent: boolean;
 
   function atEnd(): boolean {
     return this.pos >= this.length;
@@ -610,6 +615,13 @@ export struct Lexer {
   }
 
   function scanTemplateSubstitution(inout this): boolean {
+    // A template inside this substitution scans its own substitutions a
+    // level further down the native stack.
+    if (stackAddress() < this.stackFloor) {
+      this.stackSpent = true;
+      this.pos = this.length;
+      return false;
+    }
     let depth: u32 = 1;
     // Last significant byte consumed: decides whether `/` opens a regex
     // (expression position) or is division (value position).
@@ -911,7 +923,7 @@ export struct Lexer {
   }
 }
 
-export function createLexer(source: Array<u8>): Lexer {
+export function createLexer(source: Array<u8>, stackFloor: usize): Lexer {
   const length = source.length;
   return Lexer({
     source: move source,
@@ -922,17 +934,24 @@ export function createLexer(source: Array<u8>): Lexer {
     expectRegex: true,
     prevKind: TokenKind.eof,
     crossedNewline: false,
+    stackFloor: stackFloor,
+    stackSpent: false,
   });
 }
 
-// Eager form: every token including the trailing Eof.
-export function tokenize(source: Array<u8>): Array<Token> {
-  let lexer = createLexer(move source);
+// Eager form: every token including the trailing Eof. `stackFloor` is the
+// lowest address the native stack may reach, 0 for no limit; `stackSpent`
+// is set when the source nests templates deep enough to reach it.
+export function tokenize(source: Array<u8>, stackFloor: usize, inout stackSpent: boolean): Array<Token> {
+  let lexer = createLexer(move source, stackFloor);
   let tokens = Array<Token>();
   while (true) {
     const token = lexer.nextToken();
     tokens.push(token);
-    if (token.kind == TokenKind.eof) return tokens;
+    if (token.kind == TokenKind.eof) {
+      if (lexer.stackSpent) stackSpent = true;
+      return tokens;
+    }
   }
   // `while (true)` with only `return` exits is not seen as diverging.
   return tokens;
@@ -942,21 +961,25 @@ export function tokenize(source: Array<u8>): Array<Token> {
 // regular expression may begin: the parser's second cut after an `await`
 // or `yield` it has found to be an operator (expectRegexAfter cannot tell
 // them from identifiers).
-export function tokenizeFrom(source: Array<u8>, start: u32): Array<Token> {
-  let lexer = createLexer(move source);
+export function tokenizeFrom(source: Array<u8>, start: u32, stackFloor: usize, inout stackSpent: boolean): Array<Token> {
+  let lexer = createLexer(move source, stackFloor);
   lexer.pos = usize(start);
   let tokens = Array<Token>();
   while (true) {
     const token = lexer.nextToken();
     tokens.push(token);
-    if (token.kind == TokenKind.eof) return tokens;
+    if (token.kind == TokenKind.eof) {
+      if (lexer.stackSpent) stackSpent = true;
+      return tokens;
+    }
   }
   return tokens;
 }
 
 // Source given as text, for tests and tools that hold a String.
 export function tokenizeText(source: String): Array<Token> {
-  return tokenize(bytesOf(in source));
+  let stackSpent = false;
+  return tokenize(bytesOf(in source), 0, inout stackSpent);
 }
 
 // --- Tests ----------------------------------------------------------------
@@ -988,7 +1011,7 @@ test "keywords, identifiers, numbers, and punctuators" {
 
 test "token spans slice the source" {
   const sample: String = "let  answer = 42";
-  let lexer = createLexer(bytesOf(in sample));
+  let lexer = createLexer(bytesOf(in sample), 0);
   const first = lexer.nextToken();
   const second = lexer.nextToken();
   const firstText = lexer.text(first);
@@ -1068,4 +1091,15 @@ test "comments and unusual whitespace are trivia" {
 test "unterminated string is invalid" {
   const found = kinds("'abc\nx");
   expect(found[0] == TokenKind.invalid).toEqual(true);
+}
+
+test "templates nested past the stack floor end the tokens and say so" {
+  const source: String = "`a${`b${`c${1}`}`}`;";
+  let spent = false;
+  const fits = tokenize(bytesOf(in source), 0, inout spent);
+  expect(spent).toEqual(false);
+  expect(fits[0].kind == TokenKind.templateLit).toEqual(true);
+  const none = tokenize(bytesOf(in source), 0xFFFF_FFFF_FFFF_FFF0, inout spent);
+  expect(spent).toEqual(true);
+  expect(none[none.length - 1].kind == TokenKind.eof).toEqual(true);
 }

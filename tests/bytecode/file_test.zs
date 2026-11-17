@@ -22,7 +22,7 @@ function sourceBytes(in text: String): Array<u8> {
 // The program compiled in an engine of its own and written out.
 function compiled(in text: String): Array<u8> {
   let compiling = createEngine();
-  const parsed = parseProgram(sourceBytes(in text), false);
+  const parsed = parseProgram(sourceBytes(in text), false, 0);
   const first = compiling.functions.length;
   const root = compileProgram(in parsed.parser, parsed.root, inout compiling);
   return writeProgram(inout compiling, u32(first), u32(root));

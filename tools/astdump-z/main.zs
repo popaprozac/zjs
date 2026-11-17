@@ -27,7 +27,7 @@ function dumpNode(in ast: Ast, index: u32, depth: u32): void {
 
 function dump(in path: String, isModule: boolean): i32 throws String {
   const source = try fs.readBytes(path);
-  const result = parseProgram(move source, isModule);
+  const result = parseProgram(move source, isModule, 0);
   const flag: u8 = result.hadError ? 1 : 0;
   console.log(`error ${flag}`);
   if (!result.hadError) dumpNode(in result.parser.ast, result.root, 0);

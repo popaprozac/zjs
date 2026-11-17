@@ -7,6 +7,7 @@
 import native from "./native/zjs_regexp.h";
 import { bytesOf } from "./heap.zs";
 import { expect } from "std/test";
+import { stackAddress } from "./stack.zs";
 
 // Flag bits, the RegExp letters d g i m s u y v.
 export const REGEX_GLOBAL: i32 = 1;
@@ -297,6 +298,13 @@ export struct RegexBackend {
     native.zjs_re_set_stack_budget(this.context, bytes);
   }
 
+  // The stack the engine measured (`size` bytes up from `low`) and the
+  // lowest address a call entered on it may reach, whatever its budget. A
+  // backend with no native context yet has nothing to tell.
+  function setStack(low: usize, size: usize, floor: usize): void {
+    if (this.context != 0) native.zjs_re_set_stack(this.context, low, size, floor);
+  }
+
   function setStepBudget(checks: usize): void {
     native.zjs_re_set_step_budget(this.context, checks);
   }
@@ -430,5 +438,27 @@ test "resource failures carry their category: memory, steps, stack" {
   const deepSource = asciiBytes(in deep);
   expect(backend.compile(in deepSource, 0)).toEqual(-1);
   expect(backend.lastFailure).toEqual(REGEX_STACK_LIMIT);
+  // And the engine's stack, with a floor a little under this call: no
+  // budget takes five hundred nested groups past it. A stack this call
+  // is not on is left out.
+  backend.setStackBudget(262144);
+  let nestedSource = Array<u8>();
+  i = 0;
+  while (i < 500) { nestedSource.push(40); nestedSource.push(63); nestedSource.push(58); i = i + 1; }
+  nestedSource.push(97);
+  i = 0;
+  while (i < 500) { nestedSource.push(41); i = i + 1; }
+  // (A pattern compiled once is kept, so each try has a flag of its own.)
+  expect(backend.compile(in nestedSource, 0) >= 0).toEqual(true);
+  backend.setStack(stackAddress() - 1048576, 2097152, stackAddress() - 8192);
+  expect(backend.compile(in nestedSource, REGEX_IGNORE_CASE)).toEqual(-1);
+  expect(backend.lastFailure).toEqual(REGEX_STACK_LIMIT);
+  // Entered below the floor, on that stack: no room at all.
+  backend.setStack(stackAddress() - 1048576, 2097152, stackAddress() + 4096);
+  expect(backend.compile(in nestedSource, REGEX_DOT_ALL)).toEqual(-1);
+  expect(backend.lastFailure).toEqual(REGEX_STACK_LIMIT);
+  backend.setStack(stackAddress() + 1048576, 2097152, stackAddress() + 2097152);
+  expect(backend.compile(in nestedSource, REGEX_MULTILINE) >= 0).toEqual(true);
+  backend.setStack(0, 0, 0);
   backend.release();
 }

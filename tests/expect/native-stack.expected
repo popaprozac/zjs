@@ -1,0 +1,31 @@
+String of nested arrays true RangeError: Maximum call stack size exceeded
+join true RangeError: Maximum call stack size exceeded
+toString true RangeError: Maximum call stack size exceeded
+toLocaleString true RangeError: Maximum call stack size exceeded
+concatenation true RangeError: Maximum call stack size exceeded
+template true RangeError: Maximum call stack size exceeded
+flat true RangeError: Maximum call stack size exceeded
+JSON.stringify of nested arrays true RangeError: Maximum call stack size exceeded
+JSON.stringify of nested objects true RangeError: Maximum call stack size exceeded
+500 deep: 1 1 1003
+JSON.parse 2000 deep: 1
+parentheses true RangeError: Maximum call stack size exceeded
+array literals true RangeError: Maximum call stack size exceeded
+object literals true RangeError: Maximum call stack size exceeded
+calls true RangeError: Maximum call stack size exceeded
+unary operators true RangeError: Maximum call stack size exceeded
+assignments true RangeError: Maximum call stack size exceeded
+blocks true RangeError: Maximum call stack size exceeded
+if statements true RangeError: Maximum call stack size exceeded
+array patterns true RangeError: Maximum call stack size exceeded
+template literals true RangeError: Maximum call stack size exceeded
+the Function constructor true RangeError: Maximum call stack size exceeded
+indirect eval true RangeError: Maximum call stack size exceeded
+200 parentheses: 7
+2000 terms: 2001
+caught 2000 calls down: true
+finally and catch ran: 2
+String of nested arrays, again true RangeError: Maximum call stack size exceeded
+blocks, again true RangeError: Maximum call stack size exceeded
+self-holding: 1,2,
+after: 1,2,3,4 {"a":[1,{"b":2}]} 9

@@ -13,6 +13,7 @@ import { replace } from "std/memory";
 import math from "std/math";
 import native from "./builtins/clock.h";
 import host from "./native/zjs_host.h";
+import { stackAddress } from "./stack.zs";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
@@ -265,6 +266,8 @@ export type EvalCompiler = (inout runtime: Runtime, source: Array<u8>, caller: u
 export const COMPILE_PARSE_ERROR: i32 = -1;
 export const COMPILE_ERROR: i32 = -2;
 export const COMPILE_NO_COMPILER: i32 = -3;
+// The source nests deeper than the native stack has room for.
+export const COMPILE_STACK: i32 = -4;
 
 // How many global slots there can be: an instruction names one in 16 bits.
 export const GLOBAL_SLOT_LIMIT: usize = 0x1_0000;
@@ -538,19 +541,31 @@ const SHARED_GIVE_UP: u8 = 255;
 // frame that passes it is opened, and counts the interrupt countdown down
 // to its first call or loop back-edge, where pollInterrupt throws. Two
 // frames can be past it, the second a generator's or a program's, which
-// open before they poll. The limit also stands in for one on the native
-// stack, which the engine does not measure: a call a builtin makes back
-// into JavaScript (a getter, a callback) runs the dispatch loop again
-// under it, 0.5 to 1.7 kB of native stack a level as measured on arm64,
-// and 3,000 of those stay inside a main thread's 8 MB.
+// open before they poll. It counts frames only: a call a builtin makes
+// back into JavaScript (a getter, a callback) also runs the dispatch loop
+// again on the native stack, and that has a limit of its own (stackShort).
 //
 // REGISTER_LIMIT is how far up the register stack a call's arguments may
 // be placed when there are any number of them (a spread, apply): what a
 // recursion that spreads a long array into every call meets first. A
 // frame's own registers, 256 at most, are not held to it, so the stack
 // ends within 256 registers a frame of it.
-const FRAME_LIMIT: usize = 3000;
+const FRAME_LIMIT: usize = 10000;
 const REGISTER_LIMIT: usize = 1048576;
+
+// The native stack. Code that recurses on it asks stackShort where it is
+// about to go a level deeper -- a call from a builtin back into
+// JavaScript, a builtin walking nested data, the compiler walking a nested
+// tree -- and throws the same RangeError when the answer is yes. The
+// answer comes from the address, not from a count of levels: a level
+// costs from 0.2 kB to several, and a thread's stack is 8 MB or 512 kB.
+//
+// STACK_RESERVE is what is kept back at the stack's end for everything
+// that does not ask: the calls under the last check that passed, and the
+// work of raising the error. STACK_DEFAULT is the size a stack is taken
+// to be where the platform does not tell (zjs_host_stack_top).
+const STACK_RESERVE: usize = 65536;
+const STACK_DEFAULT: usize = 262144;
 
 export struct Runtime {
   heap: Heap;
@@ -799,6 +814,15 @@ export struct Runtime {
   interruptHandler: usize = 0;
   interruptOpaque: usize = 0;
   interruptCountdown: u32 = INTERRUPT_POLL_INTERVAL;
+  // The native stack this context may use on the thread that last
+  // measured it (stackMeasure): `stackSpan` bytes up from `stackLimit`.
+  // No address is inside before the first measure.
+  stackLimit: usize = 0;
+  stackSpan: usize = 0;
+  stackThread: usize = 0;
+  // The compiler stopped for want of native stack: its failure is then
+  // COMPILE_STACK, not an error in the source.
+  compileSpent: boolean = false;
   terminating: boolean = false;
   // FEATURE_* bits of the optional builtins installed.
   features: u32;
@@ -2408,8 +2432,13 @@ export struct Runtime {
 
   // What a compile that gave no function throws: a SyntaxError naming
   // the phase that failed, as the reference reports both; an EvalError
-  // where there is no compiler.
+  // where there is no compiler; and the call stack's RangeError where
+  // the source nests deeper than the native stack has room for.
   function compileFailure(inout this, reason: i32): Value {
+    if (reason == COMPILE_STACK) {
+      this.stackOverflow();
+      return this.takePending();
+    }
     if (reason == COMPILE_NO_COMPILER) {
       const message: String = "no compiler: this context runs bytecode only";
       return this.makeError(ERROR_KIND_EVAL, bytesOf(in message));
@@ -5174,6 +5203,9 @@ export struct Runtime {
       const unstartedAsync = this.generatorIsAsync(record);
       return this.resumeResult(unstartedAsync, sent, true);
     }
+    // The body runs in the dispatch loop a level further down the native
+    // stack; out of it, the generator stays as it was.
+    if (this.stackShort(0)) return this.stackOverflow();
     // A return at a yield re-enters the body, which returns the value
     // through its finally blocks (the compiler checks the mode after
     // every yield); a delegating yield forwards it.
@@ -5651,6 +5683,12 @@ export struct Runtime {
         return quick;
       }
     }
+    // Every call a builtin makes goes a level down the native stack: into
+    // another builtin, or into the dispatch loop again.
+    if (this.stackShort(0)) {
+      this.regTop = argsBase;
+      return this.stackOverflow();
+    }
     if (this.isHostFunctionValue(callee)) {
       const handle = asCell(callee);
       const builtin = this.heap.hostFunctionId(handle);
@@ -6021,6 +6059,7 @@ export struct Runtime {
       if (this.pendingThrow) return undefinedValue();
       return this.isObjectLike(outcome) ? outcome : created;
     }
+    if (this.stackShort(0)) return this.stackOverflow();
     const argsBase = this.regTop;
     const argc = u32(args.length);
     const needed = usize(argsBase + argc);
@@ -7416,9 +7455,61 @@ export struct Runtime {
     this.regStack.appendRepeated(undefinedValue(), top - this.regStack.length);
   }
 
-  // The RangeError of a call past FRAME_LIMIT or REGISTER_LIMIT, left
-  // pending; and undefined, what a call from Z returns with it.
+  // Whether the native stack has fewer than `need` bytes left: asked
+  // where native code is about to recurse. One compare says both that the
+  // address is above the limit and that it is on the stack measured, so a
+  // context entered on another thread measures again by itself.
+  inline function stackShort(inout this, need: usize): boolean {
+    const room = stackAddress().wrappingSubtract(this.stackLimit);
+    if (room < this.stackSpan && room >= need) return false;
+    return this.stackMeasure(need);
+  }
+
+  // stackShort off the stack it knew, or near that stack's end. Inside
+  // the stack measured (reserve included) it is the end. Anywhere else is
+  // another thread, or further up a stack the platform does not describe:
+  // measured again, the reserve taken off its far end.
+  cold function stackMeasure(inout this, need: usize): boolean {
+    const here = stackAddress();
+    const thread = host.zjs_host_thread();
+    const low = this.stackLimit.wrappingSubtract(STACK_RESERVE);
+    if (thread == this.stackThread && here.wrappingSubtract(low) < this.stackSpan + STACK_RESERVE) return true;
+    let top = host.zjs_host_stack_top();
+    let size = host.zjs_host_stack_size();
+    if (here >= top || top - here > size) {
+      top = here + 1;
+      size = STACK_DEFAULT;
+    }
+    this.stackThread = thread;
+    this.stackSpan = size > STACK_RESERVE ? size - STACK_RESERVE : 0;
+    this.stackLimit = top.wrappingSubtract(this.stackSpan);
+    this.tellRegexStack();
+    return here < this.stackLimit || here - this.stackLimit < need;
+  }
+
+  // The matcher is told the stack measured, and how far down it may go
+  // there: half the reserve past the limit, so that a match started at
+  // the limit still has room to run.
+  function tellRegexStack(inout this): void {
+    const low = this.stackLimit.wrappingSubtract(STACK_RESERVE);
+    this.regexBackend.setStack(low, this.stackSpan + STACK_RESERVE, low + STACK_RESERVE / 2);
+  }
+
+  // The lowest address the native stack may reach on this thread: the
+  // limit for code that runs to its end here without the runtime (the
+  // parser).
+  function stackFloor(inout this): usize {
+    this.stackShort(0);
+    return this.stackLimit;
+  }
+
+  // The RangeError of a call past FRAME_LIMIT or REGISTER_LIMIT, or of
+  // native code out of stack (stackShort), left pending; and undefined,
+  // what a call from Z returns with it.
   cold function stackOverflow(inout this): Value {
+    // A construct call refused on its way into a builtin leaves no new
+    // target for the next builtin called to take.
+    this.hostNewTarget = undefinedValue();
     const message: String = "Maximum call stack size exceeded";
     const error = this.rangeError(in message);
     this.raise(error);
@@ -8278,6 +8369,12 @@ export struct Runtime {
   // of `this` inside a call that borrows `this` mutably.
   // Run a program: its frame on the stack, `this` the global object.
   function run(inout this, functionIndex: u32): RunResult {
+    // Indirect eval and the Function constructor come here from inside a
+    // run, a level down the native stack.
+    if (this.stackShort(0)) {
+      this.stackOverflow();
+      return RunResult({ isThrow: true, value: this.takePending() });
+    }
     const entryDepth = this.frameCount;
     this.pushFrame(functionIndex, 0);
     this.hostThis = cellValue(this.globalObject);
@@ -11326,6 +11423,33 @@ export function numericNeg(a: Value): Value {
   }
   // Negation, not subtraction from zero: -(+0) is -0.
   return doubleValue(-1.0 * toNumber(a));
+}
+
+test "the native stack is short only near its end, and is measured again on another stack" {
+  let runtime = createRuntime();
+  expect(runtime.stackShort(0)).toEqual(false);
+  const limit = runtime.stackLimit;
+  expect(limit != 0 && limit < stackAddress()).toEqual(true);
+  expect(runtime.stackFloor()).toEqual(limit);
+  // More than any stack has left is short, and asking does not move the
+  // limit.
+  expect(runtime.stackShort(0xFFFF_FFFF_FFFF)).toEqual(true);
+  expect(runtime.stackLimit).toEqual(limit);
+  expect(runtime.stackShort(0)).toEqual(false);
+  // A limit this thread's stack is not inside, as one left by a call on
+  // another thread: the first question measures this stack again.
+  runtime.stackThread = runtime.stackThread + 1;
+  runtime.stackLimit = stackAddress() + 1048576;
+  expect(runtime.stackShort(0)).toEqual(false);
+  expect(runtime.stackLimit).toEqual(limit);
+  // Past the limit on the stack it was measured on is the end. The same
+  // range left by another thread is not this stack's: measured again.
+  runtime.stackLimit = stackAddress() + 4096;
+  runtime.stackSpan = 65536;
+  expect(runtime.stackShort(0)).toEqual(true);
+  runtime.stackThread = runtime.stackThread + 1;
+  expect(runtime.stackShort(0)).toEqual(false);
+  expect(runtime.stackLimit).toEqual(limit);
 }
 
 test "int32 arithmetic promotes to double only when it must" {

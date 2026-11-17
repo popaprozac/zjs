@@ -390,8 +390,10 @@ function parseNumber(inout parser: JsonParser): Value {
   return numberValue(stringToNumber(in digits));
 }
 
-function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32): Value {
-  if (depth > 512) {
+function parseValue(inout runtime: Runtime, inout parser: JsonParser): Value {
+  // Nested as deep as the native stack has room for.
+  if (runtime.stackShort(0)) {
+    runtime.stackOverflow();
     parser.failed = true;
     return undefinedValue();
   }
@@ -447,7 +449,7 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
         return undefinedValue();
       }
       parser.position = parser.position + 1;
-      const value = parseValue(inout runtime, inout parser, depth + 1);
+      const value = parseValue(inout runtime, inout parser);
       if (parser.failed) {
         runtime.popTempRootsTo(mark);
         return undefinedValue();
@@ -483,7 +485,7 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
       return cellValue(array);
     }
     while (true) {
-      const element = parseValue(inout runtime, inout parser, depth + 1);
+      const element = parseValue(inout runtime, inout parser);
       if (parser.failed) {
         runtime.popTempRoot();
         return undefinedValue();
@@ -542,6 +544,7 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser, depth: u32
 // holder, the key, the value, and the value's keys are rooted while the
 // reviver runs, since a collection may come in any call.
 function revive(inout runtime: Runtime, holder: Value, key: Value, reviver: Value): Value {
+  if (runtime.stackShort(0)) return runtime.stackOverflow();
   const mark = runtime.tempRoots.length;
   runtime.pushTempRoot(holder);
   runtime.pushTempRoot(key);
@@ -606,7 +609,8 @@ function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
     bytes = runtime.heap.stringStorageBytes(textHandle);
   }
   let parser = JsonParser({ bytes: move bytes, textUnits: move textUnits, textWide, length: runtime.heap.stringLength(textHandle), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeFrom: zeros(SHAPE_CACHE), shapeName: zeros(SHAPE_CACHE), shapeTo: zeros(SHAPE_CACHE), shapeSlot: zeros(SHAPE_CACHE), nextFrom: zeros(NEXT_CACHE), nextTo: zeros(NEXT_CACHE) });
-  const value = parseValue(inout runtime, inout parser, 0);
+  const value = parseValue(inout runtime, inout parser);
+  if (runtime.pendingThrow) return undefinedValue();
   skipSpace(inout parser);
   if (parser.failed || parser.position != parser.length) {
     const message: String = "Unexpected token in JSON";
@@ -968,6 +972,10 @@ function noteWithoutToJSON(in runtime: Runtime, inout state: Stringifier, handle
 
 // SerializeJSONProperty with the property's value already read.
 function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder: Value, key: Value, given: Value, inout text: TextBuilder): boolean {
+  if (runtime.stackShort(0)) {
+    runtime.stackOverflow();
+    return false;
+  }
   let value = given;
   if (runtime.isObjectLike(value) && !knownWithoutToJSON(in runtime, in state, asCell(value))) {
     const toJSONKey = state.toJSONKey;

@@ -3,32 +3,40 @@
 // never runs on -- one that only loads bytecode files -- links no lexer,
 // parser, or compiler.
 import { thread } from "std/thread";
-import { Runtime, CompiledModule, emptyModuleInfo, COMPILE_PARSE_ERROR, COMPILE_ERROR } from "./runtime.zs";
+import { Runtime, CompiledModule, emptyModuleInfo, COMPILE_PARSE_ERROR, COMPILE_ERROR, COMPILE_STACK } from "./runtime.zs";
 import { parseProgram, parseScript } from "./parser.zs";
 import { compileProgram, compileEval, compileModule } from "./compiler.zs";
 
+// Why a compile gave no function: the compiler ran out of native stack,
+// as it says in the runtime, or the source is in error.
+function compileStopped(inout runtime: Runtime): i32 {
+  if (!runtime.compileSpent) return COMPILE_ERROR;
+  runtime.compileSpent = false;
+  return COMPILE_STACK;
+}
+
 function compileScriptSource(inout runtime: Runtime, source: Array<u8>): i32 on thread.any {
-  const parsed = parseProgram(move source, false);
-  if (parsed.hadError) return COMPILE_PARSE_ERROR;
+  const parsed = parseProgram(move source, false, runtime.stackFloor());
+  if (parsed.hadError) return parsed.parser.stackSpent ? COMPILE_STACK : COMPILE_PARSE_ERROR;
   const index = compileProgram(in parsed.parser, parsed.root, inout runtime);
-  if (index < 0) return COMPILE_ERROR;
+  if (index < 0) return compileStopped(inout runtime);
   return index;
 }
 
 function compileEvalSource(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32): i32 on thread.any {
   const strict = runtime.functions[usize(caller)].evalSites[usize(site)].strict;
-  let parsed = parseScript(move source, false, strict);
-  if (parsed.hadError) return COMPILE_PARSE_ERROR;
+  let parsed = parseScript(move source, false, strict, runtime.stackFloor());
+  if (parsed.hadError) return parsed.parser.stackSpent ? COMPILE_STACK : COMPILE_PARSE_ERROR;
   const index = compileEval(inout parsed.parser, parsed.root, inout runtime, caller, site);
-  if (index < 0) return COMPILE_ERROR;
+  if (index < 0) return compileStopped(inout runtime);
   return index;
 }
 
 function compileModuleSource(inout runtime: Runtime, source: Array<u8>): CompiledModule on thread.any {
-  const parsed = parseProgram(move source, true);
-  if (parsed.hadError) return CompiledModule({ index: COMPILE_PARSE_ERROR, info: emptyModuleInfo() });
+  const parsed = parseProgram(move source, true, runtime.stackFloor());
+  if (parsed.hadError) return CompiledModule({ index: parsed.parser.stackSpent ? COMPILE_STACK : COMPILE_PARSE_ERROR, info: emptyModuleInfo() });
   let compiled = compileModule(in parsed.parser, parsed.root, inout runtime);
-  if (compiled.index < 0) return CompiledModule({ index: COMPILE_ERROR, info: emptyModuleInfo() });
+  if (compiled.index < 0) return CompiledModule({ index: compileStopped(inout runtime), info: emptyModuleInfo() });
   return compiled;
 }
 

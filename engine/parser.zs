@@ -17,6 +17,7 @@ import { TokenKind, Token, tokenEof } from "./token.zs";
 import { tokenize, tokenizeFrom } from "./lexer.zs";
 import { bytesOf, sliceBytes } from "./heap.zs";
 import { NodeKind, AstNode, Ast, NO_NODE, createAst } from "./ast.zs";
+import { stackAddress } from "./stack.zs";
 
 // --- Bytes and text -------------------------------------------------------
 
@@ -111,6 +112,11 @@ export struct Parser {
   pos: usize;
   ast: Ast;
   hadError: boolean;
+  // The lowest address the native stack may reach (Runtime.stackFloor; 0
+  // for no limit), and whether the source nests deep enough to reach it:
+  // the error is then a RangeError, not a SyntaxError.
+  stackFloor: usize;
+  stackSpent: boolean;
   // ECMA-262 [NoIn]: parse_relational must not consume `in` as a binary
   // operator inside a for-head init slot.
   noIn: boolean;
@@ -140,6 +146,26 @@ export struct Parser {
   // name of the binding a function makes when only direct eval code in
   // it can read it.
   argumentsName: u32;
+
+  // Whether fewer than `need` bytes of native stack are left: asked by the
+  // functions every nesting in the grammar comes through, before they go
+  // a level deeper. The parse then fails, and at the end of the tokens,
+  // where every function still running stops by itself.
+  function stackShort(inout this, need: usize): boolean {
+    const here = stackAddress();
+    if (here >= this.stackFloor && here - this.stackFloor >= need) return false;
+    this.stackSpent = true;
+    this.hadError = true;
+    this.pos = this.tokenLimit;
+    return true;
+  }
+
+  // The same before a walk of `node`'s tree by a function that recurses
+  // over it without asking (WALK_LEVEL in ast.zs): the tree may be deep
+  // where the parser never was, built link by link in a loop.
+  function walkShort(inout this, node: u32): boolean {
+    return this.stackShort(this.ast.walkCost(this.ast.heightOf(node)));
+  }
 
   // --- Cursor ---
 
@@ -219,7 +245,7 @@ export struct Parser {
     if (k != TokenKind.slash && k != TokenKind.slashEq) return;
     const inMain = this.tokenLimit == this.mainLimit;
     const start = this.peek().start;
-    const rest = tokenizeFrom(sliceBytes(in this.source, 0, usize(this.windowEnd)), start);
+    const rest = tokenizeFrom(sliceBytes(in this.source, 0, usize(this.windowEnd)), start, this.stackFloor, inout this.stackSpent);
     let tokens = Array<Token>.withCapacity(this.pos + rest.length);
     let i: usize = 0;
     while (i < this.pos) {
@@ -431,6 +457,7 @@ export struct Parser {
   }
 
   function parseStatement(inout this): u32 {
+    if (this.stackShort(0)) return NO_NODE;
     const k = this.peekKind();
 
     if (k == TokenKind.lBrace) return this.parseBlock();
@@ -759,6 +786,7 @@ export struct Parser {
   }
 
   function parseAssignment(inout this): u32 {
+    if (this.stackShort(0)) return NO_NODE;
     // YieldExpression sits at AssignmentExpression precedence.
     if (this.peekKind() == TokenKind.kwYield && this.inGenerator) {
       const keyword = this.advance();
@@ -828,6 +856,7 @@ export struct Parser {
       // on the left as the matching assignment pattern.
       let target = left;
       if (opToken.kind == TokenKind.eq && (leftNode.kind == NodeKind.array || leftNode.kind == NodeKind.object)) {
+        if (this.walkShort(left)) return NO_NODE;
         target = this.reinterpretAsPattern(left);
         if (target == NO_NODE) return NO_NODE;
       }
@@ -1042,6 +1071,7 @@ export struct Parser {
   }
 
   function parseUnary(inout this): u32 {
+    if (this.stackShort(0)) return NO_NODE;
     const k = this.peekKind();
     if (k == TokenKind.bang || k == TokenKind.tilde || k == TokenKind.plus || k == TokenKind.minus
         || k == TokenKind.plusPlus || k == TokenKind.minusMinus
@@ -1245,6 +1275,7 @@ export struct Parser {
   }
 
   function parsePrimary(inout this): u32 {
+    if (this.stackShort(0)) return NO_NODE;
     const t = this.peek();
     const k = t.kind;
 
@@ -1503,6 +1534,7 @@ export struct Parser {
   }
 
   function parseBindingTarget(inout this): u32 {
+    if (this.stackShort(0)) return NO_NODE;
     const k = this.peekKind();
     if (k == TokenKind.lBrace) return this.parseObjectPattern();
     if (k == TokenKind.lBracket) return this.parseArrayPattern();
@@ -1927,11 +1959,12 @@ export struct Parser {
   }
 
   // Duplicate BoundNames through patterns, rest, and defaults.
-  function paramsHaveDuplicateBinding(in params: Array<u32>): boolean {
+  function paramsHaveDuplicateBinding(inout this, in params: Array<u32>): boolean {
     let starts = Array<u32>();
     let lengths = Array<u32>();
     let i: usize = 0;
     while (i < params.length) {
+      if (this.walkShort(params[i])) return true;
       this.collectParamBoundNames(params[i], inout starts, inout lengths);
       i = i + 1;
     }
@@ -2530,6 +2563,7 @@ export struct Parser {
   function finishForInOrOf(inout this, keyword: Token, bindingIn: u32, opKind: TokenKind, isAwait: boolean): u32 {
     let binding = bindingIn;
     if (binding != NO_NODE && (this.kindOf(binding) == NodeKind.array || this.kindOf(binding) == NodeKind.object)) {
+      if (this.walkShort(binding)) return NO_NODE;
       binding = this.reinterpretAsPattern(binding);
       if (binding == NO_NODE) return NO_NODE;
     }
@@ -2861,7 +2895,7 @@ export struct Parser {
   // Re-tokenize [start, end) and parse it as an assignment expression with
   // absolute offsets, swapping the token stream in and back out.
   function parseTemplateExprSlice(inout this, start: u32, end: u32): u32 {
-    const sliceTokens = tokenize(sliceBytes(in this.source, usize(start), usize(end)));
+    const sliceTokens = tokenize(sliceBytes(in this.source, usize(start), usize(end)), this.stackFloor, inout this.stackSpent);
     const savedPos = this.pos;
     const savedLimit = this.tokenLimit;
     const savedNoIn = this.noIn;
@@ -3144,6 +3178,7 @@ export struct Parser {
         this.inStaticBlock = savedInBlock;
         this.staticBlockDepth = savedDepth;
         if (body == NO_NODE) return NO_NODE;
+        if (this.walkShort(body)) return NO_NODE;
         if (this.staticBlockUsesArguments(body)) {
           this.hadError = true;
           return NO_NODE;
@@ -3229,6 +3264,7 @@ export struct Parser {
         this.advance();
         init = this.parseAssignment();
         if (init == NO_NODE) return NO_NODE;
+        if (this.walkShort(init)) return NO_NODE;
         if (this.exprContainsArguments(init)) {
           this.hadError = true;
           return NO_NODE;
@@ -3820,19 +3856,20 @@ function parseIntPrefix(in text: String, begin: usize, limit: usize, base: u32):
 
 // Source given as text, for tests and tools that hold a String.
 export function parseText(source: String, isModule: boolean): ParseResult {
-  return parseProgram(bytesOf(in source), isModule);
+  return parseProgram(bytesOf(in source), isModule, 0);
 }
 
-export function parseProgram(source: Array<u8>, isModule: boolean): ParseResult {
-  return parseScript(move source, isModule, false);
+export function parseProgram(source: Array<u8>, isModule: boolean, stackFloor: usize): ParseResult {
+  return parseScript(move source, isModule, false, stackFloor);
 }
 
 // A program parsed as strict code from the start: direct eval code
 // called from strict code.
-export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean): ParseResult {
+export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, stackFloor: usize): ParseResult {
   const sourceLength = u32(source.length);
   const byteCount = source.length;
-  const tokens = tokenize(sliceBytes(in source, 0, byteCount));
+  let stackSpent = false;
+  const tokens = tokenize(sliceBytes(in source, 0, byteCount), stackFloor, inout stackSpent);
   const tokenCount = tokens.length;
   let parser = Parser({
     source: move source,
@@ -3840,7 +3877,9 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     tokenLimit: tokenCount,
     pos: 0,
     ast: createAst(),
-    hadError: false,
+    hadError: stackSpent,
+    stackFloor: stackFloor,
+    stackSpent: stackSpent,
     noIn: false,
     functionDepth: 0,
     // A module's own code may await.
@@ -3887,7 +3926,10 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
 
   // AllPrivateNamesValid: checked after parsing because a class body may use
   // a private name before its declaration.
-  if (!parser.hadError) {
+  // The tree is finished: its height is what the walks of it that do not
+  // ask about the native stack are held to, here and in the compiler.
+  if (!parser.hadError) parser.ast.tallest = parser.ast.heightOf(program);
+  if (!parser.hadError && !parser.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
     let chain = Array<u32>();
     parser.validatePrivateNames(program, inout chain, 0);
   }
@@ -3946,4 +3988,39 @@ test "a class with fields gains a synthesized constructor" {
 test "a private name outside any class is rejected" {
   const result = parseText("#x in obj;", false);
   expect(result.hadError).toEqual(true);
+}
+
+test "source nested past the stack floor fails as out of stack, not as a syntax error" {
+  const source: String = "f(((1 + [2, {a: `${3}`}])));";
+  const fits = parseProgram(bytesOf(in source), false, 0);
+  expect(fits.hadError).toEqual(false);
+  expect(fits.parser.stackSpent).toEqual(false);
+  // A floor above every address: the first statement has no room.
+  const none = parseProgram(bytesOf(in source), false, 0xFFFF_FFFF_FFFF_FFF0);
+  expect(none.hadError).toEqual(true);
+  expect(none.parser.stackSpent).toEqual(true);
+  // A floor just under this call: some nesting fits, forty levels do not.
+  const deep: String = "((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))));";
+  const short = parseProgram(bytesOf(in deep), false, stackAddress() - 2048);
+  expect(short.hadError).toEqual(true);
+  expect(short.parser.stackSpent).toEqual(true);
+  // An ordinary syntax error is not one for want of stack.
+  const wrong: String = "1 +;";
+  const syntax = parseProgram(bytesOf(in wrong), false, 0);
+  expect(syntax.hadError).toEqual(true);
+  expect(syntax.parser.stackSpent).toEqual(false);
+}
+
+test "the parse leaves the height of the whole tree, class fields included" {
+  // Six nested arrays in a field initializer, which goes into the
+  // constructor's body after that body is linked.
+  const source: String = "class A extends B { x = [[[[[[1]]]]]]; constructor() { super(); } }";
+  const result = parseProgram(bytesOf(in source), false, 0);
+  expect(result.hadError).toEqual(false);
+  expect(result.parser.ast.tallest).toEqual(result.parser.ast.heightOf(result.root));
+  expect(result.parser.ast.tallest > 9).toEqual(true);
+  // A chain the parser builds in a loop is as tall as it is long.
+  const chain: String = "a.b.c.d.e.f.g.h.i.j;";
+  const flat = parseProgram(bytesOf(in chain), false, 0);
+  expect(flat.parser.ast.tallest).toEqual(11);
 }

@@ -3609,6 +3609,11 @@ export struct Compiler {
 
   function compileExpr(inout this, in parser: Parser, inout runtime: Runtime, node: u32): u8 {
     if (node == NO_NODE) return 0;
+    if (runtime.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
+      this.hadError = true;
+      stackSpent(inout runtime);
+      return 0;
+    }
     const n = parser.ast.node(node);
     const k = n.kind;
     const contextualStart = this.pendingNameStart;
@@ -5403,6 +5408,11 @@ export struct Compiler {
   }
 
   function destructure(inout this, in parser: Parser, inout runtime: Runtime, pattern: u32, source: u8): void {
+    if (runtime.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
+      this.hadError = true;
+      stackSpent(inout runtime);
+      return;
+    }
     const n = parser.ast.node(pattern);
     if (n.kind == NodeKind.objectPattern) {
       this.destructureObject(in parser, inout runtime, pattern, source);
@@ -5617,6 +5627,11 @@ export struct Compiler {
 
   function compileStmt(inout this, in parser: Parser, inout runtime: Runtime, node: u32): void {
     if (node == NO_NODE) return;
+    if (runtime.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
+      this.hadError = true;
+      stackSpent(inout runtime);
+      return;
+    }
     const n = parser.ast.node(node);
     const k = n.kind;
 
@@ -6621,6 +6636,16 @@ function decodeStringBody(in parser: Parser, rawStart: u32, rawEnd: u32): Array<
 // index or -1. Mirrors the reference: parameters first as locals, then the
 // body's own bindings, defaults evaluated at entry, function declarations
 // compiled before other statements, an implicit undefined return.
+// The native stack is too short to compile a level deeper. The functions
+// every nesting comes through ask before they do (compileExpr,
+// compileStmt, destructure, compileFunction, and a program's start): for
+// the level, and for a walk of the whole tree by the scans that recurse
+// without asking (WALK_LEVEL in ast.zs). The compile then fails, and says
+// why in the runtime (COMPILE_STACK).
+cold function stackSpent(inout runtime: Runtime): void {
+  runtime.compileSpent = true;
+}
+
 function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, in enclosingScopes: Array<Scope>, enclosingBindings: Bindings, enclosingHasEnv: boolean, enclosingOpenEnvs: u32, enclosingIsArrow: boolean, enclosingThisSlot: i32, enclosingVarSlot: i32, enclosingStrict: boolean, contextualStart: u32, contextualLength: u32, namePrefix: u32, role: u32, fieldCount: u32, steps: ModuleSteps, enclosingModule: i32, in enclosingWiths: Array<WithRef>): CompiledFunction {
   const n = parser.ast.node(node);
   // A function expression written with a name binds it inside itself. A
@@ -6641,6 +6666,10 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   if (enclosingWiths.length > 0) inWiths = true;
   const scopeCount = scopes.length;
   const failed = CompiledFunction({ index: -1, minOuterScope: scopeCount });
+  if (runtime.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
+    stackSpent(inout runtime);
+    return failed;
+  }
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
     bindings: newBindings(Array<Local>()), outerScopes: move scopes, capturedNames: Array<Local>(),
@@ -8157,6 +8186,10 @@ export function compileModule(in parser: Parser, root: u32, inout runtime: Runti
 // Compiles a parsed program into the runtime's function table; returns the
 // function index, or -1 on error.
 export function compileProgram(in parser: Parser, root: u32, inout runtime: Runtime): i32 {
+  if (runtime.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
+    stackSpent(inout runtime);
+    return -1;
+  }
   let compiler = Compiler({
     code: Array<Inst>(), constants: Array<Value>(), nextReg: 0, maxReg: 0, fixedRegs: 0, openEnvs: 0, envRegs: Array<u8>(), initializing: false,
     bindings: newBindings(Array<Local>()), outerScopes: Array<Scope>(), capturedNames: Array<Local>(),
@@ -8238,6 +8271,10 @@ export function compileProgram(in parser: Parser, root: u32, inout runtime: Runt
 // globals. Strict code keeps its own. The completion value is the
 // result. Returns the function index, or -1 on error.
 export function compileEval(inout parser: Parser, root: u32, inout runtime: Runtime, caller: u32, site: u32): i32 {
+  if (runtime.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
+    stackSpent(inout runtime);
+    return -1;
+  }
   const spelled = u32(parser.source.length);
   const nameCount = runtime.functions[usize(caller)].evalSites[usize(site)].names.length;
   let b: usize = 0;
