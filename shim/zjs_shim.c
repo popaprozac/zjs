@@ -233,6 +233,83 @@ uint32_t zjs_array_length(ZjsValue v) {
   return zjs_z_array_length(ZJS_SLOT(v), v.bits);
 }
 
+/* --- Properties, globals, and calls: each may run JavaScript, and a
+   throw is the context's error (zjs_had_error, zjs_get_error), the call
+   answering undefined. --- */
+
+ZjsValue zjs_get_property(ZjsContext *ctx, ZjsValue obj, const char *name) {
+  if (ctx == NULL || name == NULL) return zjs_undefined();
+  return zjs_bits(zjs_z_get_property((uintptr_t)ctx, obj.bits, (const uint8_t *)name, strlen(name)));
+}
+
+void zjs_set_property(ZjsContext *ctx, ZjsValue obj, const char *name, ZjsValue value) {
+  if (ctx == NULL || name == NULL) return;
+  zjs_z_set_property((uintptr_t)ctx, obj.bits, (const uint8_t *)name, strlen(name), value.bits);
+}
+
+ZjsValue zjs_get_element(ZjsContext *ctx, ZjsValue obj, uint32_t index) {
+  if (ctx == NULL) return zjs_undefined();
+  return zjs_bits(zjs_z_get_element((uintptr_t)ctx, obj.bits, index));
+}
+
+void zjs_set_element(ZjsContext *ctx, ZjsValue obj, uint32_t index, ZjsValue value) {
+  if (ctx != NULL) zjs_z_set_element((uintptr_t)ctx, obj.bits, index, value.bits);
+}
+
+ZjsValue zjs_get_global(ZjsContext *ctx, const char *name) {
+  if (ctx == NULL || name == NULL) return zjs_undefined();
+  return zjs_bits(zjs_z_get_global((uintptr_t)ctx, (const uint8_t *)name, strlen(name)));
+}
+
+void zjs_set_global(ZjsContext *ctx, const char *name, ZjsValue value) {
+  if (ctx == NULL || name == NULL) return;
+  zjs_z_set_global((uintptr_t)ctx, (const uint8_t *)name, strlen(name), value.bits);
+}
+
+/* The function's value, undefined when it threw; the jobs it queued have
+   run by the time this returns. */
+ZjsValue zjs_call(ZjsContext *ctx, ZjsValue callee, ZjsValue this_val, ZjsValue *argv, uint32_t argc) {
+  if (ctx == NULL || (argv == NULL && argc != 0)) return zjs_undefined();
+  zjs_z_call((uintptr_t)ctx, callee.bits, this_val.bits, (uintptr_t)argv, argc);
+  return zjs_bits(zjs_z_result((uintptr_t)ctx));
+}
+
+void zjs_drain_microtasks(ZjsContext *ctx) { if (ctx != NULL) zjs_z_drain_microtasks((uintptr_t)ctx); }
+
+int zjs_has_pending_work(ZjsContext *ctx) {
+  if (ctx == NULL) return 0;
+  return (int)zjs_z_has_pending_work((uintptr_t)ctx);
+}
+
+/* --- The collector --- */
+
+void zjs_gc(ZjsContext *ctx) { if (ctx != NULL) zjs_z_gc((uintptr_t)ctx); }
+
+unsigned int zjs_cell_count(ZjsContext *ctx) {
+  if (ctx == NULL) return 0;
+  return zjs_z_heap_cells((uintptr_t)ctx);
+}
+
+unsigned int zjs_gc_collections(ZjsContext *ctx) {
+  if (ctx == NULL) return 0;
+  return zjs_z_gc_collections((uintptr_t)ctx);
+}
+
+uint64_t zjs_gc_pause_ns_total(ZjsContext *ctx) {
+  if (ctx == NULL) return 0;
+  return zjs_z_gc_pause_total((uintptr_t)ctx);
+}
+
+uint64_t zjs_gc_pause_ns_max(ZjsContext *ctx) {
+  if (ctx == NULL) return 0;
+  return zjs_z_gc_pause_max((uintptr_t)ctx);
+}
+
+unsigned int zjs_gc_cells_freed(ZjsContext *ctx) {
+  if (ctx == NULL) return 0;
+  return zjs_z_gc_cells_freed((uintptr_t)ctx);
+}
+
 /* --- Values kept across calls --- */
 
 void zjs_pin(ZjsContext *ctx, ZjsValue value) { if (ctx != NULL) zjs_z_pin((uintptr_t)ctx, value.bits); }

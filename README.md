@@ -688,9 +688,10 @@ lookup only, so independent contexts evaluate concurrently and freeing a
 context destroys its runtime and native state once the last reference
 drops. `docs/lifecycle.md` states the admission, destruction,
 reentrancy, and initialization rules, how values cross the ABI and how
-long they last, what of `zjs.h` is not implemented yet, and the evidence
-`tests/lifecycle_test.c` and `tests/abi_values_test.c` produce on every
-build.
+long they last, how properties, globals, and calls behave, what of
+`zjs.h` is not implemented yet, and the evidence
+`tests/lifecycle_test.c`, `tests/abi_values_test.c`, and
+`tests/abi_calls_test.c` produce on every build.
 
 ## Layout
 

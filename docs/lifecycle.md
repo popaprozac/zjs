@@ -114,11 +114,14 @@ in the frozen ABI reaches it, and no claim of complete unload is made.
 
 ### Pending work
 
-Promise jobs are drained at the end of every evaluation before control
-returns to the host; a context never holds pending jobs between calls,
-so destruction never discards them. There are no timers or host-driven
-queues yet (`zjs_has_pending_work` / `zjs_next_timer_ms` are
-placeholders).
+Promise jobs are drained at the end of every evaluation and of every
+`zjs_call` before control returns to the host. A property read or write
+through the ABI can run an accessor that queues a job, and that job
+waits: `zjs_has_pending_work` answers 1, and `zjs_drain_microtasks`, the
+next `zjs_call`, or the next evaluation runs it. A context freed with
+jobs queued discards them. There are no timers yet (`zjs_next_timer_ms`
+and `zjs_run_pending_timers` are placeholders), so
+`zjs_has_pending_work` reports jobs only.
 
 ## What Z blocked
 
@@ -175,19 +178,68 @@ of value out of an evaluation and back in, strings in UTF-8 both ways,
 roots and pins across collections, 2,400 strings read with collections
 between, a second context's values refused, and bits no call returned.
 
+## Properties, globals, and calls
+
+`zjs_get_property` and `zjs_set_property` read and assign as a program's
+`obj.name` and `obj.name = v` do, outside strict mode: prototypes are
+walked, accessors run, a number or a string answers through its
+prototype, and a write that an object refuses (frozen, or made to a
+primitive) does nothing. The name is UTF-8. `zjs_get_element` and
+`zjs_set_element` are the same with the index as the key, so an object's
+element 7 is its property `"7"`, and a write past an array's end
+lengthens it. `zjs_get_global` and `zjs_set_global` read and assign a
+property of the global object: a script's `var` and function
+declarations are seen, its `let` and `const` are not.
+
+Any of these can run JavaScript. What it throws, a property of `null`
+or `undefined` included, becomes the context's error (`zjs_had_error`,
+`zjs_get_error`) and the call answers `undefined`. One that does not
+throw leaves the error of an earlier call as it was; only an evaluation
+or `zjs_call` clears it.
+
+`zjs_call` calls a function with a receiver and `argc` values at `argv`,
+then runs the jobs the call queued, and returns the function's value. It
+clears the context's error first. What the function throws, or a callee
+that is not callable (a `TypeError`), is the context's error, and the
+call returns `undefined`. The interrupt handler stops a call, and an
+accessor a property read runs, as it stops an evaluation.
+
+`zjs_gc` runs a whole collection. `zjs_cell_count` is the cells in the
+heap now. `zjs_gc_collections` counts the collections completed, minor
+and full. `zjs_gc_pause_ns_total` and `zjs_gc_pause_ns_max` are over
+every stop the collector makes, of which a full collection done in
+slices is several; the clock is read twice a stop to keep them.
+`zjs_gc_cells_freed` is the cells made less `zjs_cell_count`.
+
+A cell of another context is `undefined` to each of these, so reading
+its property is the `TypeError` of reading `undefined`'s. A freed or
+`NULL` context answers `undefined` or 0 and does nothing, and so does a
+`NULL` name or a `NULL` `argv` with a nonzero `argc`.
+
+`tests/abi_calls_test.c`, run by `build.sh`, is the evidence: properties
+and elements of every kind set, read, and seen from a program; getters,
+setters, and inherited properties; throws from each kind of call and
+what clears them; calls with a receiver, no arguments, and three hundred
+arguments; a call's jobs run before it returns and a getter's wait for a
+drain; an endless call and an endless getter stopped by the interrupt
+handler; twenty thousand objects given back and counted; and another
+context's, a freed context's, and no context's values refused.
+
 ## ABI placeholders
 
 The shim provides the contexts and their installers, the evaluators and
 `zjs_compile_to_bytecode`, `zjs_had_error` and `zjs_get_error`, the
-interrupt handler, `zjs_version`, and the values of the section above:
-the constructors, predicates, and unboxers, `zjs_new_string`,
+interrupt handler, `zjs_version`, the values of the Values section (the
+constructors, predicates, and unboxers, `zjs_new_string`,
 `zjs_string_bytes`, `zjs_new_object`, `zjs_new_array`,
-`zjs_array_length`, pins, and roots. The rest of the header is
-unimplemented, and calling it is a link error: properties, elements, and
-globals; `zjs_call`; host functions (`zjs_register_host_function`,
-`zjs_get_this`, `zjs_throw`); `zjs_drain_microtasks`,
-`zjs_has_pending_work`, and the timers; `zjs_gc`, `zjs_cell_count`, and
-the GC statistics; `zjs_set_process_argv`; `zjs_new_minimal_context`,
+`zjs_array_length`, pins, and roots), and the calls of the section
+above: properties, elements, and globals, `zjs_call`,
+`zjs_drain_microtasks`, `zjs_has_pending_work`, `zjs_gc`,
+`zjs_cell_count`, and the GC statistics. The rest of the header is
+unimplemented, and calling it is a link error: host functions
+(`zjs_register_host_function`, `zjs_get_this`, `zjs_throw`);
+`zjs_next_timer_ms` and `zjs_run_pending_timers`;
+`zjs_set_process_argv`; `zjs_new_minimal_context`,
 `zjs_install_stdlib_extensions`, the `zjs_install_web_*` installers,
 `zjs_install_node_net_globals`, and `ctx_register_stdlib_modules`.
 
@@ -253,4 +305,5 @@ contexts are built outside the registry lock again).
 | Cycles, contexts, jobs, callbacks exercised | Evidence 1 to 7; callbacks deferred |
 | ABI placeholders tracked | ABI placeholders |
 | Values cross the ABI and outlive collections | Values; `tests/abi_values_test.c` |
+| Properties, globals, and calls from C | Properties, globals, and calls; `tests/abi_calls_test.c` |
 | Stale comments updated | lib.zs and the shim |

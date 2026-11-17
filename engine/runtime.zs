@@ -795,8 +795,12 @@ export struct Runtime {
   // longer: it is storage kept for reuse, and nothing past this is a job.
   jobEnd: usize;
   // Collection timing, off unless the host turns it on: each pause in
-  // nanoseconds, in order. Nothing is read from the clock otherwise.
+  // nanoseconds, in order.
   gcTiming: boolean;
+  // Every collection's pause, summed, and the longest, in nanoseconds
+  // (zjs_gc_pause_ns_total, zjs_gc_pause_ns_max).
+  gcPauseTotal: f64 = 0.0;
+  gcPauseMax: f64 = 0.0;
   // The first function and hidden class a collection has not yet traced:
   // everything the earlier ones name was marked then and is old, so a
   // minor collection's roots start here. Installing a function, or
@@ -6220,10 +6224,12 @@ export struct Runtime {
   }
 
   function collectTimed(inout this, mode: u8): void {
-    let started: f64 = 0.0;
-    if (this.gcTiming) started = native.zjs_clock_mono_ns();
+    const started = native.zjs_clock_mono_ns();
     this.collectNow(mode);
-    if (this.gcTiming) this.gcPauses.push(native.zjs_clock_mono_ns() - started);
+    const pause = native.zjs_clock_mono_ns() - started;
+    this.gcPauseTotal = this.gcPauseTotal + pause;
+    if (pause > this.gcPauseMax) this.gcPauseMax = pause;
+    if (this.gcTiming) this.gcPauses.push(pause);
   }
 
   function collectNow(inout this, mode: u8): void {

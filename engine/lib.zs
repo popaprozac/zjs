@@ -35,7 +35,7 @@ import { installCompiler, installModuleCompiler } from "./compile.zs";
 import { evaluateModule, evaluateModuleSource, installModuleSupport } from "./modules.zs";
 import { installFileLoader } from "./module_files.zs";
 import { writeProgram, writeModule, loadProgram } from "./bytecode_file.zs";
-import { Value, undefinedValue, deletedValue, cellValue, asCell, isCell, isNumber, isDeleted, isHole, VALUE_NULL, VALUE_FALSE, VALUE_TRUE, VALUE_UNDEFINED } from "./value.zs";
+import { Value, undefinedValue, deletedValue, cellValue, int32Value, doubleValue, asCell, isCell, isNumber, isNull, isUndefined, isDeleted, isHole, VALUE_NULL, VALUE_FALSE, VALUE_TRUE, VALUE_UNDEFINED } from "./value.zs";
 import { sliceBytes, TAG_STRING, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_PROMISE, TAG_REGEXP } from "./heap.zs";
 
 export struct ContextState {
@@ -45,6 +45,42 @@ export struct ContextState {
   lastResult: Value;
   // The last evaluation ended because the interrupt handler asked it to.
   interrupted: boolean = false;
+  // After the embedder read or wrote a property, which may have run a
+  // getter or a setter: a throw left pending, or a termination, becomes
+  // the context's error as an evaluation's does, and false comes back.
+  // Without one the error of an earlier call stays as it was.
+  function settle(inout this): boolean {
+    const threw = this.runtime.pendingThrow;
+    let thrown = undefinedValue();
+    if (threw) thrown = this.runtime.takePending();
+    const interrupted = this.runtime.endTermination();
+    if (!threw && !interrupted) return true;
+    this.hadError = true;
+    this.interrupted = interrupted;
+    this.lastResult = thrown;
+    // Where a run keeps what it threw: a root until the next run.
+    this.runtime.lastResult = thrown;
+    return false;
+  }
+
+  // zjs_call: the function called, then the jobs it queued, as an
+  // evaluation runs a script and then its jobs. Its value, or what it
+  // threw, is the context's last result.
+  function call(inout this, callee: Value, thisValue: Value, args: Array<Value>): void {
+    this.hadError = false;
+    this.interrupted = false;
+    let result = this.runtime.callValue(callee, thisValue, move args);
+    const threw = this.runtime.pendingThrow;
+    if (threw) result = this.runtime.takePending();
+    this.runtime.pushTempRoot(result);
+    this.runtime.runJobs();
+    this.runtime.popTempRoot();
+    this.interrupted = this.runtime.endTermination();
+    this.hadError = threw || this.interrupted;
+    this.lastResult = result;
+    this.runtime.lastResult = result;
+  }
+
   // zjs_string_bytes: the UTF-8 copies of strings lent to the embedder,
   // in a table with open addressing: a string's cell (0 for a free
   // place), its copy's address, and the copy's length.
@@ -422,6 +458,11 @@ function nativeLoadByte(buffer: usize, index: usize): u8 = raw c {
 
 function nativeFree(buffer: usize): void = raw c {
   free((void *)buffer);
+}
+
+// The index-th of the 64-bit words at an address: zjs_call's arguments.
+function nativeLoadWord(address: usize, index: usize): u64 = raw c {
+  return ((const uint64_t *)address)[index];
 }
 
 // A bytecode file arrives as a borrowed byte slice and is copied, as
@@ -922,7 +963,283 @@ export c function zjs_z_root_get(handle: usize, root: u32): u64 {
   }
 }
 
-// Live heap cells in a context, for the harness.
+// --- Properties, globals, and calls ---
+//
+// Each may run JavaScript (a getter, a setter, the function called). A
+// throw is the context's error, as an evaluation's is, and the call
+// answers undefined. zjs_call runs the jobs the function queued before it
+// returns; a property read or write leaves any its accessor queued for
+// zjs_drain_microtasks or the next call or evaluation.
+
+// A property key from the embedder's bytes: the string's atom.
+function keyOf(inout runtime: Runtime, in name: Array<u8>): Value {
+  const count = name.length;
+  return cellValue(runtime.internUtf8(sliceBytes(in name, 0, count)));
+}
+
+// A property of null or undefined is a TypeError, raised here as the
+// interpreter raises it for `obj.name`: getProperty and setProperty
+// answer such an object quietly. True when it was raised.
+function refuseNullish(inout runtime: Runtime, target: Value, key: Value, reading: boolean): boolean {
+  if (!isNull(target) && !isUndefined(target)) return false;
+  const atom = runtime.propertyKey(key);
+  const error = runtime.propertyOfNullish(target, atom, reading);
+  runtime.raise(error);
+  return true;
+}
+
+// An element's key: the index as the number a program would write.
+function indexKey(index: u32): Value {
+  if (index <= 2147483647) return int32Value(i32(index));
+  return doubleValue(f64(index));
+}
+
+export c function zjs_z_get_property(handle: usize, object: u64, name: Slice<u8>): u64 {
+  const bytes = sliceToBytes(name);
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((inout state): u64 => {
+        const target = importValue(in state.runtime, slot, object);
+        const key = keyOf(inout state.runtime, in bytes);
+        let value = undefinedValue();
+        if (!refuseNullish(inout state.runtime, target, key, true)) value = state.runtime.getProperty(target, key);
+        if (!state.settle()) return VALUE_UNDEFINED;
+        return exportValue(in state.runtime, slot, value);
+      });
+    }
+    none => {
+      return VALUE_UNDEFINED;
+    }
+  }
+}
+
+export c function zjs_z_set_property(handle: usize, object: u64, name: Slice<u8>, value: u64): void {
+  const bytes = sliceToBytes(name);
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        const target = importValue(in state.runtime, slot, object);
+        const stored = importValue(in state.runtime, slot, value);
+        const key = keyOf(inout state.runtime, in bytes);
+        if (!refuseNullish(inout state.runtime, target, key, false)) {
+          const accepted = state.runtime.setProperty(target, key, stored);
+        }
+        const settled = state.settle();
+      });
+    }
+    none => {
+    }
+  }
+}
+
+export c function zjs_z_get_element(handle: usize, object: u64, index: u32): u64 {
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((inout state): u64 => {
+        const target = importValue(in state.runtime, slot, object);
+        const key = indexKey(index);
+        let value = undefinedValue();
+        if (!refuseNullish(inout state.runtime, target, key, true)) value = state.runtime.getProperty(target, key);
+        if (!state.settle()) return VALUE_UNDEFINED;
+        return exportValue(in state.runtime, slot, value);
+      });
+    }
+    none => {
+      return VALUE_UNDEFINED;
+    }
+  }
+}
+
+export c function zjs_z_set_element(handle: usize, object: u64, index: u32, value: u64): void {
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        const target = importValue(in state.runtime, slot, object);
+        const stored = importValue(in state.runtime, slot, value);
+        const key = indexKey(index);
+        if (!refuseNullish(inout state.runtime, target, key, false)) {
+          const accepted = state.runtime.setProperty(target, key, stored);
+        }
+        const settled = state.settle();
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// zjs_get_global, zjs_set_global: a property of the global object, which
+// a script's var and function declarations are, and which a name no
+// script declared becomes when it is set.
+export c function zjs_z_get_global(handle: usize, name: Slice<u8>): u64 {
+  const bytes = sliceToBytes(name);
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((inout state): u64 => {
+        const key = keyOf(inout state.runtime, in bytes);
+        const global = cellValue(state.runtime.globalObject);
+        const value = state.runtime.getProperty(global, key);
+        if (!state.settle()) return VALUE_UNDEFINED;
+        return exportValue(in state.runtime, slot, value);
+      });
+    }
+    none => {
+      return VALUE_UNDEFINED;
+    }
+  }
+}
+
+export c function zjs_z_set_global(handle: usize, name: Slice<u8>, value: u64): void {
+  const bytes = sliceToBytes(name);
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        const stored = importValue(in state.runtime, slot, value);
+        const key = keyOf(inout state.runtime, in bytes);
+        const global = cellValue(state.runtime.globalObject);
+        const accepted = state.runtime.setProperty(global, key, stored);
+        const settled = state.settle();
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// zjs_call: `argc` values at the address `argv`. Its result is the
+// context's (zjs_z_result, zjs_z_error), as an evaluation's is.
+export c function zjs_z_call(handle: usize, callee: u64, thisValue: u64, argv: usize, argc: u32): void {
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        let args = Array<Value>();
+        let index: u32 = 0;
+        while (index < argc) {
+          args.push(importValue(in state.runtime, slot, nativeLoadWord(argv, usize(index))));
+          index = index + 1;
+        }
+        const target = importValue(in state.runtime, slot, callee);
+        const receiver = importValue(in state.runtime, slot, thisValue);
+        state.call(target, receiver, move args);
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// zjs_drain_microtasks: the queued jobs, run now.
+export c function zjs_z_drain_microtasks(handle: usize): void {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        state.runtime.runJobs();
+        const settled = state.settle();
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// zjs_has_pending_work: 1 while a job is queued. There are no timers.
+export c function zjs_z_has_pending_work(handle: usize): i32 {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((in state): i32 => state.runtime.jobCursor < state.runtime.jobEnd ? 1 : 0);
+    }
+    none => {
+      return 0;
+    }
+  }
+}
+
+// zjs_gc: a whole collection now.
+export c function zjs_z_gc(handle: usize): void {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      context.state.withLock((inout state): void => {
+        state.runtime.collectAll();
+      });
+    }
+    none => {
+    }
+  }
+}
+
+// The collector's figures since the context was made: collections of
+// every kind, the sum of their pauses and the longest in nanoseconds,
+// and the cells given back.
+export c function zjs_z_gc_collections(handle: usize): u32 {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((in state): u32 => state.runtime.heap.collections);
+    }
+    none => {
+      return 0;
+    }
+  }
+}
+
+export c function zjs_z_gc_pause_total(handle: usize): u64 {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((in state): u64 => u64(state.runtime.gcPauseTotal));
+    }
+    none => {
+      return 0;
+    }
+  }
+}
+
+export c function zjs_z_gc_pause_max(handle: usize): u64 {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((in state): u64 => u64(state.runtime.gcPauseMax));
+    }
+    none => {
+      return 0;
+    }
+  }
+}
+
+export c function zjs_z_gc_cells_freed(handle: usize): u32 {
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((in state): u32 => {
+        const made = state.runtime.heap.cellsAllocated();
+        const live = f64(state.runtime.heap.liveCells());
+        return made > live ? u32(made - live) : 0;
+      });
+    }
+    none => {
+      return 0;
+    }
+  }
+}
+
+// Live heap cells in a context (zjs_cell_count).
 export c function zjs_z_heap_cells(handle: usize): u32 {
   const found = retain(handle);
   match (found) {
