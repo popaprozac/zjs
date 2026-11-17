@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Executable acceptance criteria for docs/z-findings.md.
+# Executable acceptance criteria for the Z language gaps the engine has hit
+# (probes/README.md).
 #
 # Each probe is a small Z program that compiles and runs only when its
 # finding has landed. Outcomes are classified, not collapsed:

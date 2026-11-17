@@ -1,32 +1,10 @@
 # Embedding lifecycle: ownership model
 
-Status: implemented (review points incorporated); the root is
-main-independent since z-lang `bdd92241`. The "what the scaffold did"
-section describes what this replaced. The public ABI
-(`include/zjs.h`) is unchanged; what changed is what the Z library does
-behind it and what the shim promises. `tests/lifecycle_test.c` is the
-evidence and runs on every build.
+How a context lives and dies behind the public ABI (`include/zjs.h`):
+what the Z library does and what the shim promises. `tests/lifecycle_test.c`
+is the evidence and runs on every build.
 
-## What the scaffold did (replaced)
-
-- One root, `Engine`, published through `Once<T>` and retained by the
-  generated runtime (`target.runtime.initialize`). It holds
-  `registry: Mutex<Registry>` and a field it never reads,
-  `publicationEpoch: i32 on thread.main`, because `Once<T>` rejects a
-  class that is not main-bound. That field makes the generated header
-  demand a main-thread proof and an executor release hook.
-- The shim (`shim/zjs_shim.c`) answers those hooks with
-  `is_main_thread = always true` and `enqueue_release = finalize inline`.
-  Both are placeholders, not facts about the host.
-- Every ABI call holds the registry lock for its whole duration, the
-  evaluation included, so two contexts never run at once.
-- `zjs_free_context` marks the slot dead and releases the regex context;
-  the `Runtime` (heap, atoms, functions) stays in the registry array for
-  the life of the process. Handles are 1-based indices, never reused.
-- `zjs_eval` returns `undefined` unconditionally; the completion value is
-  reachable only as raw bits through `zjs_z_last_result_bits`.
-
-## The proposed model
+## The model
 
 ### Ownership
 
@@ -153,23 +131,6 @@ freed with jobs queued discards them. There are no timers yet (`zjs_next_timer_m
 and `zjs_run_pending_timers` are placeholders), so
 `zjs_has_pending_work` reports jobs only.
 
-## What Z blocked
-
-- **Shareable root** (resolved at z-lang `bdd92241`): `Once<T>` used to
-  require a main-bound class (Z0604), so the root carried a main-bound
-  field it never read and the generated header demanded a main-thread
-  proof and a release hook. `Once<T>` now accepts a compiler-proven
-  shareable class; the field, the shim's hooks, and the main-thread
-  initialization contract are gone (probe `shareable-once-root`,
-  `LANDED`; evidence 0 and 8).
-- Not a block, a pattern: an `Option<Context>` element cannot be returned
-  from the lock callback directly (Z0204, a move out of the owner); the
-  `match ... some(context) => Option<Context>.some(context)` spelling
-  retains a copy and is accepted.
-- Minor: the lock callback captures the source bytes by borrow, so the
-  evaluation receives a second copy of the script (`sliceToBytes`, then
-  `sliceBytes` inside the lock).
-
 ## Values
 
 A `ZjsValue` has the engine's own bits for a number, a boolean, null, and
@@ -199,6 +160,11 @@ compacted. The copy stays where it is for as long as the string lives.
 The heap marks a string whose text was lent and lists it when it dies
 (`lendString`, `lentDead` in `engine/heap.zs`); the copies of the dead are
 freed before the next is looked up, and all of them with the context.
+
+Text from the host (source and strings) is taken as bytes and not
+validated, so a script that is not UTF-8 cannot abort the host: a byte
+that is not UTF-8 becomes the code unit with its value. Text back to the
+host is UTF-8, with a lone surrogate as U+FFFD.
 
 `zjs_eval` and the other evaluators return what the program produced, or
 `undefined` when it threw; `zjs_get_error` then returns what was thrown.
@@ -324,27 +290,3 @@ with the library's counters as witnesses (`zjs_z_live_contexts`,
 
 The gate is `engine/native/zjs_testing.h` and the test-only export
 `zjs_z_eval_gated`, neither part of the embedding ABI.
-
-Two Z findings came out of this, both in `docs/z-findings.md` and both
-fixed upstream: the root had to be main-bound (probe
-`shareable-once-root`; fixed at z-lang `bdd92241`, after which the root
-lost its main-bound field and the shim its hooks), and a class stored
-through a lock callback was never destroyed (probe
-`lock-callback-capture-release`; fixed at `23bb4f73`, after which
-contexts are built outside the registry lock again).
-
-## Acceptance mapping
-
-| Target | Where |
-|---|---|
-| Free the actual Runtime | Destruction; evidence 1 and 4 |
-| Independent contexts concurrent | Admission and locking; evidence 2 |
-| Same-context rules explicit | Admission and locking, Reentrancy; evidence 3 |
-| Real init / thread registration, no lying hooks | Initialization; evidence 0 and 8; no hooks at all since the root is shareable |
-| Init failure and partial teardown safe | Initialization; evidence 4 to 6 |
-| Cycles, contexts, jobs, callbacks exercised | Evidence 1 to 7; callbacks: Reentrancy and callbacks, `tests/abi_host_test.c` |
-| ABI placeholders tracked | ABI placeholders |
-| Values cross the ABI and outlive collections | Values; `tests/abi_values_test.c` |
-| Properties, globals, and calls from C | Properties, globals, and calls; `tests/abi_calls_test.c` |
-| C called from JavaScript | Reentrancy and callbacks; `tests/abi_host_test.c` |
-| Stale comments updated | lib.zs and the shim |

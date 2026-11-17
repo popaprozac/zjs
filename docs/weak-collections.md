@@ -1,9 +1,9 @@
 # WeakMap / WeakSet: weak semantics in the collector
 
-Status: implemented (`heap.zs`, Weak records; `builtins/collections.zs`).
-Scope: `WeakMap` and `WeakSet` keys held weakly with ephemeron semantics.
-Not in scope: `WeakRef`, `FinalizationRegistry`, generational or
-concurrent collection, or any promise about when a collection happens.
+`WeakMap` and `WeakSet` keys held weakly with ephemeron semantics
+(`heap.zs`, Weak records; `builtins/collections.zs`). Not covered:
+`WeakRef`, `FinalizationRegistry`, or any promise about when a collection
+happens.
 
 ## Representation
 
@@ -102,37 +102,12 @@ orders, a record discovered through a value, a 40-link reverse chain,
 shared keys across records, an unreachable record, handle reuse, storage
 across cycles); `tests/expect/weak-collections.js` (node-recorded) and
 `weak-upsert.js` (from the proposal text; node 25 lacks the methods);
-`gc-check.sh` on the engine's counters; test262 A/B for WeakMap,
-WeakSet, Map, Set, and Symbol against the previous build: 0 regressions,
-8 fixes.
+`gc-check.sh` on the engine's counters, including
+`tests/gc/weak-pressure.js` (400,000 keys inserted and dropped across a
+WeakMap and a WeakSet, 100 held, ordinary collections only).
 
-Cost, `tests/gc/weak-pressure.js` (400,000 keys inserted and dropped
-across a WeakMap and a WeakSet, 100 held, ordinary collections only):
-
-| build | wall | live cells at exit | entries cleared |
-|---|---|---|---|
-| before | 0.075 s | 601,026 | (kept forever) |
-| weak | 0.042 s | 3,769 | 398,170 |
-
-Cost, an adversarial chain: record i maps key i to a holder of key i + 1,
-only key 0 rooted, records discovered in reverse (the natural order when
-they sit in an array, since marking pops its children last-first). The
-first implementation rescanned every record per pass; the pending table
-visits each entry once at registration and once in the verification scan.
-
-| links | 1d4d5c9 passes | 1d4d5c9 gc() | pending passes | pending gc() | entry visits | scratch peak |
-|---|---|---|---|---|---|---|
-| 1,000 | 1,001 | 4 ms | 1 | 0 ms | 2,000 | 24 KiB |
-| 10,000 | 10,001 | 310 ms | 1 | 2 ms | 20,000 | 384 KiB |
-| 30,000 | 30,001 | 2,925 ms | 1 | 5 ms | 60,000 | 768 KiB |
-
-The favourable order (1d4d5c9: 2 passes) costs the same in both. One key
-across 100,000 records: 13 ms against 14 ms, 300,000 visits, 3 MiB of
-scratch during the collection and none retained. 100,000 value-to-key
-cycles, none rooted, clear in one pass either way. A chain of 10,000
-records each reached through the previous one's value: 1 ms in both.
-Ordinary workloads without weak collections are unchanged (integer loop,
-calls, property access, arrays, strings, closures: within 1 percent, the
-same allocator calls); the churn test (400,000 dropped keys under ordinary
-collections) is 0.039 s against 0.040 s with ten more allocator calls for
-the scratch. The binary is the same 735,544 bytes.
+Cost: the pending table visits each entry once at registration and once
+in the verification scan, so an adversarial chain (record i maps key i
+to a holder of key i + 1, only key 0 rooted, records discovered in
+reverse, the natural order when they sit in an array) clears in one
+pass. Its scratch lives only during the collection.

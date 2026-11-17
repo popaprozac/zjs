@@ -11,9 +11,7 @@ criteria for z-lang and as the engine's signal that a workaround can come out.
 Z_LANG=/path/to/z-lang PROBE_TIMEOUT=60 ./probes/run.sh
 ```
 
-The narrative for each gap -- what the engine needs and why -- lives in
-[`docs/z-findings.md`](../docs/z-findings.md), which names the probe for
-each entry.
+Each probe's header comment states what the engine needs and why.
 
 ## Outcomes
 

@@ -1,9 +1,7 @@
 # The engine against its goals
 
-What the rewrite is for, in order, and where it stands. Size measured
-2026-09-26 at engine commit `798b7eb` (the engine's own code has since
-grown from 610 to about 625 KB, `325838b`); speed 2026-09-28 at
-`322e164`, memory at `325838b`; z-lang `bdc237d2`, macOS arm64.
+The engine's goals, in order, and the figures measured against each,
+on macOS arm64; each table names its run.
 
 1. **Small, with features opt-in.** The core is ECMAScript and nothing
    else; web APIs, WinterTC, and the like are modules an embedder links
@@ -29,23 +27,14 @@ segment sizes; nothing is stripped):
 | The core with JSON and Map / Set installed | 606 KB | 16 KB |
 | The same, iOS device (arm64), 2026-09-26 (688 KB on macOS then) | 705 KB | 16 KB |
 
-KB is 1000 bytes. Measured 2026-09-29 at `525afba`; on 2026-09-26
-(`d259ae4`) the minimal embedder was 688 KB, its code 640 KB where it is
-712 KB now. The 72 KB went to the dispatch loop's split into hot and
-cold handlers and the frameless runner for leaf callbacks (12 KB), direct
-eval seeing and writing a function's locals (8 KB), the compiler's
-inlining, string joins, and fused instructions (6 KB), the young
-generation's collector (3 KB), and JSON's single-buffer rewrite (2 KB);
-the rest is spread thin. The optional builtins are opt-in: a core
+KB is 1000 bytes. Measured 2026-09-29 at `525afba`. The optional
+builtins are opt-in: a core
 context (`zjs_new_core_context`) has the language and the builtins it
 cannot do without, and `zjs_install_json`, `_regexp`, `_date`,
 `_collections`, `_promise`, and `_reflect` add the rest; an embedder
 links only the installers it calls, and without RegExp none of the
 regular-expression matcher (a literal then throws a TypeError).
-`zjs_new_context` is the core with every installer run. Not yet: size
-optimization of the large functions no profile touches, 705 KB (-66 KB)
-at no measured cost, which needs a mark Z does not have
-(docs/z-findings.md).
+`zjs_new_context` is the core with every installer run.
 
 Where the engine's code goes (share of 569 KB of functions, measured
 2026-09-25 at 584 KB of `__TEXT`):
@@ -104,27 +93,14 @@ source and on bytecode `hermesc -O` made beforehand:
 Over these eleven kernels the engine is 1.65 times faster than QuickJS
 and 1.45 times faster than Hermes (1.42 precompiled), 1.13 times faster
 than JavaScriptCore's interpreter, and V8's is 1.06 times faster, its
-figures moving more than the others' from run to run. Earlier the same
-day (`results/2026-09-29-arrays.json`, engine `b6cbba7`, before the fused
-instructions): 1.47 QuickJS, 1.29 Hermes (1.27 precompiled),
-JavaScriptCore 1.03, V8 1.14 faster; on 2026-09-28
-(`results/2026-09-28-captured.json`, engine `322e164`): 1.39 QuickJS,
-1.22 Hermes (1.21 precompiled), JavaScriptCore level, V8 1.14 faster. Over the ten before
-`helpers` (`results/2026-09-28.json`, engine `4143c54`): 1.33 QuickJS,
-1.27 Hermes, JavaScriptCore 1.09 faster, V8 1.10. On 2026-09-27
-(`results/2026-09-27.json`, engine `325838b`) the engine was 1.06 times
-faster than QuickJS and level with Hermes, and JavaScriptCore was 1.37
-times faster, V8 1.49; on 2026-09-26 (`results/2026-09-26-hermes.json`)
-QuickJS was 1.19 times faster, Hermes 1.25 (1.28 precompiled),
-JavaScriptCore 1.7, V8 1.9. The engine is the fastest of these on
+figures moving more than the others' from run to run. The engine is the fastest of these on
 allocation, helpers, Map and Set, and polymorphic access, and starts
 fastest. The Hermes VM alone is 2.75 MB of code and 3.34 MB with its
 compiler (arm64), against the engine's minimal embedder of 0.77 MB
 (0.56 MB on a core context). The largest gaps left: JSON (2.8x
 JavaScriptCore), strings (1.8x V8), regular expressions (1.6x V8), calls
 (1.5x V8), closures (1.5x Hermes precompiled), properties (1.2x
-JavaScriptCore), arrays (1.1x V8). The plan to close them is
-[levers.md](levers.md).
+JavaScriptCore), arrays (1.1x V8).
 
 Memory, on a large live heap (`bench/memory`): about 100 MB at peak,
 against QuickJS 131, JavaScriptCore 188, V8 240, and Hermes 67.
@@ -153,7 +129,7 @@ rewriting the generated C by hand, was slower on Apple silicon
   `strtod`, which follow the host's `LC_NUMERIC`: an embedder that sets a
   comma-decimal locale gets wrong numeric literals, `String(0.1)`,
   `JSON.parse`, and `parseFloat`. The fix waits on locale-independent
-  conversion in Z's standard library (docs/z-findings.md).
+  conversion in Z's standard library.
 - **Embedding.** The frozen `zjs.h` ABI; handle-based contexts, created,
   used, and freed from any host thread, independent contexts concurrent;
   a lifecycle test (1,000 create/free cycles with no growth, free after

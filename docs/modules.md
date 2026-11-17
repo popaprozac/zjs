@@ -2,18 +2,14 @@
 
 `import` and `export` as the specification has them: live bindings,
 modules linked before any of them runs, cycles, namespace objects. The
-parser has read module syntax for some time; this is the rest. The
 embedding calls are the ones the ABI declares, `zjs_eval_module` and
 `zjs_eval_module_source` (`include/zjs.h`), and `zjsz run` takes a
 module (`.mjs`, or `--module`).
 
-The Zen-C engine's model, which `zjs.h` described, gave each module an
-exports object that cycles saw "partially populated". That is not the
-language: an import is a binding that reads the exporting module's
-binding as it is now, a `let` read before it is initialized throws, and a
-function declaration is callable from another module before its own
-module has run. This follows the specification instead, and `zjs.h`'s
-text now says so.
+An import is a binding that reads the exporting module's binding as it
+is at the time of the read: a `let` read before it is initialized throws,
+and a function declaration is callable from another module before its
+own module has run.
 
 ## Modules in the runtime
 
@@ -70,7 +66,7 @@ function argument of `compileFunction`, and a runtime has a module
 compiler only once `installModuleCompiler` gives it one: a front end
 that compiles only scripts links none of it. Such an embedder's
 `__TEXT` grows by under 5 KB (the parser's module syntax and
-`compileFunction`'s module branches; 10.7 KB before the split), a
+`compileFunction`'s module branches), a
 bytecode-only one's by 1.2 KB (the runtime's `importBind` and the
 marking of module records).
 
@@ -145,7 +141,9 @@ specifier's conversion, a module not found or not parsing, a link error,
 an evaluation error. A script's `import()` resolves against the script's
 path when the host knows it (`zjsz` sets it; `zjs_eval` has none, so a
 specifier is a path as written). Without module support installed,
-`import()` rejects with a TypeError.
+`import()` rejects with a TypeError. A second argument (import
+attributes, `with { type: "json" }`) is read and dropped; there are no
+JSON modules.
 
 `import.meta` (`importMeta`) is an object of the module's own, without a
 prototype, made the first time it is read; its `url` is the module's key,
@@ -185,17 +183,12 @@ imports. `zjsz run --via-bytecode` passes every module of a graph
 through a module file made in an engine of its own, which the
 expectation cases and the test262 runner's `--aot` use.
 
-## Later
-
-- Import attributes (`with { type: "json" }`) and JSON modules: the
-  parser reads and drops a second argument to `import()`.
-
 ## Evidence
 
 - test262: the runner runs a module test from its own file, so that its
   relative and self imports resolve, with the harness as a script
   included first (`zjsz run --include harness.js --module test.js`), and
-  the curated subset now includes `language/module-code`, `import`, and
+  the curated subset includes `language/module-code`, `import`, and
   `export`. A script test that imports dynamically runs from beside its
   own file, so its relative specifiers resolve. With
   `expressions/dynamic-import` and `import.meta`, and skipping only the
@@ -208,8 +201,6 @@ expectation cases and the test262 runner's `--aot` use.
   third), as `dynamic-import-script`, a script, is. Under `--aot` the
   610 module tests of `module-code`, `dynamic-import`, and `import.meta`
   have the outcomes they have from source.
-- The Vite build of `ipodos`: its three chunks load, link, and run until
-  the entry reaches `document`, which a browser provides.
 - `tests/module_test.c`: the ABI's two source entries, the cache, a
   module from memory importing files, top-level await and import(), and
   load, link, and evaluation errors. `tests/module_bytecode_test.c`:

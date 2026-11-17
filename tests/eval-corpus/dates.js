@@ -1,6 +1,6 @@
 // Date: construction, UTC fields, ISO round-trips, arithmetic, and
 // coercion. Local-time forms are not here: the reference has no local
-// time zone; the rest of what it lacks is listed in the README.
+// time zone, and the rest of what it lacks is left out too.
 var log = [];
 var d = new Date(Date.UTC(2026, 8, 15, 10, 30, 45, 123));
 log.push(d.getTime(), d.valueOf(), d.toISOString(), +d, d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds());

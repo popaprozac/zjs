@@ -5,7 +5,7 @@
 // pointer touches the object graph, so the GC will operate over Z-owned values
 // with ownership intact; handles are position-independent, which makes the
 // mmap-ready zero-copy AOT bundle nearly free; and it is trivially
-// cross-platform. See spike/RESULTS.md.
+// cross-platform. The measurement programs are in spike/.
 //
 // Layout is two parallel arrays rather than one packed slab:
 //
@@ -4327,7 +4327,9 @@ const REMEMBERED_SLOTS_LIMIT: usize = 262144;
 const HEADER_BYTES: f64 = 20.0;
 
 // Properties an object may hold in class mode before its next addition
-// moves it to dictionary mode (chosen from measurement; see README).
+// moves it to dictionary mode. Measured: from 64 properties uncached
+// lookups, misses, and enumeration are faster in dictionary mode, while a
+// cached named access stays faster in class mode and holds half the slots.
 export const DICT_THRESHOLD: u32 = 64;
 
 // The bytes of a Z String as an owned byte array.

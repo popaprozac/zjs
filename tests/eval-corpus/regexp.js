@@ -1,6 +1,6 @@
 // RegExp: literals, exec results, the string methods through the
 // symbol protocol, flags, and subclassing. Only what the reference
-// also gets right; the rest is listed in the README.
+// also gets right; the rest is left out.
 var log = [];
 var re = /a(b+)c/g;
 log.push(re.source, re.flags, re.global, re.lastIndex, Object.prototype.toString.call(re), re instanceof RegExp, typeof RegExp.prototype.exec);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The tables of docs/allocation.md, from results/*.json. Nothing is measured here."""
+"""The allocation measurement tables, from results/*.json. Nothing is measured here."""
 import json
 from pathlib import Path
 R = Path(__file__).resolve().parent / "results"

@@ -1,9 +1,8 @@
 # Bytecode files
 
 A program compiled once and loaded later, so a runtime can skip the
-lexer, parser, and compiler -- or link without them. The lever is in
-[levers.md](levers.md) (Precompiled bytecode); the embedding calls are
-the ones the ABI already declares, `zjs_compile_to_bytecode` and
+lexer, parser, and compiler -- or link without them. The embedding
+calls are the ones the ABI declares, `zjs_compile_to_bytecode` and
 `zjs_eval_bytecode` (`include/zjs.h`), and the command line's
 `zjsz compile in.js -o out.zbc` and `zjsz run out.zbc`.
 
@@ -202,9 +201,8 @@ compiler, and the bytecode writer are gone, and only the loader remains.
   as from source.
 - The loader's refusals: truncated files, each byte flipped, wrong
   magic and versions, out-of-range indices.
-- Load time against parse and compile time (2026-10-16): a generated
-  program of 3,000 functions, 1.29 MB of source, runs in 204M cycles
-  from source and 28M from its bytecode file, startup (5.5M) included:
-  loading is 8.6 times faster than parsing and compiling. The file is
-  1.31 MB, the size of the source; nothing in the format is compact yet
-  (an instruction is 5 bytes, every count and index 4).
+- Load time against parse and compile time: a generated program of
+  3,000 functions, 1.29 MB of source, runs in 204M cycles from source
+  and 28M from its bytecode file, startup (5.5M) included. The file is
+  1.31 MB, about the size of the source: an instruction is 5 bytes,
+  every count and index 4.

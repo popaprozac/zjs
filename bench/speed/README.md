@@ -25,41 +25,38 @@ Engines, each measured only when present:
 | `hermes-hbc` | `hvm -Xes6-class` | Hermes on bytecode `hermesc -O` made before timing, the way a React Native app ships it |
 
 The kernels are written for this suite, each with its work inside a
-function, as most code runs (`results/2026-09-25.json` was recorded with an
-earlier version that ran at the top level, where every variable is a
-global; `results/2026-09-26.json` is the first with QuickJS beside the
-others, and `results/2026-09-26-hermes.json` adds Hermes). They are small
-on purpose: each
+function, as most code runs; older recorded runs may have fewer kernels,
+or earlier versions of them. They are small on purpose: each
 isolates one cost (calls, property access, closures, arrays, strings,
 allocation, JSON, regular expressions, Map and Set), so a regression or a
 win points at a subsystem. They are not a substitute for real programs.
-`long-strings` (added 2026-09-30) concatenates and joins kilobyte strings,
+`long-strings` concatenates and joins kilobyte strings,
 where `strings` builds from pieces of a few bytes: it tracks copying a
 string's bytes as blocks.
-`helpers` (added 2026-09-28) calls small non-recursive functions from a
+`helpers` calls small non-recursive functions from a
 loop -- arithmetic helpers, a predicate, a property accessor -- which
 `calls`, a recursion, does not.
-`borrowed-methods` (added 2026-11-15) reads names off functions and calls
+`borrowed-methods` reads names off functions and calls
 through them, as library code does: a builtin's prototype method borrowed
 with `call`, a function called with `call` and `apply`, a function's
-`length` and `name`. Recorded runs before that date have twelve kernels.
-`method-shapes` (added the same day) reads one name off receivers of
+`length` and `name`.
+`method-shapes` reads one name off receivers of
 several shapes: a method on objects of two classes and of four, an
 array's and a string's method of one name in one function, a field on
 six shapes. `polymorphic` reads a field off four shapes, which is what
 one site keeps.
-`prototype-chains` (added the same day) reads names found past an
+`prototype-chains` reads names found past an
 object's first prototype or nowhere: a base class's method on a
 subclass's object, a method two classes up, `hasOwnProperty` on an
 instance, and options an object does not have.
-`array-methods` (added the same day) calls the array methods that take
+`array-methods` calls the array methods that take
 no callback, on 64 numbers and 64 strings: `indexOf`, `lastIndexOf`,
 `includes`, `slice`, `concat`, `reverse`. `arrays` has the ones that
 take one.
-`array-spread` (added 2026-11-16) spreads arrays of 4 and 64 elements
+`array-spread` spreads arrays of 4 and 64 elements
 into array literals and into calls, and copies them with `Array.from`,
 with a function and without.
-`own-keys` (added the same day) lists and copies an object's own
+`own-keys` lists and copies an object's own
 properties, on objects of eight and three: `Object.keys`, `values`,
 `entries`, `for`-`in`, `Object.assign`, and spread.
 
