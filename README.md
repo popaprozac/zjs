@@ -681,6 +681,39 @@ index in dictionary mode. Delete-and-reinsert is level across sizes in
 dictionary mode and reaches 1.9 s at 16k in class mode. The runner is
 `--dict-threshold` over generated files (bounded at 20 s per run).
 
+## Call depth
+
+A call that would pass one of two limits throws a RangeError, "Maximum call
+stack size exceeded", which a program can catch; the context goes on
+working. Both are constants in `engine/runtime.zs`.
+
+| Limit | Value | What it stops |
+|---|---|---|
+| `FRAME_LIMIT` | 3,000 frames | calls nested deeper than that, however the frames open: a call, `new`, a spread call, a generator or async function resumed, `eval`, a builtin calling back into JavaScript |
+| `REGISTER_LIMIT` | 1,048,576 registers (8 MB) | an argument list of any length (a spread, `apply`, `Reflect.construct`, arguments a builtin passes on) placed further up the register stack than that: a recursion that spreads a long array into every call, or one call with that many arguments |
+
+Neither is asked on a call that finds room: the frame limit only where the
+frame stack has to grow, the register limit only where the register stack
+does. The frame that passes the frame limit is opened, and sets the
+interrupt countdown so that its first call or loop back-edge polls; the
+poll throws. A frame's own registers (256 at most) are not held to the
+register limit, so the register stack ends within 256 registers a frame of
+it.
+
+The frame limit is also all that keeps the native stack from running out
+when JavaScript re-enters itself through a builtin (a getter, a callback,
+a generator resumed): each such level runs the dispatch loop again on 0.5
+to 1.7 kB of native stack, and 3,000 of the heaviest measured need about
+5 MB. The engine does not measure the native stack. A thread with less
+than that is not protected, and neither is a builtin recursing over
+nested data, which opens no frame: `String` of an array nested several
+thousand deep, or source text nested that deep, still overflows the
+native stack.
+
+`tests/expect/call-depth.js` runs every kind of call past the limits, and
+`tests/gc/call-depth.js` (under `gc-check.sh`) checks that the frame limit
+stays where it is from one overflow to the next.
+
 ## Embedding lifecycle
 
 A context is an ARC class behind its own lock; the registry lock covers

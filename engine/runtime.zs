@@ -526,6 +526,29 @@ const SHARED_ADOPT_AFTER: u8 = 16;
 // read, before any can be answered.
 const SHARED_GIVE_UP: u8 = 255;
 
+// How deep calls go. A call that passes either limit throws a RangeError,
+// so a recursion with no end stops with an error the program can catch,
+// not with the machine's memory gone.
+//
+// FRAME_LIMIT is the most frames open at once. It is asked only where the
+// frame stack grows (openFrame), never on a call that finds a slot: the
+// frame that passes it is opened, and counts the interrupt countdown down
+// to its first call or loop back-edge, where pollInterrupt throws. Two
+// frames can be past it, the second a generator's or a program's, which
+// open before they poll. The limit also stands in for one on the native
+// stack, which the engine does not measure: a call a builtin makes back
+// into JavaScript (a getter, a callback) runs the dispatch loop again
+// under it, 0.5 to 1.7 kB of native stack a level as measured on arm64,
+// and 3,000 of those stay inside a main thread's 8 MB.
+//
+// REGISTER_LIMIT is how far up the register stack a call's arguments may
+// be placed when there are any number of them (a spread, apply): what a
+// recursion that spreads a long array into every call meets first. A
+// frame's own registers, 256 at most, are not held to it, so the stack
+// ends within 256 registers a frame of it.
+const FRAME_LIMIT: usize = 3000;
+const REGISTER_LIMIT: usize = 1048576;
+
 export struct Runtime {
   heap: Heap;
   functions: Array<FunctionCode>;
@@ -4987,7 +5010,8 @@ export struct Runtime {
   // end, and leaving one, by a return, a throw, or a suspension, puts the
   // top back at its start. Under the frame they would stay on the stack
   // until the caller's own frame went. The caller raises the top over
-  // them once the frame is open, or around a host function's call.
+  // them once the frame is open, or around a host function's call. Past
+  // REGISTER_LIMIT nothing is placed and a RangeError is left pending.
   function spreadArguments(inout this, callee: Value, array: u32): u32 {
     let argsBase = this.regTop;
     if (this.isCompiledCallable(callee)) {
@@ -4998,7 +5022,13 @@ export struct Runtime {
     }
     const argc = this.heap.arrayLength(array);
     const needed = usize(argsBase + argc);
-    if (this.regStack.length < needed) this.growRegisters(needed);
+    if (this.regStack.length < needed) {
+      if (needed > REGISTER_LIMIT) {
+        this.stackOverflow();
+        return argsBase;
+      }
+      this.growRegisters(needed);
+    }
     let index: u32 = 0;
     while (index < argc) {
       const element = this.heap.arrayGet(array, index);
@@ -5489,7 +5519,10 @@ export struct Runtime {
     const argsBase = this.regTop;
     const argc = u32(args.length);
     const needed = usize(argsBase + argc);
-    if (this.regStack.length < needed) this.growRegisters(needed);
+    if (this.regStack.length < needed) {
+      if (needed > REGISTER_LIMIT) return this.stackOverflow();
+      this.growRegisters(needed);
+    }
     let index: u32 = 0;
     while (index < argc) {
       const passed = args[usize(index)];
@@ -5550,7 +5583,10 @@ export struct Runtime {
   // vector.
   function callForwarding(inout this, callee: Value, thisValue: Value, source: u32, count: u32): Value {
     const argsBase = this.regTop;
-    if (this.regStack.length < usize(argsBase + count)) this.growRegisters(usize(argsBase + count));
+    if (this.regStack.length < usize(argsBase + count)) {
+      if (usize(argsBase + count) > REGISTER_LIMIT) return this.stackOverflow();
+      this.growRegisters(usize(argsBase + count));
+    }
     let index: u32 = 0;
     while (index < count) {
       const passed = this.stackAt(usize(source + index));
@@ -5944,7 +5980,10 @@ export struct Runtime {
     const argsBase = this.regTop;
     const argc = u32(args.length);
     const needed = usize(argsBase + argc);
-    if (this.regStack.length < needed) this.growRegisters(needed);
+    if (this.regStack.length < needed) {
+      if (needed > REGISTER_LIMIT) return this.stackOverflow();
+      this.growRegisters(needed);
+    }
     let index: u32 = 0;
     while (index < argc) {
       const passed = args[usize(index)];
@@ -7055,6 +7094,8 @@ export struct Runtime {
       this.frames[usize(this.frameCount)] = frame;
     } else {
       this.frames.push(frame);
+      // Past the limit: the next poll throws (see FRAME_LIMIT).
+      if (this.frames.length > FRAME_LIMIT) this.interruptCountdown = 1;
     }
     this.frameCount = this.frameCount + 1;
     return base;
@@ -7130,6 +7171,8 @@ export struct Runtime {
       this.frames[usize(this.frameCount)] = frame;
     } else {
       this.frames.push(frame);
+      // Past the limit: the next poll throws (see FRAME_LIMIT).
+      if (this.frames.length > FRAME_LIMIT) this.interruptCountdown = 1;
     }
     this.frameCount = this.frameCount + 1;
     this.hostThis = boundThis;
@@ -7301,6 +7344,15 @@ export struct Runtime {
   // enough, and almost none has to grow it.
   function growRegisters(inout this, top: usize): void {
     this.regStack.appendRepeated(undefinedValue(), top - this.regStack.length);
+  }
+
+  // The RangeError of a call past FRAME_LIMIT or REGISTER_LIMIT, left
+  // pending; and undefined, what a call from Z returns with it.
+  cold function stackOverflow(inout this): Value {
+    const message: String = "Maximum call stack size exceeded";
+    const error = this.rangeError(in message);
+    this.raise(error);
+    return undefinedValue();
   }
 
   // Stack access by absolute index, for the code that places a call's
@@ -9005,7 +9057,9 @@ export struct Runtime {
           const argsArray = this.reg(base, arrayReg);
           const argsBase = this.spreadArguments(callee, asCell(argsArray));
           const argc = this.heap.arrayLength(asCell(argsArray));
-          if (op == Op.spreadNewInvoke) {
+          if (this.pendingThrow) {
+            // No room for the arguments: the throw stays pending.
+          } else if (op == Op.spreadNewInvoke) {
             if (!this.isConstructorValue(callee)) {
               {
                 const raised = this.notConstructorError(callee);
@@ -9196,10 +9250,21 @@ export struct Runtime {
   // Ask the handler, and stop if it says so. Once stopping, every poll
   // stops again, at once: a builtin that took the termination for an
   // ordinary error (a promise executor's, say) cannot keep JavaScript
-  // running past it.
+  // running past it. Before the handler, the frame limit: a frame past
+  // FRAME_LIMIT counted down to this poll, and while one is open every
+  // poll throws and the next call or back-edge polls again. Once none is,
+  // their slots go, so the next frame to pass the limit counts down too.
   cold function pollInterrupt(inout this): boolean {
     this.interruptCountdown = INTERRUPT_POLL_INTERVAL;
     if (!this.terminating) {
+      if (usize(this.frameCount) > FRAME_LIMIT) {
+        this.interruptCountdown = 1;
+        this.stackOverflow();
+        return true;
+      }
+      while (this.frames.length > FRAME_LIMIT) {
+        this.frames.pop();
+      }
       if (this.interruptHandler == 0) return false;
       if (host.zjs_host_interrupt(this.interruptHandler, this.interruptOpaque) == 0) return false;
     }

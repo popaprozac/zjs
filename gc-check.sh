@@ -49,6 +49,12 @@ echo "gc: spread calls: $(echo "$out" | head -1); registers $registers"
 echo "$out" | grep -q "^later 4000" || { echo "gc: FAIL spread calls result"; fail=1; }
 [ "$registers" -lt 1000 ] || { echo "gc: FAIL spread calls' arguments stay on the register stack ($registers registers)"; fail=1; }
 
+# The frame limit stays where it is however often a recursion passes it
+# (the frame past it gives its slot back; see FRAME_LIMIT in runtime.zs).
+out="$("$ZJSZ" run "$HERE/tests/gc/call-depth.js" 2>&1)"
+echo "gc: $out"
+[ "$out" = "call depth limited; same depth 300 of 300; retries no deeper true of 300; constructors and generators no deeper true; arguments passed on RangeError" ] || { echo "gc: FAIL the frame limit moved"; fail=1; }
+
 # A graph mutated at random and checked every round (recorded from node):
 # the same lines whatever the nursery and the slice of a full collection,
 # down to a collection at every safe point with a cell or two marked at

@@ -1,0 +1,40 @@
+below the limit 1000
+plain call true RangeError: Maximum call stack size exceeded
+mutual recursion true RangeError: Maximum call stack size exceeded
+method call true RangeError: Maximum call stack size exceeded
+new true RangeError: Maximum call stack size exceeded
+class constructor true RangeError: Maximum call stack size exceeded
+spread call true RangeError: Maximum call stack size exceeded
+closure true RangeError: Maximum call stack size exceeded
+long argument lists true RangeError: Maximum call stack size exceeded
+one long argument list 60000
+long argument lists, apply true RangeError: Maximum call stack size exceeded
+long argument lists, construct true RangeError: Maximum call stack size exceeded
+getter true RangeError: Maximum call stack size exceeded
+setter true RangeError: Maximum call stack size exceeded
+Array.prototype.map true RangeError: Maximum call stack size exceeded
+Array.prototype.forEach true RangeError: Maximum call stack size exceeded
+sort comparator true RangeError: Maximum call stack size exceeded
+Function.prototype.apply true RangeError: Maximum call stack size exceeded
+Function.prototype.call true RangeError: Maximum call stack size exceeded
+bound function true RangeError: Maximum call stack size exceeded
+Reflect.apply true RangeError: Maximum call stack size exceeded
+Reflect.construct true RangeError: Maximum call stack size exceeded
+valueOf true RangeError: Maximum call stack size exceeded
+toString true RangeError: Maximum call stack size exceeded
+toJSON true RangeError: Maximum call stack size exceeded
+replace callback true RangeError: Maximum call stack size exceeded
+eval true RangeError: Maximum call stack size exceeded
+iterator true RangeError: Maximum call stack size exceeded
+generator delegation true RangeError: Maximum call stack size exceeded
+generator resumed true RangeError: Maximum call stack size exceeded
+try/finally true RangeError: Maximum call stack size exceeded
+finally blocks ran true
+caught at depth recovered
+again true RangeError: Maximum call stack size exceeded
+and again true RangeError: Maximum call stack size exceeded
+below the limit 1000 true 500 200 300
+0,1,4,9,16 {"a":[1,{"b":2}]} xxx
+1,2,3 null
+async function RangeError
+async function, a job a call 5000
