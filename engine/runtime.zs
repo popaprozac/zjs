@@ -6039,7 +6039,13 @@ export struct Runtime {
     // The return handler substitutes the constructed object for a
     // non-object return value, and checks a derived constructor did
     // call super(), so the result is the object or a throw.
-    if (this.enterConstruct(callee, 0, argsBase, argc, newTarget)) {
+    // The new target is a constructor, so a cell: its header alone says
+    // whether it is a bound function (isBoundFunction asks again whether
+    // it is a cell, at twice the cost to every super()).
+    const targetCell = asCell(newTarget);
+    const boundTarget = this.heap.tagOf(targetCell) == TAG_HOST_FUNCTION && (this.heap.flagsOf(targetCell) & FLAG_BOUND) != 0;
+    const entered = boundTarget ? this.enterConstructBound(callee, argsBase, argc, newTarget) : this.enterConstruct(callee, 0, argsBase, argc, newTarget);
+    if (entered) {
       const result = this.runFrames(entryDepth);
       if (result.isThrow) {
         this.raise(result.value);
@@ -7274,6 +7280,26 @@ export struct Runtime {
       created = cellValue(this.heap.allocateObject(proto));
     }
     if (!this.enterCallable(callee, returnDst, created, argsBase, argc, created)) return false;
+    this.frames[usize(this.frameCount - 1)].newTarget = newTarget;
+    return true;
+  }
+
+  // enterConstruct for a new target that is a bound function. It has no
+  // `prototype` of its own for prototypeOf to answer with, so a base
+  // constructor's object takes what a Get finds (a property the program
+  // gave it, an inherited one, a getter's answer) when that is an object,
+  // and Object.prototype otherwise. Only a construct from Z can name one.
+  cold function enterConstructBound(inout this, callee: Value, argsBase: u32, argc: u32, newTarget: Value): boolean {
+    const code = this.heap.functionIndex(asCell(callee));
+    if (this.functions[usize(code)].isDerived) return this.enterConstruct(callee, 0, argsBase, argc, newTarget);
+    // The read may run the program, which can drop the callee.
+    this.pushTempRoot(callee);
+    const atomPrototype = this.atomPrototype;
+    const held = this.getProperty(newTarget, cellValue(atomPrototype));
+    this.popTempRoot();
+    if (this.pendingThrow) return false;
+    const created = cellValue(this.heap.allocateObject(this.isObjectLike(held) ? asCell(held) : this.objectProto));
+    if (!this.enterSpecial(callee, 0, created, argsBase, argc, created)) return false;
     this.frames[usize(this.frameCount - 1)].newTarget = newTarget;
     return true;
   }

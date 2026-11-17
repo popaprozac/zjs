@@ -21,6 +21,17 @@ class extends a binding without prototype: throws TypeError
 class extends a binding given a prototype: 1,2,true,true,true
 bound Promise: true,true,true
 bound Promise called: throws TypeError
+a function, a class, and a derived class take Object.prototype: true,true,1,2,Object,true,Object,true,Object
+constructed through a binding and through a chain: true,1,2,Object,true,1,2,Object
+bindings of a class, a derived class, and builtins: Object,A,Object,Object,Object,A
+a builtin constructor keeps its own prototype: Map,Array,RangeError,Promise,Object,Map,2
+a prototype the program gave the binding: given,Object,Object,false,Object
+a prototype the binding inherits: inherited,Object
+a getter is read once a construct, as the base constructor is entered: derived,get,base,after,get,fresh,fresh,false
+a getter that throws stops the construct: RangeError p,RangeError p,RangeError p,10
+a getter that lets go of the constructor: ran,Object
+the return rule holds: Object,true
+each construct makes its own object and the binding gains nothing: false,false,false,length,name,undefined
 no own prototype: false,false,undefined,length,name
 an assigned prototype is an ordinary property: true,true,true,1,true,true,true,false
 a defined prototype getter is not read by construction: 0,true,0

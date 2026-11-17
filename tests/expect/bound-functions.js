@@ -2,8 +2,9 @@
 // decided by how the function was entered and never by the shape of
 // `this`; both prepend the bound arguments; the new target becomes the
 // target only when it was the bound function itself; there is no own
-// `prototype` unless the program defines one; instanceof asks the
-// target, custom @@hasInstance included.
+// `prototype` unless the program defines one, so as the new target of
+// another constructor it gives whatever a Get of `prototype` finds;
+// instanceof asks the target, custom @@hasInstance included.
 function show(label, f) { try { console.log(label, String(f())); } catch (e) { console.log(label, "throws", e && e.constructor ? e.constructor.name : e); } }
 function churn() { var keep = []; for (var i = 0; i < 300; i++) { keep.push({ a: i, b: [i], c: "s" + i }); } return keep.length; }
 function collect() { gc(); churn(); gc(); churn(); }
@@ -38,6 +39,22 @@ show("class extends a binding without prototype:", function () { class D extends
 show("class extends a binding given a prototype:", function () { var C = F.bind(null, 1); C.prototype = F.prototype; class D extends C { constructor() { super(2); } } var d = new D(); return [d.a, d.b, d.nt === D, d instanceof D, d instanceof F]; });
 show("bound Promise:", function () { var BP = Promise.bind(); var p = new BP(function (r) { r(1); }); return [p instanceof Promise, p instanceof BP, Object.getPrototypeOf(p) === Promise.prototype]; });
 show("bound Promise called:", function () { return Promise.bind()(function () {}); });
+
+// --- a binding as the new target of another constructor ---
+function G(a, b) { this.nt = new.target; this.self = this; this.args = [a, b].join(); }
+G.prototype.tag = "G";
+function named(o) { var p = Object.getPrototypeOf(o); return p === null ? "null" : p === Object.prototype ? "Object" : p === Function.prototype ? "Function" : p === Map.prototype ? "Map" : p === Array.prototype ? "Array" : p === Promise.prototype ? "Promise" : p === RangeError.prototype ? "RangeError" : Object.prototype.hasOwnProperty.call(p, "tag") ? p.tag : "other"; }
+show("a function, a class, and a derived class take Object.prototype:", function () { class A { constructor() { this.nt = new.target; } } A.prototype.tag = "A"; class D extends A {} D.prototype.tag = "D"; var other = G.bind(); var x = Reflect.construct(G, [1, 2], other), y = Reflect.construct(A, [], other), z = Reflect.construct(D, [], other); return [x.nt === other, x.self === x, x.args, named(x), y.nt === other, named(y), z.nt === other, named(z)]; });
+show("constructed through a binding and through a chain:", function () { var other = G.bind().bind(); var x = Reflect.construct(G.bind(null, 1), [2], other), y = Reflect.construct(G.bind(null, 1).bind(null, 2).bind(), [], other); return [x.nt === other, x.args, named(x), y.nt === other, y.args, named(y)]; });
+show("bindings of a class, a derived class, and builtins:", function () { class A {} A.prototype.tag = "A"; class D extends A {} D.prototype.tag = "D"; return [A.bind(), D.bind(), Map.bind(), Array.bind(), Promise.bind(), Math.max.bind.call(D.bind())].map(function (nt) { return named(Reflect.construct(G, [], nt)); }); });
+show("a builtin constructor keeps its own prototype:", function () { class M extends Map {} M.prototype.tag = "M"; var other = G.bind(); return [named(Reflect.construct(Map, [], other)), named(Reflect.construct(Array, [], other)), named(Reflect.construct(RangeError, [], other)), named(Reflect.construct(Promise, [function () {}], other)), named(Reflect.construct(Object, [], other)), named(Reflect.construct(M, [], other)), Reflect.construct(M, [[[1, 2]]], other).get(1)]; });
+show("a prototype the program gave the binding:", function () { var other = G.bind(); var r = []; other.prototype = { tag: "given" }; r.push(named(Reflect.construct(G, [], other))); other.prototype = 5; r.push(named(Reflect.construct(G, [], other))); delete other.prototype; r.push(named(Reflect.construct(G, [], other)), "prototype" in other); function N() {} N.prototype = 5; r.push(named(Reflect.construct(G, [], N))); return r; });
+show("a prototype the binding inherits:", function () { var other = G.bind(), bare = G.bind(); Object.setPrototypeOf(other, { prototype: { tag: "inherited" } }); Object.setPrototypeOf(bare, null); return [named(Reflect.construct(G, [], other)), named(Reflect.construct(G, [], bare))]; });
+show("a getter is read once a construct, as the base constructor is entered:", function () { var log = []; class A { constructor() { log.push("base"); } } class D extends A { constructor() { log.push("derived"); super(); log.push("after"); } } var other = G.bind(); Object.defineProperty(other, "prototype", { get: function () { log.push("get"); collect(); return { tag: "fresh" }; } }); var x = Reflect.construct(D, [], other); collect(); var y = Reflect.construct(G, [], other); return [log.join(), named(x), named(y), Object.getPrototypeOf(x) === Object.getPrototypeOf(y)]; });
+show("a getter that throws stops the construct:", function () { var ran = 0; function T() { ran++; } class D extends T { constructor() { ran += 10; super(); } } var other = G.bind(); Object.defineProperty(other, "prototype", { get: function () { throw new RangeError("p"); } }); var r = []; [T, D, T.bind()].forEach(function (target) { try { Reflect.construct(target, [], other); r.push("no throw"); } catch (e) { r.push(e.constructor.name + " " + e.message); } }); return r.concat(ran); });
+show("a getter that lets go of the constructor:", function () { var D = (function () { class A { constructor() { collect(); this.base = "ran"; } } return class extends A {}; })(); var other = G.bind(); Object.defineProperty(other, "prototype", { get: function () { Object.setPrototypeOf(D, Function.prototype); Object.setPrototypeOf(D.prototype, null); collect(); return null; } }); var x = Reflect.construct(D, [], other); return [x.base, named(x)]; });
+show("the return rule holds:", function () { var given = { given: true }; function R() { return 5; } function RO() { return given; } var other = G.bind(); return [named(Reflect.construct(R, [], other)), Reflect.construct(RO, [], other) === given]; });
+show("each construct makes its own object and the binding gains nothing:", function () { var other = G.bind(); var x = Reflect.construct(G, [], other), y = Reflect.construct(G, [], other); x.mark = 1; return [x === y, "mark" in y, "mark" in {}, Object.getOwnPropertyNames(other).sort().join(), typeof other.prototype]; });
 
 // --- the [[Prototype]] and the `prototype` property ---
 show("no own prototype:", function () { return ["prototype" in B, B.hasOwnProperty("prototype"), typeof B.prototype, Object.getOwnPropertyNames(B).sort().join()]; });

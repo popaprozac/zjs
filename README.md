@@ -123,7 +123,13 @@ uses boundThis, a construct ignores it and constructs the target, with
 the target as new target only when the new target was the bound function
 itself. It is constructable exactly when its target is, inherits from
 what its target inherits from, and has no `prototype` of its own (the
-program may define one; construction never reads it). `length` comes
+program may define one; constructing it never reads it). Named as the
+new target of another constructor (`Reflect.construct(F, [], bound)`),
+it gives the new object what a Get of `prototype` finds on it, a
+getter's answer or an inherited property included (a function or class
+makes that read as its base constructor is entered); when that is not
+an object the new object takes `Object.prototype`, or a builtin
+constructor's own prototype. `length` comes
 from the target's own `length` when that is a Number (infinity kept),
 `name` from the target's `name` when that is a String, read in that
 order. The name is put together when it is read and is not kept: a bound
