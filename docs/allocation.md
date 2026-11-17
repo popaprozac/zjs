@@ -218,6 +218,10 @@ refers to them. No allocator call or host interface is proposed.
 A collection is due after a number of cells allocated: the survivors of
 the last one times a multiple, and never fewer than the floor. With small
 live sets the floor is the policy; with large ones the multiple is.
+(Since 2026-11-16 the bytes in strings' own buffers are counted beside
+the cells, by the same multiple and a floor of a megabyte: README,
+Phase 6. None of the workloads here makes a megabyte of them between
+collections.)
 
 Six small-live-set workloads, ranges across them (`policy.json`):
 

@@ -444,7 +444,15 @@ cell in a remembered set, or for a cell of 256 slots or more just the slot,
 and a minor collection traces those too. Weak entries are held strongly
 by a minor collection; their dead keys go at the next full one. A full
 collection is the mark-sweep above, due once minor collections have
-promoted the floor or twice what the last full one kept. On a program
+promoted the floor or twice what the last full one kept. A string longer
+than 256 bytes has a buffer of its own, which no count of cells measures,
+so the buffers' bytes are counted beside the cells (2026-11-16): a
+collection is due once a megabyte has gone into buffers since the last
+one, and a full one once a megabyte of them, or twice what the last full
+one kept, has been promoted. A loop that makes a thousand 100 kB strings
+and drops each ended holding 98 MB of them, and now holds 2 MB;
+`tests/gc/string-bytes.js` (under `gc-check.sh`) checks the like, with
+strings that die old among them. On a program
 keeping 400,000 records alive under steady churn, peak resident memory
 went from 247 to 117 MB and the 95th-percentile pause from 20 ms to under
 0.2 ms. `gc()` always collects fully.

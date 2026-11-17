@@ -297,6 +297,19 @@ export struct Heap {
   // long-lived string is copied once per doubling, not every collection.
   smallLiveBytes: usize;
   bufferRefs: Array<u32>;
+  // The buffers' bytes pace the collector beside the cells, which do not
+  // measure them. (The arena's need no count: a cell brings at most
+  // SMALL_STRING_BYTES of them.) `youngBufferBytes`: the bytes buffers
+  // were given since the last collection, less any arena string appended
+  // in place. `bufferOld`: per buffer, the part of it counted old, which
+  // is its length when a string over it last survived a minor
+  // collection. `oldBufferBytes`: the sum of those. `promotedBufferBytes`:
+  // the part of the sum counted since the last full collection's marking
+  // ended.
+  youngBufferBytes: usize;
+  bufferOld: Array<u32>;
+  oldBufferBytes: usize;
+  promotedBufferBytes: usize;
   classes: Array<HiddenClass>;
   // Weak records reached during the current collection (see Weak
   // records); emptied when the collection ends, never a root.
@@ -352,7 +365,9 @@ export struct Heap {
   markStack: Array<u32>;
   markCount: usize;
   // Cells allocated since the last collection, and how many trigger the
-  // next one: at least a floor, otherwise proportional to what survived.
+  // next one: at least a floor, otherwise proportional to what survived,
+  // and none once the buffers have been given a nursery's worth of bytes
+  // (countBufferBytes).
   allocatedSinceCollect: u32;
   collectThreshold: u32;
   collections: u32;
@@ -584,7 +599,12 @@ export struct Heap {
   // Whether the old cells have grown past the policy's bound, so a full
   // collection should begin, or there is no young generation.
   function majorDue(): boolean {
-    return this.nurseryCells == 0 || this.promotedCells >= this.majorThreshold;
+    if (this.nurseryCells == 0 || this.promotedCells >= this.majorThreshold) return true;
+    // The buffers' bytes by the same policy: a floor promoted, and the
+    // growth multiple of what the last full collection kept, which is
+    // the old bytes less the promoted ones (multiplied out).
+    const growth = usize(this.collectGrowthPercent);
+    return this.promotedBufferBytes >= NURSERY_BUFFER_BYTES && this.promotedBufferBytes * (100 + growth) >= this.oldBufferBytes * growth;
   }
 
   // Whether the whole heap can be marked within one slice's bound. A
@@ -941,6 +961,7 @@ export struct Heap {
     this.tenureSkips = 0;
     this.promotedCells = 0;
     this.promotedSlots = 0;
+    this.promotedBufferBytes = 0;
     this.markedCells = survivors;
     this.markedSlots = this.reachedSlots;
     this.whole = false;
@@ -1326,6 +1347,7 @@ export struct Heap {
       this.youngOwners.clear();
     }
     this.minorCollection = false;
+    this.youngBufferBytes = 0;
     this.tailBase = this.slots.length;
     this.byteTailBase = this.smallBytes.length;
     this.cycleFreeCount = this.freeHandleCount;
@@ -1454,7 +1476,10 @@ export struct Heap {
       const owning = this.youngOwners[owner];
       owner = owner + 1;
       const header = this.cellHeader(owning);
-      if (header.mark != 0 || header.tag == TAG_FREE) continue;
+      if (header.mark != 0 || header.tag == TAG_FREE) {
+        if (header.mark != 0) this.ageBuffer(owning);
+        continue;
+      }
       if (header.tag == TAG_STRING && (header.flags & FLAG_INTERNED) != 0) {
         if (!header.remembered) {
           this.headers[usize(owning)].remembered = true;
@@ -1661,6 +1686,11 @@ export struct Heap {
     this.collectThreshold = this.nurseryCells;
     this.tenureSkips = this.tenureSkips - 1;
     this.tenured = this.tenured + 1;
+    let owner: usize = 0;
+    while (owner < this.youngOwners.length) {
+      this.ageBuffer(this.youngOwners[owner]);
+      owner = owner + 1;
+    }
     this.deadAtoms.clear();
     this.endCycle();
     this.collections = this.collections - 1;
@@ -3067,6 +3097,7 @@ export struct Heap {
 
   // A buffer slot for `bytes`, with one string over it to come.
   function adoptBuffer(inout this, bytes: Array<u8>): u32 {
+    this.countBufferBytes(bytes.length);
     if (this.freeStringCount > 0) {
       this.freeStringCount = this.freeStringCount - 1;
       const reused = this.freeStrings[this.freeStringCount];
@@ -3077,7 +3108,31 @@ export struct Heap {
     const stringIndex = u32(this.strings.length);
     this.strings.push(move bytes);
     this.bufferRefs.push(1);
+    this.bufferOld.push(0);
     return stringIndex;
+  }
+
+  // `count` bytes have gone into a buffer. Once a nursery's worth has
+  // gone in since the last collection, the next safe point collects,
+  // however few cells came with them; the sweep that follows sets the
+  // threshold again.
+  function countBufferBytes(inout this, count: usize): void {
+    this.youngBufferBytes = this.youngBufferBytes + count;
+    if (this.youngBufferBytes >= NURSERY_BUFFER_BYTES) this.collectThreshold = 0;
+  }
+
+  // A young cell has been made old. If it is a string over a buffer, the
+  // bytes the buffer has gained since a string over it was last made old
+  // are old with it.
+  function ageBuffer(inout this, handle: u32): void {
+    const header = this.cellHeader(handle);
+    if (header.tag != TAG_STRING || (header.payload & ARENA_BIT) != 0) return;
+    const at = usize(header.payload);
+    const length = u32(this.strings[at].length);
+    const gained = usize(length - this.bufferOld[at]);
+    this.bufferOld[at] = length;
+    this.oldBufferBytes = this.oldBufferBytes + gained;
+    this.promotedBufferBytes = this.promotedBufferBytes + gained;
   }
 
   // A string cell over the first `byteCount` bytes of buffer
@@ -3122,6 +3177,8 @@ export struct Heap {
     }
     this.strings[at] = Array<u8>();
     this.bufferRefs[at] = 0;
+    this.oldBufferBytes = this.oldBufferBytes - usize(this.bufferOld[at]);
+    this.bufferOld[at] = 0;
     if (this.freeStringCount < this.freeStrings.length) {
       this.freeStrings[this.freeStringCount] = stringIndex;
     } else {
@@ -3221,6 +3278,7 @@ export struct Heap {
           const origin = usize(rightPayload & ~ARENA_BIT);
           this.strings[leftBuffer].append(this.smallBytes.slice(origin, origin + usize(rightBytes)));
         } else {
+          this.countBufferBytes(usize(rightBytes));
           while (index < usize(rightBytes)) {
             const byte = this.storageByte(right, index);
             this.strings[leftBuffer].push(byte);
@@ -4020,7 +4078,7 @@ export struct Heap {
 
   // The string table: an array per string plus each one's content.
   function stringBytesHeld(): f64 {
-    let held: f64 = f64(this.strings.capacity) * 24.0 + f64(this.freeStrings.capacity) * 4.0;
+    let held: f64 = f64(this.strings.capacity) * 24.0 + f64(this.freeStrings.capacity) * 4.0 + f64(this.bufferOld.capacity) * 4.0;
     held = held + f64(this.smallBytes.capacity);
     let index: usize = 0;
     while (index < this.strings.length) {
@@ -4219,7 +4277,7 @@ export function createHeap(): Heap {
   let phaseNs = Array<f64>();
   phaseNs.appendRepeated(0.0, 12);
   return Heap({
-    headers: move headers, slots: Array<Value>(), slideCounts: Array<u32>(), slideOrder: Array<u64>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), classes: move classes,
+    headers: move headers, slots: Array<Value>(), slideCounts: Array<u32>(), slideOrder: Array<u64>(), elementAttrs: Array<ElementAttrs>(), elementAttrIndex: Array<u32>(), slotsAfterSweep: 0, headerCount: 1, cellsBeforeCycle: 0.0, slotsBeforeCycle: 0.0, strings: Array<Array<u8>>(), smallBytes: Array<u8>(), smallLiveBytes: 0, bufferRefs: Array<u32>(), youngBufferBytes: 0, bufferOld: Array<u32>(), oldBufferBytes: 0, promotedBufferBytes: 0, classes: move classes,
     freeHandles: Array<u32>(), freeHandleCount: 0, freeStrings: Array<u32>(), freeStringCount: 0,
     weakRecords: Array<u32>(), pendingKeys: Array<u32>(), pendingValues: Array<Value>(), pendingNext: Array<u32>(), pendingBuckets: Array<u32>(), pendingMask: 0, pendingCount: 0,
     weakCleared: 0, ephemeronPasses: 0, weakVisits: 0, markedCells: 0, markedSlots: 0,
@@ -4249,6 +4307,9 @@ const COLLECT_FLOOR: u32 = 4096;
 const COLLECT_GROWTH_PERCENT: u32 = 200;
 // Allocations between minor collections.
 const NURSERY_CELLS: u32 = 16384;
+// Bytes given to string buffers between collections, and the fewest
+// promoted between full ones: about what a nursery's cells take.
+const NURSERY_BUFFER_BYTES: usize = 1048576;
 // A minor collection of at least this many young cells that kept this
 // share of them turns the young generation off until the next full one.
 const TENURE_SAMPLE: usize = 1024;
@@ -5324,6 +5385,77 @@ test "young strings sharing bytes keep their text through a minor collection" {
   expect(heap.stringsEqual(abcdef, heap.allocateText("abcdef"))).toEqual(true);
   expect(heap.stringsEqual(abcdefgh, heap.allocateText("abcdefgh"))).toEqual(true);
   expect(heap.stringsEqual(tail, heap.allocateText("tail"))).toEqual(true);
+}
+
+test "a buffer's bytes make a collection due, are counted old with a survivor, and leave the count when released" {
+  let heap = createHeap();
+  let roots = Array<u32>();
+  let first = Array<u8>();
+  first.appendRepeated(97, 1000);
+  let second = Array<u8>();
+  second.appendRepeated(98, 1000);
+  const kept = heap.allocateLatin1(move first);
+  const dropped = heap.allocateLatin1(move second);
+  expect(heap.youngBufferBytes).toEqual(2000);
+  expect(heap.shouldCollect()).toEqual(false);
+  roots.push(kept);
+  collectMinor(inout heap, in roots);
+  expect(heap.isReleased(dropped)).toEqual(true);
+  expect(heap.youngBufferBytes).toEqual(0);
+  expect(heap.oldBufferBytes).toEqual(1000);
+  expect(heap.promotedBufferBytes).toEqual(1000);
+  // A buffer a concatenation made, then extended in place: the survivor
+  // over it brings what the buffer gained, once.
+  const joined = heap.concatStorage(kept, kept);
+  roots.push(joined);
+  collectMinor(inout heap, in roots);
+  expect(heap.oldBufferBytes).toEqual(3000);
+  const xy: String = "xy";
+  const xyBytes = bytesOf(in xy);
+  const longer = heap.concatAscii(joined, xyBytes, 2, false);
+  expect(heap.stringBuffer(longer)).toEqual(heap.stringBuffer(joined));
+  roots.push(longer);
+  collectMinor(inout heap, in roots);
+  collectMinor(inout heap, in roots);
+  expect(heap.oldBufferBytes).toEqual(3002);
+  expect(heap.majorDue()).toEqual(false);
+  // A string with a buffer of its own, appended in place, is counted as
+  // it goes in.
+  const longest = heap.concatStorage(longer, kept);
+  expect(heap.stringBuffer(longest)).toEqual(heap.stringBuffer(joined));
+  expect(heap.youngBufferBytes).toEqual(1000);
+  // A nursery's worth of bytes in one cell: a collection is due, and a
+  // full one once it has been promoted.
+  let large = Array<u8>();
+  large.appendRepeated(99, NURSERY_BUFFER_BYTES);
+  const big = heap.allocateLatin1(move large);
+  expect(heap.shouldCollect()).toEqual(true);
+  roots.push(big);
+  collectMinor(inout heap, in roots);
+  expect(heap.shouldCollect()).toEqual(false);
+  expect(heap.majorDue()).toEqual(true);
+  // The full collection keeps it: as much again promoted is under twice
+  // what was kept, so no full collection is due.
+  collectFull(inout heap, in roots);
+  expect(heap.promotedBufferBytes).toEqual(0);
+  expect(heap.oldBufferBytes).toEqual(3002 + NURSERY_BUFFER_BYTES);
+  let another = Array<u8>();
+  another.appendRepeated(100, NURSERY_BUFFER_BYTES);
+  roots.push(heap.allocateLatin1(move another));
+  collectMinor(inout heap, in roots);
+  expect(heap.promotedBufferBytes).toEqual(NURSERY_BUFFER_BYTES);
+  expect(heap.majorDue()).toEqual(false);
+  let none = Array<u32>();
+  collectFull(inout heap, in none);
+  expect(heap.oldBufferBytes).toEqual(0);
+  // Made old untraced, a young string takes its buffer with it.
+  let untraced = Array<u8>();
+  untraced.appendRepeated(101, 1000);
+  const tenured = heap.allocateLatin1(move untraced);
+  heap.tenureSkips = 1;
+  heap.promoteYoung();
+  expect(heap.oldBufferBytes).toEqual(1000);
+  expect(heap.youngBufferBytes).toEqual(0);
 }
 
 test "a full collection slides the survivors' slots and string bytes down in place" {

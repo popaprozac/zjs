@@ -63,6 +63,15 @@ echo "gc: bound chain: $(echo "$out" | head -1); held-strings-kib $strings"
 echo "$out" | grep -q "^chain 1 12001" || { echo "gc: FAIL bound chain result"; fail=1; }
 [ "$strings" -lt 100 ] || { echo "gc: FAIL a chain of binds holds its links' names ($strings kB of strings)"; fail=1; }
 
+# A string's buffer counts toward the next collection by its bytes: 40,000
+# kB of strings made by a thousand cells, thirty alive at most, are given
+# back as the program runs, those that die old among them.
+out="$("$ZJSZ" run --stats --mem-stats "$HERE/tests/gc/string-bytes.js" 2>&1)"
+strings="$(stat "$out" held-strings-kib)"; collections="$(stat "$out" collections)"
+echo "gc: string bytes: $(echo "$out" | head -1); held-strings-kib $strings, collections $collections"
+echo "$out" | grep -q "^strings 20079800 30" || { echo "gc: FAIL string bytes result"; fail=1; }
+[ "$strings" -lt 8192 ] || { echo "gc: FAIL dead strings' buffers are still held ($strings kB of strings)"; fail=1; }
+
 # A graph mutated at random and checked every round (recorded from node):
 # the same lines whatever the nursery and the slice of a full collection,
 # down to a collection at every safe point with a cell or two marked at
