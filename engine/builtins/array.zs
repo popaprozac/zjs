@@ -1234,6 +1234,18 @@ function arrayFlatMap(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
   return result;
 }
 
+// Whether this object's join is running further up the native stack.
+// Out of line, and asked only while some join is running, so that the
+// join of an array of primitives pays one test for it.
+cold function isJoining(in runtime: Runtime, object: u32): boolean {
+  let depth: usize = 0;
+  while (depth < runtime.joining.length) {
+    if (runtime.joining[depth] == object) return true;
+    depth = depth + 1;
+  }
+  return false;
+}
+
 // join(separator): elements through ToString, holes and nullish empty.
 function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Value, locale: boolean): Value {
   const object = receiverObject(inout runtime, thisValue);
@@ -1249,6 +1261,14 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
     separator = asCell(text);
     runtime.pushTempRoot(text);
   }
+  // An object that holds itself, at any depth, reaches its own join
+  // again from an element's ToString, and the specification's steps
+  // would never end: as in other engines, the inner join is empty.
+  if (runtime.joining.length > 0 && isJoining(in runtime, asCell(object))) {
+    if (separator != 0) runtime.popTempRoot();
+    runtime.popTempRoot();
+    return cellValue(runtime.atomEmpty);
+  }
   if (!locale && isArrayValue(in runtime, object) && (separator == 0 || !runtime.heap.isWideString(separator))) {
     const plain = joinPlain(inout runtime, asCell(object), length, separator);
     if (!isDeleted(plain)) {
@@ -1258,6 +1278,7 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
     }
   }
   let joined = textBuilder(64);
+  runtime.joining.push(asCell(object));
   let k = 0.0;
   while (k < length) {
     if (k > 0.0) {
@@ -1301,6 +1322,8 @@ function joinWith(inout runtime: Runtime, thisValue: Value, separatorGiven: Valu
     }
     k = k + 1.0;
   }
+  // Every way out of the loop, a throw included, comes through here.
+  const finished = runtime.joining.pop();
   if (separator != 0) runtime.popTempRoot();
   runtime.popTempRoot();
   if (runtime.pendingThrow) return undefinedValue();
