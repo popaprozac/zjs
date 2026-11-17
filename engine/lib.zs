@@ -35,7 +35,8 @@ import { installCompiler, installModuleCompiler } from "./compile.zs";
 import { evaluateModule, evaluateModuleSource, installModuleSupport } from "./modules.zs";
 import { installFileLoader } from "./module_files.zs";
 import { writeProgram, writeModule, loadProgram } from "./bytecode_file.zs";
-import { Value, undefinedValue, deletedValue, cellValue, int32Value, doubleValue, asCell, isCell, isNumber, isNull, isUndefined, isDeleted, isHole, VALUE_NULL, VALUE_FALSE, VALUE_TRUE, VALUE_UNDEFINED } from "./value.zs";
+import { Value, undefinedValue, deletedValue, cellValue, int32Value, asInt32, doubleValue, asCell, isCell, isNumber, isNull, isUndefined, isDeleted, isHole, VALUE_NULL, VALUE_FALSE, VALUE_TRUE, VALUE_UNDEFINED } from "./value.zs";
+import host from "./native/zjs_host.h";
 import { sliceBytes, TAG_STRING, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_PROMISE, TAG_REGEXP } from "./heap.zs";
 
 export struct ContextState {
@@ -79,108 +80,6 @@ export struct ContextState {
     this.hadError = threw || this.interrupted;
     this.lastResult = result;
     this.runtime.lastResult = result;
-  }
-
-  // zjs_string_bytes: the UTF-8 copies of strings lent to the embedder,
-  // in a table with open addressing: a string's cell (0 for a free
-  // place), its copy's address, and the copy's length.
-  textCells: Array<u32> = Array<u32>();
-  textBuffers: Array<usize> = Array<usize>();
-  textLengths: Array<usize> = Array<usize>();
-  textCount: usize = 0;
-
-  // A string's text as UTF-8 for the embedder: the address of a copy
-  // with a NUL after it, its length in bytes written at `lengthOut`.
-  // The engine's own storage will not do: it holds bytes or 16-bit
-  // units, not UTF-8, and a small string's moves. The copy stays where
-  // it is for as long as the string lives: the heap lists the lent
-  // strings that die (lendString), and their copies are freed here
-  // before any is looked up, so a handle given out again finds none.
-  function textBytes(inout this, cell: u32, lengthOut: usize): usize {
-    if (this.runtime.heap.lentDead.length > 0) this.dropDeadText();
-    if ((this.textCount + 1) * 2 > this.textCells.length) this.rebuildText(this.textCells.length < 8 ? 8 : this.textCells.length * 2);
-    const place = this.textPlace(cell);
-    if (this.textCells[place] != cell) {
-      const bytes = this.runtime.heap.stringUtf8(cell);
-      const buffer = nativeAlloc(bytes.length + 1);
-      let index: usize = 0;
-      while (index < bytes.length) {
-        nativeStoreByte(buffer, index, bytes[index]);
-        index = index + 1;
-      }
-      nativeStoreByte(buffer, bytes.length, 0);
-      this.textCells[place] = cell;
-      this.textBuffers[place] = buffer;
-      this.textLengths[place] = bytes.length;
-      this.textCount = this.textCount + 1;
-      this.runtime.heap.lendString(cell);
-    }
-    nativeStoreLength(lengthOut, this.textLengths[place]);
-    return this.textBuffers[place];
-  }
-
-  // Where a cell's copy is, or the free place it would take.
-  function textPlace(cell: u32): usize {
-    const mask = this.textCells.length - 1;
-    let place = usize(cell.wrappingMultiply(2654435761)) & mask;
-    while (this.textCells[place] != 0 && this.textCells[place] != cell) {
-      place = (place + 1) & mask;
-    }
-    return place;
-  }
-
-  // The table again with `capacity` places, a power of two, without the
-  // copies that were freed (a buffer of 0).
-  function rebuildText(inout this, capacity: usize): void {
-    let cells = Array<u32>();
-    let buffers = Array<usize>();
-    let lengths = Array<usize>();
-    cells.appendRepeated(0, capacity);
-    buffers.appendRepeated(0, capacity);
-    lengths.appendRepeated(0, capacity);
-    const oldCells = replace(inout this.textCells, move cells);
-    const oldBuffers = replace(inout this.textBuffers, move buffers);
-    const oldLengths = replace(inout this.textLengths, move lengths);
-    this.textCount = 0;
-    let index: usize = 0;
-    while (index < oldCells.length) {
-      if (oldCells[index] != 0 && oldBuffers[index] != 0) {
-        const place = this.textPlace(oldCells[index]);
-        this.textCells[place] = oldCells[index];
-        this.textBuffers[place] = oldBuffers[index];
-        this.textLengths[place] = oldLengths[index];
-        this.textCount = this.textCount + 1;
-      }
-      index = index + 1;
-    }
-  }
-
-  // The copies of the lent strings that have died are freed. A freed
-  // one keeps its place until the table is made again, so that the ones
-  // that follow it in a run are still found.
-  function dropDeadText(inout this): void {
-    const dead = replace(inout this.runtime.heap.lentDead, Array<u32>());
-    if (this.textCells.length == 0) return;
-    let index: usize = 0;
-    let dropped = false;
-    while (index < dead.length) {
-      const place = this.textPlace(dead[index]);
-      if (this.textCells[place] == dead[index] && this.textBuffers[place] != 0) {
-        nativeFree(this.textBuffers[place]);
-        this.textBuffers[place] = 0;
-        dropped = true;
-      }
-      index = index + 1;
-    }
-    if (dropped) this.rebuildText(this.textCells.length);
-  }
-
-  deinit on thread.any {
-    let index: usize = 0;
-    while (index < this.textCells.length) {
-      if (this.textCells[index] != 0 && this.textBuffers[index] != 0) nativeFree(this.textBuffers[index]);
-      index = index + 1;
-    }
   }
 
   function evaluate(inout this, source: Array<u8>): void {
@@ -724,6 +623,528 @@ function retainSlot(slot: u32): Option<Context> {
   });
 }
 
+// --- The operations behind zjs.h ---
+//
+// Each works on a context's runtime, given the slot its values carry. Its
+// export reaches it under the context's lock; a host function reaches it
+// through the service the engine lends it (serve, below), on the runtime
+// the interpreter holds while the host function runs. One that can run
+// JavaScript leaves a throw pending for its caller to make the error.
+
+// A string's text as UTF-8 for the embedder: the address of a copy with
+// a NUL after it, its length in bytes written at `lengthOut`. The
+// engine's own storage will not do: it holds bytes or 16-bit units, not
+// UTF-8, and a small string's moves. The copy stays where it is for as
+// long as the string lives: the heap lists the lent strings that die
+// (lendString), and their copies are freed here before any is looked up,
+// so a handle given out again finds none.
+function textBytes(inout runtime: Runtime, cell: u32, lengthOut: usize): usize {
+  if (runtime.heap.lentDead.length > 0) dropDeadText(inout runtime);
+  if ((runtime.lentCount + 1) * 2 > runtime.lentCells.length) rebuildText(inout runtime, runtime.lentCells.length < 8 ? 8 : runtime.lentCells.length * 2);
+  const place = textPlace(in runtime, cell);
+  if (runtime.lentCells[place] != cell) {
+    const bytes = runtime.heap.stringUtf8(cell);
+    const buffer = nativeAlloc(bytes.length + 1);
+    let index: usize = 0;
+    while (index < bytes.length) {
+      nativeStoreByte(buffer, index, bytes[index]);
+      index = index + 1;
+    }
+    nativeStoreByte(buffer, bytes.length, 0);
+    runtime.lentCells[place] = cell;
+    runtime.lentBuffers[place] = buffer;
+    runtime.lentLengths[place] = bytes.length;
+    runtime.lentCount = runtime.lentCount + 1;
+    runtime.heap.lendString(cell);
+  }
+  nativeStoreLength(lengthOut, runtime.lentLengths[place]);
+  return runtime.lentBuffers[place];
+}
+
+// Where a cell's copy is, or the free place it would take.
+function textPlace(in runtime: Runtime, cell: u32): usize {
+  const mask = runtime.lentCells.length - 1;
+  let place = usize(cell.wrappingMultiply(2654435761)) & mask;
+  while (runtime.lentCells[place] != 0 && runtime.lentCells[place] != cell) {
+    place = (place + 1) & mask;
+  }
+  return place;
+}
+
+// The table again with `capacity` places, a power of two, without the
+// copies that were freed (a buffer of 0).
+function rebuildText(inout runtime: Runtime, capacity: usize): void {
+  let cells = Array<u32>();
+  let buffers = Array<usize>();
+  let lengths = Array<usize>();
+  cells.appendRepeated(0, capacity);
+  buffers.appendRepeated(0, capacity);
+  lengths.appendRepeated(0, capacity);
+  const oldCells = replace(inout runtime.lentCells, move cells);
+  const oldBuffers = replace(inout runtime.lentBuffers, move buffers);
+  const oldLengths = replace(inout runtime.lentLengths, move lengths);
+  runtime.lentCount = 0;
+  let index: usize = 0;
+  while (index < oldCells.length) {
+    if (oldCells[index] != 0 && oldBuffers[index] != 0) {
+      const place = textPlace(in runtime, oldCells[index]);
+      runtime.lentCells[place] = oldCells[index];
+      runtime.lentBuffers[place] = oldBuffers[index];
+      runtime.lentLengths[place] = oldLengths[index];
+      runtime.lentCount = runtime.lentCount + 1;
+    }
+    index = index + 1;
+  }
+}
+
+// The copies of the lent strings that have died are freed. A freed one
+// keeps its place until the table is made again, so that the ones that
+// follow it in a run are still found.
+function dropDeadText(inout runtime: Runtime): void {
+  const dead = replace(inout runtime.heap.lentDead, Array<u32>());
+  if (runtime.lentCells.length == 0) return;
+  let index: usize = 0;
+  let dropped = false;
+  while (index < dead.length) {
+    const place = textPlace(in runtime, dead[index]);
+    if (runtime.lentCells[place] == dead[index] && runtime.lentBuffers[place] != 0) {
+      nativeFree(runtime.lentBuffers[place]);
+      runtime.lentBuffers[place] = 0;
+      dropped = true;
+    }
+    index = index + 1;
+  }
+  if (dropped) rebuildText(inout runtime, runtime.lentCells.length);
+}
+
+// zjs_new_string: the one string cell with this UTF-8 text.
+function newString(inout runtime: Runtime, slot: u32, in bytes: Array<u8>): u64 {
+  const byteCount = bytes.length;
+  const cell = runtime.internUtf8(sliceBytes(in bytes, 0, byteCount));
+  return exportValue(in runtime, slot, cellValue(cell));
+}
+
+// zjs_string_bytes: 0 for what is not a string of this context.
+function stringBytes(inout runtime: Runtime, slot: u32, bits: u64, lengthOut: usize): usize {
+  const value = importValue(in runtime, slot, bits);
+  if (!isCell(value) || !runtime.heap.isString(asCell(value))) return 0;
+  return textBytes(inout runtime, asCell(value), lengthOut);
+}
+
+function newObject(inout runtime: Runtime, slot: u32): u64 {
+  const proto = runtime.objectProto;
+  const made = runtime.heap.allocateObject(proto);
+  return exportValue(in runtime, slot, cellValue(made));
+}
+
+// zjs_new_array: `length` elements, each undefined.
+function newArray(inout runtime: Runtime, slot: u32, length: u32): u64 {
+  const made = runtime.heap.allocateArray(length);
+  let index: u32 = 0;
+  while (index < length) {
+    runtime.heap.arraySet(made, index, undefinedValue());
+    index = index + 1;
+  }
+  return exportValue(in runtime, slot, cellValue(made));
+}
+
+// zjs_array_length: 0 for what is not an array of this context.
+function arrayLength(in runtime: Runtime, slot: u32, bits: u64): u32 {
+  const value = importValue(in runtime, slot, bits);
+  if (!isCell(value) || !runtime.heap.isArray(asCell(value))) return 0;
+  return runtime.heap.arrayLength(asCell(value));
+}
+
+// zjs_pin, zjs_unpin, zjs_pin_replace: a stack of values the collector
+// starts from. Replacing with nothing pinned pins.
+function pinValue(inout runtime: Runtime, slot: u32, bits: u64): void {
+  const value = importValue(in runtime, slot, bits);
+  runtime.hostPins.push(value);
+}
+
+function unpinValue(inout runtime: Runtime): void {
+  const dropped = runtime.hostPins.pop();
+}
+
+function replacePin(inout runtime: Runtime, slot: u32, bits: u64): void {
+  const value = importValue(in runtime, slot, bits);
+  const held = runtime.hostPins.length;
+  if (held == 0) {
+    runtime.hostPins.push(value);
+  } else {
+    runtime.hostPins[held - 1] = value;
+  }
+}
+
+// zjs_root: a place in the table of roots, as its index plus one (0 is
+// no root); zjs_unroot gives the place back, and zjs_root_get reads it,
+// undefined for a place that holds nothing.
+function rootValue(inout runtime: Runtime, slot: u32, bits: u64): u32 {
+  const value = importValue(in runtime, slot, bits);
+  match (runtime.hostRootsFree.pop()) {
+    some(place) => {
+      runtime.hostRoots[usize(place)] = value;
+      return place + 1;
+    }
+    none => {
+      runtime.hostRoots.push(value);
+      return u32(runtime.hostRoots.length);
+    }
+  }
+}
+
+function unrootValue(inout runtime: Runtime, root: u32): void {
+  if (root == 0 || usize(root) > runtime.hostRoots.length) return;
+  const at = usize(root - 1);
+  if (isDeleted(runtime.hostRoots[at])) return;
+  runtime.hostRoots[at] = deletedValue();
+  runtime.hostRootsFree.push(root - 1);
+}
+
+function rootedValue(in runtime: Runtime, slot: u32, root: u32): u64 {
+  if (root == 0 || usize(root) > runtime.hostRoots.length) return VALUE_UNDEFINED;
+  return exportValue(in runtime, slot, runtime.hostRoots[usize(root - 1)]);
+}
+
+// A property as `obj.name` reads it (zjs_get_property, zjs_get_element).
+function readProperty(inout runtime: Runtime, slot: u32, object: u64, key: Value): Value {
+  const target = importValue(in runtime, slot, object);
+  if (refuseNullish(inout runtime, target, key, true)) return undefinedValue();
+  return runtime.getProperty(target, key);
+}
+
+// A property as `obj.name = value` writes it (zjs_set_property,
+// zjs_set_element).
+function writeProperty(inout runtime: Runtime, slot: u32, object: u64, key: Value, value: u64): void {
+  const target = importValue(in runtime, slot, object);
+  const stored = importValue(in runtime, slot, value);
+  if (refuseNullish(inout runtime, target, key, false)) return;
+  const accepted = runtime.setProperty(target, key, stored);
+}
+
+// zjs_get_global, zjs_set_global: a property of the global object, which
+// a script's var and function declarations are, and which a name no
+// script declared becomes when it is set.
+function readGlobal(inout runtime: Runtime, key: Value): Value {
+  const global = cellValue(runtime.globalObject);
+  return runtime.getProperty(global, key);
+}
+
+function writeGlobal(inout runtime: Runtime, slot: u32, key: Value, value: u64): void {
+  const stored = importValue(in runtime, slot, value);
+  const global = cellValue(runtime.globalObject);
+  const accepted = runtime.setProperty(global, key, stored);
+}
+
+// zjs_call's arguments: `argc` values at the address `argv`.
+function callArguments(in runtime: Runtime, slot: u32, argv: usize, argc: u32): Array<Value> {
+  let args = Array<Value>();
+  let index: u32 = 0;
+  while (index < argc) {
+    args.push(importValue(in runtime, slot, nativeLoadWord(argv, usize(index))));
+    index = index + 1;
+  }
+  return args;
+}
+
+// zjs_has_pending_work: 1 while a job is queued. There are no timers.
+function pendingWork(in runtime: Runtime): i32 {
+  return runtime.jobCursor < runtime.jobEnd ? 1 : 0;
+}
+
+// zjs_gc_cells_freed: the cells made less the cells in the heap.
+function cellsFreed(in runtime: Runtime): u32 {
+  const made = runtime.heap.cellsAllocated();
+  const live = f64(runtime.heap.liveCells());
+  return made > live ? u32(made - live) : 0;
+}
+
+// --- Host functions ---
+//
+// zjs_register_host_function makes a host function cell whose data is
+// the index of the embedder's C function in embedderFunctions, and
+// assigns it to the global of that name. Called from JavaScript, it runs
+// callEmbedder, which calls the C function through zjs_host_call and
+// lends it a closure over this runtime for the call: every zjs_* call
+// the C function makes on this context comes back through it (serve),
+// while the context's lock stays held by the call that is running the
+// JavaScript. Calls made from inside a host function keep their own
+// error and result (zjs_had_error, zjs_get_error), run no promise jobs
+// (those run when the call the embedder made from outside returns), and
+// leave an interrupt's termination to unwind to that call.
+
+function registerHostFunction(inout runtime: Runtime, handle: usize, in name: Array<u8>, entry: usize): Value {
+  runtime.embedderHandle = handle;
+  const index = runtime.embedderFunctions.length;
+  runtime.embedderFunctions.push(entry);
+  const count = name.length;
+  const made = cellValue(runtime.defineHostFunctionBytes(callEmbedder, int32Value(i32(index)), 0, sliceBytes(in name, 0, count)));
+  runtime.pushTempRoot(made);
+  const key = keyOf(inout runtime, in name);
+  writeGlobal(inout runtime, handleIndex(handle), key, made.bits);
+  runtime.popTempRoot();
+  return made;
+}
+
+export c function zjs_z_register_host_function(handle: usize, name: Slice<u8>, entry: usize): u64 {
+  const bytes = sliceToBytes(name);
+  const slot = handleIndex(handle);
+  const found = retain(handle);
+  match (found) {
+    some(context) => {
+      return context.state.withLock((inout state): u64 => {
+        const made = registerHostFunction(inout state.runtime, handle, in bytes, entry);
+        // A setter for that name on the global object may throw; the
+        // function is made all the same.
+        const settled = state.settle();
+        return exportValue(in state.runtime, slot, made);
+      });
+    }
+    none => {
+      return VALUE_UNDEFINED;
+    }
+  }
+}
+
+// A host function called from JavaScript. Its arguments are read from
+// their registers when C asks for them, before the C function runs; every
+// caller of a host function has the register top above them for the
+// call, so the collector marks them and a call the C function makes
+// starts above them. The state of the calls the C function makes is its
+// own, and an enclosing host function's comes back when it returns. What
+// the C function passed to zjs_throw is thrown; during a termination
+// nothing is, and the termination goes on unwinding.
+function callEmbedder(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const entry = runtime.embedderFunctions[usize(asInt32(runtime.heap.slot(callee, 0)))];
+  const outerThis = runtime.embedderThis;
+  const outerError = runtime.embedderError;
+  const outerInterrupted = runtime.embedderInterrupted;
+  const outerResult = runtime.embedderResult;
+  const outerThrew = runtime.embedderThrew;
+  const outerThrown = runtime.embedderThrown;
+  runtime.pushTempRoot(outerThis);
+  runtime.pushTempRoot(outerResult);
+  runtime.pushTempRoot(outerThrown);
+  runtime.embedderThis = thisValue;
+  runtime.embedderError = false;
+  runtime.embedderInterrupted = false;
+  runtime.embedderResult = undefinedValue();
+  runtime.embedderThrew = false;
+  runtime.embedderThrown = undefinedValue();
+  const handle = runtime.embedderHandle;
+  const slot = handleIndex(handle);
+  const bits = host.zjs_host_call(entry, handle, slot, argc, (op, a, b, c, d) => serve(inout runtime, argsBase, argc, op, a, b, c, d));
+  const returned = importValue(in runtime, slot, bits);
+  const threw = runtime.embedderThrew;
+  const thrown = runtime.embedderThrown;
+  runtime.embedderThis = outerThis;
+  runtime.embedderError = outerError;
+  runtime.embedderInterrupted = outerInterrupted;
+  runtime.embedderResult = outerResult;
+  runtime.embedderThrew = outerThrew;
+  runtime.embedderThrown = outerThrown;
+  if (runtime.terminating) return undefinedValue();
+  if (threw) {
+    runtime.raise(thrown);
+    return undefinedValue();
+  }
+  return returned;
+}
+
+// After a call from inside a host function that may have run
+// JavaScript: a throw left pending, or a termination, becomes the error
+// of the calls the host function makes, and false comes back. Without
+// one their earlier error stays. A termination stays raised.
+function embedderSettle(inout runtime: Runtime): boolean {
+  const threw = runtime.pendingThrow;
+  let thrown = undefinedValue();
+  if (threw) thrown = runtime.takePending();
+  const interrupted = runtime.terminating;
+  if (!threw && !interrupted) return true;
+  runtime.embedderError = true;
+  runtime.embedderInterrupted = interrupted;
+  runtime.embedderResult = thrown;
+  return false;
+}
+
+// `length` bytes at `address`: a name the embedder passed.
+function bytesAt(address: usize, length: usize): Array<u8> {
+  let bytes = Array<u8>();
+  let index: usize = 0;
+  while (index < length) {
+    bytes.push(nativeLoadByte(address, index));
+    index = index + 1;
+  }
+  return bytes;
+}
+
+// The operations a host function's service is asked for, numbered as
+// engine/native/zjs_host.h numbers them.
+const HOST_ARGUMENT: u32 = 1;
+const HOST_RESULT: u32 = 2;
+const HOST_ERROR: u32 = 3;
+const HOST_HAD_ERROR: u32 = 4;
+const HOST_INTERRUPTED: u32 = 5;
+const HOST_NEW_STRING: u32 = 6;
+const HOST_STRING_BYTES: u32 = 7;
+const HOST_NEW_OBJECT: u32 = 8;
+const HOST_NEW_ARRAY: u32 = 9;
+const HOST_ARRAY_LENGTH: u32 = 10;
+const HOST_PIN: u32 = 11;
+const HOST_UNPIN: u32 = 12;
+const HOST_PIN_REPLACE: u32 = 13;
+const HOST_ROOT: u32 = 14;
+const HOST_UNROOT: u32 = 15;
+const HOST_ROOT_GET: u32 = 16;
+const HOST_GET_PROPERTY: u32 = 17;
+const HOST_SET_PROPERTY: u32 = 18;
+const HOST_GET_ELEMENT: u32 = 19;
+const HOST_SET_ELEMENT: u32 = 20;
+const HOST_GET_GLOBAL: u32 = 21;
+const HOST_SET_GLOBAL: u32 = 22;
+const HOST_CALL: u32 = 23;
+const HOST_PENDING_WORK: u32 = 24;
+const HOST_GC: u32 = 25;
+const HOST_CELL_COUNT: u32 = 26;
+const HOST_GC_COLLECTIONS: u32 = 27;
+const HOST_GC_PAUSE_TOTAL: u32 = 28;
+const HOST_GC_PAUSE_MAX: u32 = 29;
+const HOST_GC_CELLS_FREED: u32 = 30;
+const HOST_REGISTER: u32 = 31;
+const HOST_GET_THIS: u32 = 32;
+const HOST_THROW: u32 = 33;
+const HOST_SET_INTERRUPT: u32 = 34;
+const HOST_REFUSE: u32 = 35;
+
+// One call a host function made on its own context, on the runtime the
+// interpreter holds. Its arguments are the `argc` registers at `argsBase`.
+function serve(inout runtime: Runtime, argsBase: u32, argc: u32, op: u32, a: u64, b: u64, c: u64, d: u64): u64 {
+  const slot = handleIndex(runtime.embedderHandle);
+  if (op == HOST_ARGUMENT) return exportValue(in runtime, slot, runtime.argument(argsBase, argc, u32(a)));
+  if (op == HOST_RESULT) {
+    if (runtime.embedderError) return VALUE_UNDEFINED;
+    return exportValue(in runtime, slot, runtime.embedderResult);
+  }
+  if (op == HOST_ERROR) {
+    if (!runtime.embedderError) return VALUE_UNDEFINED;
+    return exportValue(in runtime, slot, runtime.embedderResult);
+  }
+  if (op == HOST_HAD_ERROR) return runtime.embedderError ? 1 : 0;
+  if (op == HOST_INTERRUPTED) return runtime.embedderInterrupted ? 1 : 0;
+  if (op == HOST_NEW_STRING) {
+    const bytes = bytesAt(usize(a), usize(b));
+    return newString(inout runtime, slot, in bytes);
+  }
+  if (op == HOST_STRING_BYTES) return u64(stringBytes(inout runtime, slot, a, usize(b)));
+  if (op == HOST_NEW_OBJECT) return newObject(inout runtime, slot);
+  if (op == HOST_NEW_ARRAY) return newArray(inout runtime, slot, u32(a));
+  if (op == HOST_ARRAY_LENGTH) return u64(arrayLength(in runtime, slot, a));
+  if (op == HOST_PIN) {
+    pinValue(inout runtime, slot, a);
+    return 0;
+  }
+  if (op == HOST_UNPIN) {
+    unpinValue(inout runtime);
+    return 0;
+  }
+  if (op == HOST_PIN_REPLACE) {
+    replacePin(inout runtime, slot, a);
+    return 0;
+  }
+  if (op == HOST_ROOT) return u64(rootValue(inout runtime, slot, a));
+  if (op == HOST_UNROOT) {
+    unrootValue(inout runtime, u32(a));
+    return 0;
+  }
+  if (op == HOST_ROOT_GET) return rootedValue(in runtime, slot, u32(a));
+  if (op == HOST_GET_PROPERTY) {
+    const bytes = bytesAt(usize(b), usize(c));
+    const key = keyOf(inout runtime, in bytes);
+    const value = readProperty(inout runtime, slot, a, key);
+    if (!embedderSettle(inout runtime)) return VALUE_UNDEFINED;
+    return exportValue(in runtime, slot, value);
+  }
+  if (op == HOST_SET_PROPERTY) {
+    const bytes = bytesAt(usize(b), usize(c));
+    const key = keyOf(inout runtime, in bytes);
+    writeProperty(inout runtime, slot, a, key, d);
+    const settled = embedderSettle(inout runtime);
+    return 0;
+  }
+  if (op == HOST_GET_ELEMENT) {
+    const value = readProperty(inout runtime, slot, a, indexKey(u32(b)));
+    if (!embedderSettle(inout runtime)) return VALUE_UNDEFINED;
+    return exportValue(in runtime, slot, value);
+  }
+  if (op == HOST_SET_ELEMENT) {
+    writeProperty(inout runtime, slot, a, indexKey(u32(b)), c);
+    const settled = embedderSettle(inout runtime);
+    return 0;
+  }
+  if (op == HOST_GET_GLOBAL) {
+    const bytes = bytesAt(usize(a), usize(b));
+    const key = keyOf(inout runtime, in bytes);
+    const value = readGlobal(inout runtime, key);
+    if (!embedderSettle(inout runtime)) return VALUE_UNDEFINED;
+    return exportValue(in runtime, slot, value);
+  }
+  if (op == HOST_SET_GLOBAL) {
+    const bytes = bytesAt(usize(a), usize(b));
+    const key = keyOf(inout runtime, in bytes);
+    writeGlobal(inout runtime, slot, key, c);
+    const settled = embedderSettle(inout runtime);
+    return 0;
+  }
+  if (op == HOST_CALL) {
+    let callArgs = callArguments(in runtime, slot, usize(c), u32(d));
+    const target = importValue(in runtime, slot, a);
+    const receiver = importValue(in runtime, slot, b);
+    runtime.embedderError = false;
+    runtime.embedderInterrupted = false;
+    let result = runtime.callValue(target, receiver, move callArgs);
+    const threw = runtime.pendingThrow;
+    if (threw) result = runtime.takePending();
+    runtime.embedderInterrupted = runtime.terminating;
+    runtime.embedderError = threw || runtime.terminating;
+    runtime.embedderResult = result;
+    return 0;
+  }
+  if (op == HOST_PENDING_WORK) return u64(pendingWork(in runtime));
+  if (op == HOST_GC) {
+    runtime.collectAll();
+    return 0;
+  }
+  if (op == HOST_CELL_COUNT) return u64(runtime.heap.liveCells());
+  if (op == HOST_GC_COLLECTIONS) return u64(runtime.heap.collections);
+  if (op == HOST_GC_PAUSE_TOTAL) return u64(runtime.gcPauseTotal);
+  if (op == HOST_GC_PAUSE_MAX) return u64(runtime.gcPauseMax);
+  if (op == HOST_GC_CELLS_FREED) return u64(cellsFreed(in runtime));
+  if (op == HOST_REGISTER) {
+    const bytes = bytesAt(usize(a), usize(b));
+    const made = registerHostFunction(inout runtime, runtime.embedderHandle, in bytes, usize(c));
+    const settled = embedderSettle(inout runtime);
+    return exportValue(in runtime, slot, made);
+  }
+  if (op == HOST_GET_THIS) return exportValue(in runtime, slot, runtime.embedderThis);
+  if (op == HOST_THROW) {
+    runtime.embedderThrew = true;
+    runtime.embedderThrown = importValue(in runtime, slot, a);
+    return 0;
+  }
+  if (op == HOST_SET_INTERRUPT) {
+    runtime.setInterruptHandler(usize(a), usize(b));
+    return 0;
+  }
+  if (op == HOST_REFUSE) {
+    const message: String = "this zjs.h call is not available inside a host function";
+    runtime.embedderError = true;
+    runtime.embedderInterrupted = false;
+    runtime.embedderResult = runtime.typeError(in message);
+    return 0;
+  }
+  return 0;
+}
+
 // What the last evaluation produced (zjs_eval and the others return it):
 // undefined when it threw.
 export c function zjs_z_result(handle: usize): u64 {
@@ -767,11 +1188,7 @@ export c function zjs_z_new_string(handle: usize, text: Slice<u8>): u64 {
   const found = retain(handle);
   match (found) {
     some(context) => {
-      return context.state.withLock((inout state): u64 => {
-        const byteCount = bytes.length;
-        const cell = state.runtime.internUtf8(sliceBytes(in bytes, 0, byteCount));
-        return exportValue(in state.runtime, slot, cellValue(cell));
-      });
+      return context.state.withLock((inout state): u64 => newString(inout state.runtime, slot, in bytes));
     }
     none => {
       return VALUE_UNDEFINED;
@@ -784,11 +1201,7 @@ export c function zjs_z_string_bytes(slot: u32, bits: u64, lengthOut: usize): us
   const found = retainSlot(slot);
   match (found) {
     some(context) => {
-      return context.state.withLock((inout state): usize => {
-        const value = importValue(in state.runtime, slot, bits);
-        if (!isCell(value) || !state.runtime.heap.isString(asCell(value))) return 0;
-        return state.textBytes(asCell(value), lengthOut);
-      });
+      return context.state.withLock((inout state): usize => stringBytes(inout state.runtime, slot, bits, lengthOut));
     }
     none => {
       return 0;
@@ -801,11 +1214,7 @@ export c function zjs_z_new_object(handle: usize): u64 {
   const found = retain(handle);
   match (found) {
     some(context) => {
-      return context.state.withLock((inout state): u64 => {
-        const proto = state.runtime.objectProto;
-        const made = state.runtime.heap.allocateObject(proto);
-        return exportValue(in state.runtime, slot, cellValue(made));
-      });
+      return context.state.withLock((inout state): u64 => newObject(inout state.runtime, slot));
     }
     none => {
       return VALUE_UNDEFINED;
@@ -813,21 +1222,12 @@ export c function zjs_z_new_object(handle: usize): u64 {
   }
 }
 
-// zjs_new_array: `length` elements, each undefined.
 export c function zjs_z_new_array(handle: usize, length: u32): u64 {
   const slot = handleIndex(handle);
   const found = retain(handle);
   match (found) {
     some(context) => {
-      return context.state.withLock((inout state): u64 => {
-        const made = state.runtime.heap.allocateArray(length);
-        let index: u32 = 0;
-        while (index < length) {
-          state.runtime.heap.arraySet(made, index, undefinedValue());
-          index = index + 1;
-        }
-        return exportValue(in state.runtime, slot, cellValue(made));
-      });
+      return context.state.withLock((inout state): u64 => newArray(inout state.runtime, slot, length));
     }
     none => {
       return VALUE_UNDEFINED;
@@ -835,16 +1235,12 @@ export c function zjs_z_new_array(handle: usize, length: u32): u64 {
   }
 }
 
-// zjs_array_length: 0 for what is not an array of the context in `slot`.
+// zjs_array_length, for the context in `slot`.
 export c function zjs_z_array_length(slot: u32, bits: u64): u32 {
   const found = retainSlot(slot);
   match (found) {
     some(context) => {
-      return context.state.withLock((in state): u32 => {
-        const value = importValue(in state.runtime, slot, bits);
-        if (!isCell(value) || !state.runtime.heap.isArray(asCell(value))) return 0;
-        return state.runtime.heap.arrayLength(asCell(value));
-      });
+      return context.state.withLock((in state): u32 => arrayLength(in state.runtime, slot, bits));
     }
     none => {
       return 0;
@@ -852,16 +1248,13 @@ export c function zjs_z_array_length(slot: u32, bits: u64): u32 {
   }
 }
 
-// zjs_pin, zjs_unpin, zjs_pin_replace: a stack of values the collector
-// starts from. Replacing with nothing pinned pins.
 export c function zjs_z_pin(handle: usize, bits: u64): void {
   const slot = handleIndex(handle);
   const found = retain(handle);
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        const value = importValue(in state.runtime, slot, bits);
-        state.runtime.hostPins.push(value);
+        pinValue(inout state.runtime, slot, bits);
       });
     }
     none => {
@@ -874,7 +1267,7 @@ export c function zjs_z_unpin(handle: usize): void {
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        const dropped = state.runtime.hostPins.pop();
+        unpinValue(inout state.runtime);
       });
     }
     none => {
@@ -888,13 +1281,7 @@ export c function zjs_z_pin_replace(handle: usize, bits: u64): void {
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        const value = importValue(in state.runtime, slot, bits);
-        const held = state.runtime.hostPins.length;
-        if (held == 0) {
-          state.runtime.hostPins.push(value);
-        } else {
-          state.runtime.hostPins[held - 1] = value;
-        }
+        replacePin(inout state.runtime, slot, bits);
       });
     }
     none => {
@@ -902,27 +1289,12 @@ export c function zjs_z_pin_replace(handle: usize, bits: u64): void {
   }
 }
 
-// zjs_root: a place in the table of roots, as its index plus one (0 is
-// no root); zjs_unroot gives the place back, and zjs_root_get reads it,
-// undefined for a place that holds nothing.
 export c function zjs_z_root(handle: usize, bits: u64): u32 {
   const slot = handleIndex(handle);
   const found = retain(handle);
   match (found) {
     some(context) => {
-      return context.state.withLock((inout state): u32 => {
-        const value = importValue(in state.runtime, slot, bits);
-        match (state.runtime.hostRootsFree.pop()) {
-          some(place) => {
-            state.runtime.hostRoots[usize(place)] = value;
-            return place + 1;
-          }
-          none => {
-            state.runtime.hostRoots.push(value);
-            return u32(state.runtime.hostRoots.length);
-          }
-        }
-      });
+      return context.state.withLock((inout state): u32 => rootValue(inout state.runtime, slot, bits));
     }
     none => {
       return 0;
@@ -935,11 +1307,7 @@ export c function zjs_z_unroot(handle: usize, root: u32): void {
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        if (root == 0 || usize(root) > state.runtime.hostRoots.length) return;
-        const at = usize(root - 1);
-        if (isDeleted(state.runtime.hostRoots[at])) return;
-        state.runtime.hostRoots[at] = deletedValue();
-        state.runtime.hostRootsFree.push(root - 1);
+        unrootValue(inout state.runtime, root);
       });
     }
     none => {
@@ -952,10 +1320,7 @@ export c function zjs_z_root_get(handle: usize, root: u32): u64 {
   const found = retain(handle);
   match (found) {
     some(context) => {
-      return context.state.withLock((in state): u64 => {
-        if (root == 0 || usize(root) > state.runtime.hostRoots.length) return VALUE_UNDEFINED;
-        return exportValue(in state.runtime, slot, state.runtime.hostRoots[usize(root - 1)]);
-      });
+      return context.state.withLock((in state): u64 => rootedValue(in state.runtime, slot, root));
     }
     none => {
       return VALUE_UNDEFINED;
@@ -1001,10 +1366,8 @@ export c function zjs_z_get_property(handle: usize, object: u64, name: Slice<u8>
   match (found) {
     some(context) => {
       return context.state.withLock((inout state): u64 => {
-        const target = importValue(in state.runtime, slot, object);
         const key = keyOf(inout state.runtime, in bytes);
-        let value = undefinedValue();
-        if (!refuseNullish(inout state.runtime, target, key, true)) value = state.runtime.getProperty(target, key);
+        const value = readProperty(inout state.runtime, slot, object, key);
         if (!state.settle()) return VALUE_UNDEFINED;
         return exportValue(in state.runtime, slot, value);
       });
@@ -1022,12 +1385,8 @@ export c function zjs_z_set_property(handle: usize, object: u64, name: Slice<u8>
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        const target = importValue(in state.runtime, slot, object);
-        const stored = importValue(in state.runtime, slot, value);
         const key = keyOf(inout state.runtime, in bytes);
-        if (!refuseNullish(inout state.runtime, target, key, false)) {
-          const accepted = state.runtime.setProperty(target, key, stored);
-        }
+        writeProperty(inout state.runtime, slot, object, key, value);
         const settled = state.settle();
       });
     }
@@ -1042,10 +1401,7 @@ export c function zjs_z_get_element(handle: usize, object: u64, index: u32): u64
   match (found) {
     some(context) => {
       return context.state.withLock((inout state): u64 => {
-        const target = importValue(in state.runtime, slot, object);
-        const key = indexKey(index);
-        let value = undefinedValue();
-        if (!refuseNullish(inout state.runtime, target, key, true)) value = state.runtime.getProperty(target, key);
+        const value = readProperty(inout state.runtime, slot, object, indexKey(index));
         if (!state.settle()) return VALUE_UNDEFINED;
         return exportValue(in state.runtime, slot, value);
       });
@@ -1062,12 +1418,7 @@ export c function zjs_z_set_element(handle: usize, object: u64, index: u32, valu
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        const target = importValue(in state.runtime, slot, object);
-        const stored = importValue(in state.runtime, slot, value);
-        const key = indexKey(index);
-        if (!refuseNullish(inout state.runtime, target, key, false)) {
-          const accepted = state.runtime.setProperty(target, key, stored);
-        }
+        writeProperty(inout state.runtime, slot, object, indexKey(index), value);
         const settled = state.settle();
       });
     }
@@ -1076,9 +1427,6 @@ export c function zjs_z_set_element(handle: usize, object: u64, index: u32, valu
   }
 }
 
-// zjs_get_global, zjs_set_global: a property of the global object, which
-// a script's var and function declarations are, and which a name no
-// script declared becomes when it is set.
 export c function zjs_z_get_global(handle: usize, name: Slice<u8>): u64 {
   const bytes = sliceToBytes(name);
   const slot = handleIndex(handle);
@@ -1087,8 +1435,7 @@ export c function zjs_z_get_global(handle: usize, name: Slice<u8>): u64 {
     some(context) => {
       return context.state.withLock((inout state): u64 => {
         const key = keyOf(inout state.runtime, in bytes);
-        const global = cellValue(state.runtime.globalObject);
-        const value = state.runtime.getProperty(global, key);
+        const value = readGlobal(inout state.runtime, key);
         if (!state.settle()) return VALUE_UNDEFINED;
         return exportValue(in state.runtime, slot, value);
       });
@@ -1106,10 +1453,8 @@ export c function zjs_z_set_global(handle: usize, name: Slice<u8>, value: u64): 
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        const stored = importValue(in state.runtime, slot, value);
         const key = keyOf(inout state.runtime, in bytes);
-        const global = cellValue(state.runtime.globalObject);
-        const accepted = state.runtime.setProperty(global, key, stored);
+        writeGlobal(inout state.runtime, slot, key, value);
         const settled = state.settle();
       });
     }
@@ -1126,12 +1471,7 @@ export c function zjs_z_call(handle: usize, callee: u64, thisValue: u64, argv: u
   match (found) {
     some(context) => {
       context.state.withLock((inout state): void => {
-        let args = Array<Value>();
-        let index: u32 = 0;
-        while (index < argc) {
-          args.push(importValue(in state.runtime, slot, nativeLoadWord(argv, usize(index))));
-          index = index + 1;
-        }
+        let args = callArguments(in state.runtime, slot, argv, argc);
         const target = importValue(in state.runtime, slot, callee);
         const receiver = importValue(in state.runtime, slot, thisValue);
         state.call(target, receiver, move args);
@@ -1157,12 +1497,11 @@ export c function zjs_z_drain_microtasks(handle: usize): void {
   }
 }
 
-// zjs_has_pending_work: 1 while a job is queued. There are no timers.
 export c function zjs_z_has_pending_work(handle: usize): i32 {
   const found = retain(handle);
   match (found) {
     some(context) => {
-      return context.state.withLock((in state): i32 => state.runtime.jobCursor < state.runtime.jobEnd ? 1 : 0);
+      return context.state.withLock((in state): i32 => pendingWork(in state.runtime));
     }
     none => {
       return 0;
@@ -1227,11 +1566,7 @@ export c function zjs_z_gc_cells_freed(handle: usize): u32 {
   const found = retain(handle);
   match (found) {
     some(context) => {
-      return context.state.withLock((in state): u32 => {
-        const made = state.runtime.heap.cellsAllocated();
-        const live = f64(state.runtime.heap.liveCells());
-        return made > live ? u32(made - live) : 0;
-      });
+      return context.state.withLock((in state): u32 => cellsFreed(in state.runtime));
     }
     none => {
       return 0;

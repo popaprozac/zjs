@@ -797,6 +797,31 @@ export struct Runtime {
   hostPins: Array<Value> = Array<Value>();
   hostRoots: Array<Value> = Array<Value>();
   hostRootsFree: Array<u32> = Array<u32>();
+  // The embedder's host functions (zjs_register_host_function): the C
+  // function of each, by the index its cell holds as its data, and the
+  // context handle they were registered on. While one runs, the zjs_*
+  // calls it makes on its context come back in through the service the
+  // engine lends it (lib.zs, callEmbedder), on this runtime, and keep
+  // their own state here: its receiver (zjs_get_this), whether the last
+  // of them that can throw did and its value (zjs_had_error,
+  // zjs_get_error), and what zjs_throw asked to throw when it returns.
+  // The values are roots.
+  embedderFunctions: Array<usize> = Array<usize>();
+  embedderHandle: usize = 0;
+  embedderThis: Value = undefinedValue();
+  embedderError: boolean = false;
+  embedderInterrupted: boolean = false;
+  embedderResult: Value = undefinedValue();
+  embedderThrew: boolean = false;
+  embedderThrown: Value = undefinedValue();
+  // zjs_string_bytes: the UTF-8 copies of strings lent to the embedder,
+  // in a table with open addressing (lib.zs, textBytes): a string's cell
+  // (0 for a free place), its copy's address (0 once freed), and the
+  // copy's length. The copies go with the runtime.
+  lentCells: Array<u32> = Array<u32>();
+  lentBuffers: Array<usize> = Array<usize>();
+  lentLengths: Array<usize> = Array<usize>();
+  lentCount: usize = 0;
   // The key list of each hidden class an object of which has been
   // listed (KeyPlan), and for a class its list's place in keyPlans plus
   // one, 0 for none yet.
@@ -2453,6 +2478,11 @@ export struct Runtime {
   // on whatever thread drops the last reference to its context.
   deinit on thread.any {
     this.regexBackend.release();
+    let index: usize = 0;
+    while (index < this.lentBuffers.length) {
+      if (this.lentBuffers[index] != 0) freeLentText(this.lentBuffers[index]);
+      index = index + 1;
+    }
   }
 
   function hasErrorData(value: Value): boolean {
@@ -6580,6 +6610,12 @@ export struct Runtime {
       this.heap.markValue(rooted);
       index = index + 1;
     }
+    const embedderThis = this.embedderThis;
+    this.heap.markValue(embedderThis);
+    const embedderResult = this.embedderResult;
+    this.heap.markValue(embedderResult);
+    const embedderThrown = this.embedderThrown;
+    this.heap.markValue(embedderThrown);
     const pendingValue = this.pendingValue;
     this.heap.markValue(pendingValue);
     const lastError = this.lastError;
@@ -11293,6 +11329,11 @@ export function createRuntime(): Runtime {
 // Mirrors the reference's int32 fast paths: an int32 result is produced
 // only when it is exactly representable, otherwise the operation is
 // performed in doubles.
+
+// A copy lent to the embedder (lib.zs, textBytes), given back.
+function freeLentText(buffer: usize): void = raw c {
+  free((void *)buffer);
+}
 
 function nativePow(base: f64, exponent: f64): f64 = raw c {
   return __builtin_pow(base, exponent);

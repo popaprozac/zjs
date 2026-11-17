@@ -72,6 +72,11 @@ echo "[3i/6] the native stack's limit, on the main thread and on small ones"
 clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" \
   -o "$OUT/stack_test" "$ROOT/tests/stack_test.c" "$OUT/libzjs.a" -lpthread
 "$OUT/stack_test"
+
+echo "[3j/6] host functions across the public ABI"
+clang -std=c11 -O2 -Wall -Wextra -Werror -I "$ROOT/include" \
+  -o "$OUT/abi_host_test" "$ROOT/tests/abi_host_test.c" "$OUT/libzjs.a"
+"$OUT/abi_host_test"
 echo "[4/6] test262 runner (unmodified)"
 clang -std=c11 -O2 -I "$ROOT/include" \
   -o "$OUT/test262_runner" "$ROOT/tests/test262_runner.c" "$OUT/libzjs.a"

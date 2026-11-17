@@ -79,17 +79,46 @@ no-ops.
 
 ### Reentrancy and callbacks
 
-There are no host callbacks at the ABI (`zjs_register_host_function` is a
-placeholder); the only host functions are the ones the `zjsz` tool
-installs in Z. When callbacks arrive, a callback runs inside its
-context's lock: an ABI call on that same context from within it would
-wait on its own lock, and a call on another context can deadlock too
-(A calls B while B's evaluation calls A, or two threads acquire two
-context locks in opposite orders). The entry path will therefore refuse
-a call on a context whose lock is held by the calling thread rather than
-block, and cross-context calls from callbacks are not promised safe. The
-owner check needs a thread identity the first tier of Z does not expose;
-callbacks stay deferred until it does.
+A host function (`zjs_register_host_function`) runs inside its context's
+lock, held by the call that is running the JavaScript that called it. A
+zjs_* call it makes on that context must not take the lock again, and
+does not: when JavaScript calls a host function, the engine calls it
+through `zjs_host_call` (`engine/native/zjs_host.c`) and lends it a
+closure over the runtime the interpreter holds, for the length of the
+call. `zjs_host_call` keeps that service on a per-thread list of running
+host calls (a pthread key, made by the first host call: a C thread-local
+would cost every process that links the engine at launch), and the shim
+sends every call on a context that has a host call running on this
+thread through the innermost one (`zjs_host_call_for_handle`, and
+`zjs_host_call_for_slot` for `zjs_string_bytes` and `zjs_array_length`).
+A call on that context from another thread is not on the list, and waits
+for the lock as any other does.
+
+Inside a host function:
+
+- Values, strings, properties, elements, globals, `zjs_call`, pins,
+  roots, `zjs_register_host_function`, the interrupt handler, and the
+  collector's calls work as outside. `zjs_get_this` is the receiver;
+  outside a host function it is `undefined`. What `zjs_throw` was given is
+  thrown when the function returns; outside one it does nothing.
+- The error and result of its calls (`zjs_had_error`, `zjs_get_error`,
+  `zjs_is_interrupted`) are its own: each host function starts with none,
+  and the enclosing one's come back when it returns.
+- `zjs_call` runs no promise jobs, and `zjs_drain_microtasks` does
+  nothing: the jobs run when the call that entered the engine returns.
+- The evaluators, `zjs_compile_to_bytecode`, and the installers are
+  refused: they do nothing, and the error is a `TypeError`.
+- An interrupt that stops JavaScript the host function called is its
+  error (`zjs_is_interrupted` answers 1), and the termination goes on:
+  nothing more runs, its `zjs_throw` is dropped, and the call that
+  entered the engine ends interrupted.
+
+Host functions nest: JavaScript a host function calls may call another,
+on the same context or, through a context it evaluates, on another; each
+call on a context finds that context's innermost host call. Two threads
+that wait on each other's contexts can still deadlock (thread 1 inside
+A's host function calls B while thread 2 inside B's calls A); that is the
+embedder's to avoid.
 
 ### Initialization and teardown
 
@@ -118,8 +147,9 @@ Promise jobs are drained at the end of every evaluation and of every
 `zjs_call` before control returns to the host. A property read or write
 through the ABI can run an accessor that queues a job, and that job
 waits: `zjs_has_pending_work` answers 1, and `zjs_drain_microtasks`, the
-next `zjs_call`, or the next evaluation runs it. A context freed with
-jobs queued discards them. There are no timers yet (`zjs_next_timer_ms`
+next `zjs_call`, or the next evaluation runs it. A job queued while a
+host function runs waits for the call that entered the engine. A context
+freed with jobs queued discards them. There are no timers yet (`zjs_next_timer_ms`
 and `zjs_run_pending_timers` are placeholders), so
 `zjs_has_pending_work` reports jobs only.
 
@@ -225,6 +255,16 @@ drain; an endless call and an endless getter stopped by the interrupt
 handler; twenty thousand objects given back and counted; and another
 context's, a freed context's, and no context's values refused.
 
+`tests/abi_host_test.c`, run by `build.sh`, is the evidence for host
+functions: called from JavaScript with every count of arguments, spread,
+bound, and passed to a builtin; their receiver and their throw; every
+kind of call made from inside one, nested thirty deep through
+JavaScript, with its own error; what is refused there; a job queued
+inside that waits; strings read and collections run inside; a host
+function registered from inside one; an interrupt inside one that ends
+the evaluation and runs nothing after; and a host function that
+evaluates another context whose host function reads the first.
+
 ## ABI placeholders
 
 The shim provides the contexts and their installers, the evaluators and
@@ -232,12 +272,12 @@ The shim provides the contexts and their installers, the evaluators and
 interrupt handler, `zjs_version`, the values of the Values section (the
 constructors, predicates, and unboxers, `zjs_new_string`,
 `zjs_string_bytes`, `zjs_new_object`, `zjs_new_array`,
-`zjs_array_length`, pins, and roots), and the calls of the section
-above: properties, elements, and globals, `zjs_call`,
-`zjs_drain_microtasks`, `zjs_has_pending_work`, `zjs_gc`,
-`zjs_cell_count`, and the GC statistics. The rest of the header is
-unimplemented, and calling it is a link error: host functions
-(`zjs_register_host_function`, `zjs_get_this`, `zjs_throw`);
+`zjs_array_length`, pins, and roots), the calls of the section above
+(properties, elements, and globals, `zjs_call`, `zjs_drain_microtasks`,
+`zjs_has_pending_work`, `zjs_gc`, `zjs_cell_count`, and the GC
+statistics), and host functions (`zjs_register_host_function`,
+`zjs_get_this`, `zjs_throw`; Reentrancy and callbacks). The rest of the
+header is unimplemented, and calling it is a link error:
 `zjs_next_timer_ms` and `zjs_run_pending_timers`;
 `zjs_set_process_argv`; `zjs_new_minimal_context`,
 `zjs_install_stdlib_extensions`, the `zjs_install_web_*` installers,
@@ -302,8 +342,9 @@ contexts are built outside the registry lock again).
 | Same-context rules explicit | Admission and locking, Reentrancy; evidence 3 |
 | Real init / thread registration, no lying hooks | Initialization; evidence 0 and 8; no hooks at all since the root is shareable |
 | Init failure and partial teardown safe | Initialization; evidence 4 to 6 |
-| Cycles, contexts, jobs, callbacks exercised | Evidence 1 to 7; callbacks deferred |
+| Cycles, contexts, jobs, callbacks exercised | Evidence 1 to 7; callbacks: Reentrancy and callbacks, `tests/abi_host_test.c` |
 | ABI placeholders tracked | ABI placeholders |
 | Values cross the ABI and outlive collections | Values; `tests/abi_values_test.c` |
 | Properties, globals, and calls from C | Properties, globals, and calls; `tests/abi_calls_test.c` |
+| C called from JavaScript | Reentrancy and callbacks; `tests/abi_host_test.c` |
 | Stale comments updated | lib.zs and the shim |

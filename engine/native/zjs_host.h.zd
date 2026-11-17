@@ -1,0 +1,8 @@
+declare module "zjs_host.h" {
+  export function zjs_host_call(entry: _, handle: _, slot: _, argc: _, context: _, in service: _): _ {
+    callback service {
+      context context;
+      invoked repeatedly;
+    }
+  }
+}
