@@ -57,13 +57,17 @@ The front end (lexer, parser, compiler) is 29% of the engine. The largest
 single optional piece is `libunicode` (60 KB, 38 KB once dead-stripped),
 which only Unicode-aware regular expressions and case mapping need.
 
-Not yet in the engine, and each will add to it: Proxy, typed arrays and
-ArrayBuffer, BigInt, WeakRef. ES modules are opt-in by what an embedder
+Not yet in the engine, and each will add to it: Proxy, BigInt, WeakRef,
+DataView, and the rest of the typed arrays (their prototype methods beyond
+the getters and iterators, `from` and `of`, resizable buffers,
+Float16Array, the BigInt kinds). ES modules are opt-in by what an embedder
 calls: a front end that compiles only scripts links none of the module
 compiler or linker (under 5 KB of `__TEXT` goes to the parser and
 compiler for all, 1.2 KB to a bytecode-only runtime; docs/modules.md).
-Opt-in: JSON, RegExp, Date, Map / Set / WeakMap / WeakSet, Promise, and
-Reflect, each with its own installer on a core context; the frozen ABI's
+Opt-in: JSON, RegExp, Date, Map / Set / WeakMap / WeakSet, Promise,
+Reflect, and ArrayBuffer with the nine number typed arrays, each with its
+own installer on a core context (`zjs_install_typed_arrays`, for the
+last, an addition to the frozen header); the frozen ABI's
 other installers (`zjs_new_minimal_context`, `zjs_install_web_*`) are not
 implemented by the Z engine yet.
 

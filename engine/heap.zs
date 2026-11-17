@@ -53,6 +53,10 @@ export const TAG_TABLE: u8 = 18;
 // An iteration under way: slot 0 its iterator, slot 1 that iterator's
 // `next` as read when the iterator was got. No program value is one.
 export const TAG_ITERATION: u8 = 19;
+// An ArrayBuffer's bytes: the cell's payload numbers a buffer in the
+// table string buffers use, which the cell owns (see Bytes). No program
+// value is one.
+export const TAG_BYTES: u8 = 20;
 
 // Beyond the reference's tags: an environment is its own cell here, where
 // the reference keeps captured bindings in a property bag.
@@ -118,6 +122,11 @@ export const FLAG_BOUND: u8 = 32;
 // A string cell that is the canonical spelling of an array index, set
 // when it is interned: the key it makes names an element.
 export const FLAG_INDEX_KEY: u8 = 128;
+// On an object (the same bit, which only strings and functions otherwise
+// use): an ArrayBuffer, typed array, or DataView, whose leading slots hold
+// its internal data, the first of them which of the three it is
+// (runtime.zs, Binary data).
+export const FLAG_BINARY: u8 = 16;
 
 // A cell's mark: 0 while it is young; MARK_OLD once it has survived a
 // collection; MARK_LIVE (old and reached) while a full collection that has
@@ -1010,7 +1019,7 @@ export struct Heap {
         // Only a cell that owns something is given back and rewritten;
         // any other is unmarked, which is all that says a handle is free.
         const tag = header.tag;
-        if ((tag == TAG_OBJECT && (header.payload & DICT_BIT) != 0) || (tag == TAG_STRING && ((header.payload & ARENA_BIT) == 0 || (header.flags & FLAG_LENT) != 0)) || tag == TAG_TABLE || (tag == TAG_ARRAY && (header.flags & FLAG_ELEMENT_ATTRS) != 0)) {
+        if ((tag == TAG_OBJECT && (header.payload & DICT_BIT) != 0) || (tag == TAG_STRING && ((header.payload & ARENA_BIT) == 0 || (header.flags & FLAG_LENT) != 0)) || tag == TAG_TABLE || tag == TAG_BYTES || (tag == TAG_ARRAY && (header.flags & FLAG_ELEMENT_ATTRS) != 0)) {
           this.releaseCell(handle, tag);
         } else {
           this.headers[usize(handle)].mark = 0;
@@ -1378,7 +1387,9 @@ export struct Heap {
     if (tag == TAG_OBJECT && (this.cellHeader(handle).payload & DICT_BIT) != 0) {
       this.releaseDictionary(this.cellHeader(handle).payload & (DICT_BIT - 1));
     }
-    if (tag == TAG_STRING && (this.cellHeader(handle).payload & ARENA_BIT) == 0) {
+    // A buffer string's or an ArrayBuffer's bytes, through one call, so
+    // releaseStringBuffer stays inlined here.
+    if ((tag == TAG_STRING && (this.cellHeader(handle).payload & ARENA_BIT) == 0) || tag == TAG_BYTES) {
       const stringIndex = this.cellHeader(handle).payload;
       this.releaseStringBuffer(stringIndex);
     }
@@ -2313,6 +2324,40 @@ export struct Heap {
     return u32(this.dictionaries.length - this.freeDictionaryCount);
   }
 
+  // --- Bytes ---
+  //
+  // An ArrayBuffer's bytes, `count` of them, all zero: a TAG_BYTES cell
+  // over a buffer in the string buffers' table, which it alone owns. The
+  // bytes count toward the next collection as a string buffer's do, are
+  // aged when the cell is, and go back when it dies. The runtime keeps the
+  // cell in the ArrayBuffer object, and drops it there to detach.
+  function allocateBytes(inout this, count: usize): u32 {
+    let bytes = Array<u8>.withCapacity(count);
+    bytes.appendRepeated(0, count);
+    const buffer = this.adoptBuffer(move bytes);
+    const handle = this.allocate(TAG_BYTES, 0);
+    this.youngOwners.push(handle);
+    this.headers[usize(handle)].payload = buffer;
+    return handle;
+  }
+
+  function isBytes(handle: u32): boolean {
+    return this.cellHeader(handle).tag == TAG_BYTES;
+  }
+
+  function bytesLength(handle: u32): usize {
+    return this.strings[usize(this.cellHeader(handle).payload)].length;
+  }
+
+  function byteAt(handle: u32, index: usize): u8 {
+    return this.strings[usize(this.cellHeader(handle).payload)][index];
+  }
+
+  function setByteAt(inout this, handle: u32, index: usize, value: u8): void {
+    const buffer = usize(this.cellHeader(handle).payload);
+    this.strings[buffer][index] = value;
+  }
+
   // --- Tables ---
   //
   // A Map's or Set's entries live outside the slot arena, in a table that
@@ -3126,7 +3171,7 @@ export struct Heap {
   // are old with it.
   function ageBuffer(inout this, handle: u32): void {
     const header = this.cellHeader(handle);
-    if (header.tag != TAG_STRING || (header.payload & ARENA_BIT) != 0) return;
+    if (header.tag != TAG_BYTES && (header.tag != TAG_STRING || (header.payload & ARENA_BIT) != 0)) return;
     const at = usize(header.payload);
     const length = u32(this.strings[at].length);
     const gained = usize(length - this.bufferOld[at]);
@@ -5505,4 +5550,28 @@ test "a full collection slides the survivors' slots and string bytes down in pla
   expect(heap.smallBytes.length).toEqual(eight);
   expect(heap.stringsEqual(abcdef, heap.allocateText("abcdef"))).toEqual(true);
   expect(heap.stringsEqual(abcdefgh, heap.allocateText("abcdefgh"))).toEqual(true);
+}
+
+test "an ArrayBuffer's bytes are zero, written in place, counted, and given back when the cell dies" {
+  let heap = createHeap();
+  const kept = heap.allocateBytes(16);
+  const dropped = heap.allocateBytes(5000);
+  expect(heap.isBytes(kept)).toEqual(true);
+  expect(heap.bytesLength(kept)).toEqual(16);
+  expect(heap.byteAt(kept, 15)).toEqual(0);
+  heap.setByteAt(kept, 3, 200);
+  expect(heap.byteAt(kept, 3)).toEqual(200);
+  expect(heap.youngBufferBytes).toEqual(5016);
+  let roots = Array<u32>();
+  roots.push(kept);
+  const freeBefore = heap.freeStringCount;
+  collectMinor(inout heap, in roots);
+  expect(heap.freeStringCount).toEqual(freeBefore + 1);
+  expect(heap.byteAt(kept, 3)).toEqual(200);
+  expect(heap.oldBufferBytes).toEqual(16);
+  // Old, it is given back by the full collection it does not survive.
+  let none = Array<u32>();
+  collectFull(inout heap, in none);
+  expect(heap.oldBufferBytes).toEqual(0);
+  expect(heap.freeStringCount).toEqual(freeBefore + 2);
 }

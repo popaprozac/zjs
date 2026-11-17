@@ -26,7 +26,7 @@ int main(void) {
     return 1;
   }
   check(core, "optional builtins absent",
-        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect'])"
+        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect', 'ArrayBuffer', 'Uint8Array', 'Float64Array'])"
         "  if (typeof globalThis[name] !== 'undefined') throw new Error(name);"
         "if ('match' in String.prototype || 'search' in String.prototype || 'matchAll' in String.prototype) throw 1;");
   check(core, "core builtins present",
@@ -58,11 +58,13 @@ int main(void) {
   zjs_install_collections(core);
   zjs_install_promise(core);
   zjs_install_reflect(core);
+  zjs_install_typed_arrays(core);
   check(core, "installed builtins work",
         "if (JSON.stringify({ a: [1] }) !== '{\"a\":[1]}') throw 1;"
         "if (!/b+/.test('abbc') || 'abbc'.match(/b+/)[0] !== 'bb' || 'a1b2'.search(/\\d/) !== 1) throw 2;"
         "if (new Date(0).getTime() !== 0 || new Map([[1, 2]]).get(1) !== 2 || !new Set([1]).has(1)) throw 3;"
-        "if (Reflect.ownKeys({ q: 1 })[0] !== 'q' || typeof Promise.resolve(1).then !== 'function') throw 4;");
+        "if (Reflect.ownKeys({ q: 1 })[0] !== 'q' || typeof Promise.resolve(1).then !== 'function') throw 4;"
+        "var bytes = new Uint8Array(new ArrayBuffer(4)); bytes[0] = 257; if (bytes[0] !== 1 || new Float64Array([0.5])[0] !== 0.5) throw 5;");
   check(core, "installing twice changes nothing",
         "var R = RegExp, J = JSON; globalThis.saved = [R, J];");
   zjs_install_regexp(core);
@@ -73,7 +75,7 @@ int main(void) {
 
   ZjsContext *full = zjs_new_context();
   check(full, "the full context has everything",
-        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect'])"
+        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect', 'ArrayBuffer', 'Int8Array', 'Uint8ClampedArray'])"
         "  if (typeof globalThis[name] === 'undefined') throw new Error(name);"
         "if (typeof ''.match !== 'function' || !/a/.test('a')) throw 1;");
   zjs_free_context(full);

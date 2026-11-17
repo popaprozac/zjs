@@ -72,6 +72,7 @@ void zjs_install_date(ZjsContext* ctx);         /* Date */
 void zjs_install_collections(ZjsContext* ctx);  /* Map, Set, WeakMap, WeakSet */
 void zjs_install_promise(ZjsContext* ctx);      /* Promise */
 void zjs_install_reflect(ZjsContext* ctx);      /* Reflect */
+void zjs_install_typed_arrays(ZjsContext* ctx); /* ArrayBuffer and the typed arrays */
 /* The source compiler, for eval and the Function constructor in a context
  * that has compiled no source of its own: zjs_new_context has it, and
  * zjs_eval and zjs_compile_to_bytecode bring it to any context they run

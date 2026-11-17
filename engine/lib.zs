@@ -31,6 +31,7 @@ import { installDate } from "./builtins/date.zs";
 import { installCollections } from "./builtins/collections.zs";
 import { installPromise } from "./builtins/promise.zs";
 import { installReflect } from "./builtins/reflect.zs";
+import { installTypedArrays } from "./builtins/typedarray.zs";
 import { installCompiler, installModuleCompiler } from "./compile.zs";
 import { evaluateModule, evaluateModuleSource, installModuleSupport } from "./modules.zs";
 import { installFileLoader } from "./module_files.zs";
@@ -262,6 +263,10 @@ export c function zjs_z_install_promise(handle: usize): void {
 
 export c function zjs_z_install_reflect(handle: usize): void {
   installInto(handle, installReflect);
+}
+
+export c function zjs_z_install_typed_arrays(handle: usize): void {
+  installInto(handle, installTypedArrays);
 }
 
 // Run an installer on a live context, under its lock; installing a

@@ -130,6 +130,37 @@ function reflectSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   const target = runtime.argument(argsBase, argc, 0);
   const method: String = "set";
   if (!requireTarget(inout runtime, target, in method)) return undefinedValue();
+  // A typed array's element with another receiver (the typed array's
+  // [[Set]]): an invalid index succeeds doing nothing; a valid one is a
+  // writable data property, so the receiver gets the value as its own,
+  // unconverted, if it can hold one.
+  if (argc >= 4 && runtime.isTypedArray(target)) {
+    const receiver = runtime.argument(argsBase, argc, 3);
+    const key = runtime.argument(argsBase, argc, 1);
+    const typed = runtime.typedKey(key);
+    if (typed.numeric && !runtime.sameValue(target, receiver)) {
+      if (!runtime.typedValidIndex(asCell(target), typed.index)) return booleanValue(true);
+      if (!runtime.isObjectLike(receiver)) return booleanValue(false);
+      const existing = runtime.getOwnDescriptor(receiver, key);
+      if (runtime.pendingThrow) return undefinedValue();
+      let desc = runtime.emptyInput();
+      desc.hasValue = true;
+      desc.value = runtime.argument(argsBase, argc, 2);
+      if (existing.present) {
+        if ((existing.attr & PROP_ACCESSOR) != 0 || (existing.attr & PROP_WRITABLE) == 0) return booleanValue(false);
+      } else {
+        desc.hasWritable = true;
+        desc.writable = true;
+        desc.hasEnumerable = true;
+        desc.enumerable = true;
+        desc.hasConfigurable = true;
+        desc.configurable = true;
+      }
+      const defined = runtime.defineOwnProperty(receiver, key, desc);
+      if (runtime.pendingThrow) return undefinedValue();
+      return booleanValue(defined);
+    }
+  }
   const accepted = runtime.setProperty(target, runtime.argument(argsBase, argc, 1), runtime.argument(argsBase, argc, 2));
   if (runtime.pendingThrow) return undefinedValue();
   return booleanValue(accepted);

@@ -16,7 +16,7 @@ import host from "./native/zjs_host.h";
 import { stackAddress } from "./stack.zs";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
-import { Heap, createHeap, bytesOf, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
+import { Heap, createHeap, bytesOf, FLAG_BINARY, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CHAIN_LIMIT } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -133,6 +133,7 @@ const SPARSE_GAP: i64 = 1024;
 const SET_NOT_INHERITED: i32 = 0;
 const SET_DONE: i32 = 1;
 const SET_REFUSED: i32 = 2;
+const SET_PASSED: i32 = 3;
 
 const JOB_REACTION: i32 = 0;
 const JOB_THENABLE: i32 = 1;
@@ -431,6 +432,31 @@ export const FEATURE_DATE: u32 = 4;
 export const FEATURE_COLLECTIONS: u32 = 8;
 export const FEATURE_PROMISE: u32 = 16;
 export const FEATURE_REFLECT: u32 = 32;
+export const FEATURE_TYPED_ARRAYS: u32 = 64;
+
+// Binary data: an object with FLAG_BINARY holds its internal data in its
+// leading slots (heap.leadingSlot), the first saying which it is. An
+// ArrayBuffer: [BINARY_BUFFER, its bytes (a TAG_BYTES cell, null once
+// detached), its byte length]. A typed array: [BINARY_TYPED, its
+// ArrayBuffer, byte offset, length in elements, element kind].
+export const BINARY_BUFFER: i32 = 0;
+export const BINARY_TYPED: i32 = 1;
+export const ELEMENT_INT8: i32 = 0;
+export const ELEMENT_UINT8: i32 = 1;
+export const ELEMENT_UINT8_CLAMPED: i32 = 2;
+export const ELEMENT_INT16: i32 = 3;
+export const ELEMENT_UINT16: i32 = 4;
+export const ELEMENT_INT32: i32 = 5;
+export const ELEMENT_UINT32: i32 = 6;
+export const ELEMENT_FLOAT32: i32 = 7;
+export const ELEMENT_FLOAT64: i32 = 8;
+
+// A property key of a typed array read as the specification's
+// CanonicalNumericIndexString: whether it is one, and the number.
+export struct TypedKey {
+  numeric: boolean;
+  index: f64;
+}
 
 function regExpMissing(inout runtime: Runtime, pattern: Value, flags: Value): Value on thread.any {
   const message: String = "RegExp is not installed";
@@ -822,6 +848,18 @@ export struct Runtime {
   lentBuffers: Array<usize> = Array<usize>();
   lentLengths: Array<usize> = Array<usize>();
   lentCount: usize = 0;
+  // Binary data (builtins/typedarray.zs): the classes its objects are made
+  // with, the prototypes, and the per-kind prototypes of typed arrays by
+  // element kind. 0 until installTypedArrays.
+  bufferClass: u32 = 0;
+  typedClass: u32 = 0;
+  arrayBufferProto: u32 = 0;
+  arrayBufferCtor: u32 = 0;
+  typedArrayProto: u32 = 0;
+  typedArrayProtos: Array<u32> = Array<u32>();
+  // Whether a typed array has been made: until then no prototype chain
+  // holds one, and the walks up a chain need not look for one.
+  typedArraysMade: boolean = false;
   // The key list of each hidden class an object of which has been
   // listed (KeyPlan), and for a class its list's place in keyPlans plus
   // one, 0 for none yet.
@@ -2626,8 +2664,15 @@ export struct Runtime {
   // Own-or-inherited property of an object cell, an accessor's getter
   // called with `receiver` as this.
   function lookupProperty(inout this, handle: u32, atom: u32, receiver: Value): Value {
+    const typedArrays = this.typedArraysMade;
     let current = handle;
     while (current != 0) {
+      // A typed array on the way answers a numeric key itself, element or
+      // undefined, and the walk ends there.
+      if (typedArrays && (this.heap.flagsOf(current) & FLAG_BINARY) != 0) {
+        const element = this.typedGetOwn(current, cellValue(atom));
+        if (!isDeleted(element)) return element;
+      }
       const slot = this.heap.objectFindSlot(current, atom);
       if (slot >= 0) {
         const value = this.heap.slot(current, u32(slot));
@@ -2760,6 +2805,208 @@ export struct Runtime {
 
   // The primitive a wrapper object holds, or the deleted marker for an
   // ordinary object.
+  // --- Binary data ---
+  //
+  // ArrayBuffers and typed arrays (see BINARY_BUFFER). A typed array is
+  // an integer-indexed exotic object: a key that is a canonical numeric
+  // string names an element or nothing, never an ordinary property, so the
+  // property operations ask typedKey first for an object with FLAG_BINARY.
+  // Elements are kept little-endian, as the platforms the engine runs on
+  // are. A float read from the bytes may be any NaN; it is boxed as the
+  // engine's one NaN, since another's bits could read as a cell.
+
+  // Which kind of binary object `handle` is, or -1 for none.
+  function binaryKind(handle: u32): i32 {
+    if (!this.heap.isObject(handle) || (this.heap.flagsOf(handle) & FLAG_BINARY) == 0) return -1;
+    return asInt32(this.heap.slot(handle, this.heap.leadingSlot(handle, 0)));
+  }
+
+  function binaryField(handle: u32, field: u32): Value {
+    return this.heap.slot(handle, this.heap.leadingSlot(handle, field));
+  }
+
+  function setBinaryField(inout this, handle: u32, field: u32, value: Value): void {
+    const slot = this.heap.leadingSlot(handle, field);
+    this.heap.setSlot(handle, slot, value);
+  }
+
+  // The property operations' hooks for an object with FLAG_BINARY. Out of
+  // line (cold), so the hot operations they sit in keep their registers.
+
+  // A typed array's own element for a numeric key, element or undefined;
+  // deleted for any other key or object.
+  cold function typedGetOwn(inout this, handle: u32, key: Value): Value {
+    if (this.binaryKind(handle) != BINARY_TYPED) return deletedValue();
+    const typed = this.typedKey(key);
+    if (!typed.numeric) return deletedValue();
+    return this.typedGetElement(handle, typed.index);
+  }
+
+  // [[Get]] on an object with FLAG_BINARY: a typed array's element by the
+  // key as given, which makes no atom for an integer key; otherwise the
+  // lookup, which is all the rest of [[Get]] for an object that is neither
+  // the global object nor a wrapper.
+  cold function binaryGet(inout this, handle: u32, key: Value, receiver: Value): Value {
+    const element = this.typedGetOwn(handle, key);
+    if (!isDeleted(element)) return element;
+    const atom = this.propertyKey(key);
+    return this.lookupProperty(handle, atom, receiver);
+  }
+
+  // [[Set]] on an object with FLAG_BINARY: a typed array's element for a
+  // numeric key, written if the index is valid, the assignment succeeding
+  // either way; otherwise the chain's [[Set]], as for any object but the
+  // global object.
+  cold function binarySet(inout this, handle: u32, key: Value, value: Value, receiver: Value): boolean {
+    if (this.binaryKind(handle) == BINARY_TYPED) {
+      const typed = this.typedKey(key);
+      if (typed.numeric) {
+        this.typedSetElement(handle, typed.index, value);
+        return true;
+      }
+    }
+    const atom = this.propertyKey(key);
+    return this.setOnObject(handle, atom, value, receiver);
+  }
+
+  // [[Set]] meeting a typed array further up the chain, for a numeric key:
+  // an invalid index makes the assignment succeed doing nothing
+  // (SET_DONE); a valid one is a writable data property, so the object
+  // gets its own (SET_NOT_INHERITED). SET_PASSED for any other key or
+  // object: the walk goes on.
+  cold function typedSetInherited(inout this, handle: u32, atom: u32): i32 {
+    if (this.binaryKind(handle) != BINARY_TYPED) return SET_PASSED;
+    const typed = this.typedKey(cellValue(atom));
+    if (!typed.numeric) return SET_PASSED;
+    return this.typedValidIndex(handle, typed.index) ? SET_NOT_INHERITED : SET_DONE;
+  }
+
+  function isTypedArray(value: Value): boolean {
+    return isCell(value) && asCell(value) != 0 && this.binaryKind(asCell(value)) == BINARY_TYPED;
+  }
+
+  function isArrayBuffer(value: Value): boolean {
+    return isCell(value) && asCell(value) != 0 && this.binaryKind(asCell(value)) == BINARY_BUFFER;
+  }
+
+  // An ArrayBuffer's bytes cell, 0 once it is detached.
+  function bufferBytes(buffer: u32): u32 {
+    const bytes = this.binaryField(buffer, 1);
+    return isCell(bytes) ? asCell(bytes) : 0;
+  }
+
+  function typedBuffer(handle: u32): u32 {
+    return asCell(this.binaryField(handle, 1));
+  }
+
+  function typedElement(handle: u32): i32 {
+    return asInt32(this.binaryField(handle, 4));
+  }
+
+  function typedByteOffset(handle: u32): f64 {
+    return toNumber(this.binaryField(handle, 2));
+  }
+
+  // The number of elements, 0 once the buffer is detached.
+  function typedLength(handle: u32): f64 {
+    if (this.bufferBytes(this.typedBuffer(handle)) == 0) return 0.0;
+    return toNumber(this.binaryField(handle, 3));
+  }
+
+  // IsValidIntegerIndex.
+  function typedValidIndex(handle: u32, index: f64): boolean {
+    if (!isIntegralDouble(index)) return false;
+    if (index == 0.0 && 1.0 / index < 0.0) return false;
+    return index >= 0.0 && index < this.typedLength(handle);
+  }
+
+  // A key read as CanonicalNumericIndexString: an int32 or double key is
+  // the number's own string, so it is numeric (-0 as 0); a string is when
+  // it is "-0" or the number it reads as prints as it.
+  function typedKey(inout this, key: Value): TypedKey {
+    if (isInt32(key)) return TypedKey({ numeric: true, index: f64(asInt32(key)) });
+    if (isDouble(key)) {
+      const d = asDouble(key);
+      return TypedKey({ numeric: true, index: d == 0.0 ? 0.0 : d });
+    }
+    if (!this.isStringValue(key)) return TypedKey({ numeric: false, index: 0.0 });
+    const index = this.arrayIndexOf(key);
+    if (index >= 0) return TypedKey({ numeric: true, index: f64(index) });
+    const handle = asCell(key);
+    const length = this.heap.stringLength(handle);
+    if (length == 0) return TypedKey({ numeric: false, index: 0.0 });
+    // A number prints starting with a digit, a minus, or the I or N of
+    // Infinity and NaN.
+    const first = this.heap.stringUnit(handle, 0);
+    if (!((first >= 48 && first <= 57) || first == 45 || first == 73 || first == 78)) return TypedKey({ numeric: false, index: 0.0 });
+    if (length == 2 && first == 45 && this.heap.stringUnit(handle, 1) == 48) return TypedKey({ numeric: true, index: -0.0 });
+    // Through toNumberValue, so stringValueToNumber keeps its one caller
+    // and stays inlined there.
+    const number = this.toNumberValue(key);
+    const printed = this.toStringValue(doubleValue(number == number ? number : nativeNan()));
+    if (!this.heap.stringsEqual(asCell(printed), handle)) return TypedKey({ numeric: false, index: 0.0 });
+    return TypedKey({ numeric: true, index: number });
+  }
+
+  // The element at a valid index.
+  function typedRead(handle: u32, index: f64): Value {
+    const element = this.typedElement(handle);
+    const size = elementSize(element);
+    const bytes = this.bufferBytes(this.typedBuffer(handle));
+    const at = usize(this.typedByteOffset(handle)) + usize(index) * usize(size);
+    let bits: u64 = 0;
+    let k: u32 = size;
+    while (k > 0) {
+      k = k - 1;
+      bits = (bits << 8) | u64(this.heap.byteAt(bytes, at + usize(k)));
+    }
+    if (element == ELEMENT_INT8) return int32Value(i32(bits) - (bits >= 128 ? 256 : 0));
+    if (element == ELEMENT_INT16) return int32Value(i32(bits) - (bits >= 32768 ? 65536 : 0));
+    if (element == ELEMENT_INT32) return int32Value(i32.fromBits(u32(bits)));
+    if (element == ELEMENT_UINT32) return binaryNumber(f64(bits));
+    if (element == ELEMENT_FLOAT32) return binaryNumber(float32Value(u32(bits)));
+    if (element == ELEMENT_FLOAT64) return binaryNumber(f64.fromBits(bits));
+    return int32Value(i32(bits));
+  }
+
+  // A number written at a valid index, converted for the element kind.
+  function typedWrite(inout this, handle: u32, index: f64, number: f64): void {
+    const element = this.typedElement(handle);
+    const size = elementSize(element);
+    const bytes = this.bufferBytes(this.typedBuffer(handle));
+    const at = usize(this.typedByteOffset(handle)) + usize(index) * usize(size);
+    let bits: u64 = 0;
+    if (element == ELEMENT_FLOAT32) {
+      bits = u64(float32Bits(number));
+    } else if (element == ELEMENT_FLOAT64) {
+      bits = number.toBits();
+    } else if (element == ELEMENT_UINT8_CLAMPED) {
+      bits = u64(clampToUint8(number));
+    } else if (number == number) {
+      bits = u64(nativeToUint32(number));
+    }
+    let k: u32 = 0;
+    while (k < size) {
+      this.heap.setByteAt(bytes, at + usize(k), u8(bits & 255));
+      bits = bits >> 8;
+      k = k + 1;
+    }
+  }
+
+  // TypedArrayGetElement.
+  function typedGetElement(handle: u32, index: f64): Value {
+    if (!this.typedValidIndex(handle, index)) return undefinedValue();
+    return this.typedRead(handle, index);
+  }
+
+  // TypedArraySetElement: the value made a number first (which may run a
+  // program, and detach the buffer), then written if the index is valid.
+  function typedSetElement(inout this, handle: u32, index: f64, value: Value): void {
+    const number = this.toNumberValue(value);
+    if (this.pendingThrow) return;
+    if (this.typedValidIndex(handle, index)) this.typedWrite(handle, index, number);
+  }
+
   function wrappedPrimitive(handle: u32): Value {
     const slot = this.heap.objectFindSlot(handle, this.atomPrimitive);
     if (slot < 0) return deletedValue();
@@ -2814,6 +3061,7 @@ export struct Runtime {
       return this.lookupProperty(symbolProto, atom, object);
     }
     if (tag == TAG_OBJECT) {
+      if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0) return this.binaryGet(handle, key, object);
       const atom = this.propertyKey(key);
       const found = this.lookupProperty(handle, atom, object);
       if (!isUndefined(found)) return found;
@@ -3049,6 +3297,7 @@ export struct Runtime {
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
+      if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0) return this.binarySet(handle, key, value, object);
       const atom = this.propertyKey(key);
       if (handle == this.globalObject && this.heap.objectFindSlot(handle, atom) < 0) {
         const slot = this.findGlobalByAtom(atom);
@@ -3251,6 +3500,13 @@ export struct Runtime {
         const inherited = this.setThroughChain(current, atom, value, receiver);
         if (inherited != SET_NOT_INHERITED) return inherited == SET_DONE;
         break;
+      }
+      // A typed array further up decides a numeric key. The flag is read
+      // here, not held across the walk, which would cost a saved register.
+      if (current != 0 && this.typedArraysMade && (this.heap.flagsOf(current) & FLAG_BINARY) != 0) {
+        const met = this.typedSetInherited(current, atom);
+        if (met == SET_DONE) return true;
+        if (met == SET_NOT_INHERITED) break;
       }
     }
     // Not own: create it, if the object allows new properties.
@@ -3467,6 +3723,13 @@ export struct Runtime {
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
+      if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
+        const typed = this.typedKey(key);
+        if (typed.numeric) {
+          if (!this.typedValidIndex(handle, typed.index)) return absentProperty();
+          return dataProperty(this.typedRead(handle, typed.index), PROP_WRITABLE | PROP_ENUMERABLE | PROP_CONFIGURABLE);
+        }
+      }
       const atom = this.propertyKey(key);
       const own = this.ownSlotDescriptor(handle, atom);
       if (own.present) {
@@ -3616,6 +3879,20 @@ export struct Runtime {
     if (!this.isObjectLike(object)) return false;
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
+    // A typed array's element is a writable, enumerable, configurable data
+    // property while its index is valid, and can be nothing else.
+    if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
+      const typed = this.typedKey(key);
+      if (typed.numeric) {
+        if (!this.typedValidIndex(handle, typed.index)) return false;
+        if (desc.hasConfigurable && !desc.configurable) return false;
+        if (desc.hasEnumerable && !desc.enumerable) return false;
+        if (desc.hasGetter || desc.hasSetter) return false;
+        if (desc.hasWritable && !desc.writable) return false;
+        if (desc.hasValue) this.typedSetElement(handle, typed.index, desc.value);
+        return !this.pendingThrow;
+      }
+    }
     const atom = this.propertyKey(key);
     const isAccessorInput = desc.hasGetter || desc.hasSetter;
     const current = this.getOwnDescriptor(object, key);
@@ -3851,6 +4128,14 @@ export struct Runtime {
     if (tag == TAG_OBJECT) {
       const primitive = this.wrappedPrimitive(handle);
       if (!isDeleted(primitive) && this.isStringValue(primitive)) this.pushStringKeys(inout keys, asCell(primitive));
+      if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
+        const length = this.typedLength(handle);
+        let index: f64 = 0.0;
+        while (index < length) {
+          keys.push(this.toStringValue(binaryNumber(index)));
+          index = index + 1.0;
+        }
+      }
       this.pushObjectKeys(inout keys, handle, false);
       if (handle == this.globalObject) {
         let g: usize = 0;
@@ -4041,7 +4326,7 @@ export struct Runtime {
   function walkOwn(inout this, source: Value, mode: u32, sink: Value, excluded: u32): boolean {
     if (!isCell(source) || asCell(source) == 0) return false;
     const handle = asCell(source);
-    if (this.heap.tagOf(handle) != TAG_OBJECT || handle == this.globalObject || (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) return false;
+    if (this.heap.tagOf(handle) != TAG_OBJECT || handle == this.globalObject || (this.heap.flagsOf(handle) & (FLAG_NAMESPACE | FLAG_BINARY)) != 0) return false;
     if (this.heap.isDictionary(handle)) {
       if (mode >= WALK_VALUES) return false;
       return this.walkDictionary(handle, mode == WALK_NAMES, asCell(sink));
@@ -4163,6 +4448,10 @@ export struct Runtime {
       if (inherited == 0) return false;
       return this.hasProperty(cellValue(inherited), key);
     }
+    if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
+      const typed = this.typedKey(key);
+      if (typed.numeric) return this.typedValidIndex(handle, typed.index);
+    }
     if (tag == TAG_OBJECT) {
       // A String wrapper has its characters and length.
       const primitive = this.wrappedPrimitive(handle);
@@ -4210,6 +4499,10 @@ export struct Runtime {
       // A namespace answers through [[GetOwnProperty]], which reads the
       // binding (a ReferenceError while uninitialized).
       if ((this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) return this.getOwnDescriptor(object, key).present;
+      if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
+        const typed = this.typedKey(key);
+        if (typed.numeric) return this.typedValidIndex(handle, typed.index);
+      }
       const atom = this.propertyKey(key);
       const slot = this.heap.objectFindSlot(handle, atom);
       if (slot >= 0 && !isDeleted(this.heap.slot(handle, u32(slot)))) return true;
@@ -4350,6 +4643,10 @@ export struct Runtime {
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
     if (tag == TAG_OBJECT) {
+      if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
+        const typed = this.typedKey(key);
+        if (typed.numeric) return !this.typedValidIndex(handle, typed.index);
+      }
       const atom = this.propertyKey(key);
       // A global binding seen through the global object: deleting it
       // undefines the binding.
@@ -4547,6 +4844,17 @@ export struct Runtime {
       }
       return cellValue(keys);
     }
+    if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
+      // A typed array's indices come first, then its names as any object's.
+      const length = this.typedLength(handle);
+      let index: f64 = 0.0;
+      while (index < length) {
+        const key = this.toStringValue(binaryNumber(index));
+        const count = this.heap.arrayLength(keys);
+        this.heap.arraySet(keys, count, key);
+        index = index + 1.0;
+      }
+    }
     if (tag == TAG_OBJECT) {
       // Each object's own names in order, a name skipped once a nearer
       // object owns it (enumerable or not). Names are remembered only when
@@ -4743,6 +5051,16 @@ export struct Runtime {
       length = this.heap.arrayLength(asCell(source));
     } else if (this.isStringValue(source)) {
       length = u32(this.heap.stringLength(asCell(source)));
+    } else if (this.isTypedArray(source)) {
+      // A typed array's own length, not its `length` property; a detached
+      // one is a TypeError.
+      if (this.bufferBytes(this.typedBuffer(asCell(source))) == 0) {
+        const message: String = "Cannot iterate a typed array whose buffer is detached";
+        const error = this.typeError(in message);
+        this.raise(error);
+        return deletedValue();
+      }
+      length = u32(this.typedLength(asCell(source)));
     } else {
       const lengthKey = cellValue(this.atomLength);
       const lengthValue = this.getProperty(source, lengthKey);
@@ -6741,6 +7059,20 @@ export struct Runtime {
     this.heap.markHandle(arrayCtor);
     const arraySpeciesGetter = this.arraySpeciesGetter;
     this.heap.markHandle(arraySpeciesGetter);
+    // Typed arrays, once installed, make buffers and fall back to these
+    // whatever a program drops.
+    const arrayBufferProto = this.arrayBufferProto;
+    if (arrayBufferProto != 0) this.heap.markHandle(arrayBufferProto);
+    const arrayBufferCtor = this.arrayBufferCtor;
+    if (arrayBufferCtor != 0) this.heap.markHandle(arrayBufferCtor);
+    const typedArrayProto = this.typedArrayProto;
+    if (typedArrayProto != 0) this.heap.markHandle(typedArrayProto);
+    let kind: usize = 0;
+    while (kind < this.typedArrayProtos.length) {
+      const typedProto = this.typedArrayProtos[kind];
+      this.heap.markHandle(typedProto);
+      kind = kind + 1;
+    }
     let job: usize = 0;
     while (job < this.jobEnd) {
       const queued = this.jobs[job];
@@ -11365,6 +11697,46 @@ export function truncateDouble(value: f64): f64 {
 
 export function isIntegralDouble(value: f64): boolean {
   return value == value && truncateDouble(value) == value;
+}
+
+// Bytes per element of a typed array's kind.
+export function elementSize(element: i32): u32 {
+  if (element <= ELEMENT_UINT8_CLAMPED) return 1;
+  if (element <= ELEMENT_UINT16) return 2;
+  if (element <= ELEMENT_FLOAT32) return 4;
+  return 8;
+}
+
+// A number read from binary data, as a value: an int32 when it is one
+// (not -0), NaN as the engine's own NaN.
+export function binaryNumber(number: f64): Value {
+  if (number != number) return doubleValue(nativeNan());
+  if (number >= -2147483648.0 && number <= 2147483647.0 && isIntegralDouble(number) && !(number == 0.0 && 1.0 / number < 0.0)) return int32Value(i32(number));
+  return doubleValue(number);
+}
+
+// ToUint8Clamp: rounded to the nearest, a tie to the even one.
+function clampToUint8(number: f64): u32 {
+  if (!(number > 0.0)) return 0;
+  if (number >= 255.0) return 255;
+  // Positive here, so truncating is the floor.
+  const floor = math.trunc(number);
+  if (floor + 0.5 < number) return u32(floor) + 1;
+  if (number < floor + 0.5) return u32(floor);
+  return u32(floor) % 2 == 0 ? u32(floor) : u32(floor) + 1;
+}
+
+function float32Bits(value: f64): u32 = raw c {
+  float narrowed = (float)value;
+  uint32_t bits;
+  __builtin_memcpy(&bits, &narrowed, sizeof bits);
+  return bits;
+}
+
+function float32Value(bits: u32): f64 = raw c {
+  float widened;
+  __builtin_memcpy(&widened, &bits, sizeof widened);
+  return (double)widened;
 }
 
 function nativeNan(): f64 = raw c {

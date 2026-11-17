@@ -268,6 +268,9 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
         # runner can grep for via stdout. The CLI prints flag-state to
         # stdout for us to inspect post-run.
         parts.append(LOCAL_ASYNC_HARNESS)
+    if "detachArrayBuffer.js" in meta.get("includes", []):
+        # The host hook $DETACHBUFFER asks for, only where it is asked for.
+        parts.append(LOCAL_DETACH_HARNESS)
     for inc in meta.get("includes", []):
         if inc in ("sta.js", "assert.js"):
             continue
@@ -276,6 +279,17 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
             parts.append(f.read_text(encoding="utf-8"))
     parts.append(test_src)
     return "\n".join(parts)
+
+# $262.detachArrayBuffer for detachArrayBuffer.js: the host detaches by
+# transferring the buffer's bytes away (ArrayBuffer.prototype.transfer),
+# and a buffer already detached stays as it is.
+LOCAL_DETACH_HARNESS = r"""
+var $262 = {
+  detachArrayBuffer: function (buffer) {
+    if (!buffer.detached) buffer.transfer();
+  }
+};
+"""
 
 # Tiny print shim for async-flag tests. The test calls
 # print('Test262:AsyncTestComplete') on success; we surface that to

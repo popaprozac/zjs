@@ -4,7 +4,7 @@ import { thread } from "std/thread";
 import { TextBuilder, textBuilder, putByte, putByteRun, putUnit, putUnits, putString, textLength, truncateTo, finishText } from "./builder.zs";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isBoolean, isTrue, isNumber, isInt32, asInt32, isDeleted } from "../value.zs";
 import { Runtime, JsonPlan, ERROR_KIND_SYNTAX, toNumber, isIntegralDouble, truncateDouble, stringToNumber, FEATURE_JSON } from "../runtime.zs";
-import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN, DICT_BIT } from "../heap.zs";
+import { bytesOf, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_INDEX_KEY, FLAG_HIDDEN, DICT_BIT, FLAG_BINARY } from "../heap.zs";
 
 // --- parse ---
 
@@ -1088,7 +1088,9 @@ function serializeValue(inout runtime: Runtime, inout state: Stringifier, holder
   const isArray = runtime.heap.isArray(handle);
   let plan: i64 = -1;
   let plainStart: i64 = -1;
-  if (!isArray && !state.useAllowed && runtime.heap.isObject(handle) && handle != runtime.globalObject) {
+  // A typed array's elements are not in its class: it lists its keys as
+  // any object without a plan does.
+  if (!isArray && !state.useAllowed && runtime.heap.isObject(handle) && handle != runtime.globalObject && (runtime.heap.flagsOf(handle) & FLAG_BINARY) == 0) {
     const shape = runtime.heap.objectClass(handle);
     if ((shape & DICT_BIT) == 0) plan = earlyPlan >= 0 ? earlyPlan : jsonPlanFor(inout runtime, shape);
     if (plan < 0) plainStart = pushPlainKeys(inout runtime, inout state, handle);
