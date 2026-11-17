@@ -112,7 +112,8 @@ DEFAULT_TEST262 = REPO_ROOT / "vendor" / "test262"
 #     type: SyntaxError
 #   ---*/
 #
-# We don't pull in a YAML library — the format is regular enough to
+# A list may also be written as block items on the lines after its key
+# ("flags:" then "  - noStrict"). We don't pull in a YAML library — the format is regular enough to
 # parse with a few regexes for the keys we care about.
 # -----------------------------------------------------------------------------
 
@@ -139,12 +140,20 @@ def parse_frontmatter(src: str):
         return [t.strip() for t in rest.split(",") if t.strip()]
 
     in_negative = False
+    # A list key with nothing after the colon: its items follow as YAML
+    # block items ("  - noStrict"), as some files write flags and features.
+    list_key = None
     for raw_line in body.splitlines():
         line = raw_line.rstrip()
         if not line.strip():
             in_negative = False
+            list_key = None
             continue
         stripped = line.lstrip()
+        if list_key and stripped.startswith("- "):
+            out[list_key].append(stripped[2:].strip())
+            continue
+        list_key = None
         # Track "negative:" multi-line block (phase + type sub-keys).
         if stripped.startswith("negative:"):
             in_negative = True
@@ -164,12 +173,12 @@ def parse_frontmatter(src: str):
                 out["negative"]["type"]  = stripped.split(":", 1)[1].strip()
             continue
         in_negative = False
-        if stripped.startswith("features:"):
-            out["features"] = parse_list(stripped)
-        elif stripped.startswith("flags:"):
-            out["flags"] = parse_list(stripped)
-        elif stripped.startswith("includes:"):
-            out["includes"] = parse_list(stripped)
+        for key in ("features", "flags", "includes"):
+            if stripped.startswith(key + ":"):
+                out[key] = parse_list(stripped)
+                if not out[key]:
+                    list_key = key
+                break
     return out
 
 # -----------------------------------------------------------------------------
