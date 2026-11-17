@@ -1,0 +1,51 @@
+delete n.zz threw TypeError
+delete u.zz threw TypeError
+delete n['zz'] threw TypeError
+delete u['zz'] threw TypeError
+delete n[0] threw TypeError
+delete (n.zz) threw TypeError
+delete ((n).zz) threw TypeError
+delete null.zz threw TypeError
+delete undefined.zz threw TypeError
+delete (void 0).zz threw TypeError
+delete {}.a.b threw TypeError
+delete n.a.b threw TypeError
+delete u[key('a')] threw TypeError
+delete n[objKey] threw TypeError
+key a
+delete (0).zz -> true
+delete true.zz -> true
+delete 'ab'.zz -> true
+delete Symbol().zz -> true
+delete {}.zz -> true
+delete [].zz -> true
+delete t.zz -> true
+delete {}[objKey] -> true false
+sloppy delete this.zz, this undefined -> true
+strict delete n.zz threw TypeError
+strict delete u['zz'] threw TypeError
+strict delete this.zz, this undefined threw TypeError
+strict delete this.zz, this null threw TypeError
+strict delete this.zz, this 0 -> true
+strict delete this.zz, this an object -> true false
+strict delete n?.zz -> true
+strict delete frozen?.a threw TypeError
+delete n?.zz -> true
+delete u?.[key('skipped')] -> true
+delete n?.a.b -> true
+delete (n?.a.b) -> true
+delete (n?.a).b threw TypeError
+delete o?.a -> true false
+delete o?.['b'].c -> true false
+delete o.b?.d -> true false
+delete o.f?.().e -> true false
+delete o.g?.().e -> true
+delete o.g?.x[key('skipped')] -> true
+delete o?.[key('evaluated')] -> true
+delete o.zz?.a.b -> true
+delete o.zz.a threw TypeError
+delete o.b?.zz.a threw TypeError
+delete frozen?.a -> false
+typeof (delete n?.a) -> boolean
+delete o?.#x threw SyntaxError
+key evaluated

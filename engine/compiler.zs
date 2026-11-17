@@ -2234,7 +2234,7 @@ export struct Compiler {
   // `o.#x ||= v`) reads and writes through: a name's atom, a private
   // name's symbol, or the computed key.
   function memberKeyReg(inout this, in parser: Parser, inout runtime: Runtime, target: AstNode): u8 {
-    if (target.kind == NodeKind.computed) return this.compileExpr(in parser, inout runtime, target.right);
+    if (target.kind == NodeKind.computed || target.kind == NodeKind.optionalComputed) return this.compileExpr(in parser, inout runtime, target.right);
     if (this.isPrivateName(in parser, target.nameStart, target.nameLength)) return this.privateKeyReg(in parser, target.nameStart, target.nameLength);
     const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
     return this.emitKey(atom);
@@ -4550,16 +4550,32 @@ export struct Compiler {
       }
       const target = parser.ast.node(operandNode);
       const dst = this.allocReg();
+      const optional = target.kind == NodeKind.optionalMember || target.kind == NodeKind.optionalComputed;
       // A private name cannot be deleted: an early error, however the
       // reference is parenthesized.
-      if (target.kind == NodeKind.member && this.isPrivateName(in parser, target.nameStart, target.nameLength)) {
+      if ((target.kind == NodeKind.member || target.kind == NodeKind.optionalMember) && this.isPrivateName(in parser, target.nameStart, target.nameLength)) {
         this.hadError = true;
         return dst;
       }
-      if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
-        const object = this.compileExpr(in parser, inout runtime, target.left);
+      if (target.kind == NodeKind.member || target.kind == NodeKind.computed || optional) {
+        // In an optional chain a nullish base at a `?.` link ends the
+        // chain: nothing is deleted and the result is true.
+        let exits = Array<u32>();
+        let object: u8 = 0;
+        if (chainHasOptional(in parser, operandNode)) {
+          object = this.compileChainLink(in parser, inout runtime, target.left, inout exits);
+          if (optional) exits.push(this.emit(instAI16(Op.jmpIfNullish, object, 0)));
+        } else {
+          object = this.compileExpr(in parser, inout runtime, target.left);
+        }
         const key = this.memberKeyReg(in parser, inout runtime, target);
         this.emit(instABC(Op.deleteElem, dst, object, key));
+        if (exits.length > 0) {
+          const over = this.emit(instAI16(Op.jmp, 0, 0));
+          this.patchJumps(in exits);
+          this.emit(instA(Op.loadTrue, dst));
+          this.patchJump(over);
+        }
         return dst;
       }
       // A binding cannot be deleted, but a `with` object's property can;

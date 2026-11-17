@@ -8575,8 +8575,13 @@ export struct Runtime {
       deleteElem => {
         const object = this.reg(base, inst.b);
         const key = this.reg(base, inst.c);
-        const removed = this.deleteProperty(object, key);
-        if (!removed && this.functions[usize(fi)].strict) {
+        // The base goes through ToObject before the key is looked at:
+        // null and undefined are a TypeError.
+        const nullish = isUndefined(object) || isNull(object);
+        const removed = !nullish && this.deleteProperty(object, key);
+        if (nullish) {
+          const refused = this.toObjectValue(object);
+        } else if (!removed && this.functions[usize(fi)].strict) {
           const message: String = "Cannot delete property";
           {
             const raised = this.typeError(in message);
