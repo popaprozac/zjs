@@ -797,8 +797,11 @@ export const INSTRUCTION_SET_VERSION: u32 = 5;
 // function: the receiver's hidden class and where the property was
 // last found, so the next access with the same shape skips the lookup.
 // A transition entry records the class an added property moves the
-// receiver to, and the prototype chain (at most two objects, then
-// null) that was checked to hold no such property.
+// receiver to, and the prototype chain (at most four objects, then
+// null) that was checked to hold no such property: the first two in
+// proto1 / proto1Class and proto2 / proto2Class, the next two as
+// (object, class) in extraClass0 / extraSlot0 and extraClass1 /
+// extraSlot1.
 export const CACHE_EMPTY: u8 = 0;
 export const CACHE_OWN: u8 = 1;
 export const CACHE_PROTO: u8 = 2;

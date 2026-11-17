@@ -572,8 +572,9 @@ now 0.65 s, calls 0.14, array methods 0.29. Inline caches then went in:
 each property name a function uses has one cache entry recording the
 receiver's hidden class and where the property was found -- an own
 slot, a slot on the direct prototype, or the class transition that adds
-it, with the prototype chain (at most two objects, then null) recorded
-so a later setter is noticed. Validation is by class, so nothing is
+it, with the prototype chain (at most four objects, then null: an
+instance of a class extending another has three) recorded so a later
+setter is noticed. Validation is by class, so nothing is
 invalidated and a reused handle cannot alias. An entry holds four
 shapes of an own property and one of anything else, and a function's
 sites of one name share it; for a shape the entry does not hold, the

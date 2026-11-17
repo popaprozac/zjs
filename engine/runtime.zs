@@ -1541,6 +1541,41 @@ export struct Runtime {
     return false;
   }
 
+  // Whether the site's entry is a transition past three or four
+  // prototypes, which storeCached misses and storeDeepCached takes:
+  // asked in line on the store's miss line, so that a miss on any other
+  // entry pays a test and not a call.
+  inline function deepTransitionSite(fi: u32, nameSlot: usize): boolean {
+    const cache = this.siteCache(fi, nameSlot);
+    return cache.kind == CACHE_TRANSITION && cache.depth >= 3;
+  }
+
+  // A cached transition for a receiver with three or four prototypes:
+  // the third and fourth are kept as (object, class) in extraClass0 /
+  // extraSlot0 and extraClass1 / extraSlot1. A separate function on the
+  // store's miss line, so that storeCached's hits pay nothing for it
+  // (written into storeCached, in line or by a call, it cost every
+  // store at the site 2 to 7 instructions).
+  function storeDeepCached(inout this, fi: u32, nameSlot: usize, handle: u32, value: Value): boolean {
+    const cache = this.siteCache(fi, nameSlot);
+    if (this.heap.objectClass(handle) != cache.receiverClass) return false;
+    if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0) return false;
+    let proto = this.heap.objectProto(handle);
+    if (proto != cache.proto1 || this.heap.objectClass(proto) != cache.proto1Class) return false;
+    proto = this.heap.objectProto(proto);
+    if (proto != cache.proto2 || this.heap.objectClass(proto) != cache.proto2Class) return false;
+    proto = this.heap.objectProto(proto);
+    if (proto != cache.extraClass0 || this.heap.objectClass(proto) != cache.extraSlot0) return false;
+    proto = this.heap.objectProto(proto);
+    if (cache.depth >= 4) {
+      if (proto != cache.extraClass1 || this.heap.objectClass(proto) != cache.extraSlot1) return false;
+      proto = this.heap.objectProto(proto);
+    }
+    if (proto != 0) return false;
+    this.heap.transitionTo(handle, cache.targetClass, cache.slot, value);
+    return true;
+  }
+
   // An object literal's cached definition; false for a miss.
   function defineCached(inout this, fi: u32, nameSlot: usize, handle: u32, value: Value): boolean {
     const cache = this.siteCache(fi, nameSlot);
@@ -1562,7 +1597,7 @@ export struct Runtime {
 
   // After a slow-path store on an object: remember an own writable data
   // property, or the transition that added one when the prototype chain
-  // (at most two objects, ending in null) holds no such property.
+  // (at most four objects, ending in null) holds no such property.
   function populateStoreCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, classBefore: u32): void {
     if (handle == this.globalObject || this.heap.isDictionary(handle)) return;
     const own = this.heap.objectFindSlot(handle, atom);
@@ -1596,8 +1631,32 @@ export struct Runtime {
       proto2Class = this.heap.objectClass(proto);
       proto = this.heap.objectProto(proto);
     }
+    if (proto == 0) {
+      this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, attr: 0, depth: depth, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+      return;
+    }
+    // The third and fourth, as storeDeepCached reads them: a class's
+    // instance has three prototypes, one of a class extending it four.
+    // Their entry is built apart from the shorter chain's above, which a
+    // site of two shapes writes on every miss, so that that one is built
+    // as it was (with these four fields in it, such a miss cost eight
+    // instructions more).
+    if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+    const proto3 = proto;
+    const proto3Class = this.heap.objectClass(proto);
+    proto = this.heap.objectProto(proto);
+    depth = 3;
+    let proto4: u32 = 0;
+    let proto4Class: u32 = 0;
+    if (proto != 0) {
+      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      depth = 4;
+      proto4 = proto;
+      proto4Class = this.heap.objectClass(proto);
+      proto = this.heap.objectProto(proto);
+    }
     if (proto != 0) return;
-    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, attr: 0, depth: depth, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
+    this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_TRANSITION, attr: 0, depth: depth, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: classBefore, slot: u32(own), targetClass: classAfter, proto1: proto1, proto1Class: proto1Class, proto2: proto2, proto2Class: proto2Class, extraCount: 0, extraNext: 0, extraClass0: proto3, extraSlot0: proto3Class, extraClass1: proto4, extraSlot1: proto4Class, extraClass2: 0, extraSlot2: 0 });
   }
 
   function functionValue(inout this, index: u32): Value {
@@ -10681,6 +10740,7 @@ export struct Runtime {
                 throwing = true;
                 break;
               } else {
+                if (isPlainObject && this.deepTransitionSite(fi, nameSlot) && this.storeDeepCached(fi, nameSlot, asCell(object), value)) continue;
                 const classBefore: u32 = isPlainObject ? this.heap.objectClass(asCell(object)) : 0;
                 const accepted = this.setProperty(object, cellValue(atom), value);
                 if (this.pendingThrow) {
