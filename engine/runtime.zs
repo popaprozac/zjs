@@ -731,6 +731,8 @@ export struct Runtime {
   atomPrimitive: u32;
   // The hidden key marking an arguments object's bag.
   atomArgumentsMarker: u32;
+  // "callee", which every arguments object defines.
+  atomCallee: u32;
   // Iteration: %IteratorPrototype%, %ArrayIteratorPrototype%, the hidden
   // keys an array iterator keeps its state under, and the builtin `next`
   // whose presence allows the allocation-free fast path.
@@ -3847,8 +3849,7 @@ export struct Runtime {
       const iteratorKey = this.propertyKey(this.symbolIterator);
       this.heap.objectDefine(object, iteratorKey, cellValue(this.arrayValuesFn), PROP_WRITABLE | PROP_CONFIGURABLE);
     }
-    const calleeText: String = "callee";
-    const calleeKey = this.atomOf(in calleeText);
+    const calleeKey = this.atomCallee;
     if (mapped) {
       this.heap.objectDefine(object, calleeKey, this.frames[frameIndex].callee, PROP_WRITABLE | PROP_CONFIGURABLE);
     } else {
@@ -6809,6 +6810,8 @@ export struct Runtime {
     this.atomThrow = this.atomOf(in throwText);
     const resolveText: String = "resolve";
     this.atomResolve = this.atomOf(in resolveText);
+    const calleeText: String = "callee";
+    this.atomCallee = this.atomOf(in calleeText);
     let hidden = Array<u8>();
     hidden.push(255);
     hidden.push(112);
@@ -7160,6 +7163,8 @@ export struct Runtime {
     this.heap.markHandle(atomEmpty);
     const atomArgumentsMarker = this.atomArgumentsMarker;
     this.heap.markHandle(atomArgumentsMarker);
+    const atomCallee = this.atomCallee;
+    this.heap.markHandle(atomCallee);
     const iteratorProto = this.iteratorProto;
     this.heap.markHandle(iteratorProto);
     const arrayIteratorProto = this.arrayIteratorProto;
@@ -11858,7 +11863,7 @@ export function createRuntime(): Runtime {
     randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), joining: Array<u32>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, flagsProtoClass: 0, flagAccessors: Array<FlagAccessor>(), flagsShapeClass: 0, flagsBitsSlot: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
-    atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
+    atomArgumentsMarker: 0, atomCallee: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
     mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, arrayCtor: 0, arraySpeciesGetter: 0, arrayCtorSlotClass: 0, arrayCtorSlot: -1, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseState: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, sharedLoads: Array<SharedLoad>(), gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
