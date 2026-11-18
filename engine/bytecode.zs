@@ -826,6 +826,14 @@ export const CACHE_FUNCTION_PROTO: u8 = 7;
 // `name`) while its own properties lack it: the class of its bag, and
 // in `slot` which of the three.
 export const CACHE_FUNCTION_VIRTUAL: u8 = 8;
+// A read on a plain object of a name found as an accessor on the object
+// itself or one of its first four prototypes: the prototypes followed to
+// the holder (`depth`, none to four) and their classes as CACHE_CHAIN's
+// (below), and the slot of the accessor in the holder. A hit reads the
+// accessor there and calls its getter, so a getter replaced in place is
+// seen. Numbered beside the function kinds: loadPropSlow answers these
+// three from the site's entry, behind one range test.
+export const CACHE_GETTER: u8 = 9;
 // A read on a plain object of a name found as data on its second to
 // fourth prototype: the object's class, the classes of the prototypes
 // on the way in proto1, proto1Class, proto2, and proto2Class (`depth`
@@ -833,11 +841,11 @@ export const CACHE_FUNCTION_VIRTUAL: u8 = 8;
 // lacks the name, or where the last holds it. A class does not say what
 // an object's prototype is, so a read follows the prototypes it finds
 // and checks each one's class.
-export const CACHE_CHAIN: u8 = 9;
+export const CACHE_CHAIN: u8 = 10;
 // The same for a name found nowhere: `depth` prototypes (none to four),
 // each lacking the name and the last without a prototype.
-export const CACHE_ABSENT: u8 = 10;
-// The most prototypes either of those follows.
+export const CACHE_ABSENT: u8 = 11;
+// The most prototypes any of those follows.
 export const CHAIN_LIMIT: u8 = 4;
 export const VIRTUAL_PROTOTYPE: u32 = 0;
 export const VIRTUAL_LENGTH: u32 = 1;

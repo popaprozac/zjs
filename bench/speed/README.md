@@ -1,7 +1,7 @@
 # Jitless speed
 
 The Z engine against the jit-less engines an embedder would otherwise
-choose, on nineteen small kernels. The engine's goal is to be the fastest
+choose, on twenty small kernels. The engine's goal is to be the fastest
 engine that runs without a JIT, which is what every iOS app gets; these
 kernels are how that is tracked.
 
@@ -61,7 +61,9 @@ properties, on objects of eight and three: `Object.keys`, `values`,
 `entries`, `for`-`in`, `Object.assign`, and spread.
 `typed-arrays` reads and writes typed arrays' elements by index (a
 Float64Array, a Uint8Array, an Int32Array, a Uint16Array histogram),
-reading each `length` once per loop.
+reading each `length` once per loop. `getters` reads getters in loops:
+a class's on its instances and a subclass's, an object literal's own,
+Map's `size`, and a typed array's `length`.
 
 The `vs zjsz` row is the geometric mean over the kernels of each engine's
 time divided by the Z engine's: below 1 means that engine is faster.

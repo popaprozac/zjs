@@ -18,7 +18,7 @@ import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, i
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, FLAG_BINARY, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
-import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CHAIN_LIMIT } from "./bytecode.zs";
+import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CACHE_GETTER, CHAIN_LIMIT } from "./bytecode.zs";
 import stdlib from "stdlib.h";
 import stdio from "stdio.h";
 import string from "string.h";
@@ -546,6 +546,9 @@ const LOAD_REFUSED: u8 = 0;
 const LOAD_RECORDED: u8 = 1;
 // The object and its first prototype lack the name: recordChain's case.
 const LOAD_NOT_FOUND: u8 = 2;
+// The object or its first prototype holds the name as an accessor:
+// recordChain's too, as a getter.
+const LOAD_ACCESSOR: u8 = 3;
 
 // Entries in the shared load table, a power of two (16 KB, made when the
 // first read is kept).
@@ -1152,7 +1155,7 @@ export struct Runtime {
     const siteKind = this.siteCache(fi, nameSlot).kind;
     // The site's own entry when it is a chain's, which the handler
     // leaves to this path. (A function's is answered before this.)
-    const siteAnswers = tag == TAG_OBJECT && (siteKind == CACHE_CHAIN || siteKind == CACHE_ABSENT);
+    const siteAnswers = tag == TAG_OBJECT && (siteKind == CACHE_CHAIN || siteKind == CACHE_ABSENT || siteKind == CACHE_GETTER);
     let value = deletedValue();
     let fromTable = false;
     // The site's entry first, then the table's fact: an entry for the
@@ -1196,6 +1199,10 @@ export struct Runtime {
           if (proto == holder && this.heap.objectClass(proto) == holderClass) value = this.heap.slot(proto, slot);
         } else if (kind == CACHE_CHAIN || kind == CACHE_ABSENT) {
           value = this.chainLoad(kind, depth, slot, holder, holderClass, class3, class4, handle);
+        } else if (kind == CACHE_GETTER) {
+          // The accessor is where CACHE_CHAIN's data would be.
+          const accessor = this.chainLoad(CACHE_CHAIN, depth, slot, holder, holderClass, class3, class4, handle);
+          if (!isDeleted(accessor)) value = this.callGetter(accessor, cellValue(handle));
         }
       } else if (isFunction) {
         // An own property's class is never the root class, so the bag exists.
@@ -1233,6 +1240,25 @@ export struct Runtime {
     return this.heap.objectProto(current) == 0 ? undefinedValue() : deletedValue();
   }
 
+  // The site's getter entry for a plain object of its class: the getter
+  // called; deleted for a miss.
+  function loadSiteGetter(inout this, fi: u32, nameSlot: usize, handle: u32): Value {
+    if (!this.heap.isObject(handle)) return deletedValue();
+    const cache = this.functions[usize(fi)].caches[nameSlot];
+    if (this.heap.objectClass(handle) != cache.receiverClass) return deletedValue();
+    const accessor = this.chainLoad(CACHE_CHAIN, cache.depth, cache.slot, cache.proto1, cache.proto1Class, cache.proto2, cache.proto2Class, handle);
+    if (isDeleted(accessor)) return deletedValue();
+    return this.callGetter(accessor, cellValue(handle));
+  }
+
+  // An accessor's getter called with `receiver` as this, as lookupProperty
+  // calls it: undefined when it has none.
+  function callGetter(inout this, accessor: Value, receiver: Value): Value {
+    const getter = this.heap.slot(asCell(accessor), 0);
+    if (!this.isCallable(getter)) return undefinedValue();
+    return this.callValue0(getter, receiver);
+  }
+
   // What a read of `atom` on a plain object found past its first
   // prototype, as a fact to keep; of kind CACHE_EMPTY when it is not
   // one. The caller knows the object is in class mode and lacks the
@@ -1268,7 +1294,7 @@ export struct Runtime {
         if (found >= 0) {
           if (isDeleted(this.heap.slot(proto, u32(found)))) return fact;
           fact.attr = this.heap.attrOf(proto, u32(found));
-          if ((fact.attr & PROP_ACCESSOR) != 0) return fact;
+          if ((fact.attr & PROP_ACCESSOR) != 0) return this.getterFact(handle, atom);
           fact.kind = CACHE_CHAIN;
           fact.depth = depth;
           fact.slot = u32(found);
@@ -1280,16 +1306,55 @@ export struct Runtime {
     return fact;
   }
 
+  // What a read of `atom` on a plain object found as an accessor on the
+  // object or one of its first CHAIN_LIMIT prototypes, as a fact
+  // (CACHE_GETTER): the prototypes followed to the holder, their classes,
+  // and the slot there. Of kind CACHE_EMPTY when the name is first found
+  // as data, deleted, or not at all, or past a prototype that is not a
+  // plain object in class mode; and for the global object, a module
+  // namespace, and a wrapper's length, which getProperty answers its own
+  // way.
+  function getterFact(handle: u32, atom: u32): SharedLoad {
+    let fact = SharedLoad({ atom: atom, kind: CACHE_EMPTY, attr: 0, depth: 0, shape: this.heap.objectClass(handle), holder: 0, holderClass: 0, slot: 0, class3: 0, class4: 0 });
+    if (handle == this.globalObject || this.heap.isDictionary(handle) || (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) return fact;
+    if (atom == this.atomLength && !isDeleted(this.wrappedPrimitive(handle))) return fact;
+    let current = handle;
+    let depth: u8 = 0;
+    while (true) {
+      const found = this.heap.objectFindSlot(current, atom);
+      if (found >= 0) {
+        if (isDeleted(this.heap.slot(current, u32(found)))) return fact;
+        const attr = this.heap.attrOf(current, u32(found));
+        if ((attr & PROP_ACCESSOR) == 0) return fact;
+        fact.kind = CACHE_GETTER;
+        fact.attr = attr;
+        fact.depth = depth;
+        fact.slot = u32(found);
+        return fact;
+      }
+      const proto = this.heap.objectProto(current);
+      if (proto == 0 || depth == CHAIN_LIMIT || !this.heap.isObject(proto) || this.heap.isDictionary(proto)) return fact;
+      const protoClass = this.heap.objectClass(proto);
+      if (depth == 0) fact.holder = protoClass;
+      else if (depth == 1) fact.holderClass = protoClass;
+      else if (depth == 2) fact.class3 = protoClass;
+      else fact.class4 = protoClass;
+      depth = depth + 1;
+      current = proto;
+    }
+    return fact;
+  }
+
   // After the search read a name the object and its first prototype
   // lack: keep where it was found, or that it was not. The site takes
   // the fact as its entry when it has none, or one of these kinds; an
   // entry the handler answers from stays, and the table answers for
   // this shape.
-  function recordChain(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, keep: boolean): void {
-    const fact = this.chainFact(handle, atom);
+  function recordChain(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, accessor: boolean, keep: boolean): void {
+    const fact = accessor ? this.getterFact(handle, atom) : this.chainFact(handle, atom);
     if (fact.kind == CACHE_EMPTY) return;
     const siteKind = this.siteCache(fi, nameSlot).kind;
-    if (siteKind == CACHE_EMPTY || siteKind == CACHE_CHAIN || siteKind == CACHE_ABSENT) {
+    if (siteKind == CACHE_EMPTY || siteKind == CACHE_CHAIN || siteKind == CACHE_ABSENT || siteKind == CACHE_GETTER) {
       this.functions[usize(fi)].caches[nameSlot] = this.siteEntry(fact, this.siteCache(fi, nameSlot).searches);
     }
     if (keep) this.keepShared(handle, fact);
@@ -1304,7 +1369,7 @@ export struct Runtime {
     fresh.slot = fact.slot;
     fresh.proto1 = fact.holder;
     fresh.proto1Class = fact.holderClass;
-    if (fact.kind == CACHE_CHAIN || fact.kind == CACHE_ABSENT) {
+    if (fact.kind == CACHE_CHAIN || fact.kind == CACHE_ABSENT || fact.kind == CACHE_GETTER) {
       fresh.depth = fact.depth;
       fresh.receiverClass = fact.shape;
       fresh.proto2 = fact.class3;
@@ -1422,13 +1487,13 @@ export struct Runtime {
     const isCellValue = isCell(object) && asCell(object) != 0;
     const hasEntry = isCellValue && this.siteCache(fi, nameSlot).kind != CACHE_EMPTY;
     if (hasEntry) {
-      // A function's inherited or computed name, by the site's own
-      // entry: the commonest of the reads answered here, so it comes
-      // before the rest is set up.
+      // A function's inherited or computed name, or a getter, by the
+      // site's own entry: the reads answered here that the handler does
+      // not, so they come before the rest is set up.
       const siteKind = this.siteCache(fi, nameSlot).kind;
-      if (siteKind == CACHE_FUNCTION_PROTO || siteKind == CACHE_FUNCTION_VIRTUAL) {
-        const named = this.loadSiteFunctionName(fi, nameSlot, asCell(object));
-        if (!isDeleted(named)) return named;
+      if (siteKind >= CACHE_FUNCTION_PROTO && siteKind <= CACHE_GETTER) {
+        const answered = siteKind == CACHE_GETTER ? this.loadSiteGetter(fi, nameSlot, asCell(object)) : this.loadSiteFunctionName(fi, nameSlot, asCell(object));
+        if (!isDeleted(answered)) return answered;
       }
     }
     const searches: u8 = hasEntry ? this.siteCache(fi, nameSlot).searches : 0;
@@ -1443,7 +1508,7 @@ export struct Runtime {
     if (this.heap.isObject(asCell(object))) {
       const outcome = this.populateLoadCache(fi, nameSlot, asCell(object), atom);
       recorded = outcome == LOAD_RECORDED;
-      if (outcome == LOAD_NOT_FOUND) this.recordChain(fi, nameSlot, asCell(object), atom, searches < SHARED_GIVE_UP);
+      if (outcome == LOAD_NOT_FOUND || outcome == LOAD_ACCESSOR) this.recordChain(fi, nameSlot, asCell(object), atom, outcome == LOAD_ACCESSOR, searches < SHARED_GIVE_UP);
     } else if (!isUndefined(found)) {
       // Nothing found is nothing to record.
       recorded = this.populateInheritedCache(fi, nameSlot, asCell(object), atom);
@@ -1539,13 +1604,16 @@ export struct Runtime {
 
   function populateLoadCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32): u8 {
     if (this.heap.isDictionary(handle)) return LOAD_REFUSED;
+    // A typed array answers a numeric name (NaN, Infinity) itself, from no
+    // slot and no prototype.
+    if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED && this.typedKey(cellValue(atom)).numeric) return LOAD_REFUSED;
     const receiverClass = this.heap.objectClass(handle);
     const own = this.heap.objectFindSlot(handle, atom);
     if (own >= 0) {
       if (isDeleted(this.heap.slot(handle, u32(own)))) return LOAD_REFUSED;
-      // An accessor is not cached: a hit reads the slot as data.
+      // An accessor is not this entry's: a hit reads the slot as data.
       const ownAttr = this.heap.attrOf(handle, u32(own));
-      if ((ownAttr & PROP_ACCESSOR) != 0) return LOAD_REFUSED;
+      if ((ownAttr & PROP_ACCESSOR) != 0) return LOAD_ACCESSOR;
       if (this.functions[usize(fi)].caches[nameSlot].kind == CACHE_OWN && this.functions[usize(fi)].caches[nameSlot].receiverClass != receiverClass) {
         // Another shape at an own-property site: kept beside the first.
         let cache = this.functions[usize(fi)].caches[nameSlot];
@@ -1575,7 +1643,7 @@ export struct Runtime {
     if (inherited < 0) return LOAD_NOT_FOUND;
     if (isDeleted(this.heap.slot(proto, u32(inherited)))) return LOAD_REFUSED;
     const inheritedAttr = this.heap.attrOf(proto, u32(inherited));
-    if ((inheritedAttr & PROP_ACCESSOR) != 0) return LOAD_REFUSED;
+    if ((inheritedAttr & PROP_ACCESSOR) != 0) return LOAD_ACCESSOR;
     const protoClass = this.heap.objectClass(proto);
     this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_PROTO, attr: inheritedAttr, depth: 1, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: receiverClass, slot: u32(inherited), targetClass: 0, proto1: proto, proto1Class: protoClass, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
     return LOAD_RECORDED;
