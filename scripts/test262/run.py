@@ -1,48 +1,32 @@
 #!/usr/bin/env python3
 """
-test262 conformance runner for zjs.
+test262 harness assembly and classification for zjsz, the pieces
+test262-ab.py and the whole-suite run share:
 
-What this does:
-  1. Walks the configured subset of test262 (see config.json).
-  2. Parses each test's frontmatter; skips tests that need features /
-     harness includes / flags we don't support.
-  3. For each runnable test: concatenates the required harness files +
-     the test source into a temp file and runs `./build/zjs run <tmp>`.
-  4. Compares the engine's outcome (exit 0 vs throw) with the expected
-     outcome (`negative:` frontmatter says "should throw this error
-     type"; absence says "should not throw").
-  5. Writes:
-        docs/conformance/last.json       — per-test status for the run
-        docs/conformance/history.jsonl   — append-only summary row
-        docs/conformance/index.html      — regenerated, with embedded
-                                            history + current results
+  - parse_frontmatter: a test's flags, features, includes, negative.
+  - load_config / gather_tests / should_skip: the curated subset in
+    config.json and its feature, flag, and include skips.
+  - execution_modes / assemble / script_directory: each run of a test
+    (sloppy and strict unless a flag says otherwise; a module from its own
+    file with the harness as a script included first; a dynamic-import
+    script beside its file) with sta.js, assert.js, the async and detach
+    shims, and its includes prepended.
+  - run_one / classify: one run of zjsz (from source, or through bytecode
+    files with aot) and its verdict: the exact thrown type and phase for a
+    negative test, Test262:AsyncTestComplete for an async one.
 
-What this does NOT do:
-  - Run in strict and sloppy mode separately. We treat all tests as
-    strict-by-default; the `noStrict` / `onlyStrict` flags don't gate
-    inclusion. (Tests that fail only in one mode may be misclassified;
-    the numbers are still useful as a coarse trend.)
-  - Verify error MESSAGES — only the thrown type (`SyntaxError`,
-    `TypeError`, etc.) is matched.
-  - Time-out individual tests. zjs has no loop-counter; an infinite
-    loop will hang the runner. Trim aggressively if that happens.
-
-Usage:
-    python3 scripts/test262/run.py
-    python3 scripts/test262/run.py --test262 /path/to/test262
-    python3 scripts/test262/run.py --filter language/expressions/addition
-    python3 scripts/test262/run.py --limit 100
+Error messages are not checked. test262-fyi.py counts the whole suite by
+test262.fyi's rules instead, for a number that compares with other engines.
 """
 
-import argparse
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
+
 
 # Force UTF-8 on stdout/stderr — Windows's default text encoding
 # (cp1252) chokes on the replacement char (�) and other
@@ -57,46 +41,6 @@ if sys.platform == "win32":
 
 REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
 CONFIG     = REPO_ROOT / "scripts" / "test262" / "config.json"
-OUT_DIR    = REPO_ROOT / "docs" / "conformance"
-
-# Same platform-tagging convention as scripts/bench/run.py: macOS keeps
-# the original (un-suffixed) filenames; Windows and Linux land in
-# `-windows` / `-linux` siblings so the three streams don't pollute one
-# another's history.
-IS_WINDOWS  = sys.platform == "win32"
-IS_LINUX    = sys.platform.startswith("linux")
-if IS_WINDOWS:
-    PLATFORM_TAG = "windows"
-    PLATFORM_LABEL = "Windows"
-elif IS_LINUX:
-    PLATFORM_TAG = "linux"
-    PLATFORM_LABEL = "Linux"
-else:
-    PLATFORM_TAG = None
-    PLATFORM_LABEL = "macOS"
-def _host_subdir():
-    """build/<os>-<arch> — must match build-windows.ps1's $OutDir and the
-    Makefile's BUILD_DIR convention."""
-    import platform as _pf
-    os_ = "win" if IS_WINDOWS else ("linux" if IS_LINUX else "macos")
-    m = _pf.machine().lower()
-    arch = "arm64" if m in ("arm64", "aarch64") else ("x64" if m in ("x86_64", "amd64") else m)
-    return f"{os_}-{arch}"
-
-def _resolve_zjs(stem="zjs"):
-    """Prefer build/<os>-<arch>/<stem>, fall back to flat build/<stem> so
-    the runner works before a platform's build moves to subdirs."""
-    exe = stem + (".exe" if IS_WINDOWS else "")
-    sub = REPO_ROOT / "build" / _host_subdir() / exe
-    return sub if sub.exists() else REPO_ROOT / "build" / exe
-
-ZJS_BIN     = _resolve_zjs()
-_suffix     = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
-HISTORY     = OUT_DIR / f"history{_suffix}.jsonl"
-LAST_JSON   = OUT_DIR / f"last{_suffix}.json"
-HTML_PATH   = OUT_DIR / f"index{_suffix}.html"
-
-DEFAULT_TEST262 = REPO_ROOT / "vendor" / "test262"
 
 # -----------------------------------------------------------------------------
 # Frontmatter parsing.
@@ -221,8 +165,6 @@ def should_skip(meta, cfg):
         if inc in skip_includes:
             return f"include:{inc}"
     return None
-
-LOCAL_HARNESS = REPO_ROOT / "scripts" / "test262" / "zjs_harness.js"
 
 # zjs CLI prints uncaught throws as:
 #     zjs: throw: <ErrorTypeName>: <message>
@@ -498,340 +440,3 @@ def classify(meta, exit_code, stderr, stdout=""):
     if threw:
         return ("fail", stderr.strip()[:120])
     return ("pass", "")
-
-# -----------------------------------------------------------------------------
-# HTML report
-# -----------------------------------------------------------------------------
-
-def write_html(out_path, history, last_summary, last_failures):
-    history_json   = json.dumps(history)
-    failures_json  = json.dumps(last_failures[:200])
-    summary_json   = json.dumps(last_summary)
-    platform_label = (last_summary.get("platform") or "macOS").strip()
-    html = f"""<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<title>zjs test262 conformance — {platform_label}</title>
-<style>
-  body {{ font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
-          max-width: 960px; margin: 2em auto; padding: 0 1em; color: #222; }}
-  h1 {{ font-size: 1.4em; margin-bottom: 0.2em; }}
-  .sub {{ color: #666; margin-bottom: 1.5em; }}
-  .card {{ background: #fafafa; border: 1px solid #eee; border-radius: 6px;
-           padding: 1em 1.25em; margin-bottom: 1.25em; }}
-  .stat {{ display: inline-block; margin-right: 2em; }}
-  .stat .n {{ font-size: 1.8em; font-weight: 600; display: block; }}
-  .stat .l {{ color: #666; font-size: 0.85em; }}
-  .pass {{ color: #2c7; }} .fail {{ color: #c44; }} .skip {{ color: #999; }}
-  svg {{ display: block; }}
-  table {{ border-collapse: collapse; width: 100%; font-size: 12px; }}
-  th, td {{ text-align: left; padding: 4px 8px; border-bottom: 1px solid #eee; }}
-  th {{ background: #f5f5f5; }}
-  td.path {{ font-family: ui-monospace, SFMono-Regular, monospace; }}
-  td.reason {{ color: #888; }}
-  details {{ margin-top: 1em; }}
-</style>
-
-<h1>zjs — test262 conformance <span style="font-size:0.65em;color:#888;font-weight:normal;">({platform_label})</span></h1>
-<p class="sub">Generated <span id="when"></span>. Curated subset of test262; configuration in
-<code>scripts/test262/config.json</code>. Numbers exclude tests skipped due to
-unsupported features or harness includes.</p>
-
-<div class="card">
-  <div class="stat"><span class="n pass" id="pass">–</span><span class="l">passing</span></div>
-  <div class="stat"><span class="n fail" id="fail">–</span><span class="l">failing</span></div>
-  <div class="stat"><span class="n skip" id="skip">–</span><span class="l">skipped</span></div>
-  <div class="stat"><span class="n" id="rate">–</span><span class="l">pass rate</span></div>
-</div>
-
-<div class="card">
-  <strong>Test counts over time</strong>
-  <div class="legend" style="margin: 0.4em 0; font-size: 0.85em; color: #666;">
-    <span style="color:#2c7;">● passing</span> &nbsp;
-    <span style="color:#c44;">● failing</span> &nbsp;
-    <span style="color:#999;">● skipped</span>
-  </div>
-  <div id="chart"></div>
-</div>
-
-<details>
-  <summary>First failures (up to 200)</summary>
-  <table id="failures-table">
-    <thead><tr><th>Test</th><th>Reason</th></tr></thead>
-    <tbody></tbody>
-  </table>
-</details>
-
-<script id="history-data" type="application/json">{history_json}</script>
-<script id="failures-data" type="application/json">{failures_json}</script>
-<script id="summary-data" type="application/json">{summary_json}</script>
-<script>
-  const history  = JSON.parse(document.getElementById('history-data').textContent);
-  const failures = JSON.parse(document.getElementById('failures-data').textContent);
-  const summary  = JSON.parse(document.getElementById('summary-data').textContent);
-
-  document.getElementById('pass').textContent = summary.passed;
-  document.getElementById('fail').textContent = summary.failed;
-  document.getElementById('skip').textContent = summary.skipped;
-  const denom = summary.passed + summary.failed;
-  document.getElementById('rate').textContent =
-    denom ? ((summary.passed / denom) * 100).toFixed(1) + '%' : '–';
-  document.getElementById('when').textContent = summary.when || '';
-
-  // SVG chart of passing / failing / skipped counts over time.
-  const W = 900, H = 260, P = 40;
-  function chart() {{
-    if (!history.length) {{
-      document.getElementById('chart').textContent = '(no history yet)';
-      return;
-    }}
-    // Pick a nice round y-max above the biggest point we plot.
-    let maxCount = 0;
-    for (const r of history) {{
-      maxCount = Math.max(maxCount, r.passed, r.failed, r.skipped);
-    }}
-    // Round up to a clean tick boundary (250, 500, 1000, 2000, ...).
-    const niceSteps = [100, 250, 500, 1000, 2000, 5000];
-    let step = niceSteps[niceSteps.length - 1];
-    for (const s of niceSteps) {{
-      if (Math.ceil(maxCount / s) * s <= s * 6) {{ step = s; break; }}
-    }}
-    const yMax = Math.max(step * 2, Math.ceil(maxCount / step) * step);
-    const yMin = 0;
-
-    const xs = (i) => P + (i / Math.max(history.length - 1, 1)) * (W - 2*P);
-    const ys = (v) => H - P - ((v - yMin) / (yMax - yMin)) * (H - 2*P);
-
-    let svg = `<svg viewBox="0 0 ${{W}} ${{H}}" width="100%">`;
-    // axes
-    svg += `<line x1="${{P}}" y1="${{H-P}}" x2="${{W-P}}" y2="${{H-P}}" stroke="#999"/>`;
-    svg += `<line x1="${{P}}" y1="${{P}}"   x2="${{P}}"   y2="${{H-P}}" stroke="#999"/>`;
-    // gridlines + y labels
-    for (let v = 0; v <= yMax; v += step) {{
-      const y = ys(v);
-      svg += `<line x1="${{P}}" y1="${{y}}" x2="${{W-P}}" y2="${{y}}" stroke="#eee"/>`;
-      svg += `<text x="${{P-6}}" y="${{y+3}}" text-anchor="end" fill="#888" font-size="10">${{v}}</text>`;
-    }}
-
-    // One series helper. Plots a polyline + last-value label.
-    // (Drop per-point circles — once enough runs accumulate they fuzz
-    // into a band and the polyline reads cleaner on its own.)
-    function series(key, color) {{
-      const pts = history.map((r, i) => ({{ x: xs(i), y: ys(r[key]), v: r[key], when: r.when }}));
-      const d = pts.map(p => `${{p.x}},${{p.y}}`).join(' ');
-      let out = `<polyline points="${{d}}" fill="none" stroke="${{color}}" stroke-width="1.5"/>`;
-      const last = pts[pts.length - 1];
-      out += `<text x="${{last.x + 6}}" y="${{last.y + 4}}" font-size="11" fill="${{color}}">${{last.v}}</text>`;
-      return out;
-    }}
-    svg += series('passed',  '#2c7');
-    svg += series('failed',  '#c44');
-    svg += series('skipped', '#999');
-
-    svg += '</svg>';
-    document.getElementById('chart').innerHTML = svg;
-  }}
-  chart();
-
-  const tbody = document.querySelector('#failures-table tbody');
-  for (const f of failures) {{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="path">${{f.path}}</td><td class="reason">${{f.reason || ''}}</td>`;
-    tbody.appendChild(tr);
-  }}
-</script>
-</html>
-"""
-    out_path.write_text(html, encoding="utf-8")
-
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--test262", type=Path, default=DEFAULT_TEST262,
-                    help="Path to the test262 checkout (default: vendor/test262)")
-    ap.add_argument("--filter", type=str, default=None,
-                    help="Only run tests whose path contains this substring")
-    ap.add_argument("--limit",  type=int, default=0,
-                    help="Limit total tests run (0 = no limit)")
-    ap.add_argument("--timeout", type=float, default=5.0,
-                    help="Per-test timeout in seconds")
-    ap.add_argument("--no-record", action="store_true",
-                    help="Run tests but don't append to history / write HTML")
-    ap.add_argument("--record-filter", action="store_true",
-                    help="Allow recording even with --filter/--limit. By default "
-                         "partial runs are quarantined from the dashboard since "
-                         "their numbers aren't comparable to the full sweep.")
-    ap.add_argument("--quiet", action="store_true",
-                    help="Don't print per-failure lines")
-    ap.add_argument("--full-suite", action="store_true",
-                    help="Override config: run all of test/language/ + "
-                         "test/built-ins/ with NO feature skips. Reports "
-                         "the test262.fyi-style 'absolute methodology' "
-                         "number — missing-feature failures count as "
-                         "failures, not skips. Forces --no-record so it "
-                         "doesn't pollute the curated dashboard.")
-    ap.add_argument("--aot", action="store_true",
-                    help="Round-trip every test through the AOT pipeline: "
-                         "compile to .zbc, then eval the bytecode. Used to "
-                         "validate AOT serializer/deserializer coverage. "
-                         "Forces --no-record (these numbers aren't the "
-                         "conformance dashboard's).")
-    args = ap.parse_args()
-
-    if not ZJS_BIN.exists():
-        print(f"error: {ZJS_BIN} not found — run `make` first", file=sys.stderr)
-        return 2
-    if not args.test262.exists():
-        print(f"error: test262 not found at {args.test262}", file=sys.stderr)
-        print(f"hint: clone it: git clone --depth=1 https://github.com/tc39/test262 {args.test262}", file=sys.stderr)
-        return 2
-
-    cfg = load_config()
-    if args.full_suite:
-        # Match the test262.fyi methodology: full language + built-ins,
-        # exclude intl402 (Intl is its own optional opt-in) and annexB
-        # (legacy/host-optional). Zero out the feature skip-list so
-        # missing-feature tests run and count as failures rather than
-        # being filtered out — the point of this mode is honest framing.
-        cfg = dict(cfg)
-        cfg["include"] = ["test/language", "test/built-ins"]
-        cfg["skip_features"] = []
-        cfg["skip_includes"] = []
-        args.no_record = True
-        print("[full-suite] running against test/language + test/built-ins "
-              "with no feature skips. This does NOT update the curated "
-              "dashboard — it's a one-shot 'where are we vs the full spec' "
-              "measurement.", file=sys.stderr)
-    if args.aot:
-        args.no_record = True
-        print("[aot] every test compiled to .zbc then run from bytecode. "
-              "Counts AOT-pipeline regressions vs the normal run.",
-              file=sys.stderr)
-
-    tests = gather_tests(args.test262, cfg, args.filter)
-    if args.limit > 0:
-        tests = tests[:args.limit]
-
-    passed, failed, skipped = 0, 0, 0
-    failure_log = []
-    skipped_counts = {}
-
-    for i, (rel, abs_path) in enumerate(tests):
-        try:
-            src = abs_path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            skipped += 1
-            skipped_counts["non-utf8"] = skipped_counts.get("non-utf8", 0) + 1
-            continue
-        meta = parse_frontmatter(src)
-        skip_reason = should_skip(meta, cfg)
-        if skip_reason:
-            skipped += 1
-            skipped_counts[skip_reason] = skipped_counts.get(skip_reason, 0) + 1
-            continue
-
-        # Per INTERPRETING.md: run each test in every applicable mode
-        # (sloppy + strict by default; flags can restrict to one). A
-        # test PASSES only when every scheduled mode passes. The first
-        # failing mode determines the reported reason.
-        modes = execution_modes(meta)
-        verdict = "pass"
-        reason  = ""
-        failing_mode = ""
-        for mode in modes:
-            full, module_path = assemble(args.test262, src, meta, abs_path,
-                                         strict_mode=(mode == "strict"))
-            exit_code, stderr, stdout = run_one(ZJS_BIN, full, args.timeout, aot=args.aot,
-                                                module_path=module_path,
-                                                script_dir=script_directory(meta, abs_path))
-            v, r = classify(meta, exit_code, stderr, stdout)
-            if v != "pass":
-                verdict = v
-                reason  = r
-                failing_mode = mode
-                break
-        if verdict == "pass":
-            passed += 1
-        else:
-            failed += 1
-            tagged_reason = f"[{failing_mode}] {reason}" if len(modes) > 1 else reason
-            failure_log.append({"path": rel, "reason": tagged_reason})
-            if not args.quiet:
-                print(f"FAIL {rel}\n   {tagged_reason}")
-
-        if (i + 1) % 100 == 0:
-            print(f"... {i+1}/{len(tests)}  pass={passed} fail={failed} skip={skipped}",
-                  file=sys.stderr)
-
-    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    summary = {
-        "when":    when,
-        "total":   passed + failed + skipped,
-        "passed":  passed,
-        "failed":  failed,
-        "skipped": skipped,
-        "platform": PLATFORM_LABEL,
-    }
-
-    print()
-    print(f"=== test262 summary ({when}) ===")
-    print(f"  passed:  {passed}")
-    print(f"  failed:  {failed}")
-    print(f"  skipped: {skipped}")
-    if passed + failed > 0:
-        print(f"  pass rate: {passed / (passed + failed) * 100:.1f}%")
-
-    if args.aot:
-        # AOT mode skips the main dashboard but writes its own failure
-        # dump so a follow-up diff can isolate serialization gaps.
-        aot_path = OUT_DIR / "last-aot.json"
-        OUT_DIR.mkdir(parents=True, exist_ok=True)
-        with open(aot_path, "w", encoding="utf-8") as f:
-            json.dump({"summary": summary, "failures": failure_log}, f, indent=2)
-        print(f"\nAOT failure log: {aot_path}")
-    if args.no_record:
-        return 0
-
-    # Partial runs (filter/limit) get quarantined from the main dashboard
-    # by default: their pass-counts aren't comparable to the full sweep
-    # and the trend line dips spuriously if they land in history.jsonl.
-    # Pass --record-filter to opt back in if you actually want a row.
-    partial = bool(args.filter) or args.limit > 0
-    if partial and not args.record_filter:
-        print()
-        print("note: partial run (filter/limit set) — not recording to "
-              "history / dashboard.")
-        print("      Pass --record-filter to override, or run without "
-              "filter for a real measurement.")
-        return 0
-
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Append summary row.
-    with open(HISTORY, "a", encoding="utf-8") as f:
-        f.write(json.dumps(summary) + "\n")
-
-    # Full per-test results (truncate failures to 1000 entries).
-    LAST_JSON.write_text(json.dumps({
-        "summary":  summary,
-        "failures": failure_log,
-        "skip_counts": skipped_counts,
-    }, indent=2), encoding="utf-8")
-
-    # Regenerate the HTML with embedded history.
-    history = []
-    with open(HISTORY, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line: continue
-            try: history.append(json.loads(line))
-            except json.JSONDecodeError: pass
-    write_html(HTML_PATH, history, summary, failure_log)
-    print(f"\nReport: {HTML_PATH.relative_to(REPO_ROOT)}")
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main())

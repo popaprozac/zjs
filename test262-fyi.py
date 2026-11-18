@@ -3,7 +3,7 @@
 test262 counted the way test262.fyi counts it, so the number compares with
 the engines on that dashboard. The rules are its runner's
 (github.com/test262-fyi/data: runner/read.js, runner/index.js, util.js and
-controller/oom-killer.js), not test262.py's:
+controller/oom-killer.js), not scripts/test262/run.py's:
 
 - One test is one file under test/, every directory (harness/ too), files
   named *_FIXTURE* left out. No feature or directory is skipped.

@@ -181,7 +181,7 @@ left as source fails it with an EvalError.
 Each module is a file of its own: compiling one does not read its
 imports. `zjsz run --via-bytecode` passes every module of a graph
 through a module file made in an engine of its own, which the
-expectation cases and the test262 runner's `--aot` use.
+expectation cases and `test262-ab.py --aot` use.
 
 ## Evidence
 
@@ -198,9 +198,10 @@ expectation cases and the test262 runner's `--aot` use.
   `module-reexports`, `module-namespace-object`, and
   `module-top-level-await`, recorded from node, each run three times
   (collecting at every safe point the second, through module files the
-  third), as `dynamic-import-script`, a script, is. Under `--aot` the
-  610 module tests of `module-code`, `dynamic-import`, and `import.meta`
-  have the outcomes they have from source.
+  third), as `dynamic-import-script`, a script, is. Under
+  `test262-ab.py --aot` the 610 module tests of `module-code`,
+  `dynamic-import`, and `import.meta` have the outcomes they have from
+  source.
 - `tests/module_test.c`: the ABI's two source entries, the cache, a
   module from memory importing files, top-level await and import(), and
   load, link, and evaluation errors. `tests/module_bytecode_test.c`:
