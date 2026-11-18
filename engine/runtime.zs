@@ -12373,6 +12373,22 @@ function nativeFormatDouble(buffer: usize, value: f64, exponentForm: i32): void 
   char digits[40];
   int precision = 1;
   for (; precision <= 17; precision++) {
+    if (!lopsided && precision == 4) {
+      /* Past three digits, away from a power of two: the doubles reading
+         back as this one are an interval symmetric about it, and the
+         nearest decimal of one more digit is no further off, so reading
+         back is monotonic in the length, and the shortest is found in
+         about four more tries rather than up to 14. (Up to three digits,
+         as a number written by hand often has, the walk is cheaper.) */
+      int hi = 17, tried = 0;
+      while (precision < hi) {
+        tried = (precision + hi) / 2;
+        snprintf(digits, sizeof digits, "%.*e", tried - 1, value);
+        if (strtod(digits, NULL) == value) hi = tried; else precision = tried + 1;
+      }
+      if (tried != precision) snprintf(digits, sizeof digits, "%.*e", precision - 1, value);
+      break;
+    }
     snprintf(digits, sizeof digits, "%.*e", precision - 1, value);
     if (strtod(digits, NULL) == value) break;
     if (lopsided) {
