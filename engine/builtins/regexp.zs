@@ -7,7 +7,7 @@
 import { Value, undefinedValue, nullValue, booleanValue, isTrue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isNumber, asInt32, isInt32 } from "../value.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_WRITABLE } from "../heap.zs";
 import { unitsOf, sliceUnits, copyUnits, appendUnits, appendUnitRange, isHighSurrogate, isLowSurrogate } from "../text.zs";
-import { Runtime, HostFunction, toNumber, truncateDouble, appendBytes, FEATURE_REGEXP } from "../runtime.zs";
+import { Runtime, HostFunction, FlagAccessor, toNumber, truncateDouble, appendBytes, FEATURE_REGEXP } from "../runtime.zs";
 import { REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, createRegexBackend } from "../regex.zs";
 import { stringMatch, stringMatchAll, stringSearch } from "./primitives.zs";
 import { thread } from "std/thread";
@@ -114,13 +114,75 @@ function setLastIndex(inout runtime: Runtime, rx: Value, value: usize): boolean 
   return true;
 }
 
+// ToString(Get(rx, "flags")) as units. A RegExp whose read would run
+// only the builtin getters (see knownFlagBits) has them from its bits.
 function flagsStringOf(inout runtime: Runtime, rx: Value): Array<u16> {
+  const known = knownFlagBits(in runtime, rx);
+  if (known >= 0) return flagLetters(known);
+  noteFlagsShape(inout runtime, rx);
   const atomFlags = runtime.atomFlags;
   const held = runtime.getProperty(rx, cellValue(atomFlags));
   if (runtime.pendingThrow) return Array<u16>();
   const text = runtime.toStringValue(held);
   if (runtime.pendingThrow) return Array<u16>();
   return stringBytesOf(inout runtime, text);
+}
+
+// The flag bits of a RegExp whose `flags` would be read through the
+// builtin getters alone: it is of the class noteFlagsShape recorded (none
+// of their names its own), and its prototype is RegExp.prototype, still
+// of its installed class and holding the accessor cells installed. -1
+// for any other value.
+function knownFlagBits(in runtime: Runtime, rx: Value): i32 {
+  if (runtime.flagsShapeClass == 0 || !isCell(rx) || asCell(rx) == 0) return -1;
+  const handle = asCell(rx);
+  if (!runtime.heap.isObject(handle) || runtime.heap.objectClass(handle) != runtime.flagsShapeClass) return -1;
+  const proto = runtime.heap.objectProto(handle);
+  if (proto != runtime.regexProto || runtime.heap.objectClass(proto) != runtime.flagsProtoClass) return -1;
+  let i: usize = 0;
+  while (i < runtime.flagAccessors.length) {
+    const held = runtime.heap.slot(proto, runtime.flagAccessors[i].slot);
+    if (!isCell(held) || asCell(held) != runtime.flagAccessors[i].cell) return -1;
+    i = i + 1;
+  }
+  return asInt32(runtime.heap.slot(handle, runtime.flagsBitsSlot));
+}
+
+// Before a read of `flags` through Get: record the class of a RegExp
+// with none of the accessors' names as its own (see knownFlagBits).
+function noteFlagsShape(inout runtime: Runtime, rx: Value): void {
+  if (runtime.flagsProtoClass == 0 || !runtime.isRegExpObject(rx)) return;
+  const handle = asCell(rx);
+  if (runtime.heap.isDictionary(handle)) return;
+  let i: usize = 0;
+  while (i < runtime.flagAccessors.length) {
+    if (runtime.heap.objectFindSlot(handle, runtime.flagAccessors[i].atom) >= 0) return;
+    i = i + 1;
+  }
+  const atomRegexFlags = runtime.atomRegexFlags;
+  runtime.flagsBitsSlot = u32(runtime.heap.objectFindSlot(handle, atomRegexFlags));
+  runtime.flagsShapeClass = runtime.heap.objectClass(handle);
+}
+
+// The flags getter's result for these bits, in its order.
+function flagLetters(bits: i32): Array<u16> {
+  let letters = Array<u16>();
+  if ((bits & REGEX_HAS_INDICES) != 0) letters.push(100);
+  if ((bits & REGEX_GLOBAL) != 0) letters.push(103);
+  if ((bits & REGEX_IGNORE_CASE) != 0) letters.push(105);
+  if ((bits & REGEX_MULTILINE) != 0) letters.push(109);
+  if ((bits & REGEX_DOT_ALL) != 0) letters.push(115);
+  if ((bits & REGEX_UNICODE) != 0) letters.push(117);
+  if ((bits & REGEX_UNICODE_SETS) != 0) letters.push(118);
+  if ((bits & REGEX_STICKY) != 0) letters.push(121);
+  return letters;
+}
+
+// Keep a RegExp.prototype accessor as installed (see knownFlagBits).
+function recordFlagAccessor(inout runtime: Runtime, proto: u32, in name: String): void {
+  const atom = runtime.atomOf(in name);
+  const slot = u32(runtime.heap.objectFindSlot(proto, atom));
+  runtime.flagAccessors.push(FlagAccessor({ atom: atom, slot: slot, cell: asCell(runtime.heap.slot(proto, slot)) }));
 }
 
 // SpeciesConstructor(object, default).
@@ -1396,4 +1458,18 @@ export function installRegExp(inout runtime: Runtime): void {
   const tagKey = runtime.propertyKey(symbolToStringTag);
   const tagText: String = "RegExp String Iterator";
   runtime.heap.objectDefine(stringIteratorProto, tagKey, runtime.internText(in tagText), PROP_CONFIGURABLE);
+
+  // The accessors a read of `flags` runs, in the prototype's final class.
+  if (!runtime.heap.isDictionary(proto)) {
+    recordFlagAccessor(inout runtime, proto, in flagsText);
+    recordFlagAccessor(inout runtime, proto, in hasIndicesText);
+    recordFlagAccessor(inout runtime, proto, in globalText);
+    recordFlagAccessor(inout runtime, proto, in ignoreCaseText);
+    recordFlagAccessor(inout runtime, proto, in multilineText);
+    recordFlagAccessor(inout runtime, proto, in dotAllText);
+    recordFlagAccessor(inout runtime, proto, in unicodeText);
+    recordFlagAccessor(inout runtime, proto, in unicodeSetsText);
+    recordFlagAccessor(inout runtime, proto, in stickyText);
+    runtime.flagsProtoClass = runtime.heap.objectClass(proto);
+  }
 }

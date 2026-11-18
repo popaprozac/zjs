@@ -523,6 +523,15 @@ struct KeyPlan {
   saw: u32;
 }
 
+// A RegExp.prototype accessor as installed: its name, its slot, and the
+// accessor cell (one never changes: redefining a property stores a new
+// cell).
+export struct FlagAccessor {
+  atom: u32;
+  slot: u32;
+  cell: u32;
+}
+
 // A read the general path answered, kept where any site can find it:
 // for a receiver of `shape`, where `atom` is (see Shared loads). `shape`
 // is a plain object's class, a function's bag's class (the root class
@@ -671,6 +680,16 @@ export struct Runtime {
   // data property) and of the flag bits.
   execLastIndexSlot: u32;
   execFlagsSlot: u32;
+  // RegExp.prototype's class once installed and its `flags` and eight
+  // flag accessors as installed; and a RegExp's class with none of those
+  // names as its own, with the slot of its flag bits. Reading `flags`
+  // from an object of that class whose prototype is still of that class
+  // and holds those accessor cells runs only the builtin getters (see
+  // flagsStringOf). 0 for none recorded.
+  flagsProtoClass: u32;
+  flagAccessors: Array<FlagAccessor>;
+  flagsShapeClass: u32;
+  flagsBitsSlot: u32;
   // The completion value of the last run, kept alive for the embedder.
   lastResult: Value;
   // Builtins, indexed by a host function cell's payload.
@@ -7215,6 +7234,15 @@ export struct Runtime {
     if (regexIteratorProto != 0) this.heap.markHandle(regexIteratorProto);
     const regexExecFn = this.regexExecFn;
     if (regexExecFn != 0) this.heap.markHandle(regexExecFn);
+    // Compared by handle, so neither may be freed and its handle reused.
+    let flagIndex: usize = 0;
+    while (flagIndex < this.flagAccessors.length) {
+      const flagAtom = this.flagAccessors[flagIndex].atom;
+      this.heap.markHandle(flagAtom);
+      const flagCell = this.flagAccessors[flagIndex].cell;
+      this.heap.markHandle(flagCell);
+      flagIndex = flagIndex + 1;
+    }
     const regexCtor = this.regexCtor;
     if (regexCtor != 0) this.heap.markHandle(regexCtor);
     const symbolMatch = this.symbolMatch;
@@ -11827,7 +11855,7 @@ export function createRuntime(): Runtime {
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
-    randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), joining: Array<u32>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, lastResult: undefinedValue(),
+    randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), joining: Array<u32>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, flagsProtoClass: 0, flagAccessors: Array<FlagAccessor>(), flagsShapeClass: 0, flagsBitsSlot: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
