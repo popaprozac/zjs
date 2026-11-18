@@ -38,4 +38,9 @@ var rep = "[" + Array.from({ length: 6 }, function (_, i) { return "{\"id\":" + 
 var r = JSON.parse(rep); out.push(r.map(function (o) { return Object.keys(o).join("") + o.id + o.tag + o.ok; }).join("|"));
 out.push(JSON.stringify(JSON.parse(rep, function (k, v) { return k === "tag" ? v.toUpperCase() : (k === "ok" ? undefined : v); })));
 var a = JSON.parse("{\"b\":1,\"a\":2}"), b = JSON.parse("{\"a\":2,\"b\":1}"); out.push(Object.keys(a).join(""), Object.keys(b).join(""));
+// Forty shapes interleaved in one document, more classes than parse's
+// caches hold, and one class moving on by several names.
+var shapes = []; for (var s = 0; s < 40; s++) { var names = []; for (var k = 0; k <= s % 5; k++) names.push("n" + ((s * 7 + k * 3) % 23)); shapes.push(names); }
+var docs = []; for (var i = 0; i < 400; i++) { var names = shapes[(i * 13) % 40], o = {}; for (var k = 0; k < names.length; k++) o[names[k]] = i * 10 + k; docs.push(o); }
+var text = JSON.stringify(docs), back = JSON.parse(text); out.push(JSON.stringify(back) === text, Object.keys(back[397]).join(","), back[397].n10);
 console.log(out.join("\n"));

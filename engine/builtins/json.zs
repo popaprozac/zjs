@@ -22,40 +22,51 @@ struct JsonParser {
   units: Array<u16>;
   wide: boolean;
   narrow: Array<u8>;
-  // Recent class transitions, direct-mapped by (class, name): objects of
-  // one shape, which a document repeats, move straight to their class.
-  shapeFrom: Array<u32>;
-  shapeName: Array<u32>;
-  shapeTo: Array<u32>;
-  shapeSlot: Array<u32>;
-  // The class each recent class last moved to, direct-mapped by class: a
-  // document repeating a shape names the same key next, so the text is
-  // compared with that class's name in place, with no copy or lookup. A
-  // class whose name a string would escape is not kept.
-  nextFrom: Array<u32>;
-  nextTo: Array<u32>;
+  // Recent class transitions, in sets of two picked by (class, name):
+  // objects of one shape, which a document repeats, move straight to
+  // their class. A key holds the class in its high 32 bits and the name
+  // in its low; its target, the class moved to and the name's slot.
+  shapeKeys: Array<u64>;
+  shapeTargets: Array<u64>;
+  // The class each recent class last moved to, in sets of two picked by
+  // class, each entry the class in its high 32 bits and the class it
+  // moved to in its low: a document repeating a shape names the same key
+  // next, so the text is compared with that class's name in place, with
+  // no copy or lookup. A move to a class whose name a string would escape
+  // is kept as a move to 0, which expects nothing.
+  nextMoves: Array<u64>;
 }
 
-const SHAPE_CACHE: usize = 64;
-const NEXT_CACHE: usize = 64;
+// Each cache holds sets of two entries, the newer first: a new entry goes
+// first, the newer moves second, and the older leaves. Two keys that pick
+// one set both stay, where with one entry each they would evict each other
+// on every object, and a repeated document's speed would turn on which
+// class ids and atoms it happened to get.
+const SHAPE_SETS: usize = 32;
+const NEXT_SETS: usize = 32;
 
 // Define a parsed property on a fresh object, through the transition
 // cache when it holds.
 function defineParsed(inout runtime: Runtime, inout parser: JsonParser, object: u32, atom: u32, value: Value): void {
   const before = runtime.heap.objectClass(object);
-  const at = usize(before.wrappingMultiply(31).wrappingAdd(atom)) & (SHAPE_CACHE - 1);
-  if (parser.shapeFrom[at] == before && parser.shapeName[at] == atom && parser.shapeTo[at] != 0) {
-    runtime.heap.transitionTo(object, parser.shapeTo[at], parser.shapeSlot[at], value);
-    noteNext(in runtime, inout parser, before, parser.shapeTo[at]);
+  const key = (u64(before) << 32) | u64(atom);
+  const at = (usize(before.wrappingMultiply(31).wrappingAdd(atom)) & (SHAPE_SETS - 1)) * 2;
+  let way = at;
+  if (parser.shapeKeys[way] != key) way = at + 1;
+  const target = parser.shapeTargets[way];
+  if (parser.shapeKeys[way] == key && target != 0) {
+    const cached = u32(target >> 32);
+    runtime.heap.transitionTo(object, cached, u32(target & 0xFFFF_FFFF), value);
+    noteNext(in runtime, inout parser, before, cached);
     return;
   }
   runtime.heap.objectSet(object, atom, value);
   const after = runtime.heap.objectClass(object);
   if (after != before && !runtime.heap.isDictionary(object) && runtime.heap.isTransitionOf(after, before, atom)) {
-    parser.shapeFrom[at] = before;
-    parser.shapeName[at] = atom;
-    parser.shapeTo[at] = after;
-    parser.shapeSlot[at] = runtime.heap.classSlot(after);
+    parser.shapeKeys[at + 1] = parser.shapeKeys[at];
+    parser.shapeTargets[at + 1] = parser.shapeTargets[at];
+    parser.shapeKeys[at] = key;
+    parser.shapeTargets[at] = (u64(after) << 32) | u64(runtime.heap.classSlot(after));
     noteNext(in runtime, inout parser, before, after);
   }
 }
@@ -63,10 +74,16 @@ function defineParsed(inout runtime: Runtime, inout parser: JsonParser, object: 
 // Record that an object of class `before` moved to `after`, the key to
 // expect next time.
 function noteNext(in runtime: Runtime, inout parser: JsonParser, before: u32, after: u32): void {
-  const at = usize(before) & (NEXT_CACHE - 1);
-  if (parser.nextFrom[at] == before && parser.nextTo[at] == after) return;
-  parser.nextFrom[at] = before;
-  parser.nextTo[at] = plainName(in runtime, runtime.heap.transitionNameOf(after)) ? after : 0;
+  const at = (usize(before) & (NEXT_SETS - 1)) * 2;
+  const move = (u64(before) << 32) | u64(after);
+  if (parser.nextMoves[at] == move || parser.nextMoves[at + 1] == move) return;
+  let way = at;
+  if (parser.nextMoves[way] >> 32 != u64(before)) way = at + 1;
+  if (parser.nextMoves[way] >> 32 != u64(before)) {
+    parser.nextMoves[at + 1] = parser.nextMoves[at];
+    way = at;
+  }
+  parser.nextMoves[way] = plainName(in runtime, runtime.heap.transitionNameOf(after)) ? move : u64(before) << 32;
 }
 
 // Whether a name is narrow and holds no byte a JSON string escapes, so
@@ -102,8 +119,8 @@ function sameBytes(a: Slice<u8>, aStart: usize, b: Slice<u8>, bStart: usize, len
   return true;
 }
 
-function zeros(count: usize): Array<u32> {
-  let list = Array<u32>.withCapacity(count);
+function zeros(count: usize): Array<u64> {
+  let list = Array<u64>.withCapacity(count);
   list.appendRepeated(0, count);
   return list;
 }
@@ -422,9 +439,17 @@ function parseValue(inout runtime: Runtime, inout parser: JsonParser): Value {
       // The key the object's class last moved on by, if the text has it.
       // Its atom needs no root: a class's name lives as long as the class.
       const before = runtime.heap.objectClass(object);
-      const at = usize(before) & (NEXT_CACHE - 1);
+      const at = (usize(before) & (NEXT_SETS - 1)) * 2;
       let expected: u32 = 0;
-      if (parser.nextFrom[at] == before && !parser.textWide) expected = parser.nextTo[at];
+      if (!parser.textWide) {
+        const newer = parser.nextMoves[at];
+        if (newer >> 32 == u64(before)) {
+          expected = u32(newer & 0xFFFF_FFFF);
+        } else {
+          const older = parser.nextMoves[at + 1];
+          if (older >> 32 == u64(before)) expected = u32(older & 0xFFFF_FFFF);
+        }
+      }
       let atom: u32 = 0;
       if (expected != 0 && nameAt(in runtime, in parser, runtime.heap.transitionNameOf(expected))) {
         atom = runtime.heap.transitionNameOf(expected);
@@ -608,7 +633,7 @@ function jsonParse(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   } else {
     bytes = runtime.heap.stringStorageBytes(textHandle);
   }
-  let parser = JsonParser({ bytes: move bytes, textUnits: move textUnits, textWide, length: runtime.heap.stringLength(textHandle), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeFrom: zeros(SHAPE_CACHE), shapeName: zeros(SHAPE_CACHE), shapeTo: zeros(SHAPE_CACHE), shapeSlot: zeros(SHAPE_CACHE), nextFrom: zeros(NEXT_CACHE), nextTo: zeros(NEXT_CACHE) });
+  let parser = JsonParser({ bytes: move bytes, textUnits: move textUnits, textWide, length: runtime.heap.stringLength(textHandle), position: 0, failed: false, units: Array<u16>(), wide: false, narrow: Array<u8>(), shapeKeys: zeros(SHAPE_SETS * 2), shapeTargets: zeros(SHAPE_SETS * 2), nextMoves: zeros(NEXT_SETS * 2) });
   const value = parseValue(inout runtime, inout parser);
   if (runtime.pendingThrow) return undefinedValue();
   skipSpace(inout parser);
