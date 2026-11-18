@@ -30,6 +30,7 @@ Z_BIN=<native z> ./build.sh     # the same, built by a native compiler binary
 ./gc-check.sh                   # collector checks on engine counters (tests/gc)
 ./test262.py                    # test262, curated subset, against the reference
 ./test262-ab.py BEFORE AFTER    # test262, two builds of the engine, and what differs
+./test262-fyi.py ZJSZ OUT.jsonl # test262 whole, counted as test262.fyi counts engines
 ./oracle.sh                     # differential oracle, synthetic corpus
 ./oracle-tokens.sh              # lexer oracle: diff token dumps, both engines
 ./oracle-ast.sh                 # parser oracle: diff AST dumps, both engines
