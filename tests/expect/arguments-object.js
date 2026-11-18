@@ -28,3 +28,25 @@ function grow(a) { arguments[3] = 4; return arguments.length + "," + arguments[3
 out.push(grow(1));
 out.push((function () { return Object.isFrozen(Object.getOwnPropertyDescriptor((function () { "use strict"; return arguments; })(), "callee").get); })());
 console.log(out.join("\n"));
+
+// One whose elements are all data properties takes the class the first
+// of its argument count and kind was built with, and is the same as one
+// built a property at a time: every case runs again on the kept class.
+var out = [];
+function plain() { return arguments; }
+function strict() { "use strict"; return arguments; }
+function two(a, b) { a = "mapped"; return arguments[0]; }
+function show(A) {
+  var c = Object.getOwnPropertyDescriptor(A, "callee");
+  return [A.length, Object.keys(A).join(), typeof c.value + "/" + typeof c.get + "/" + c.enumerable, A[Symbol.iterator] === Array.prototype.values, [...A].join(), JSON.stringify(Object.getOwnPropertyDescriptor(A, "length"))].join(" ");
+}
+for (var round = 0; round < 3; round++) {
+  out.push(show(plain()), show(plain(1, "b")), show(strict(1, "b")), two(1, 2), show(plain(1, "b", 3)));
+  try { strict(1, "b").callee; out.push("no throw"); } catch (e) { out.push("strict callee " + e.constructor.name); }
+  out.push(plain(7, 8).callee === plain);
+}
+var wide = []; for (var i = 0; i < 70; i++) wide.push(i);
+for (var round = 0; round < 2; round++) { var W = plain.apply(null, wide); out.push([W.length, W[69], Object.keys(W).length, W.callee === plain].join()); }
+var a1 = plain(1, 2), a2 = plain(3, 4); a1[0] = "changed"; a1.extra = true; delete a2[1];
+out.push([a1[0], a2[0], a2[1], "extra" in a2, Object.keys(a1).join(), Object.keys(a2).join(), a2.length].join(" "));
+console.log(out.join("\n"));

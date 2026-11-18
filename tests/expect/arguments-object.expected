@@ -22,3 +22,27 @@ defined,defined
 second
 1,4
 true
+0  function/undefined/false true  {"value":0,"writable":true,"enumerable":false,"configurable":true}
+2 0,1 function/undefined/false true 1,b {"value":2,"writable":true,"enumerable":false,"configurable":true}
+2 0,1 undefined/function/false true 1,b {"value":2,"writable":true,"enumerable":false,"configurable":true}
+mapped
+3 0,1,2 function/undefined/false true 1,b,3 {"value":3,"writable":true,"enumerable":false,"configurable":true}
+strict callee TypeError
+true
+0  function/undefined/false true  {"value":0,"writable":true,"enumerable":false,"configurable":true}
+2 0,1 function/undefined/false true 1,b {"value":2,"writable":true,"enumerable":false,"configurable":true}
+2 0,1 undefined/function/false true 1,b {"value":2,"writable":true,"enumerable":false,"configurable":true}
+mapped
+3 0,1,2 function/undefined/false true 1,b,3 {"value":3,"writable":true,"enumerable":false,"configurable":true}
+strict callee TypeError
+true
+0  function/undefined/false true  {"value":0,"writable":true,"enumerable":false,"configurable":true}
+2 0,1 function/undefined/false true 1,b {"value":2,"writable":true,"enumerable":false,"configurable":true}
+2 0,1 undefined/function/false true 1,b {"value":2,"writable":true,"enumerable":false,"configurable":true}
+mapped
+3 0,1,2 function/undefined/false true 1,b,3 {"value":3,"writable":true,"enumerable":false,"configurable":true}
+strict callee TypeError
+true
+70,69,70,true
+70,69,70,true
+changed 3  false 0,1,extra 0 2

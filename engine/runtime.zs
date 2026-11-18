@@ -740,6 +740,10 @@ export struct Runtime {
   // on first use (0 until then): an arguments object's indices, and any
   // obj[i] on an object that is no array, name them.
   indexAtoms: Array<u32>;
+  // The class of an arguments object whose elements are all data
+  // properties, by argument count and kind (makeArguments), 0 until the
+  // first such object is built. Classes are never freed.
+  argumentsClasses: Array<u32>;
   // Iteration: %IteratorPrototype%, %ArrayIteratorPrototype%, the hidden
   // keys an array iterator keeps its state under, and the builtin `next`
   // whose presence allows the allocation-free fast path.
@@ -3848,6 +3852,14 @@ export struct Runtime {
   function makeArguments(inout this, frameIndex: usize, mapped: boolean, env: u32, in slots: Array<i32>): Value {
     const argsBase = this.frames[frameIndex].argsBase;
     const argc = this.frames[frameIndex].argc;
+    // One whose elements are all data properties has a class fixed by its
+    // argument count, whether it is mapped, and whether it has @@iterator.
+    const plain = !mapped || slots.length == 0;
+    const kind = usize(argc) * 4 + (mapped ? 2 : 0) + (this.arrayValuesFn != 0 ? 1 : 0);
+    if (plain && kind < this.argumentsClasses.length && this.argumentsClasses[kind] != 0) {
+      const known = this.argumentsClasses[kind];
+      return this.argumentsOfClass(frameIndex, mapped, known);
+    }
     const objectProto = this.objectProto;
     const object = this.heap.allocateObject(objectProto);
     this.pushTempRoot(cellValue(object));
@@ -3888,6 +3900,45 @@ export struct Runtime {
       const accessor = this.heap.allocateAccessor(cellValue(thrower), cellValue(thrower));
       this.heap.objectDefine(object, calleeKey, cellValue(accessor), PROP_ACCESSOR);
     }
+    if (plain && !this.heap.isDictionary(object)) {
+      while (this.argumentsClasses.length <= kind) { this.argumentsClasses.push(0); }
+      this.argumentsClasses[kind] = this.heap.objectClass(object);
+    }
+    this.popTempRoot();
+    return cellValue(object);
+  }
+
+  // An arguments object of the class makeArguments built for its count
+  // and kind, its slots in the order that built it: the marker, the
+  // elements, length, @@iterator where there is one, callee.
+  function argumentsOfClass(inout this, frameIndex: usize, mapped: boolean, classId: u32): Value {
+    const argsBase = this.frames[frameIndex].argsBase;
+    const argc = this.frames[frameIndex].argc;
+    const objectProto = this.objectProto;
+    const object = this.heap.allocateObjectOfClass(objectProto, classId);
+    this.heap.setSlot(object, 0, booleanValue(true));
+    let index: u32 = 0;
+    while (index < argc) {
+      const passed = this.stackAt(usize(argsBase + index));
+      this.heap.setSlot(object, index + 1, passed);
+      index = index + 1;
+    }
+    this.heap.setSlot(object, argc + 1, int32Value(i32(argc)));
+    let calleeSlot = argc + 2;
+    if (this.arrayValuesFn != 0) {
+      const values = this.arrayValuesFn;
+      this.heap.setSlot(object, calleeSlot, cellValue(values));
+      calleeSlot = calleeSlot + 1;
+    }
+    if (mapped) {
+      const callee = this.frames[frameIndex].callee;
+      this.heap.setSlot(object, calleeSlot, callee);
+      return cellValue(object);
+    }
+    this.pushTempRoot(cellValue(object));
+    const thrower = this.throwTypeError();
+    const accessor = this.heap.allocateAccessor(cellValue(thrower), cellValue(thrower));
+    this.heap.setSlot(object, calleeSlot, cellValue(accessor));
     this.popTempRoot();
     return cellValue(object);
   }
@@ -11901,7 +11952,7 @@ export function createRuntime(): Runtime {
     randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), joining: Array<u32>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, flagsProtoClass: 0, flagAccessors: Array<FlagAccessor>(), flagsShapeClass: 0, flagsBitsSlot: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
-    atomArgumentsMarker: 0, atomCallee: 0, indexAtoms: Array<u32>(), iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
+    atomArgumentsMarker: 0, atomCallee: 0, indexAtoms: Array<u32>(), argumentsClasses: Array<u32>(), iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,
     mapProto: 0, setProto: 0, weakMapProto: 0, weakSetProto: 0, mapIteratorProto: 0, setIteratorProto: 0, atomMapRecord: 0, atomMapIter: 0, atomHome: 0, atomNewTarget: 0, atomFunctionProto: 0, atomArrayProto: 0, promiseProto: 0, promiseCtor: 0, arrayCtor: 0, arraySpeciesGetter: 0, arrayCtorSlotClass: 0, arrayCtorSlot: -1, hasInstanceBuiltin: 0, promiseSpeciesGetter: 0, hostNewTarget: undefinedValue(), atomPromiseState: 0, atomErrorData: 0, atomDateValue: 0, atomRegexSource: 0, atomRegexFlags: 0, atomRegexCompiled: 0, atomRegexIter: 0, atomRegexTicket: 0, atomLastIndex: 0, atomIndex: 0, atomInput: 0, atomGroups: 0, atomExec: 0, atomFlags: 0, regexProto: 0, regexIteratorProto: 0, regexExecFn: 0, regexCtor: 0, regexBackend: emptyRegexBackend(), regexpMaker: regExpMissing, features: 0, symbolMatch: undefinedValue(), symbolMatchAll: undefinedValue(), symbolReplace: undefinedValue(), symbolSearch: undefinedValue(), symbolSplit: undefinedValue(), asyncIteratorProto: 0, asyncGeneratorProto: 0, symbolAsyncIterator: undefinedValue(), asyncFromSyncProto: 0, atomSyncIterator: 0, jobs: Array<Value>(), jobCursor: 0, jobEnd: 0, gcTiming: false, rootFunctionsFrom: 0, rootClassesFrom: 1, sharedLoads: Array<SharedLoad>(), gcPauses: Array<f64>(), resumeDone: false,
     symbolCounter: 0, symbolRegistry: Array<Value>(),
