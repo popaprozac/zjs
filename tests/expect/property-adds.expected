@@ -37,3 +37,15 @@ a setter on it: 0,1,2 / undefined(inherited),undefined(inherited),undefined(inhe
 removed: 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 s / s / s / s / s / s / s
 frozen prototypes: 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 s / s / s / s / s / s / s
 after a collection: 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 / 0,1,2 s / s / s / s / s / s / s
+shadowed: true:s0/true:t0 true:s1/true:t1 true:s2/true:t2 holder: proto
+its value changed: true:s0/true:t0 true:s1/true:t1 true:s2/true:t2 holder: changed
+read-only: false:changed/false:changed!TypeError false:changed/false:changed!TypeError false:changed/false:changed!TypeError holder: changed
+writable again: true:s0/true:t0 true:s1/true:t1 true:s2/true:t2 holder: changed
+an accessor: false:got/false:got false:got/false:got false:got/false:got holder: got
+its setter saw: s0 t0 s1 t1 s2 t2
+removed: true:s0/true:t0 true:s1/true:t1 true:s2/true:t2 holder: undefined
+back: true:s0/true:t0 true:s1/true:t1 true:s2/true:t2 holder: back
+frozen: false:back/false:back!TypeError false:back/false:back!TypeError false:back/false:back!TypeError holder: back
+shadowed two up: true:s0/true:t0 true:s1/true:t1 true:s2/true:t2 holder: deep
+read-only two up: false:deep/false:deep!TypeError false:deep/false:deep!TypeError false:deep/false:deep!TypeError holder: deep
+a setter that defines it: d0 e0 d1 e1 d2 e2

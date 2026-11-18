@@ -119,4 +119,52 @@ note("frozen prototypes:", (Object.freeze(Leaf.prototype), both()));
 // What the sites remembered survives collections.
 if (typeof gc === "function") gc();
 note("after a collection:", both());
+
+// A prototype holding a writable data property of the name: the store
+// shadows it, and the site remembers that too, until the property turns
+// read-only or an accessor, or goes.
+function shadowRound(Make, holder, label) {
+  var outcome = [];
+  for (var i = 0; i < 3; i++) {
+    var a = new Make(); shadowSloppy(a, "s" + i);
+    var b = new Make(); var threw = "";
+    try { shadowStrict(b, "t" + i); } catch (e) { threw = "!" + e.constructor.name; }
+    outcome.push(own.call(a, "name") + ":" + a.name + "/" + own.call(b, "name") + ":" + b.name + threw);
+  }
+  note(label, outcome.join(" "), "holder:", holder.name);
+}
+var shadowSloppy = site(false), shadowStrict = site(true);
+function Shadow() {}
+Shadow.prototype.name = "proto";
+shadowRound(Shadow, Shadow.prototype, "shadowed:");
+Shadow.prototype.name = "changed";
+shadowRound(Shadow, Shadow.prototype, "its value changed:");
+Object.defineProperty(Shadow.prototype, "name", { writable: false });
+shadowRound(Shadow, Shadow.prototype, "read-only:");
+Object.defineProperty(Shadow.prototype, "name", { writable: true });
+shadowRound(Shadow, Shadow.prototype, "writable again:");
+var shadowCalls = [];
+Object.defineProperty(Shadow.prototype, "name", { get: function () { return "got"; }, set: function (v) { shadowCalls.push(v); }, configurable: true });
+shadowRound(Shadow, Shadow.prototype, "an accessor:");
+note("its setter saw:", shadowCalls.join(" "));
+delete Shadow.prototype.name;
+shadowRound(Shadow, Shadow.prototype, "removed:");
+Shadow.prototype.name = "back";
+shadowRound(Shadow, Shadow.prototype, "back:");
+Object.freeze(Shadow.prototype);
+shadowRound(Shadow, Shadow.prototype, "frozen:");
+// Two prototypes up, the same.
+var deepHolder = { name: "deep" };
+function Deep() {}
+Deep.prototype = Object.create(deepHolder);
+shadowRound(Deep, deepHolder, "shadowed two up:");
+Object.defineProperty(deepHolder, "name", { writable: false });
+shadowRound(Deep, deepHolder, "read-only two up:");
+// A setter that defines the property on the receiver itself: the store
+// ran code, so every store at the site must run it again.
+var definer = [];
+function Definer() {}
+Object.defineProperty(Definer.prototype, "name", { set: function (v) { definer.push(v); Object.defineProperty(this, "name", { value: v, writable: true, enumerable: true, configurable: true }); }, configurable: true });
+for (var i = 0; i < 3; i++) { shadowSloppy(new Definer(), "d" + i); shadowStrict(new Definer(), "e" + i); }
+note("a setter that defines it:", definer.join(" "));
 console.log(log.join("\n"));

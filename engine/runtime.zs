@@ -1758,9 +1758,21 @@ export struct Runtime {
     this.functions[usize(fi)].caches[nameSlot] = PropertyCache({ kind: CACHE_DEFINE, attr: 0, depth: 0, searches: this.functions[usize(fi)].caches[nameSlot].searches, receiverClass: classBefore, slot: u32(slot), targetClass: classAfter, proto1: 0, proto1Class: 0, proto2: 0, proto2Class: 0, extraCount: 0, extraNext: 0, extraClass0: 0, extraSlot0: 0, extraClass1: 0, extraSlot1: 0, extraClass2: 0, extraSlot2: 0 });
   }
 
+  // Whether a store passing `proto` may add the property to the receiver
+  // without asking it: it has none of that name, or a writable data one,
+  // which the store shadows. The prototype's class, which a transition
+  // entry records, fixes which it is.
+  function letsStoreAdd(proto: u32, atom: u32): boolean {
+    const slot = this.heap.objectFindSlot(proto, atom);
+    if (slot < 0) return true;
+    const attr = this.heap.attrOf(proto, u32(slot));
+    return (attr & PROP_ACCESSOR) == 0 && (attr & PROP_WRITABLE) != 0;
+  }
+
   // After a slow-path store on an object: remember an own writable data
   // property, or the transition that added one when the prototype chain
-  // (at most four objects, ending in null) holds no such property.
+  // (at most four objects, ending in null) holds no such property or a
+  // writable data one.
   function populateStoreCache(inout this, fi: u32, nameSlot: usize, handle: u32, atom: u32, classBefore: u32): void {
     if (handle == this.globalObject || this.heap.isDictionary(handle)) return;
     const own = this.heap.objectFindSlot(handle, atom);
@@ -1781,14 +1793,14 @@ export struct Runtime {
     let proto2Class: u32 = 0;
     let proto = this.heap.objectProto(handle);
     if (proto != 0) {
-      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || !this.letsStoreAdd(proto, atom)) return;
       depth = 1;
       proto1 = proto;
       proto1Class = this.heap.objectClass(proto);
       proto = this.heap.objectProto(proto);
     }
     if (proto != 0) {
-      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || !this.letsStoreAdd(proto, atom)) return;
       depth = 2;
       proto2 = proto;
       proto2Class = this.heap.objectClass(proto);
@@ -1804,7 +1816,7 @@ export struct Runtime {
     // site of two shapes writes on every miss, so that that one is built
     // as it was (with these four fields in it, such a miss cost eight
     // instructions more).
-    if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+    if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || !this.letsStoreAdd(proto, atom)) return;
     const proto3 = proto;
     const proto3Class = this.heap.objectClass(proto);
     proto = this.heap.objectProto(proto);
@@ -1812,7 +1824,7 @@ export struct Runtime {
     let proto4: u32 = 0;
     let proto4Class: u32 = 0;
     if (proto != 0) {
-      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || this.heap.objectFindSlot(proto, atom) >= 0) return;
+      if (!this.heap.isObject(proto) || this.heap.isDictionary(proto) || !this.letsStoreAdd(proto, atom)) return;
       depth = 4;
       proto4 = proto;
       proto4Class = this.heap.objectClass(proto);
