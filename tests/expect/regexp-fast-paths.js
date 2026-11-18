@@ -56,3 +56,13 @@ Object.defineProperty(RegExp.prototype, "flags", flagsDescriptor);
 delete RegExp.prototype.ignoreCase;
 out.push(t.replace(/a/gi, "D"), /a/gi.flags);
 console.log(out.join("\n"));
+
+// lastIndex is stored straight into its slot for a regular expression of
+// the recorded class; one made read-only after use is no longer of it.
+var out = [];
+var ro = /a/g; out.push("aa".replace(ro, "b"), "a-a".split(/-/).length, ro.exec("aa").index, ro.lastIndex, typeof ro.lastIndex);
+Object.defineProperty(ro, "lastIndex", { writable: false });
+function attempt(f) { try { return String(f()); } catch (e) { return e.constructor.name; } }
+out.push(attempt(function () { return "aa".replace(ro, "b"); }), attempt(function () { return ro.exec("aa"); }), ro.lastIndex);
+var st = /a/y; st.lastIndex = 1; st.test("ab"); out.push(st.lastIndex); Object.defineProperty(st, "lastIndex", { writable: false, value: 1 }); out.push(attempt(function () { return st.test("ab"); }));
+console.log(out.join("\n"));

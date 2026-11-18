@@ -101,10 +101,22 @@ function getLastIndex(inout runtime: Runtime, rx: Value): usize {
   return lengthOf(inout runtime, held);
 }
 
-// Set(rx, "lastIndex", value, true).
+// Set(rx, "lastIndex", value, true). An object of the class
+// noteBuiltinExec recorded keeps lastIndex, a writable data property, in
+// a known slot, and storing there is all Set does. A value that fits is
+// an int32, the form builtinMatch reads from that slot.
 function setLastIndex(inout runtime: Runtime, rx: Value, value: usize): boolean {
+  const fits = value <= 2147483647;
+  if (fits && runtime.execShapeClass != 0 && isCell(rx) && asCell(rx) != 0) {
+    const handle = asCell(rx);
+    if (runtime.heap.isObject(handle) && runtime.heap.objectClass(handle) == runtime.execShapeClass) {
+      const lastIndexSlot = runtime.execLastIndexSlot;
+      runtime.heap.setSlotInt32(handle, lastIndexSlot, i32(value));
+      return true;
+    }
+  }
   const atomLastIndex = runtime.atomLastIndex;
-  const stored = runtime.setProperty(rx, cellValue(atomLastIndex), doubleValue(f64(value)));
+  const stored = runtime.setProperty(rx, cellValue(atomLastIndex), fits ? int32Value(i32(value)) : doubleValue(f64(value)));
   if (runtime.pendingThrow) return false;
   if (!stored) {
     const message: String = "Cannot assign to read only property 'lastIndex'";
