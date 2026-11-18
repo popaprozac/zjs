@@ -3414,10 +3414,15 @@ export struct Compiler {
     }
   }
 
-  // Compile a nested function and load its value into `dst`. The value
-  // is a closure when the function refers to enclosing bindings or is an
-  // arrow (which keeps the `this` of its creation); reaching past this
-  // function makes this one a closure as well.
+  // Compile a nested function and load its value into `dst`. Each
+  // evaluation of a function expression or declaration is a new object
+  // with its own `prototype`, so the value is a new closure unless the
+  // code runs at most once: a script's top level outside any loop (or
+  // label or switch), whose every compilation runs once, may load the
+  // function constant itself when the function refers to no enclosing
+  // binding and is not an arrow (which keeps the `this` of its
+  // creation). Reaching past this function makes this one a closure as
+  // well.
   function emitFunctionValue(inout this, in parser: Parser, inout runtime: Runtime, node: u32, dst: u8, nameStart: u32, nameLength: u32, namePrefix: u32): void {
     const hasEnv = this.hasEnv;
     const strict = this.strict;
@@ -3428,8 +3433,9 @@ export struct Compiler {
     }
     const constant = this.addConst(runtime.functionValue(u32(compiled.index)));
     const ownScope = this.outerScopes.length;
+    const runsOnce = this.functionNode == NO_NODE && this.loops.length == 0;
     const isArrow = parser.ast.node(node).kind == NodeKind.arrowFunc;
-    if (isArrow || compiled.minOuterScope <= ownScope) {
+    if (isArrow || compiled.minOuterScope <= ownScope || !runsOnce) {
       this.emit(instAU16(Op.makeClosure, dst, constant));
     } else {
       this.emit(instAU16(Op.loadConst, dst, constant));
