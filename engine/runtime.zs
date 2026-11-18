@@ -5890,6 +5890,13 @@ export struct Runtime {
     this.heap.clearSlot(record, 7);
   }
 
+  // A generator's body returned `value`: what its last resumption gives.
+  // Once per generator, so kept out of the dispatch loop's return.
+  cold function finishGenerator(inout this, gen: u32, functionIndex: u32, value: Value): Value {
+    this.completeGenerator(gen);
+    return this.resumeResult(this.functions[usize(functionIndex)].isAsync, value, true);
+  }
+
   // --- Builtins ---
 
   // Register a builtin that is not a constructor: a host function cell
@@ -11103,11 +11110,7 @@ export struct Runtime {
               continue;
             }
             const frame = this.popFrame();
-            if (frame.generator != 0) {
-              this.completeGenerator(frame.generator);
-              const finishedAsync = this.functions[usize(frame.functionIndex)].isAsync;
-              value = this.resumeResult(finishedAsync, value, true);
-            }
+            if (frame.generator != 0) value = this.finishGenerator(frame.generator, frame.functionIndex, value);
             // A constructor call yields its object unless it returned one; a
             // derived constructor must have called super() by now, and may
             // return only an object or undefined.
@@ -11573,9 +11576,12 @@ export struct Runtime {
             const env = this.frames[frameIndex].env;
             const capturedThis = this.hostThis;
             const wrapped = this.heap.functionIndex(asCell(fn));
-            const closure = this.heap.allocateClosure(wrapped, env, capturedThis);
-            if (this.functions[usize(wrapped)].leaf) this.heap.setFlags(closure, FLAG_LEAF);
-            if (this.functions[usize(wrapped)].isArrow) {
+            // Read before the allocation's stores, which the C compiler
+            // cannot tell from the functions table's.
+            const leaf = this.functions[usize(wrapped)].leaf;
+            const isArrow = this.functions[usize(wrapped)].isArrow;
+            const closure = this.heap.allocateClosure(wrapped, env, capturedThis, leaf ? FLAG_LEAF : 0);
+            if (isArrow) {
               const creator = this.frames[frameIndex].callee;
               if (isCell(creator) && asCell(creator) != 0) {
                 const atomHome = this.atomHome;

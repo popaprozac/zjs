@@ -39,7 +39,7 @@ function evalDirect(inout runtime: Runtime, source: Array<u8>, direct: DirectEva
     runtime.raise(error);
     return undefinedValue();
   }
-  const closure = runtime.heap.allocateClosure(u32(functionIndex), direct.env, direct.thisValue);
+  const closure = runtime.heap.allocateClosure(u32(functionIndex), direct.env, direct.thisValue, 0);
   return runtime.callValue(cellValue(closure), direct.thisValue, Array<Value>());
 }
 

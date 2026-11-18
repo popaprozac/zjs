@@ -20,6 +20,14 @@ made: on macOS the allocator keeps a freed large block resident, so a copy
 into a fresh arena would cost the whole old one. For the same reason the
 arena and the handle table grow four times at a step, not twice.
 
+Allocation bumps. A cell's slots go at the arena's top, and its handle
+comes off the free list or, past it, from the table's next entry; when
+every entry is in use the table adds 256 free ones at a time. A cell of at
+most 16 slots, with room for it, costs one test and plain stores
+(`allocateCell`, inline in the allocators for closures, objects, arrays,
+and environments); a larger cell, or a full arena or table, goes out of
+line to grow what is full.
+
 The handle table has an extent: when a large table's survivors all sit in
 its lowest quarter a sweep cuts the extent back to the highest of them,
 takes the handles above it off the free list, and rebuilds a table left far

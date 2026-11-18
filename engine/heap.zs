@@ -80,6 +80,14 @@ export const PROP_NONE: u8 = 0;
 // The most slots `new Array(length)` makes before any element is written.
 const ARRAY_PRESIZE: u32 = 65536;
 
+// The most slots allocateCell fills inline: as many as appendRepeated
+// stores without a loop.
+const SMALL_CELL_SLOTS: u32 = 16;
+
+// The handle table entries allocateSlow adds at a time when every one is
+// in use.
+const HANDLE_RUN: usize = 256;
+
 // Per-cell flags.
 export const FLAG_NON_EXTENSIBLE: u8 = 1;
 export const FLAG_LENGTH_READONLY: u8 = 2;
@@ -563,34 +571,80 @@ export struct Heap {
   // accepted, so the heap API has to be methods for the engine to reach a
   // per-context heap at all.
   function allocate(inout this, tag: u8, slotCount: u32): u32 {
-    const start = u32(this.slots.length);
+    return this.allocateCell(tag, slotCount, undefinedValue(), undefinedValue(), 0, 0, 0);
+  }
+
+  // A cell of `slotCount` slots, the first holding `first` and the rest
+  // `fill`, its header written whole. Inline, so a hot caller's constant
+  // slot count comes down to plain stores. The test that can fail -- no
+  // room in the arena or the handle table, or more slots than the inline
+  // stores cover -- leaves for allocateSlow.
+  inline function allocateCell(inout this, tag: u8, slotCount: u32, first: Value, fill: Value, flags: u8, payload: u32, link: u32): u32 {
+    if (slotCount > SMALL_CELL_SLOTS || this.slots.length + usize(slotCount) > this.slots.capacity || (this.freeHandleCount == 0 && this.headerCount == this.headers.length)) {
+      return this.allocateSlow(tag, slotCount, first, fill, flags, payload, link);
+    }
+    return this.placeCell(tag, slotCount, first, fill, flags, payload, link);
+  }
+
+  // allocateCell for a large cell, or with the arena or the handle table
+  // full. Not cold: a large cell's slots are filled here, by a loop the
+  // C compiler optimizes for speed.
+  function allocateSlow(inout this, tag: u8, slotCount: u32, first: Value, fill: Value, flags: u8, payload: u32, link: u32): u32 {
+    if (this.slots.length + usize(slotCount) > this.slots.capacity || (this.freeHandleCount == 0 && this.headerCount == this.headers.length)) this.growFor(slotCount);
+    return this.placeCell(tag, slotCount, first, fill, flags, payload, link);
+  }
+
+  // Room in the arena for `slotCount` more slots, and a handle to take.
+  cold function growFor(inout this, slotCount: u32): void {
     if (this.slots.length + usize(slotCount) > this.slots.capacity) this.growArena(usize(slotCount));
-    this.slots.appendRepeated(undefinedValue(), usize(slotCount));
+    if (this.freeHandleCount == 0 && this.headerCount == this.headers.length) {
+      // Free entries past the extent, a run of them, so the next
+      // allocations find one without coming here; the run is short, so
+      // the table's spare storage stays untouched until it is needed.
+      if (this.headers.length == this.headers.capacity) this.headers.reserveCapacity(grownCapacity(this.headers.capacity, 1));
+      const room = this.headers.capacity - this.headers.length;
+      const free = CellHeader({ tag: TAG_FREE, mark: 0, flags: 0, remembered: false, slotStart: 0, slotCount: 0, payload: 0, link: 0 });
+      this.headers.appendRepeated(free, room < HANDLE_RUN ? room : HANDLE_RUN);
+    }
+  }
+
+  // The cell itself, with room in the arena and a handle to take: its
+  // slots at the arena's top, its handle off the free list, or past it
+  // the table's next entry (one a sweep cut off and left in place, or
+  // one allocateSlow added). Either handle indexes the table: the free
+  // list holds only handles below the extent (trimHandleTable), and the
+  // extent is below the table's length.
+  inline function placeCell(inout this, tag: u8, slotCount: u32, first: Value, fill: Value, flags: u8, payload: u32, link: u32): u32 {
+    const start = u32(this.slots.length);
+    this.slots.appendRepeated(fill, usize(slotCount));
+    if (slotCount > 0) {
+      unsafe {
+        this.slots.uncheckedSet(usize(start), first);
+      }
+    }
     this.allocatedSinceCollect = this.allocatedSinceCollect + 1;
     const header = CellHeader({
       tag: tag,
       mark: 0,
-      flags: 0,
+      flags: flags,
       remembered: false,
       slotStart: start,
       slotCount: slotCount,
-      payload: 0,
-      link: 0,
+      payload: payload,
+      link: link,
     });
     if (this.freeHandleCount > 0) {
-      this.freeHandleCount = this.freeHandleCount - 1;
-      const handle = this.freeHandles[this.freeHandleCount];
-      this.headers[usize(handle)] = header;
+      const top = this.freeHandleCount - 1;
+      this.freeHandleCount = top;
+      const handle = unsafe { select this.freeHandles.uncheckedAt(top); };
+      unsafe {
+        this.headers.uncheckedSet(usize(handle), header);
+      }
       return handle;
     }
-    // Past the free list, the table's next entry: one a sweep cut off
-    // and left in place, or a new one.
     const next = this.headerCount;
-    if (next < this.headers.length) {
-      this.headers[next] = header;
-    } else {
-      if (this.headers.length == this.headers.capacity) this.headers.reserveCapacity(grownCapacity(this.headers.capacity, 1));
-      this.headers.push(header);
+    unsafe {
+      this.headers.uncheckedSet(next, header);
     }
     this.headerCount = next + 1;
     return u32(next);
@@ -1929,9 +1983,7 @@ export struct Heap {
   // An empty object whose prototype is `proto` (0 for none), with room
   // for a few properties before its slots move.
   function allocateObject(inout this, proto: u32): u32 {
-    const handle = this.allocate(TAG_OBJECT, 4);
-    this.headers[usize(handle)].link = proto;
-    return handle;
+    return this.allocateCell(TAG_OBJECT, 4, undefinedValue(), undefinedValue(), 0, 0, proto);
   }
 
   // An object of a class made beforehand, its properties' slots left
@@ -1940,10 +1992,7 @@ export struct Heap {
   function allocateObjectOfClass(inout this, proto: u32, classId: u32): u32 {
     const propCount = this.classes[usize(classId)].propCount;
     const slotCount: u32 = propCount > 4 ? propCount : 4;
-    const handle = this.allocate(TAG_OBJECT, slotCount);
-    this.headers[usize(handle)].payload = classId;
-    this.headers[usize(handle)].link = proto;
-    return handle;
+    return this.allocateCell(TAG_OBJECT, slotCount, undefinedValue(), undefinedValue(), 0, classId, proto);
   }
 
   // The value slot of an object's k-th property, for the leading
@@ -2604,14 +2653,7 @@ export struct Heap {
   // the length and in the spare capacity past it, starts as a hole.
   function allocateArray(inout this, length: u32): u32 {
     const capacity: u32 = length < 4 ? 4 : length;
-    const handle = this.allocate(TAG_ARRAY, capacity);
-    this.headers[usize(handle)].payload = length;
-    let hole: u32 = 0;
-    while (hole < capacity) {
-      this.setSlot(handle, hole, deletedValue());
-      hole = hole + 1;
-    }
-    return handle;
+    return this.allocateCell(TAG_ARRAY, capacity, deletedValue(), deletedValue(), 0, length, 0);
   }
 
   // An array of `length` holes, as a program's `new Array(length)` makes
@@ -3099,9 +3141,7 @@ export struct Heap {
   // An environment: one slot per captured binding, `link` the enclosing
   // environment (0 at the outermost).
   function allocateEnv(inout this, parent: u32, slotCount: u32): u32 {
-    const handle = this.allocate(TAG_ENV, slotCount);
-    this.headers[usize(handle)].link = parent;
-    return handle;
+    return this.allocateCell(TAG_ENV, slotCount, undefinedValue(), undefinedValue(), 0, 0, parent);
   }
 
   function isEnv(handle: u32): boolean {
@@ -3112,12 +3152,8 @@ export struct Heap {
   // with the environment it was created in (`link`). Slot 0 holds the
   // `this` an arrow captured, slot 1 its `prototype` object once created,
   // slot 2 its bag of named properties once one is needed.
-  function allocateClosure(inout this, functionIndex: u32, env: u32, capturedThis: Value): u32 {
-    const handle = this.allocate(TAG_CLOSURE, 3);
-    this.headers[usize(handle)].payload = functionIndex;
-    this.headers[usize(handle)].link = env;
-    this.setSlot(handle, 0, capturedThis);
-    return handle;
+  inline function allocateClosure(inout this, functionIndex: u32, env: u32, capturedThis: Value, flags: u8): u32 {
+    return this.allocateCell(TAG_CLOSURE, 3, capturedThis, undefinedValue(), flags, functionIndex, env);
   }
 
   function isClosure(handle: u32): boolean {
@@ -4675,7 +4711,7 @@ test "marking follows links: prototypes, environments, closures" {
   const outerEnv = heap.allocateEnv(0, 1);
   const innerEnv = heap.allocateEnv(outerEnv, 1);
   const fn = heap.allocateFunction(3);
-  const closure = heap.allocateClosure(3, innerEnv, cellValue(object));
+  const closure = heap.allocateClosure(3, innerEnv, cellValue(object), 0);
   heap.setSlot(outerEnv, 0, cellValue(fn));
   heap.beginWhole();
   heap.markHandle(closure);
