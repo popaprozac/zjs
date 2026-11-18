@@ -15,7 +15,7 @@ import native from "./builtins/clock.h";
 import host from "./native/zjs_host.h";
 import { stackAddress } from "./stack.zs";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
-import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
+import { RegexBackend, emptyRegexBackend, loadScratch, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, FLAG_BINARY, FLAG_VARIABLE_LENGTH, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CACHE_GETTER, CHAIN_LIMIT } from "./bytecode.zs";
@@ -2577,11 +2577,11 @@ export struct Runtime {
       // it once, not once per match.
       const tag = (u64(this.heap.collections) << 32) | u64(input);
       if (!this.regexBackend.holds(tag)) {
-        let i: usize = 0;
-        while (i < storageLength) {
-          const byte = this.heap.stringStorageByte(input, i);
-          this.regexBackend.store(buffer, i, byte);
-          i = i + 1;
+        if (this.heap.isArenaString(input)) {
+          const origin = this.heap.stringStorageStart(input);
+          loadScratch(buffer, this.heap.smallBytes.slice(origin, origin + storageLength));
+        } else {
+          loadScratch(buffer, this.heap.strings[usize(this.heap.stringBuffer(input))].slice(0, storageLength));
         }
         this.regexBackend.markLoaded(tag);
       }

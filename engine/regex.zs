@@ -54,6 +54,15 @@ function copyBytes(in bytes: Array<u8>): Array<u8> {
   return copy;
 }
 
+// Bytes copied into the start of a scratch buffer, read in place.
+export function loadScratch(buffer: usize, bytes: Slice<u8>): void {
+  let i: usize = 0;
+  while (i < bytes.length) {
+    native.zjs_re_buffer_store(buffer, i, bytes[i]);
+    i = i + 1;
+  }
+}
+
 // The context's scratch buffer holding a copy of the bytes; zero when
 // memory is out.
 function loadBuffer(context: usize, in bytes: Array<u8>): usize {
