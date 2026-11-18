@@ -536,7 +536,10 @@ function objectAssign(inout runtime: Runtime, thisValue: Value, argsBase: u32, a
 // SetIntegrityLevel: a property that refuses the change (a module
 // namespace's export, which stays writable) is a TypeError.
 function lockProperties(inout runtime: Runtime, target: Value, freeze: boolean): void {
-  runtime.preventExtensions(target);
+  if (!runtime.preventExtensions(target)) {
+    refuseExtensions(inout runtime);
+    return;
+  }
   const keys = runtime.ownKeys(target);
   let index: usize = 0;
   while (index < keys.length && !runtime.pendingThrow) {
@@ -574,8 +577,16 @@ function objectSeal(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
 
 function objectPreventExtensions(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const target = runtime.argument(argsBase, argc, 0);
-  runtime.preventExtensions(target);
+  if (!runtime.preventExtensions(target)) refuseExtensions(inout runtime);
   return target;
+}
+
+// The TypeError for an object whose [[PreventExtensions]] refused (a typed
+// array over a resizable buffer).
+function refuseExtensions(inout runtime: Runtime): void {
+  const message: String = "Cannot prevent extensions of this object";
+  const error = runtime.typeError(in message);
+  runtime.raise(error);
 }
 
 function objectIsExtensible(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

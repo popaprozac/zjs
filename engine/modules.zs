@@ -290,7 +290,7 @@ function namespaceOf(inout runtime: Runtime, m: u32): u32 {
   const tag = runtime.internUtf8Value(bytesOf(in tagText));
   const tagKey = runtime.heap.symbolKeyAtom(asCell(runtime.symbolToStringTag));
   runtime.heap.objectDefine(namespace, tagKey, tag, PROP_NONE);
-  runtime.preventExtensions(cellValue(namespace));
+  const prevented = runtime.preventExtensions(cellValue(namespace));
   runtime.heap.setFlags(namespace, runtime.heap.flagsOf(namespace) | FLAG_NAMESPACE);
   return namespace;
 }

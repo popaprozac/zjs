@@ -127,6 +127,10 @@ export const FLAG_INDEX_KEY: u8 = 128;
 // its internal data, the first of them which of the three it is
 // (runtime.zs, Binary data).
 export const FLAG_BINARY: u8 = 16;
+// On a typed array or DataView (the same bit, which only strings and host
+// functions otherwise use): it views a resizable buffer, so its length is
+// read from the buffer's each time (runtime.zs, Binary data).
+export const FLAG_VARIABLE_LENGTH: u8 = 32;
 
 // A cell's mark: 0 while it is young; MARK_OLD once it has survived a
 // collection; MARK_LIVE (old and reached) while a full collection that has
@@ -2356,6 +2360,37 @@ export struct Heap {
   function setByteAt(inout this, handle: u32, index: usize, value: u8): void {
     const buffer = usize(this.cellHeader(handle).payload);
     this.strings[buffer][index] = value;
+  }
+
+  // An ArrayBuffer's bytes made `count` long, new bytes zero, in place.
+  // Growth counts as bytes going in when the cell is young; an old cell is
+  // not aged again, so its growth is old at once. Shrinking takes the lost
+  // bytes off what was counted old.
+  function resizeBytes(inout this, handle: u32, count: usize): void {
+    const header = this.cellHeader(handle);
+    const at = usize(header.payload);
+    const length = this.strings[at].length;
+    if (count > length) {
+      this.strings[at].appendRepeated(0, count - length);
+      if (header.mark == 0) {
+        this.countBufferBytes(count - length);
+      } else {
+        const gained = count - length;
+        this.bufferOld[at] = u32(count);
+        this.oldBufferBytes = this.oldBufferBytes + gained;
+        this.promotedBufferBytes = this.promotedBufferBytes + gained;
+      }
+      return;
+    }
+    let left = length;
+    while (left > count) {
+      const dropped = this.strings[at].pop();
+      left = left - 1;
+    }
+    if (usize(this.bufferOld[at]) > count) {
+      this.oldBufferBytes = this.oldBufferBytes - (usize(this.bufferOld[at]) - count);
+      this.bufferOld[at] = u32(count);
+    }
   }
 
   // `size` bytes from `at` as one number, the first byte the most
@@ -5638,4 +5673,28 @@ test "an element's bits are stored and loaded in either byte order" {
   expect(heap.bytesLoad(bytes, 4, 4, true)).toEqual(0x01020304);
   expect(heap.bytesLoad(bytes, 0, 4, true)).toEqual(0x04030201);
   expect(heap.bytesLoad(bytes, 2, 1, false)).toEqual(2);
+}
+
+test "an ArrayBuffer's bytes resize in place, counted young or old" {
+  let heap = createHeap();
+  const bytes = heap.allocateBytes(4);
+  heap.setByteAt(bytes, 3, 7);
+  heap.resizeBytes(bytes, 10);
+  expect(heap.bytesLength(bytes)).toEqual(10);
+  expect(heap.byteAt(bytes, 3)).toEqual(7);
+  expect(heap.byteAt(bytes, 9)).toEqual(0);
+  expect(heap.youngBufferBytes).toEqual(10);
+  let roots = Array<u32>();
+  roots.push(bytes);
+  collectMinor(inout heap, in roots);
+  expect(heap.oldBufferBytes).toEqual(10);
+  // Old now: growth is old at once, and shrinking takes it back off.
+  heap.resizeBytes(bytes, 16);
+  expect(heap.oldBufferBytes).toEqual(16);
+  heap.resizeBytes(bytes, 2);
+  expect(heap.bytesLength(bytes)).toEqual(2);
+  expect(heap.oldBufferBytes).toEqual(2);
+  heap.resizeBytes(bytes, 5);
+  expect(heap.byteAt(bytes, 4)).toEqual(0);
+  expect(heap.oldBufferBytes).toEqual(5);
 }

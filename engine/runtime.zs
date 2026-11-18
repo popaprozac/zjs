@@ -16,7 +16,7 @@ import host from "./native/zjs_host.h";
 import { stackAddress } from "./stack.zs";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, emptyRegexBackend, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
-import { Heap, createHeap, bytesOf, FLAG_BINARY, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
+import { Heap, createHeap, bytesOf, FLAG_BINARY, FLAG_VARIABLE_LENGTH, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CACHE_GETTER, CHAIN_LIMIT } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -437,10 +437,14 @@ export const FEATURE_TYPED_ARRAYS: u32 = 64;
 // Binary data: an object with FLAG_BINARY holds its internal data in its
 // leading slots (heap.leadingSlot), the first saying which it is. An
 // ArrayBuffer: [BINARY_BUFFER, its bytes (a TAG_BYTES cell, null once
-// detached), its byte length]. A typed array: [BINARY_TYPED, its
-// ArrayBuffer, byte offset, length in elements, element kind]. A DataView:
-// [BINARY_VIEW, its ArrayBuffer, byte offset, byte length], the typed
-// array's slots without the element kind.
+// detached), its byte length, its maxByteLength (-1 when it is not
+// resizable)]. A typed array: [BINARY_TYPED, its ArrayBuffer, byte offset,
+// length in elements, element kind]. A DataView: [BINARY_VIEW, its
+// ArrayBuffer, byte offset, byte length], the typed array's slots without
+// the element kind. A view of a resizable buffer has FLAG_VARIABLE_LENGTH,
+// and its length is -1 when it tracks the buffer's (it was made with no
+// length): its length is worked out from the buffer's each time, and is 0
+// while it is out of bounds.
 export const BINARY_BUFFER: i32 = 0;
 export const BINARY_TYPED: i32 = 1;
 export const BINARY_VIEW: i32 = 2;
@@ -2966,8 +2970,9 @@ export struct Runtime {
     return isCell(value) && asCell(value) != 0 && this.binaryKind(asCell(value)) == BINARY_BUFFER;
   }
 
-  // An ArrayBuffer's bytes cell, 0 once it is detached.
-  function bufferBytes(buffer: u32): u32 {
+  // An ArrayBuffer's bytes cell, 0 once it is detached. Inline: the element
+  // paths of the dispatch loop read it on every access.
+  inline function bufferBytes(buffer: u32): u32 {
     const bytes = this.binaryField(buffer, 1);
     return isCell(bytes) ? asCell(bytes) : 0;
   }
@@ -2984,10 +2989,31 @@ export struct Runtime {
     return toNumber(this.binaryField(handle, 2));
   }
 
-  // The number of elements, 0 once the buffer is detached.
+  // TypedArrayLength: the number of elements, 0 while the typed array is
+  // out of bounds (its buffer detached, or shrunk past it).
   function typedLength(handle: u32): f64 {
-    if (this.bufferBytes(this.typedBuffer(handle)) == 0) return 0.0;
-    return toNumber(this.binaryField(handle, 3));
+    const bytes = this.bufferBytes(this.typedBuffer(handle));
+    if (bytes == 0) return 0.0;
+    const stored = toNumber(this.binaryField(handle, 3));
+    if ((this.heap.flagsOf(handle) & FLAG_VARIABLE_LENGTH) == 0) return stored;
+    const available = f64(this.heap.bytesLength(bytes));
+    const offset = this.typedByteOffset(handle);
+    const size = f64(elementSize(this.typedElement(handle)));
+    if (stored < 0.0) return offset > available ? 0.0 : truncateDouble((available - offset) / size);
+    return offset + stored * size > available ? 0.0 : stored;
+  }
+
+  // IsTypedArrayOutOfBounds: the buffer detached, or a resizable buffer
+  // shrunk past the start (or, for a fixed length, the end) of the array.
+  function typedOutOfBounds(handle: u32): boolean {
+    const bytes = this.bufferBytes(this.typedBuffer(handle));
+    if (bytes == 0) return true;
+    if ((this.heap.flagsOf(handle) & FLAG_VARIABLE_LENGTH) == 0) return false;
+    const available = f64(this.heap.bytesLength(bytes));
+    const offset = this.typedByteOffset(handle);
+    const stored = toNumber(this.binaryField(handle, 3));
+    if (stored < 0.0) return offset > available;
+    return offset + stored * f64(elementSize(this.typedElement(handle))) > available;
   }
 
   // IsValidIntegerIndex.
@@ -3092,7 +3118,8 @@ export struct Runtime {
     if (!isCell(object) || asCell(object) == 0) return deletedValue();
     const handle = asCell(object);
     if (this.binaryKind(handle) != BINARY_TYPED) return deletedValue();
-    if (index < 0 || this.heap.isDictionary(handle)) return this.typedGetElement(handle, f64(index));
+    // A view of a resizable buffer works its length out each time.
+    if (index < 0 || this.heap.isDictionary(handle) || (this.heap.flagsOf(handle) & FLAG_VARIABLE_LENGTH) != 0) return this.typedGetElement(handle, f64(index));
     const bytes = this.bufferBytes(asCell(this.heap.slot(handle, 1)));
     // A detached buffer has no bytes and no elements. The length and
     // offset are int32s: no buffer is longer than 2^31 - 1 bytes.
@@ -3118,7 +3145,7 @@ export struct Runtime {
   function typedStoreIndex(inout this, object: Value, index: i32, value: Value): boolean {
     if (!isNumber(value) || !isCell(object) || asCell(object) == 0) return false;
     const handle = asCell(object);
-    if (this.binaryKind(handle) != BINARY_TYPED || this.heap.isDictionary(handle)) return false;
+    if (this.binaryKind(handle) != BINARY_TYPED || this.heap.isDictionary(handle) || (this.heap.flagsOf(handle) & FLAG_VARIABLE_LENGTH) != 0) return false;
     const bytes = this.bufferBytes(asCell(this.heap.slot(handle, 1)));
     if (bytes == 0 || index < 0 || index >= asInt32(this.heap.slot(handle, 3))) return true;
     const element = asInt32(this.heap.slot(handle, 4));
@@ -3812,7 +3839,7 @@ export struct Runtime {
     const lockedLength = this.defineOwnProperty(cellValue(made), lengthKey, locked);
     const nameText: String = "name";
     const lockedName = this.defineOwnProperty(cellValue(made), cellValue(this.atomOf(in nameText)), locked);
-    this.preventExtensions(cellValue(made));
+    const prevented = this.preventExtensions(cellValue(made));
     return made;
   }
 
@@ -3986,11 +4013,16 @@ export struct Runtime {
     return (this.heap.flagsOf(asCell(value)) & FLAG_NON_EXTENSIBLE) == 0;
   }
 
-  function preventExtensions(inout this, value: Value): void {
-    if (!this.isObjectLike(value)) return;
+  // [[PreventExtensions]]: false, with nothing changed, for a typed array
+  // that views a resizable buffer, which can gain elements again as the
+  // buffer grows (IsTypedArrayFixedLength).
+  function preventExtensions(inout this, value: Value): boolean {
+    if (!this.isObjectLike(value)) return true;
     const handle = asCell(value);
     const flags = this.heap.flagsOf(handle);
+    if ((flags & FLAG_VARIABLE_LENGTH) != 0 && this.binaryKind(handle) == BINARY_TYPED) return false;
     this.heap.setFlags(handle, flags | FLAG_NON_EXTENSIBLE);
+    return true;
   }
 
   // [[DefineOwnProperty]] with the validation of a non-configurable
@@ -5172,10 +5204,10 @@ export struct Runtime {
     } else if (this.isStringValue(source)) {
       length = u32(this.heap.stringLength(asCell(source)));
     } else if (this.isTypedArray(source)) {
-      // A typed array's own length, not its `length` property; a detached
-      // one is a TypeError.
-      if (this.bufferBytes(this.typedBuffer(asCell(source))) == 0) {
-        const message: String = "Cannot iterate a typed array whose buffer is detached";
+      // A typed array's own length, not its `length` property; one out of
+      // bounds (detached, or past a shrunk buffer) is a TypeError.
+      if (this.typedOutOfBounds(asCell(source))) {
+        const message: String = "Cannot iterate a typed array that is out of bounds or detached";
         const error = this.typeError(in message);
         this.raise(error);
         return deletedValue();

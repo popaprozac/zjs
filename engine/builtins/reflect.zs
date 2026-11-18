@@ -208,8 +208,7 @@ function reflectPreventExtensions(inout runtime: Runtime, thisValue: Value, args
   const target = runtime.argument(argsBase, argc, 0);
   const method: String = "preventExtensions";
   if (!requireTarget(inout runtime, target, in method)) return undefinedValue();
-  runtime.preventExtensions(target);
-  return booleanValue(true);
+  return booleanValue(runtime.preventExtensions(target));
 }
 
 export function installReflect(inout runtime: Runtime): void {

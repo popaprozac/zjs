@@ -10,12 +10,11 @@
 // element when the key is a canonical numeric string. The bytes live in a
 // TAG_BYTES cell the buffer holds; detaching drops the cell.
 //
-// Not here yet: resizable buffers, Float16Array, and the BigInt element
-// kinds.
+// Not here yet: Float16Array and the BigInt element kinds.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isNumber, asInt32 } from "../value.zs";
 import { Runtime, HostFunction, toNumber, truncateDouble, isIntegralDouble, binaryNumber, elementSize, FEATURE_TYPED_ARRAYS, BINARY_BUFFER, BINARY_TYPED, BINARY_VIEW, ELEMENT_INT8, ELEMENT_UINT8, ELEMENT_UINT8_CLAMPED, ELEMENT_INT16, ELEMENT_UINT16, ELEMENT_INT32, ELEMENT_UINT32, ELEMENT_FLOAT32, ELEMENT_FLOAT64 } from "../runtime.zs";
-import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_BINARY } from "../heap.zs";
+import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_BINARY, FLAG_VARIABLE_LENGTH } from "../heap.zs";
 import { defineSpecies } from "./collections.zs";
 import { textBuilder, putByte, putString, finishText } from "./builder.zs";
 
@@ -94,9 +93,10 @@ function protoFrom(inout runtime: Runtime, newTarget: Value, fallback: u32): u32
   return fallback;
 }
 
-// AllocateArrayBuffer: `byteLength` zero bytes.
-function allocateBuffer(inout runtime: Runtime, proto: u32, byteLength: f64): Value {
-  if (byteLength > MAX_BYTE_LENGTH) {
+// AllocateArrayBuffer: `byteLength` zero bytes, resizable up to `max`
+// when `max` is not -1.
+function allocateBuffer(inout runtime: Runtime, proto: u32, byteLength: f64, max: f64): Value {
+  if (byteLength > MAX_BYTE_LENGTH || max > MAX_BYTE_LENGTH) {
     const message: String = "Array buffer allocation failed";
     return raiseRange(inout runtime, in message);
   }
@@ -107,12 +107,20 @@ function allocateBuffer(inout runtime: Runtime, proto: u32, byteLength: f64): Va
   const bytes = runtime.heap.allocateBytes(usize(byteLength));
   runtime.heap.setSlot(object, 1, cellValue(bytes));
   runtime.heap.setSlot(object, 2, binaryNumber(byteLength));
+  runtime.heap.setSlot(object, 3, binaryNumber(max));
   return cellValue(object);
 }
 
+// ArrayBufferByteLength: what its bytes hold now, 0 once detached.
 function bufferByteLength(in runtime: Runtime, buffer: u32): f64 {
-  if (runtime.bufferBytes(buffer) == 0) return 0.0;
-  return toNumber(runtime.binaryField(buffer, 2));
+  const bytes = runtime.bufferBytes(buffer);
+  if (bytes == 0) return 0.0;
+  return f64(runtime.heap.bytesLength(bytes));
+}
+
+// Its maxByteLength, -1 for a buffer that is not resizable.
+function bufferMax(in runtime: Runtime, buffer: u32): f64 {
+  return toNumber(runtime.binaryField(buffer, 3));
 }
 
 // `count` bytes from one buffer's bytes to another's.
@@ -135,9 +143,28 @@ function constructArrayBuffer(inout runtime: Runtime, thisValue: Value, argsBase
   }
   const byteLength = toIndex(inout runtime, runtime.argument(argsBase, argc, 0));
   if (runtime.pendingThrow) return undefinedValue();
+  // GetArrayBufferMaxByteLengthOption: the options' maxByteLength, if any,
+  // makes the buffer resizable; a length past it is refused before the
+  // object is made.
+  let max: f64 = -1.0;
+  const options = runtime.argument(argsBase, argc, 1);
+  if (runtime.isObjectLike(options)) {
+    const maxText: String = "maxByteLength";
+    const maxKey = runtime.internText(in maxText);
+    const given = runtime.getProperty(options, maxKey);
+    if (runtime.pendingThrow) return undefinedValue();
+    if (!isUndefined(given)) {
+      max = toIndex(inout runtime, given);
+      if (runtime.pendingThrow) return undefinedValue();
+    }
+  }
+  if (max >= 0.0 && byteLength > max) {
+    const message: String = "ArrayBuffer length exceeds its maxByteLength";
+    return raiseRange(inout runtime, in message);
+  }
   const proto = protoFrom(inout runtime, newTarget, runtime.arrayBufferProto);
   if (runtime.pendingThrow) return undefinedValue();
-  return allocateBuffer(inout runtime, proto, byteLength);
+  return allocateBuffer(inout runtime, proto, byteLength, max);
 }
 
 // `this` as an ArrayBuffer, or 0 and a TypeError.
@@ -155,19 +182,49 @@ function bufferByteLengthGetter(inout runtime: Runtime, thisValue: Value, argsBa
   return binaryNumber(bufferByteLength(in runtime, buffer));
 }
 
-// A fixed-length buffer's most is its length.
+// A resizable buffer's maxByteLength, a fixed-length one's length, 0 once
+// detached.
 function bufferMaxByteLength(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "get ArrayBuffer.prototype.maxByteLength";
   const buffer = thisBuffer(inout runtime, thisValue, in method);
   if (buffer == 0) return undefinedValue();
-  return binaryNumber(bufferByteLength(in runtime, buffer));
+  if (runtime.bufferBytes(buffer) == 0) return int32Value(0);
+  const max = bufferMax(in runtime, buffer);
+  return binaryNumber(max >= 0.0 ? max : bufferByteLength(in runtime, buffer));
 }
 
 function bufferResizable(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "get ArrayBuffer.prototype.resizable";
   const buffer = thisBuffer(inout runtime, thisValue, in method);
   if (buffer == 0) return undefinedValue();
-  return booleanValue(false);
+  return booleanValue(bufferMax(in runtime, buffer) >= 0.0);
+}
+
+// resize(newLength): a resizable buffer's bytes made newLength long, new
+// bytes zero; the views of it see the new length.
+function bufferResize(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const method: String = "ArrayBuffer.prototype.resize";
+  const buffer = thisBuffer(inout runtime, thisValue, in method);
+  if (buffer == 0) return undefinedValue();
+  const max = bufferMax(in runtime, buffer);
+  if (max < 0.0) {
+    const message: String = `${method} called on an ArrayBuffer that is not resizable`;
+    return raiseType(inout runtime, in message);
+  }
+  const newLength = toIndex(inout runtime, runtime.argument(argsBase, argc, 0));
+  if (runtime.pendingThrow) return undefinedValue();
+  const bytes = runtime.bufferBytes(buffer);
+  if (bytes == 0) {
+    const message: String = `${method} called on a detached ArrayBuffer`;
+    return raiseType(inout runtime, in message);
+  }
+  if (newLength > max) {
+    const message: String = `${method}: the new length exceeds the maxByteLength`;
+    return raiseRange(inout runtime, in message);
+  }
+  runtime.heap.resizeBytes(bytes, usize(newLength));
+  runtime.setBinaryField(buffer, 2, binaryNumber(newLength));
+  return undefinedValue();
 }
 
 function bufferDetached(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -227,16 +284,21 @@ function bufferSlice(inout runtime: Runtime, thisValue: Value, argsBase: u32, ar
     const message: String = "ArrayBuffer.prototype.slice: the ArrayBuffer was detached";
     return raiseType(inout runtime, in message);
   }
+  // The species constructor may have resized the buffer: what is there now.
   const fromBytes = runtime.bufferBytes(buffer);
   const toBytes = runtime.bufferBytes(target);
-  copyBytes(inout runtime, fromBytes, usize(first), toBytes, 0, usize(newLength));
+  const current = bufferByteLength(in runtime, buffer);
+  if (first < current) {
+    const count = newLength < current - first ? newLength : current - first;
+    copyBytes(inout runtime, fromBytes, usize(first), toBytes, 0, usize(count));
+  }
   return made;
 }
 
-// ArrayBufferCopyAndDetach for a fixed-length buffer: the bytes go to a
-// new buffer of the length asked (the same cell when it is the same
-// length), and this one is detached.
-function copyAndDetach(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, in method: String): Value {
+// ArrayBufferCopyAndDetach: the bytes go to a new buffer of the length
+// asked (the same cell when it is the same length), resizable with the
+// same maximum when `keep` and this one is, and this one is detached.
+function copyAndDetach(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, in method: String, keep: boolean): Value {
   const buffer = thisBuffer(inout runtime, thisValue, in method);
   if (buffer == 0) return undefinedValue();
   const asked = runtime.argument(argsBase, argc, 0);
@@ -248,6 +310,11 @@ function copyAndDetach(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     const message: String = `${method} called on a detached ArrayBuffer`;
     return raiseType(inout runtime, in message);
   }
+  const max = keep ? bufferMax(in runtime, buffer) : -1.0;
+  if (max >= 0.0 && newLength > max) {
+    const message: String = `${method}: the new length exceeds the maxByteLength`;
+    return raiseRange(inout runtime, in message);
+  }
   const oldLength = bufferByteLength(in runtime, buffer);
   const arrayBufferProto = runtime.arrayBufferProto;
   let made = undefinedValue();
@@ -258,9 +325,10 @@ function copyAndDetach(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
     runtime.heap.setSlot(object, 0, int32Value(BINARY_BUFFER));
     runtime.heap.setSlot(object, 1, cellValue(bytes));
     runtime.heap.setSlot(object, 2, binaryNumber(oldLength));
+    runtime.heap.setSlot(object, 3, binaryNumber(max));
     made = cellValue(object);
   } else {
-    made = allocateBuffer(inout runtime, arrayBufferProto, newLength);
+    made = allocateBuffer(inout runtime, arrayBufferProto, newLength, max);
     if (runtime.pendingThrow) return undefinedValue();
     const kept = newLength < oldLength ? newLength : oldLength;
     const toBytes = runtime.bufferBytes(asCell(made));
@@ -273,12 +341,12 @@ function copyAndDetach(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
 
 function bufferTransfer(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "ArrayBuffer.prototype.transfer";
-  return copyAndDetach(inout runtime, thisValue, argsBase, argc, in method);
+  return copyAndDetach(inout runtime, thisValue, argsBase, argc, in method, true);
 }
 
 function bufferTransferToFixedLength(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const method: String = "ArrayBuffer.prototype.transferToFixedLength";
-  return copyAndDetach(inout runtime, thisValue, argsBase, argc, in method);
+  return copyAndDetach(inout runtime, thisValue, argsBase, argc, in method, false);
 }
 
 // A typed array or a DataView.
@@ -317,7 +385,7 @@ function giveBuffer(inout runtime: Runtime, object: u32, length: f64): boolean {
   const kind = runtime.typedElement(object);
   const byteLength = length * f64(elementSize(kind));
   const arrayBufferProto = runtime.arrayBufferProto;
-  const buffer = allocateBuffer(inout runtime, arrayBufferProto, byteLength);
+  const buffer = allocateBuffer(inout runtime, arrayBufferProto, byteLength, -1.0);
   if (runtime.pendingThrow) return false;
   runtime.setBinaryField(object, 1, buffer);
   runtime.setBinaryField(object, 2, int32Value(0));
@@ -327,8 +395,8 @@ function giveBuffer(inout runtime: Runtime, object: u32, length: f64): boolean {
 
 // InitializeTypedArrayFromTypedArray.
 function fromTypedArray(inout runtime: Runtime, object: u32, source: u32): boolean {
-  if (runtime.bufferBytes(runtime.typedBuffer(source)) == 0) {
-    const message: String = "Cannot construct from a typed array whose buffer is detached";
+  if (runtime.typedOutOfBounds(source)) {
+    const message: String = "Cannot construct from a typed array that is out of bounds or detached";
     raiseType(inout runtime, in message);
     return false;
   }
@@ -373,6 +441,21 @@ function fromArrayBuffer(inout runtime: Runtime, object: u32, buffer: u32, byteO
     return false;
   }
   const available = bufferByteLength(in runtime, buffer);
+  const resizable = bufferMax(in runtime, buffer) >= 0.0;
+  if (resizable) runtime.heap.setFlags(object, runtime.heap.flagsOf(object) | FLAG_VARIABLE_LENGTH);
+  // With no length, on a resizable buffer: the array tracks the buffer's
+  // length (-1), whatever it is when read.
+  if (isUndefined(length) && resizable) {
+    if (offset > available) {
+      const message: String = "Start offset is outside the bounds of the buffer";
+      raiseRange(inout runtime, in message);
+      return false;
+    }
+    runtime.setBinaryField(object, 1, cellValue(buffer));
+    runtime.setBinaryField(object, 2, binaryNumber(offset));
+    runtime.setBinaryField(object, 3, int32Value(-1));
+    return true;
+  }
   let byteLength: f64 = 0.0;
   if (isUndefined(length)) {
     if (available - size * truncateDouble(available / size) != 0.0) {
@@ -560,7 +643,7 @@ function typedByteOffsetGetter(inout runtime: Runtime, thisValue: Value, argsBas
   const method: String = "get TypedArray.prototype.byteOffset";
   const handle = thisTyped(inout runtime, thisValue, in method);
   if (handle == 0) return undefinedValue();
-  if (runtime.bufferBytes(runtime.typedBuffer(handle)) == 0) return int32Value(0);
+  if (runtime.typedOutOfBounds(handle)) return int32Value(0);
   return binaryNumber(runtime.typedByteOffset(handle));
 }
 
@@ -584,15 +667,16 @@ function validTyped(inout runtime: Runtime, value: Value, in method: String): u3
   const handle = thisTyped(inout runtime, value, in method);
   if (handle == 0) return 0;
   if (isDetached(in runtime, handle)) {
-    const message: String = `${method} called on a typed array whose buffer is detached`;
+    const message: String = `${method} called on a typed array that is out of bounds or detached`;
     raiseType(inout runtime, in message);
     return 0;
   }
   return handle;
 }
 
+// IsTypedArrayOutOfBounds: detached, or past a shrunk resizable buffer.
 function isDetached(in runtime: Runtime, handle: u32): boolean {
-  return runtime.bufferBytes(runtime.typedBuffer(handle)) == 0;
+  return runtime.typedOutOfBounds(handle);
 }
 
 // ValidateTypedArray, then an array iterator over it.
@@ -1112,11 +1196,14 @@ function typedFill(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   const last = relativeIndex(inout runtime, runtime.argument(argsBase, argc, 2), length, length);
   if (runtime.pendingThrow) return undefinedValue();
   if (isDetached(in runtime, handle)) {
-    const message: String = `${method}: the typed array's buffer was detached`;
+    const message: String = `${method}: the typed array is out of bounds or detached`;
     return raiseType(inout runtime, in message);
   }
+  // A conversion may have shrunk a resizable buffer.
+  const now = runtime.typedLength(handle);
+  const end = last < now ? last : now;
   let k = first;
-  while (k < last) {
+  while (k < end) {
     runtime.typedWrite(handle, k, number);
     k = k + 1.0;
   }
@@ -1234,13 +1321,17 @@ function typedSubarray(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
   const length = runtime.typedLength(handle);
   const first = relativeIndex(inout runtime, runtime.argument(argsBase, argc, 0), length, 0.0);
   if (runtime.pendingThrow) return undefinedValue();
-  const last = relativeIndex(inout runtime, runtime.argument(argsBase, argc, 1), length, length);
+  const endGiven = runtime.argument(argsBase, argc, 1);
+  const last = relativeIndex(inout runtime, endGiven, length, length);
   if (runtime.pendingThrow) return undefinedValue();
   const size = f64(elementSize(runtime.typedElement(handle)));
   let args = Array<Value>();
   args.push(cellValue(runtime.typedBuffer(handle)));
   args.push(binaryNumber(runtime.typedByteOffset(handle) + first * size));
-  args.push(binaryNumber(last > first ? last - first : 0.0));
+  // A typed array tracking its buffer, cut with no end, gives one that
+  // tracks it too.
+  const tracks = toNumber(runtime.binaryField(handle, 3)) < 0.0;
+  if (!tracks || !isUndefined(endGiven)) args.push(binaryNumber(last > first ? last - first : 0.0));
   const made = speciesCreate(inout runtime, handle, move args, in method);
   if (made == 0) return undefinedValue();
   return cellValue(made);
@@ -1446,7 +1537,9 @@ function constructDataView(inout runtime: Runtime, thisValue: Value, argsBase: u
     const message: String = "Start offset is outside the bounds of the buffer";
     return raiseRange(inout runtime, in message);
   }
-  let viewLength = available - offset;
+  // With no length, a view of a resizable buffer tracks its length (-1).
+  const resizable = bufferMax(in runtime, buffer) >= 0.0;
+  let viewLength = resizable ? -1.0 : available - offset;
   const lengthGiven = runtime.argument(argsBase, argc, 2);
   if (!isUndefined(lengthGiven)) {
     viewLength = toIndex(inout runtime, lengthGiven);
@@ -1456,17 +1549,23 @@ function constructDataView(inout runtime: Runtime, thisValue: Value, argsBase: u
       return raiseRange(inout runtime, in message);
     }
   }
-  // Reading new.target's `prototype` can run a getter that detaches the
-  // buffer.
+  // Reading new.target's `prototype` can run a getter that detaches or
+  // resizes the buffer.
   const proto = protoFrom(inout runtime, newTarget, runtime.dataViewProto);
   if (runtime.pendingThrow) return undefinedValue();
   if (runtime.bufferBytes(buffer) == 0) {
     const message: String = "Cannot construct a DataView on a detached ArrayBuffer";
     return raiseType(inout runtime, in message);
   }
+  const now = bufferByteLength(in runtime, buffer);
+  if (offset > now || (!isUndefined(lengthGiven) && offset + viewLength > now)) {
+    const message: String = "The buffer was resized past the DataView";
+    return raiseRange(inout runtime, in message);
+  }
   const viewClass = runtime.viewClass;
   const object = runtime.heap.allocateObjectOfClass(proto, viewClass);
-  runtime.heap.setFlags(object, runtime.heap.flagsOf(object) | FLAG_BINARY);
+  const viewFlags = resizable ? FLAG_BINARY | FLAG_VARIABLE_LENGTH : FLAG_BINARY;
+  runtime.heap.setFlags(object, runtime.heap.flagsOf(object) | viewFlags);
   runtime.heap.setSlot(object, 0, int32Value(BINARY_VIEW));
   runtime.heap.setSlot(object, 1, cellValue(buffer));
   runtime.heap.setSlot(object, 2, binaryNumber(offset));
@@ -1486,12 +1585,30 @@ function thisView(inout runtime: Runtime, thisValue: Value, in method: String): 
 function attachedView(inout runtime: Runtime, thisValue: Value, in method: String): u32 {
   const view = thisView(inout runtime, thisValue, in method);
   if (view == 0) return 0;
-  if (isDetached(in runtime, view)) {
-    const message: String = `${method} called on a DataView whose buffer is detached`;
+  if (viewOutOfBounds(in runtime, view)) {
+    const message: String = `${method} called on a DataView that is out of bounds or detached`;
     raiseType(inout runtime, in message);
     return 0;
   }
   return view;
+}
+
+// GetViewByteLength: a tracking view's is the buffer's past its offset.
+function viewByteLength(in runtime: Runtime, view: u32): f64 {
+  const stored = toNumber(runtime.binaryField(view, 3));
+  if (stored >= 0.0) return stored;
+  return bufferByteLength(in runtime, runtime.typedBuffer(view)) - toNumber(runtime.binaryField(view, 2));
+}
+
+// IsViewOutOfBounds: detached, or past a shrunk resizable buffer.
+function viewOutOfBounds(in runtime: Runtime, view: u32): boolean {
+  const buffer = runtime.typedBuffer(view);
+  if (runtime.bufferBytes(buffer) == 0) return true;
+  const available = bufferByteLength(in runtime, buffer);
+  const offset = toNumber(runtime.binaryField(view, 2));
+  const stored = toNumber(runtime.binaryField(view, 3));
+  if (stored < 0.0) return offset > available;
+  return offset + stored > available;
 }
 
 function viewBufferGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1505,7 +1622,7 @@ function viewByteLengthGetter(inout runtime: Runtime, thisValue: Value, argsBase
   const method: String = "get DataView.prototype.byteLength";
   const view = attachedView(inout runtime, thisValue, in method);
   if (view == 0) return undefinedValue();
-  return runtime.binaryField(view, 3);
+  return binaryNumber(viewByteLength(in runtime, view));
 }
 
 function viewByteOffsetGetter(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -1518,7 +1635,7 @@ function viewByteOffsetGetter(inout runtime: Runtime, thisValue: Value, argsBase
 // The byte in the buffer where an element of kind `kind` at `index` in the
 // view starts, checked against the view's length; -1 with a RangeError.
 function viewPlace(inout runtime: Runtime, view: u32, index: f64, kind: i32): f64 {
-  const viewLength = toNumber(runtime.binaryField(view, 3));
+  const viewLength = viewByteLength(in runtime, view);
   if (index + f64(elementSize(kind)) > viewLength) {
     const message: String = "Offset is outside the bounds of the DataView";
     raiseRange(inout runtime, in message);
@@ -1606,7 +1723,9 @@ export function installTypedArrays(inout runtime: Runtime): void {
   const elementAtom = slotAtom(inout runtime, 54);
   const kindClass = runtime.heap.classTransitionWith(0, kindAtom, PROP_NONE);
   const bytesClass = runtime.heap.classTransitionWith(kindClass, bytesAtom, PROP_NONE);
-  runtime.bufferClass = runtime.heap.classTransitionWith(bytesClass, byteLengthAtom, PROP_NONE);
+  const byteLengthClass = runtime.heap.classTransitionWith(bytesClass, byteLengthAtom, PROP_NONE);
+  const maxAtom = slotAtom(inout runtime, 55);
+  runtime.bufferClass = runtime.heap.classTransitionWith(byteLengthClass, maxAtom, PROP_NONE);
   const bufferAtClass = runtime.heap.classTransitionWith(kindClass, bufferAtom, PROP_NONE);
   const offsetClass = runtime.heap.classTransitionWith(bufferAtClass, offsetAtom, PROP_NONE);
   const lengthClass = runtime.heap.classTransitionWith(offsetClass, lengthAtom, PROP_NONE);
@@ -1627,6 +1746,7 @@ export function installTypedArrays(inout runtime: Runtime): void {
   const byteLengthText: String = "byteLength"; defineGetter(inout runtime, bufferProto, in byteLengthText, bufferByteLengthGetter);
   const maxByteLengthText: String = "maxByteLength"; defineGetter(inout runtime, bufferProto, in maxByteLengthText, bufferMaxByteLength);
   const resizableText: String = "resizable"; defineGetter(inout runtime, bufferProto, in resizableText, bufferResizable);
+  const resizeText: String = "resize"; runtime.defineMethod(bufferProto, in resizeText, bufferResize, 1);
   const detachedText: String = "detached"; defineGetter(inout runtime, bufferProto, in detachedText, bufferDetached);
   const sliceText: String = "slice"; runtime.defineMethod(bufferProto, in sliceText, bufferSlice, 2);
   const transferText: String = "transfer"; runtime.defineMethod(bufferProto, in transferText, bufferTransfer, 0);
