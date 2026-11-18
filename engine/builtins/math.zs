@@ -3,7 +3,7 @@
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, isNumber, isInt32, asInt32 } from "../value.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE } from "../heap.zs";
-import { Runtime, toNumber, toInt32, toUint32, isIntegralDouble, truncateDouble, numberExponentiate } from "../runtime.zs";
+import { Runtime, toNumber, toInt32, toUint32, isIntegralDouble, truncateDouble, numberExponentiate, float16Bits, float16Value } from "../runtime.zs";
 
 function nativeMath1(op: i32, x: f64): f64 = raw c {
   switch (op) {
@@ -110,6 +110,14 @@ function mathRound(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc
   const rounded = x - floored >= 0.5 ? floored + 1.0 : floored;
   if (rounded == 0.0 && x < 0.0) return doubleValue(-0.0);
   return numberValue(rounded);
+}
+
+// f16round: the nearest binary16, a tie to the even, as a Float16Array
+// stores it.
+function mathF16round(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  const x = numberArgument(inout runtime, argsBase, argc, 0);
+  if (runtime.pendingThrow) return undefinedValue();
+  return numberValue(float16Value(float16Bits(x)));
 }
 
 function mathSign(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
@@ -281,6 +289,7 @@ export function installMath(inout runtime: Runtime): void {
   const cbrtText: String = "cbrt"; defineUnary(inout runtime, math, in cbrtText, MATH_CBRT);
   const truncText: String = "trunc"; defineUnary(inout runtime, math, in truncText, MATH_TRUNC);
   const froundText: String = "fround"; defineUnary(inout runtime, math, in froundText, MATH_FROUND);
+  const f16roundText: String = "f16round"; runtime.defineMethod(math, in f16roundText, mathF16round, 1);
   const roundText: String = "round"; runtime.defineMethod(math, in roundText, mathRound, 1);
   const signText: String = "sign"; runtime.defineMethod(math, in signText, mathSign, 1);
   const powText: String = "pow"; runtime.defineMethod(math, in powText, mathPow, 2);

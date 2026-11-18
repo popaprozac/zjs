@@ -10,10 +10,10 @@
 // element when the key is a canonical numeric string. The bytes live in a
 // TAG_BYTES cell the buffer holds; detaching drops the cell.
 //
-// Not here yet: Float16Array and the BigInt element kinds.
+// Not here yet: the BigInt element kinds.
 import { thread } from "std/thread";
 import { Value, undefinedValue, nullValue, booleanValue, int32Value, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isNumber, asInt32 } from "../value.zs";
-import { Runtime, HostFunction, toNumber, truncateDouble, isIntegralDouble, binaryNumber, elementSize, FEATURE_TYPED_ARRAYS, BINARY_BUFFER, BINARY_TYPED, BINARY_VIEW, ELEMENT_INT8, ELEMENT_UINT8, ELEMENT_UINT8_CLAMPED, ELEMENT_INT16, ELEMENT_UINT16, ELEMENT_INT32, ELEMENT_UINT32, ELEMENT_FLOAT32, ELEMENT_FLOAT64 } from "../runtime.zs";
+import { Runtime, HostFunction, toNumber, truncateDouble, isIntegralDouble, binaryNumber, elementSize, FEATURE_TYPED_ARRAYS, BINARY_BUFFER, BINARY_TYPED, BINARY_VIEW, ELEMENT_INT8, ELEMENT_UINT8, ELEMENT_UINT8_CLAMPED, ELEMENT_INT16, ELEMENT_UINT16, ELEMENT_INT32, ELEMENT_UINT32, ELEMENT_FLOAT32, ELEMENT_FLOAT64, ELEMENT_FLOAT16 } from "../runtime.zs";
 import { PROP_METHOD, PROP_NONE, PROP_CONFIGURABLE, PROP_ACCESSOR, FLAG_BINARY, FLAG_VARIABLE_LENGTH } from "../heap.zs";
 import { defineSpecies } from "./collections.zs";
 import { textBuilder, putByte, putString, finishText } from "./builder.zs";
@@ -22,7 +22,7 @@ import { textBuilder, putByte, putString, finishText } from "./builder.zs";
 // CreateByteDataBlock allows, rather than an allocation the process cannot
 // survive (the engine has no fallible allocation).
 const MAX_BYTE_LENGTH: f64 = 2147483647.0;
-const ELEMENT_KINDS: i32 = 9;
+const ELEMENT_KINDS: i32 = 10;
 // 2^53 - 1, the largest index ToIndex accepts.
 const MAX_INDEX: f64 = 9007199254740991.0;
 
@@ -35,6 +35,7 @@ function viewKindName(kind: i32): String {
   if (kind == ELEMENT_INT32) return "Int32";
   if (kind == ELEMENT_UINT32) return "Uint32";
   if (kind == ELEMENT_FLOAT32) return "Float32";
+  if (kind == ELEMENT_FLOAT16) return "Float16";
   return "Float64";
 }
 
@@ -47,6 +48,7 @@ function elementName(kind: i32): String {
   if (kind == ELEMENT_INT32) return "Int32Array";
   if (kind == ELEMENT_UINT32) return "Uint32Array";
   if (kind == ELEMENT_FLOAT32) return "Float32Array";
+  if (kind == ELEMENT_FLOAT16) return "Float16Array";
   return "Float64Array";
 }
 
@@ -538,7 +540,7 @@ function fromArrayLike(inout runtime: Runtime, object: u32, source: Value): bool
   return true;
 }
 
-// The constructors of the nine kinds: a length, a typed array, an
+// The constructors of the ten kinds: a length, a typed array, an
 // ArrayBuffer (with an offset and a length), an iterable, or an
 // array-like.
 function constructTyped(inout runtime: Runtime, argsBase: u32, argc: u32, kind: i32): Value {
@@ -613,6 +615,9 @@ function constructFloat32(inout runtime: Runtime, thisValue: Value, argsBase: u3
 }
 function constructFloat64(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   return constructTyped(inout runtime, argsBase, argc, ELEMENT_FLOAT64);
+}
+function constructFloat16(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
+  return constructTyped(inout runtime, argsBase, argc, ELEMENT_FLOAT16);
 }
 
 // --- %TypedArray%.prototype ---
@@ -1843,7 +1848,7 @@ export function installTypedArrays(inout runtime: Runtime): void {
     viewKind = viewKind + 1;
   }
 
-  // The nine kinds: each constructor inherits from %TypedArray%, each
+  // The ten kinds: each constructor inherits from %TypedArray%, each
   // prototype from %TypedArray%.prototype.
   const bytesText: String = "BYTES_PER_ELEMENT";
   let kind: i32 = 0;
@@ -1868,6 +1873,8 @@ export function installTypedArrays(inout runtime: Runtime): void {
       ctor = runtime.defineAllocatingConstructor(constructUint32, undefinedValue(), 3, in name);
     } else if (kind == ELEMENT_FLOAT32) {
       ctor = runtime.defineAllocatingConstructor(constructFloat32, undefinedValue(), 3, in name);
+    } else if (kind == ELEMENT_FLOAT16) {
+      ctor = runtime.defineAllocatingConstructor(constructFloat16, undefinedValue(), 3, in name);
     } else {
       ctor = runtime.defineAllocatingConstructor(constructFloat64, undefinedValue(), 3, in name);
     }

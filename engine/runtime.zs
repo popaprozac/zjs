@@ -457,6 +457,7 @@ export const ELEMENT_INT32: i32 = 5;
 export const ELEMENT_UINT32: i32 = 6;
 export const ELEMENT_FLOAT32: i32 = 7;
 export const ELEMENT_FLOAT64: i32 = 8;
+export const ELEMENT_FLOAT16: i32 = 9;
 
 // A property key of a typed array read as the specification's
 // CanonicalNumericIndexString: whether it is one, and the number.
@@ -3071,12 +3072,17 @@ export struct Runtime {
   // byte `at`, little-endian unless `big`.
   function readElement(bytes: u32, at: usize, element: i32, big: boolean): Value {
     const bits = this.heap.bytesLoad(bytes, at, elementSize(element), big);
+    // The float kinds are numbered last (FLOAT32, FLOAT64, FLOAT16): one
+    // test parts them from the integers.
+    if (element >= ELEMENT_FLOAT32) {
+      if (element == ELEMENT_FLOAT64) return binaryNumber(f64.fromBits(bits));
+      if (element == ELEMENT_FLOAT32) return binaryNumber(float32Value(u32(bits)));
+      return binaryNumber(float16Value(u32(bits)));
+    }
     if (element == ELEMENT_INT8) return int32Value(i32(bits) - (bits >= 128 ? 256 : 0));
     if (element == ELEMENT_INT16) return int32Value(i32(bits) - (bits >= 32768 ? 65536 : 0));
     if (element == ELEMENT_INT32) return int32Value(i32.fromBits(u32(bits)));
     if (element == ELEMENT_UINT32) return binaryNumber(f64(bits));
-    if (element == ELEMENT_FLOAT32) return binaryNumber(float32Value(u32(bits)));
-    if (element == ELEMENT_FLOAT64) return binaryNumber(f64.fromBits(bits));
     return int32Value(i32(bits));
   }
 
@@ -3084,16 +3090,26 @@ export struct Runtime {
   // at byte `at`, little-endian unless `big`.
   function writeElement(inout this, bytes: u32, at: usize, element: i32, number: f64, big: boolean): void {
     let bits: u64 = 0;
-    if (element == ELEMENT_FLOAT32) {
-      bits = u64(float32Bits(number));
-    } else if (element == ELEMENT_FLOAT64) {
-      bits = number.toBits();
+    if (element >= ELEMENT_FLOAT32) {
+      if (element == ELEMENT_FLOAT16) {
+        // Handed on whole, as the last thing done: a call here with work
+        // after it would keep registers saved on every kind's write.
+        this.writeHalf(bytes, at, number, big);
+        return;
+      }
+      bits = element == ELEMENT_FLOAT64 ? number.toBits() : u64(float32Bits(number));
     } else if (element == ELEMENT_UINT8_CLAMPED) {
       bits = u64(clampToUint8(number));
     } else if (number == number) {
       bits = u64(nativeToUint32(number));
     }
     this.heap.bytesStore(bytes, at, elementSize(element), bits, big);
+  }
+
+  // writeElement for a Float16Array or DataView's setFloat16: a Uint16
+  // write of the binary16's bits, so the bytes are stored in one place.
+  cold function writeHalf(inout this, bytes: u32, at: usize, number: f64, big: boolean): void {
+    this.writeElement(bytes, at, ELEMENT_UINT16, f64(float16Bits(number)), big);
   }
 
   // TypedArrayGetElement.
@@ -11880,7 +11896,7 @@ export function elementSize(element: i32): u32 {
   if (element <= ELEMENT_UINT8_CLAMPED) return 1;
   if (element <= ELEMENT_UINT16) return 2;
   if (element <= ELEMENT_FLOAT32) return 4;
-  return 8;
+  return element == ELEMENT_FLOAT64 ? 8 : 2;
 }
 
 // A number read from binary data, as a value: an int32 when it is one
@@ -11900,6 +11916,54 @@ function clampToUint8(number: f64): u32 {
   if (floor + 0.5 < number) return u32(floor) + 1;
   if (number < floor + 0.5) return u32(floor);
   return u32(floor) % 2 == 0 ? u32(floor) : u32(floor) + 1;
+}
+
+// The binary16 nearest a number, ties to even, as Float16Array and
+// Math.f16round store it: its 16 bits. Worked from the double itself:
+// through float32 a value just past a tie would round twice, and C's
+// _Float16 is not in every embedder's compiler. Out of line (cold), as
+// float32's conversion is: inlined into writeElement, it took registers
+// that every other kind's write then saved and restored.
+export cold function float16Bits(value: f64): u32 {
+  if (value != value) return 0x7E00;
+  const sign: u32 = value < 0.0 || (value == 0.0 && 1.0 / value < 0.0) ? 0x8000 : 0;
+  const magnitude = value < 0.0 ? -value : value;
+  // Half a step past the largest binary16 (65504) or more: infinity.
+  if (magnitude >= 65520.0) return sign | 0x7C00;
+  // Below 2^-14: zero or subnormal, in steps of 2^-24 (the scaling is
+  // exact); 1024 steps is the smallest normal, which the bits spell too.
+  if (magnitude < 6.103515625e-05) return sign | u32(roundHalfEven(magnitude * 16777216.0));
+  // Normal: the double's exponent is the half's, and its significand,
+  // scaled to eleven bits, rounds to even; a carry moves the exponent up.
+  const exponent = i32((magnitude.toBits() >> 52) & 0x7FF) - 1023;
+  const scale = f64.fromBits(u64(1033 - exponent) << 52);
+  let significand = roundHalfEven(magnitude * scale);
+  let biased = exponent + 15;
+  if (significand >= 2048.0) {
+    significand = 1024.0;
+    biased = biased + 1;
+  }
+  if (biased >= 31) return sign | 0x7C00;
+  return sign | (u32(biased) << 10) | (u32(significand) - 1024);
+}
+
+// The number a binary16's bits spell; out of line for the same reason.
+export cold function float16Value(bits: u32): f64 {
+  const sign = (bits & 0x8000) != 0 ? -1.0 : 1.0;
+  const biased = (bits >> 10) & 0x1F;
+  const fraction = f64(bits & 0x3FF);
+  if (biased == 0) return sign * fraction * 5.9604644775390625e-08;
+  if (biased == 31) return fraction == 0.0 ? sign / 0.0 : nativeNan();
+  return sign * (1024.0 + fraction) * f64.fromBits(u64(998 + biased) << 52);
+}
+
+// An integral double nearest x (x >= 0, below 2^53), a tie to the even.
+function roundHalfEven(x: f64): f64 {
+  const whole = truncateDouble(x);
+  const rest = x - whole;
+  if (rest > 0.5) return whole + 1.0;
+  if (rest < 0.5) return whole;
+  return whole - 2.0 * truncateDouble(whole / 2.0) == 0.0 ? whole : whole + 1.0;
 }
 
 function float32Bits(value: f64): u32 = raw c {
@@ -12833,4 +12897,30 @@ export function asyncFromSyncReturn(inout runtime: Runtime, thisValue: Value, ar
 
 export function asyncFromSyncThrow(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   return asyncFromSyncRequest(inout runtime, thisValue, argsBase, argc, 1);
+}
+
+test "binary16 is the nearest, a tie to the even" {
+  expect(float16Bits(1.0)).toEqual(0x3C00);
+  expect(float16Bits(-2.0)).toEqual(0xC000);
+  expect(float16Bits(-0.0)).toEqual(0x8000);
+  expect(float16Bits(65504.0)).toEqual(0x7BFF);
+  expect(float16Bits(65519.99)).toEqual(0x7BFF);
+  expect(float16Bits(65520.0)).toEqual(0x7C00);
+  expect(float16Bits(5.960464477539063e-08)).toEqual(1);
+  // 2^-25 is a tie between 0 and the smallest subnormal: zero is even.
+  expect(float16Bits(2.98023223876953125e-08)).toEqual(0);
+  // 1.5 x 2^-24 is a tie between steps 1 and 2: to 2.
+  expect(float16Bits(8.940696716308594e-08)).toEqual(2);
+  // 1 + 2^-11 ties to 1; 1 + 3 x 2^-11 ties to 1 + 2^-9.
+  expect(float16Bits(1.00048828125)).toEqual(0x3C00);
+  expect(float16Bits(1.00146484375)).toEqual(0x3C02);
+  // 2^-14 less half a subnormal step rounds up to the smallest normal.
+  expect(float16Bits(6.1005353927612305e-05)).toEqual(0x0400);
+  expect(float16Value(0x3555)).toEqual(0.333251953125);
+  expect(float16Value(0x0001)).toEqual(5.960464477539063e-08);
+  expect(float16Value(0x7BFF)).toEqual(65504.0);
+  expect(float16Value(0x7C00)).toEqual(1.0 / 0.0);
+  expect(float16Value(0xFC00)).toEqual(-1.0 / 0.0);
+  expect(float16Value(0x7E00) != float16Value(0x7E00)).toEqual(true);
+  expect(1.0 / float16Value(0x8000) < 0.0).toEqual(true);
 }
