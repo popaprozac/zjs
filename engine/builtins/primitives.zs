@@ -4,7 +4,7 @@
 // indexing, and every method here count units.
 import { thread } from "std/thread";
 import { Value, undefinedValue, booleanValue, int32Value, doubleValue, cellValue, asCell, isCell, isUndefined, isNull, isDeleted, isNumber, isBoolean, isTrue, isInt32, asInt32, asDouble } from "../value.zs";
-import { Runtime, ERROR_KIND_RANGE, toNumber, toInt32, isIntegralDouble, truncateDouble, int32ToString, doubleToString, stringToNumber } from "../runtime.zs";
+import { Runtime, ERROR_KIND_RANGE, toNumber, toInt32, isIntegralDouble, truncateDouble, int32ToString, doubleToString, doubleToExponentString, stringToNumber } from "../runtime.zs";
 import { bytesOf, PROP_METHOD, PROP_NONE } from "../heap.zs";
 import { unitsOf, pushCodePoint, codePointAt, isJsSpace, isHighSurrogate, isLowSurrogate, upperUnit, lowerUnit, sliceUnits, copyUnits } from "../text.zs";
 
@@ -21,15 +21,6 @@ function nativeFormatExponent(buffer: usize, value: f64, digits: i32): i32 = raw
 // expansion has at most 1074 digits after the leading one.
 function nativeFormatExact(buffer: usize, value: f64): i32 = raw c {
   return snprintf((char *)buffer, 1200, "%.1100e", value);
-}
-// The fewest significant digits that read back as the same double.
-function nativeShortestExponentDigits(value: f64): i32 = raw c {
-  char scratch[64];
-  for (int digits = 0; digits <= 17; digits++) {
-    snprintf(scratch, sizeof scratch, "%.*e", digits, value);
-    if (strtod(scratch, NULL) == value) return digits;
-  }
-  return 17;
 }
 function nativeFloor(value: f64): f64 = raw c { return __builtin_floor(value); }
 function nativeNan(): f64 = raw c { return __builtin_nan(""); }
@@ -511,8 +502,8 @@ function numberToFixed(inout runtime: Runtime, thisValue: Value, argsBase: u32, 
 }
 
 // Number.prototype.toExponential: one digit before the point and
-// fractionDigits after it, or the shortest count that reads back as the
-// same number when the argument is undefined.
+// fractionDigits after it, or, when the argument is undefined, the
+// shortest digits that read back as the same number (ToString's).
 function numberToExponential(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const text: String = "toExponential";
   const number = thisNumber(inout runtime, thisValue, in text);
@@ -530,11 +521,14 @@ function numberToExponential(inout runtime: Runtime, thisValue: Value, argsBase:
   const negative = number < 0.0;
   // A zero is formatted as +0 whatever its sign.
   const magnitude = number == 0.0 ? 0.0 : (negative ? 0.0 - number : number);
+  if (isUndefined(fractionArgument)) {
+    const shortest = doubleToExponentString(magnitude);
+    return numberFormatResult(inout runtime, negative, bytesOf(in shortest));
+  }
   let formatted = Array<u8>();
   let decimal = exactDecimal(magnitude);
   if (magnitude == 0.0) decimal.exponent = 0;
-  const keep = isUndefined(fractionArgument) ? usize(nativeShortestExponentDigits(magnitude)) + 1 : usize(digits) + 1;
-  roundDecimal(inout decimal, keep);
+  roundDecimal(inout decimal, usize(digits) + 1);
   pushExponentForm(inout formatted, in decimal);
   return numberFormatResult(inout runtime, negative, move formatted);
 }

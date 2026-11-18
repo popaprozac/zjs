@@ -12167,20 +12167,36 @@ function nativeFormatInt32(buffer: usize, value: i32): void = raw c {
 // ToString(Number): integral values within 1e15 print as integers, and
 // everything else through the shortest digit string that round-trips, laid
 // out as Number::toString says (an integer above 2^53 is its shortest
-// digits and zeros, not its exact value).
-function nativeFormatDouble(buffer: usize, value: f64): void = raw c {
+// digits and zeros, not its exact value). A non-zero exponentForm lays the
+// same digits out as Number.prototype.toExponential() does.
+function nativeFormatDouble(buffer: usize, value: f64, exponentForm: i32): void = raw c {
   char *out = (char *)buffer;
   if (value != value) { snprintf(out, 64, "NaN"); return; }
   if (__builtin_isinf(value)) { snprintf(out, 64, value > 0 ? "Infinity" : "-Infinity"); return; }
-  if (value == (double)(long long)value && value >= -1e15 && value <= 1e15) {
+  if (!exponentForm && value == (double)(long long)value && value >= -1e15 && value <= 1e15) {
     snprintf(out, 64, "%lld", (long long)value); return;
   }
-  /* Shortest round-trip digits, then ECMA-262 Number::toString layout. */
+  /* Shortest round-trip digits: at each length the nearest decimal (the C
+     library rounds correctly), then ECMA-262 Number::toString layout. At a
+     power of two the gap to the double below is half the gap above, so
+     when the nearest decimal lies below and does not read back, the one
+     just above it still may: 2^-24 is 5.960464477539063e-8. */
+  uint64_t bits;
+  memcpy(&bits, &value, sizeof bits);
+  int lopsided = (bits & 0xFFFFFFFFFFFFFull) == 0 && ((bits >> 52) & 0x7FF) > 1;
   char digits[40];
   int precision = 1;
   for (; precision <= 17; precision++) {
     snprintf(digits, sizeof digits, "%.*e", precision - 1, value);
     if (strtod(digits, NULL) == value) break;
+    if (lopsided) {
+      /* One up in the last digit. A carry out of the first digit is a
+         power of ten, which never reads back here: the one-digit pass
+         already tried it, or it is far off. */
+      int at = (int)(strchr(digits, 'e') - digits);
+      while (--at >= 0 && (digits[at] == '9' || digits[at] == '.')) { if (digits[at] == '9') digits[at] = '0'; }
+      if (at >= 0 && digits[at] >= '0' && digits[at] <= '8') { digits[at]++; if (strtod(digits, NULL) == value) break; }
+    }
   }
   const char *p = digits;
   int negative = 0;
@@ -12193,13 +12209,13 @@ function nativeFormatDouble(buffer: usize, value: f64): void = raw c {
   int e = exponent + 1;
   char *w = out;
   if (negative) *w++ = '-';
-  if (k <= e && e <= 21) {
+  if (!exponentForm && k <= e && e <= 21) {
     memcpy(w, mant, k); w += k;
     for (int i = 0; i < e - k; i++) *w++ = '0';
-  } else if (0 < e && e <= 21) {
+  } else if (!exponentForm && 0 < e && e <= 21) {
     memcpy(w, mant, e); w += e; *w++ = '.';
     memcpy(w, mant + e, k - e); w += k - e;
-  } else if (-6 < e && e <= 0) {
+  } else if (!exponentForm && -6 < e && e <= 0) {
     *w++ = '0'; *w++ = '.';
     for (int i = 0; i < -e; i++) *w++ = '0';
     memcpy(w, mant, k); w += k;
@@ -12371,7 +12387,17 @@ export function int32ToString(value: i32): String {
 
 export function doubleToString(value: f64): String {
   const buffer = nativeAlloc(64);
-  nativeFormatDouble(buffer, value);
+  nativeFormatDouble(buffer, value, 0);
+  const text = bufferToString(buffer);
+  nativeFree(buffer);
+  return text;
+}
+
+// The digits of doubleToString, always in exponent form: what
+// Number.prototype.toExponential() gives with no fraction digits.
+export function doubleToExponentString(value: f64): String {
+  const buffer = nativeAlloc(64);
+  nativeFormatDouble(buffer, value, 1);
   const text = bufferToString(buffer);
   nativeFree(buffer);
   return text;
@@ -12575,6 +12601,13 @@ test "number formatting follows the reference" {
   expect(formatted7).toEqual("0");
   const formatted8 = doubleToString(1.0 / 0.0);
   expect(formatted8).toEqual("Infinity");
+  // 2^-24: the shortest decimal lies above the double, past the nearest.
+  const formatted9 = doubleToString(5.9604644775390625e-8);
+  expect(formatted9).toEqual("5.960464477539063e-8");
+  const formatted10 = doubleToExponentString(123.0);
+  expect(formatted10).toEqual("1.23e+2");
+  const formatted11 = doubleToExponentString(0.0);
+  expect(formatted11).toEqual("0e+0");
 }
 
 function numberOf(text: String): f64 {
