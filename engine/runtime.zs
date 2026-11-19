@@ -14,6 +14,7 @@ import math from "std/math";
 import native from "./builtins/clock.h";
 import host from "./native/zjs_host.h";
 import { stackAddress } from "./stack.zs";
+import { doubleTextInto } from "./number_text.zs";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, emptyRegexBackend, loadScratch, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
 import { Heap, createHeap, bytesOf, FLAG_BINARY, FLAG_VARIABLE_LENGTH, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
@@ -658,6 +659,10 @@ export struct Runtime {
   // Bytes a join of several pieces gathers before appending them at once
   // (see joinPieces); kept so the gathering allocates only once.
   concatScratch: Array<u8>;
+  // A double's ToString text as doubleTextInto writes it. A field rather
+  // than a local: an array on toStringValue's stack would give every call
+  // of it a stack guard, strings and all.
+  numberText: u8[32];
   // The objects whose join is running, innermost last (see joinWith in
   // builtins/array.zs): one already here joins to the empty string.
   joining: Array<u32>;
@@ -7675,8 +7680,8 @@ export struct Runtime {
     }
     if (isInt32(value)) return this.newStringLatin1(int32Digits(asInt32(value)));
     if (isDouble(value)) {
-      const text = doubleToString(asDouble(value));
-      return this.newStringLatin1(bytesOf(in text));
+      const length = doubleTextInto(inout this.numberText, asDouble(value), false);
+      return cellValue(this.heap.allocateLatin1Slice(this.numberText.slice(0, length)));
     }
     if (isBoolean(value)) {
       const text: String = isTrue(value) ? "true" : "false";
@@ -11970,7 +11975,7 @@ export function createRuntime(): Runtime {
     hostThis: undefinedValue(), tryStack: Array<TryFrame>(), tryDepth: 0,
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
-    randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), joining: Array<u32>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, flagsProtoClass: 0, flagAccessors: Array<FlagAccessor>(), flagsShapeClass: 0, flagsBitsSlot: 0, lastResult: undefinedValue(),
+    randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), numberText: [u8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], joining: Array<u32>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, flagsProtoClass: 0, flagAccessors: Array<FlagAccessor>(), flagsShapeClass: 0, flagsBitsSlot: 0, lastResult: undefinedValue(),
     hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, atomCallee: 0, indexAtoms: Array<u32>(), argumentsClasses: Array<u32>(), iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
@@ -12371,88 +12376,6 @@ function nativeFormatInt32(buffer: usize, value: i32): void = raw c {
   snprintf((char *)buffer, 32, "%d", (int)value);
 }
 
-// ToString(Number): integral values within 1e15 print as integers, and
-// everything else through the shortest digit string that round-trips, laid
-// out as Number::toString says (an integer above 2^53 is its shortest
-// digits and zeros, not its exact value). A non-zero exponentForm lays the
-// same digits out as Number.prototype.toExponential() does.
-function nativeFormatDouble(buffer: usize, value: f64, exponentForm: i32): void = raw c {
-  char *out = (char *)buffer;
-  if (value != value) { snprintf(out, 64, "NaN"); return; }
-  if (__builtin_isinf(value)) { snprintf(out, 64, value > 0 ? "Infinity" : "-Infinity"); return; }
-  if (!exponentForm && value == (double)(long long)value && value >= -1e15 && value <= 1e15) {
-    snprintf(out, 64, "%lld", (long long)value); return;
-  }
-  /* Shortest round-trip digits: at each length the nearest decimal (the C
-     library rounds correctly), then ECMA-262 Number::toString layout. At a
-     power of two the gap to the double below is half the gap above, so
-     when the nearest decimal lies below and does not read back, the one
-     just above it still may: 2^-24 is 5.960464477539063e-8. */
-  uint64_t bits;
-  memcpy(&bits, &value, sizeof bits);
-  int lopsided = (bits & 0xFFFFFFFFFFFFFull) == 0 && ((bits >> 52) & 0x7FF) > 1;
-  char digits[40];
-  int precision = 1;
-  for (; precision <= 17; precision++) {
-    if (!lopsided && precision == 4) {
-      /* Past three digits, away from a power of two: the doubles reading
-         back as this one are an interval symmetric about it, and the
-         nearest decimal of one more digit is no further off, so reading
-         back is monotonic in the length, and the shortest is found in
-         about four more tries rather than up to 14. (Up to three digits,
-         as a number written by hand often has, the walk is cheaper.) */
-      int hi = 17, tried = 0;
-      while (precision < hi) {
-        tried = (precision + hi) / 2;
-        snprintf(digits, sizeof digits, "%.*e", tried - 1, value);
-        if (strtod(digits, NULL) == value) hi = tried; else precision = tried + 1;
-      }
-      if (tried != precision) snprintf(digits, sizeof digits, "%.*e", precision - 1, value);
-      break;
-    }
-    snprintf(digits, sizeof digits, "%.*e", precision - 1, value);
-    if (strtod(digits, NULL) == value) break;
-    if (lopsided) {
-      /* One up in the last digit. A carry out of the first digit is a
-         power of ten, which never reads back here: the one-digit pass
-         already tried it, or it is far off. */
-      int at = (int)(strchr(digits, 'e') - digits);
-      while (--at >= 0 && (digits[at] == '9' || digits[at] == '.')) { if (digits[at] == '9') digits[at] = '0'; }
-      if (at >= 0 && digits[at] >= '0' && digits[at] <= '8') { digits[at]++; if (strtod(digits, NULL) == value) break; }
-    }
-  }
-  const char *p = digits;
-  int negative = 0;
-  if (*p == '-') { negative = 1; p++; }
-  char mant[32]; int n = 0;
-  while (*p && *p != 'e') { if (*p != '.') mant[n++] = *p; p++; }
-  mant[n] = 0;
-  int exponent = atoi(p + 1);
-  int k = n;
-  int e = exponent + 1;
-  char *w = out;
-  if (negative) *w++ = '-';
-  if (!exponentForm && k <= e && e <= 21) {
-    memcpy(w, mant, k); w += k;
-    for (int i = 0; i < e - k; i++) *w++ = '0';
-  } else if (!exponentForm && 0 < e && e <= 21) {
-    memcpy(w, mant, e); w += e; *w++ = '.';
-    memcpy(w, mant + e, k - e); w += k - e;
-  } else if (!exponentForm && -6 < e && e <= 0) {
-    *w++ = '0'; *w++ = '.';
-    for (int i = 0; i < -e; i++) *w++ = '0';
-    memcpy(w, mant, k); w += k;
-  } else {
-    *w++ = mant[0];
-    if (k > 1) { *w++ = '.'; memcpy(w, mant + 1, k - 1); w += k - 1; }
-    *w++ = 'e';
-    int ex = e - 1;
-    *w++ = ex < 0 ? '-' : '+';
-    if (ex < 0) ex = -ex;
-    w += snprintf(w, 8, "%d", ex);
-  }
-  *w = 0;
-}
 
 // A Z String from a JavaScript string's bytes, by way of a NUL-terminated
 // native buffer: Z has no direct construction from bytes, and the copy
@@ -12609,21 +12532,25 @@ export function int32ToString(value: i32): String {
 }
 
 export function doubleToString(value: f64): String {
-  const buffer = nativeAlloc(64);
-  nativeFormatDouble(buffer, value, 0);
-  const text = bufferToString(buffer);
-  nativeFree(buffer);
-  return text;
+  return doubleText(value, false);
 }
 
 // The digits of doubleToString, always in exponent form: what
 // Number.prototype.toExponential() gives with no fraction digits.
 export function doubleToExponentString(value: f64): String {
-  const buffer = nativeAlloc(64);
-  nativeFormatDouble(buffer, value, 1);
-  const text = bufferToString(buffer);
-  nativeFree(buffer);
-  return text;
+  return doubleText(value, true);
+}
+
+function doubleText(value: f64, exponentForm: boolean): String {
+  let text: u8[32] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const length = doubleTextInto(inout text, value, exponentForm);
+  const decoded = attempt String.fromBytes(text.slice(0, length));
+  const marker: String = "?";
+  return match (decoded) {
+    success(digits) => digits;
+    // Unreachable: the text is ASCII.
+    failure(error) => marker;
+  };
 }
 
 // StringToNumber over ASCII text: white space trimmed, then the literal.
@@ -12831,6 +12758,27 @@ test "number formatting follows the reference" {
   expect(formatted10).toEqual("1.23e+2");
   const formatted11 = doubleToExponentString(0.0);
   expect(formatted11).toEqual("0e+0");
+  // Each layout, the extremes, and a key of the kind bench-v8 Splay makes.
+  const formatted12 = doubleToString(123456.789);
+  expect(formatted12).toEqual("123456.789");
+  const formatted13 = doubleToString(-1.5e-7);
+  expect(formatted13).toEqual("-1.5e-7");
+  const formatted14 = doubleToString(123456789012345680000.0);
+  expect(formatted14).toEqual("123456789012345680000");
+  const formatted15 = doubleToString(5e-324);
+  expect(formatted15).toEqual("5e-324");
+  const formatted16 = doubleToString(1.7976931348623157e308);
+  expect(formatted16).toEqual("1.7976931348623157e+308");
+  const formatted17 = doubleToString(0.1 + 0.2);
+  expect(formatted17).toEqual("0.30000000000000004");
+  const formatted18 = doubleToString(0.0 - 1.0 / 0.0);
+  expect(formatted18).toEqual("-Infinity");
+  const formatted19 = doubleToString(0.0 / 0.0);
+  expect(formatted19).toEqual("NaN");
+  const formatted20 = doubleToString(52211.0 / 268435456.0);
+  expect(formatted20).toEqual("0.000194501131772995");
+  const formatted21 = doubleToExponentString(0.000001);
+  expect(formatted21).toEqual("1e-6");
 }
 
 function numberOf(text: String): f64 {

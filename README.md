@@ -71,7 +71,7 @@ The runner:
 | `engine/compiler.zs`, `bytecode.zs`, `compile.zs` | AST to bytecode; the front end as `eval` and `Function` reach it |
 | `engine/runtime.zs` | per-context state, the interpreter loop, the object model |
 | `engine/value.zs`, `heap.zs` | NaN-boxed values; the handle-based cell heap and its collector |
-| `engine/text.zs`, `regex.zs`, `stack.zs` | strings as UTF-16 code units; the regex backend boundary; the native stack's limit |
+| `engine/text.zs`, `number_text.zs`, `regex.zs`, `stack.zs` | strings as UTF-16 code units; a double's shortest digits (Ryu) and their Number::toString layout; the regex backend boundary; the native stack's limit |
 | `engine/modules.zs`, `module_files.zs`, `bytecode_file.zs` | ES modules and their file loader; bytecode files |
 | `engine/builtins.zs`, `engine/builtins/` | builtins, one module per family, each with its installer |
 | `engine/lib.zs` | the context registry and the C ABI exports |
@@ -82,6 +82,7 @@ The runner:
 | `tools/alloc-attr.c`, `tools/malloc-count.c` | allocator attribution and call counts, inserted into a process |
 | `tests/` | ABI tests (`*_test.c`), expectation cases (`expect/`), collector checks (`gc/`), oracle corpora (`eval-corpus/`, `parse-corpus/`), the test262 runner |
 | `scripts/test262/` | test262 harness assembly, curated subset, classification |
+| `scripts/ryu-tables.py` | makes and checks the powers-of-five tables in `engine/number_text.zs` |
 | `bench/` | measurement harnesses: `speed`, `gc`, `alloc`, `memory`, `size` |
 | `probes/` | one Z program per language gap the engine has hit |
 | `spike/` | the Phase 0 dispatch and heap measurements (`./spike/run.sh`) |
