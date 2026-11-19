@@ -19,3 +19,8 @@ outer inner 2 end
 ✓-é
 TypeError
 0123456789
+256 <xyy 257 y!
+256 -2147483648 247 y1
+✓1a:3 éx1:3:233
+key 0.25 one|key 0.25 two
+pre-Hg49999.-post

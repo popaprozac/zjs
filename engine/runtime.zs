@@ -7750,22 +7750,39 @@ export struct Runtime {
   // narrow pieces that fit a small buffer in one join, any others one by
   // one. Undefined with a throw pending.
   function joinPieces(inout this, first: Value, at: u32, count: u32): Value {
+    // The joined bytes at most (an int32 takes 11), while every piece is
+    // narrow.
+    const firstHandle = asCell(first);
+    let bound = this.heap.stringLength(firstHandle);
+    let narrow = !this.heap.isWideString(firstHandle);
     let k: u32 = 0;
     while (k < count) {
-      const piece = this.regStack[usize(at + k)];
+      let piece = this.regStack[usize(at + k)];
       if (!this.isStringValue(piece) && !isInt32(piece)) {
         const primitive = this.toPrimitiveWithHint(piece, HINT_DEFAULT);
         if (this.pendingThrow) return undefinedValue();
         const text = this.toStringValue(primitive);
         if (this.pendingThrow) return undefinedValue();
         this.regStack[usize(at + k)] = text;
+        piece = text;
+      }
+      if (isInt32(piece)) {
+        bound = bound + 11;
+      } else {
+        bound = bound + this.heap.stringLength(asCell(piece));
+        if (this.heap.isWideString(asCell(piece))) narrow = false;
       }
       k = k + 1;
     }
     // The pieces' bytes gathered in the runtime's scratch buffer, a local
-    // while it fills.
+    // while it fills. A narrow result that fits it takes the first piece
+    // too, and goes to the arena in one copy, unless the first piece ends
+    // the arena and is extended in place.
     let tail = replace(inout this.concatScratch, Array<u8>());
     tail.clear();
+    const whole = narrow && bound <= CONCAT_GATHER && !this.heap.endsArena(firstHandle);
+    if (whole) this.heap.copyStorage(firstHandle, inout tail);
+    const gathered = tail.length;
     let fits = true;
     k = 0;
     while (fits && k < count) {
@@ -7780,15 +7797,19 @@ export struct Runtime {
         if (this.heap.isWideString(handle) || tail.length + length > CONCAT_GATHER) {
           fits = false;
         } else {
-          tail = this.heap.appendNarrowTo(handle, move tail);
+          this.heap.copyStorage(handle, inout tail);
         }
       }
       k = k + 1;
     }
     if (fits) {
-      const used = tail.length;
+      const used = tail.length - gathered;
       let joined = first;
-      if (used > 0) joined = cellValue(this.heap.concatAscii(asCell(first), tail, used, false));
+      if (used > 0 && whole) {
+        joined = cellValue(this.heap.allocateLatin1Slice(tail));
+      } else if (used > 0) {
+        joined = cellValue(this.heap.concatAscii(firstHandle, tail, used, false));
+      }
       this.concatScratch = move tail;
       return joined;
     }

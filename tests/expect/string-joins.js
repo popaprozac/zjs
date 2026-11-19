@@ -66,4 +66,23 @@ function templates() {
   show(many);
 }
 templates();
+
+// A small narrow join written to the arena in one copy, the first piece
+// with the rest: up to 256 bytes and past them, an int32 counted at its
+// widest, wide and Latin-1 first pieces, neighbors written one after
+// another, and a piece whose conversion allocates enough to collect.
+function gathered() {
+  var a = "x".repeat(200), b = "y".repeat(55);
+  var at = "<" + a + b, past = "<" + a + b + "!";
+  show(at.length + " " + at.slice(0, 2) + at.slice(-2) + " " + past.length + " " + past.slice(-2));
+  var widest = "<" + "y".repeat(244) + -2147483648, near = "<" + "y".repeat(245) + 1;
+  show(widest.length + " " + widest.slice(-11) + " " + near.length + " " + near.slice(-2));
+  var wide = "✓" + 1 + "a", latin = "é" + "x" + 1;
+  show(wide + ":" + wide.length + " " + latin + ":" + latin.length + ":" + latin.charCodeAt(0));
+  var key = "0.25", first = "key " + key + " one", second = "key " + key + " two";
+  show(first + "|" + second);
+  var heavy = { toString: function () { var t = ""; for (var i = 0; i < 50000; i++) t = "g" + i + "."; return "H" + t; } };
+  show("pre-" + heavy + "-post");
+}
+gathered();
 console.log(out.join("\n"));
