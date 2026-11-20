@@ -31,3 +31,21 @@ var order = [];
 var lhs = { valueOf: function () { order.push("l"); return 1; } }, rhs = { valueOf: function () { order.push("r"); return 2; } };
 function b3() { if (lhs < rhs) order.push("t"); if (lhs > rhs) order.push("T"); return order.join(""); }
 console.log([b1(1, 2), b1(2, 2), b1(3, 2), b1(NaN, 2), b1("10", "9"), b1("10", 9), b1(undefined, 1), b2(5), b3()].join(" | "));
+
+// A parenthesized target is assigned, updated, and iterated into as the
+// bare one is; it names no function, and a literal in parentheses is no
+// pattern.
+function p1(a) { (a) = a + 1; ((a)) += 2; (a)++; ++(a); (a) *= (a = 2) + 1; return a; }
+function p2(o) { (o.x) = 1; (o["y"]) = 2; (o.x) += 10; (o.y)--; return [o.x, o.y, (o.x)++, ++(o["y"]), o.x, o.y].join(); }
+function p3() { var n = 0; var read = function () { return n; }; (n) = 5; (n) += 1; (n)++; return read(); }
+var pg = 1; (pg) = 2; (pg) **= 3;
+function p4() { var k, v, async, o = {}; for ((k) in { a: 1 }); for ((v) of [7]); for ((async) of [8]); for ((o.last) of [8, 9]); return [k, v, async, o.last].join(); }
+function p5() { var f, g, c, h, getH = () => h; (f) = function () {}; g = function () {}; (c) = class {}; (h) = () => 0; return [JSON.stringify(f.name), g.name, JSON.stringify(c.name), JSON.stringify(getH().name)].join(); }
+function p6(a) { var log = []; (a) ||= 4; log.push(a); (a) &&= 5; log.push(a); a = null; (a) ??= 6; log.push(a); return log.join(); }
+function p7() { var s = { w: 1 }; with (s) { (w) = 2; (w) += 3; (w)++; } return s.w; }
+function p8(a) { var b = a; return [a + ((a) = 5) + a, b + (b)++ + b, b + ++(b)].join(); }
+class P { #v = 1; m() { (this.#v) = 5; (this.#v)++; return this.#v; } }
+console.log([p1(1), p2({}), p3(), pg, p4(), p5(), p6(0), p7(), p8(1), new P().m()].join(" | "));
+function rejects(src) { try { Function(src); return "parsed"; } catch (e) { return e.name; } }
+console.log(["(a) = 1", "((a)) += 1", "(a)++", "++(a)", "for ((a) of []);", "([a]) = [1]", "({a}) = {}", "[([a])] = [[1]]",
+  "(a, b) = 1", "(a = 1) = 2", "for (([a]) of []);", "'use strict'; (eval) = 1"].map(rejects).join(" "));

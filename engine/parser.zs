@@ -846,7 +846,13 @@ export struct Parser {
     const k = this.peekKind();
     if (this.isAssignmentOp(k)) {
       const opToken = this.advance();
-      const leftNode = this.node(left);
+      const parenthesized = this.kindOf(left) == NodeKind.paren;
+      let target = left;
+      if (parenthesized) {
+        target = this.parenTarget(left);
+        if (target == NO_NODE) return NO_NODE;
+      }
+      const leftNode = this.node(target);
       if (this.strictMode && leftNode.kind == NodeKind.identExpr
           && this.nameIsArgumentsOrEval(leftNode.start, leftNode.end - leftNode.start)) {
         this.hadError = true;
@@ -854,7 +860,6 @@ export struct Parser {
       }
       // Cover grammar: a plain `=` reinterprets an Array / Object literal
       // on the left as the matching assignment pattern.
-      let target = left;
       if (opToken.kind == TokenKind.eq && (leftNode.kind == NodeKind.array || leftNode.kind == NodeKind.object)) {
         if (this.walkShort(left)) return NO_NODE;
         target = this.reinterpretAsPattern(left);
@@ -862,10 +867,13 @@ export struct Parser {
       }
       const right = this.parseAssignment();
       if (right == NO_NODE) return NO_NODE;
-      const assignment = this.ast.newNode(NodeKind.assignment, this.startOf(target), this.endOf(right));
+      const assignment = this.ast.newNode(NodeKind.assignment, this.startOf(left), this.endOf(right));
       this.ast.setOp(assignment, opToken.kind);
       this.ast.setLeft(assignment, target);
       this.ast.setRight(assignment, right);
+      // `(f) = function () {}` names no function: IsIdentifierRef of a
+      // parenthesized target is false.
+      this.ast.setBool(assignment, parenthesized);
       return assignment;
     }
     return left;
@@ -1077,9 +1085,13 @@ export struct Parser {
         || k == TokenKind.plusPlus || k == TokenKind.minusMinus
         || k == TokenKind.kwTypeof || k == TokenKind.kwVoid || k == TokenKind.kwDelete) {
       const opToken = this.advance();
-      const operand = this.parseUnary();
+      let operand = this.parseUnary();
       if (operand == NO_NODE) return NO_NODE;
       const unary = this.ast.newNode(NodeKind.unary, opToken.start, this.endOf(operand));
+      if ((k == TokenKind.plusPlus || k == TokenKind.minusMinus) && this.kindOf(operand) == NodeKind.paren) {
+        operand = this.parenTarget(operand);
+        if (operand == NO_NODE) return NO_NODE;
+      }
       this.ast.setOp(unary, opToken.kind);
       this.ast.setLeft(unary, operand);
       return unary;
@@ -1094,8 +1106,13 @@ export struct Parser {
     if (k == TokenKind.plusPlus || k == TokenKind.minusMinus) {
       const opToken = this.advance();
       const postfix = this.ast.newNode(NodeKind.postfix, this.startOf(operand), opToken.start + opToken.length);
+      let target = operand;
+      if (this.kindOf(operand) == NodeKind.paren) {
+        target = this.parenTarget(operand);
+        if (target == NO_NODE) return NO_NODE;
+      }
       this.ast.setOp(postfix, opToken.kind);
-      this.ast.setLeft(postfix, operand);
+      this.ast.setLeft(postfix, target);
       return postfix;
     }
     return operand;
@@ -1794,7 +1811,7 @@ export struct Parser {
     if (expr == NO_NODE) return NO_NODE;
     const k = this.kindOf(expr);
     if (k == NodeKind.array || k == NodeKind.object) return this.reinterpretAsPattern(expr);
-    if (k == NodeKind.paren) return this.reinterpretAssignTarget(this.node(expr).left);
+    if (k == NodeKind.paren) return this.parenTarget(expr);
     if (k == NodeKind.identExpr) {
       if (this.identTargetReserved(expr)) {
         this.hadError = true;
@@ -1805,6 +1822,18 @@ export struct Parser {
     if (k == NodeKind.member || k == NodeKind.computed || k == NodeKind.arrayPattern || k == NodeKind.objectPattern) {
       return expr;
     }
+    this.hadError = true;
+    return NO_NODE;
+  }
+
+  // A parenthesized target, `(a)`, `((o.x))`: the identifier or member
+  // inside, assigned as the bare one is. Anything else in parentheses is
+  // no target; a literal there is no pattern (`([a]) = x`).
+  function parenTarget(inout this, expr: u32): u32 {
+    let inner = expr;
+    while (this.kindOf(inner) == NodeKind.paren) { inner = this.node(inner).left; }
+    const k = this.kindOf(inner);
+    if (k == NodeKind.identExpr || k == NodeKind.member || k == NodeKind.computed) return inner;
     this.hadError = true;
     return NO_NODE;
   }
@@ -2594,6 +2623,12 @@ export struct Parser {
         this.hadError = true;
         return NO_NODE;
       }
+    }
+    // `for ((a) in o)`: after the `async` test, which a parenthesized
+    // `(async)` passes.
+    if (binding != NO_NODE && this.kindOf(binding) == NodeKind.paren) {
+      binding = this.parenTarget(binding);
+      if (binding == NO_NODE) return NO_NODE;
     }
     this.advance();
     let iterated: u32 = NO_NODE;

@@ -4782,7 +4782,7 @@ export struct Compiler {
       if (into >= 0 && unused && n.op == TokenKind.eq) {
         // A statement `x = e` into a register binding: e leaves its value
         // in x's register when its last instruction writes it.
-        this.nameNext(assigned.nameStart, assigned.nameLength, 0);
+        if (!n.boolValue) this.nameNext(assigned.nameStart, assigned.nameLength, 0);
         this.targetReg = into;
         const value = this.compileExpr(in parser, inout runtime, n.right);
         if (value != u8(into)) this.emit(instAB(Op.mov, u8(into), value));
@@ -4816,7 +4816,8 @@ export struct Compiler {
       if (target.kind == NodeKind.identExpr) {
         let value: u8 = 0;
         if (n.op == TokenKind.eq) {
-          this.nameNext(target.nameStart, target.nameLength, 0);
+          // A parenthesized target (n.boolValue) names no function.
+          if (!n.boolValue) this.nameNext(target.nameStart, target.nameLength, 0);
           value = this.compileExpr(in parser, inout runtime, n.right);
         } else {
           // `x += e` on a binding in an environment, e a literal or a
