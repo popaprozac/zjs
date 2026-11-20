@@ -12273,7 +12273,7 @@ export inline function numericSub(a: Value, b: Value): Value {
 
 // The reference keeps an int32 product whenever it fits, including a
 // zero product with a negative operand (spec says -0); parity wins.
-export function numericMul(a: Value, b: Value): Value {
+export inline function numericMul(a: Value, b: Value): Value {
   if (isInt32(a) && isInt32(b)) {
     const product = i64(asInt32(a)) * i64(asInt32(b));
     // A zero product with a negative factor is -0, which only a double holds.
