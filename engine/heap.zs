@@ -2658,11 +2658,18 @@ export struct Heap {
   // data element, or the deleted marker for a hole, an accessor, or an
   // index past the length -- one pass over the header, for the paths that
   // read elements in place.
-  function dataElement(handle: u32, index: u32): Value {
+  inline function dataElement(handle: u32, index: u32): Value {
     const header = this.cellHeader(handle);
     if (index >= header.payload || index >= header.slotCount) return deletedValue();
     const value = unsafe { select this.slots.uncheckedAt(usize(header.slotStart.wrappingAdd(index))); };
-    if ((header.flags & FLAG_ELEMENT_ATTRS) != 0 && !isDeleted(value) && (this.elementAttrOf(handle, index) & PROP_ACCESSOR) != 0) return deletedValue();
+    if ((header.flags & FLAG_ELEMENT_ATTRS) != 0) return this.attributedElement(handle, index, value);
+    return value;
+  }
+
+  // dataElement's rare case, out of line: an array whose elements carry
+  // attributes, where an accessor's slot is not its value.
+  cold function attributedElement(handle: u32, index: u32, value: Value): Value {
+    if (!isDeleted(value) && (this.elementAttrOf(handle, index) & PROP_ACCESSOR) != 0) return deletedValue();
     return value;
   }
 
