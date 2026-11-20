@@ -43,3 +43,41 @@ out.push(namer(1).join("|"));
 function capture(start) { let total = start; const add = (step) => { total += step; return total; }; add(2); let calls = 0; total += (calls++, 5); return total + ":" + calls; }
 out.push(capture(1));
 console.log(out.join(","));
+// A local read in place while the rest of the expression assigns another
+// binding, and copied first when the rest assigns it: by an assignment,
+// an update, a compound or logical assignment, a destructuring target;
+// `++i` and `--i` read from i's own register, as an element key, an
+// operand, and a store's key.
+function byBinding() {
+  var log = [];
+  var a = 1, b = 2, i = 0, arr = [10, 20, 30, 40, 50];
+  log.push(a + (b = 5), b);
+  log.push(a + (a = 7), a);
+  log.push(a + ([a] = [9])[0], a);
+  log.push(a + ({ a } = { a: 4 }).a, a);
+  log.push(a + (a += 2), a);
+  var z = 0; log.push(z + (z ||= 6), z);
+  log.push(a + (b > 9 ? 0 : (a = 2)), a);
+  log.push(a + Math.max(0, (a = 8)), a);
+  var holder = { a: 1 }; log.push(a + (holder.a = 100), a, holder.a);
+  log.push(arr[++i] + i, i);
+  log.push(arr[++i] + (i = 0), i);
+  log.push(++i + i, i);
+  log.push(++i + i++, i);
+  log.push(--i * (i = 10), i);
+  i = 3; log.push(arr[--i], i);
+  var s = "2"; log.push(arr[++s], typeof s);
+  var row = 0, last = 0, x = [1, 2, 3, 4, 5, 6], y = [0, 0, 0, 0, 0, 0];
+  for (var k = 0; k < 4; k++) last = y[row] = last + x[++row] * 2;
+  log.push(y.join("-"), row, last);
+  var j = 1; arr[j] = (j = 3, -1); log.push(arr.join("/"), j);
+  var target = [0, 0], other = [0, 0]; target[0] = (target = other, 7); log.push(other.join(""), target === other);
+  var n = 2; arr[++n] = n; log.push(arr.join("/"), n);
+  var m = 0; arr[++m] = (m = 4, -9); log.push(arr.join("/"), m);
+  var t = 5; t += (b = 1, t = 50, 2); log.push(t);
+  var u = 5; u += (b = 1, 2); log.push(u);
+  var c = 3; log.push(c * (function () { var c = 100; c = 200; return c; })(), c);
+  var d = 3; log.push(d + (() => { d = 30; return 1; })(), d);
+  return log.join(" ");
+}
+console.log(byBinding());

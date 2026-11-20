@@ -1639,10 +1639,10 @@ export struct Compiler {
     return local.nameConst >= 0 && (local.alwaysCheck || !local.initialized);
   }
 
-  // The register of a binding read as an operand, when it can be read in
-  // place: a local of this function held in a register, whose read needs
-  // no hole check. -1 otherwise.
-  function operandLocalReg(inout this, in parser: Parser, node: u32): i32 {
+  // The binding read as an operand, when it can be read in place: a local
+  // of this function held in a register, whose read needs no hole check.
+  // Its index; -1 otherwise.
+  function operandLocal(inout this, in parser: Parser, node: u32): i32 {
     let current = node;
     while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
       current = parser.ast.node(current).left;
@@ -1654,7 +1654,62 @@ export struct Compiler {
     if (local < 0) return -1;
     const index = usize(local);
     if (this.bindings.locals[index].envSlot >= 0 || this.mustCheck(index) || this.localShadowed(index)) return -1;
-    return i32(this.bindings.locals[index].reg);
+    return local;
+  }
+
+  // The register of the binding operandLocal finds; -1 when it finds none.
+  function operandLocalReg(inout this, in parser: Parser, node: u32): i32 {
+    const local = this.operandLocal(in parser, node);
+    if (local < 0) return -1;
+    return i32(this.bindings.locals[usize(local)].reg);
+  }
+
+  // Whether evaluating a subtree may assign the binding `local`: an
+  // assignment or update whose target names it, or a destructuring
+  // target, which may. A binding operandLocal finds changes only that way:
+  // closures, a mapped arguments object, eval and `with` reach bindings
+  // in the environment, never one in a register.
+  function mayAssignLocal(inout this, in parser: Parser, node: u32, local: i32): boolean {
+    if (node == NO_NODE) return false;
+    const n = parser.ast.node(node);
+    const k = n.kind;
+    if (k == NodeKind.functionExpr || k == NodeKind.arrowFunc) return false;
+    if (k == NodeKind.assignment || ((k == NodeKind.unary || k == NodeKind.postfix) && (n.op == TokenKind.plusPlus || n.op == TokenKind.minusMinus))) {
+      let target = n.left;
+      while (target != NO_NODE && parser.ast.node(target).kind == NodeKind.paren) {
+        target = parser.ast.node(target).left;
+      }
+      if (target != NO_NODE) {
+        const t = parser.ast.node(target);
+        if (t.kind == NodeKind.identExpr) {
+          if (this.findLocal(in parser, t.nameStart, t.nameLength) == local) return true;
+        } else if (t.kind != NodeKind.member && t.kind != NodeKind.computed) {
+          return true;
+        }
+      }
+    }
+    if (this.mayAssignLocal(in parser, n.left, local) || this.mayAssignLocal(in parser, n.right, local) || this.mayAssignLocal(in parser, n.third, local)) return true;
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (this.mayAssignLocal(in parser, parser.ast.child(node, i), local)) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // `++x` or `--x` of a binding an assignment can write directly: the
+  // binding's index; -1 otherwise.
+  function prefixStepLocal(inout this, in parser: Parser, node: u32): i32 {
+    let current = node;
+    while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+      current = parser.ast.node(current).left;
+    }
+    if (current == NO_NODE) return -1;
+    const n = parser.ast.node(current);
+    if (n.kind != NodeKind.unary || (n.op != TokenKind.plusPlus && n.op != TokenKind.minusMinus)) return -1;
+    if (this.storableLocalReg(in parser, n.left) < 0) return -1;
+    const target = parser.ast.node(n.left);
+    return this.findLocal(in parser, target.nameStart, target.nameLength);
   }
 
   // The register of a binding an assignment can write directly: a local
@@ -1678,15 +1733,29 @@ export struct Compiler {
   // code, so that is the whole question. Anything else compiles into a
   // temporary as usual.
   function compileOperand(inout this, in parser: Parser, inout runtime: Runtime, node: u32, later: u32): u8 {
-    const direct = this.operandLocalReg(in parser, node);
-    if (direct >= 0 && !mayAssign(in parser, later)) {
+    const direct = this.operandLocal(in parser, node);
+    if (direct >= 0 && !this.mayAssignLocal(in parser, later, direct)) {
       // Read in place: what compileExpr would have consumed -- a name
       // waiting for a function expression, a destination hint -- is
       // consumed here, so neither reaches a later expression.
       this.pendingNameLength = 0;
       this.pendingNamePrefix = 0;
       this.targetReg = -1;
-      return u8(direct);
+      return this.bindings.locals[usize(direct)].reg;
+    }
+    // `++x` steps x in place, and x's register holds the value as well.
+    const stepped = this.prefixStepLocal(in parser, node);
+    if (stepped >= 0 && !this.mayAssignLocal(in parser, later, stepped)) {
+      this.pendingNameLength = 0;
+      this.pendingNamePrefix = 0;
+      this.targetReg = -1;
+      let current = node;
+      while (parser.ast.node(current).kind == NodeKind.paren) {
+        current = parser.ast.node(current).left;
+      }
+      const reg = this.bindings.locals[usize(stepped)].reg;
+      this.emit(instAB(parser.ast.node(current).op == TokenKind.plusPlus ? Op.inc : Op.dec, reg, reg));
+      return reg;
     }
     return this.compileExpr(in parser, inout runtime, node);
   }
@@ -4738,7 +4807,7 @@ export struct Compiler {
           }
         }
         let current = u8(into);
-        if (mayAssign(in parser, n.right)) current = this.compileExpr(in parser, inout runtime, n.left);
+        if (this.mayAssignLocal(in parser, n.right, this.findLocal(in parser, assigned.nameStart, assigned.nameLength))) current = this.compileExpr(in parser, inout runtime, n.left);
         const right = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
         this.emit(instABC(op, u8(into), current, right));
         return u8(into);
@@ -4802,9 +4871,9 @@ export struct Compiler {
       }
       if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
         let object: u8 = 0;
-        const objectReg = this.operandLocalReg(in parser, target.left);
-        if (objectReg >= 0 && !mayAssign(in parser, n.right) && (target.kind == NodeKind.member || !mayAssign(in parser, target.right))) {
-          object = u8(objectReg);
+        const objectLocal = this.operandLocal(in parser, target.left);
+        if (objectLocal >= 0 && !this.mayAssignLocal(in parser, n.right, objectLocal) && (target.kind == NodeKind.member || !this.mayAssignLocal(in parser, target.right, objectLocal))) {
+          object = this.bindings.locals[usize(objectLocal)].reg;
         } else {
           object = this.compileExpr(in parser, inout runtime, target.left);
         }
@@ -4829,7 +4898,7 @@ export struct Compiler {
             }
             return value;
           }
-          const key = this.compileExpr(in parser, inout runtime, target.right);
+          const key = this.compileOperand(in parser, inout runtime, target.right, n.right);
           let value: u8 = 0;
           if (unused) {
             value = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
