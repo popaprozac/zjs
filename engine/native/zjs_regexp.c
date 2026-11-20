@@ -11,6 +11,25 @@
 
 /* libregexp caps a pattern at 255 groups. */
 #define ZJS_RE_MAX_CAPTURES 255
+/* The longest literal a pattern's facts keep (see readFacts): a part of a
+   literal every match holds is as good a filter. */
+#define ZJS_RE_LITERAL_MAX 32
+/* The widest range of starts a literal's place may leave to try. */
+#define ZJS_RE_WINDOW_MAX 8
+
+/* libregexp's opcodes and their sizes, from the header it is built with. */
+typedef enum {
+#define DEF(id, size) ZJS_REOP_##id,
+#include "libregexp-opcode.h"
+#undef DEF
+  ZJS_REOP_COUNT
+} ReOp;
+
+static const uint8_t op_sizes[ZJS_REOP_COUNT] = {
+#define DEF(id, size) size,
+#include "libregexp-opcode.h"
+#undef DEF
+};
 
 typedef struct {
   /* Limits and the state of the call in progress. */
@@ -60,7 +79,29 @@ typedef struct {
   char *names;
   int names_length;
   Context *owner;
+  /* What every match holds, read from the bytecode once (readFacts), for
+     a search (see search for where each holds). `placed` is a literal that begins between
+     placed_min and placed_max units after the match does; `required` is
+     the longest literal it holds anywhere; a literal's bytes are lowercase
+     where `*_fold` marks an ASCII letter of either case. Lengths of 0 for
+     none. `anchored`: it can begin only at the input's start. */
+  uint8_t placed[ZJS_RE_LITERAL_MAX];
+  uint8_t placed_fold[ZJS_RE_LITERAL_MAX];
+  int placed_length;
+  int placed_min;
+  int placed_max;
+  uint8_t required[ZJS_RE_LITERAL_MAX];
+  uint8_t required_fold[ZJS_RE_LITERAL_MAX];
+  int required_length;
+  bool anchored;
+  /* The same pattern without its search loop: one try at the position it
+     is given. Made when the facts name the positions worth trying. */
+  uint8_t *twin;
+  int twin_length;
 } Pattern;
+
+static void readFacts(Pattern *compiled);
+static bool makeTwin(Pattern *compiled, Context *context);
 
 /* --- Host callbacks libregexp requires; `opaque` is the context --- */
 
@@ -237,6 +278,9 @@ uintptr_t zjs_re_compile(uintptr_t handle, uintptr_t pattern, uintptr_t length, 
   compiled->captures = lre_get_capture_count(bytecode);
   compiled->alloc_count = lre_get_alloc_count(bytecode);
   compiled->flags = lre_get_flags(bytecode);
+  readFacts(compiled);
+  compiled->twin = NULL;
+  compiled->twin_length = 0;
   compiled->names = NULL;
   compiled->names_length = 0;
   const char *names = lre_get_groupnames(bytecode);
@@ -267,9 +311,16 @@ uintptr_t zjs_re_compile(uintptr_t handle, uintptr_t pattern, uintptr_t length, 
     }
     compiled->names_length = (int)total;
   }
+  if (!makeTwin(compiled, context)) {
+    if (compiled->names != NULL) lre_realloc(NULL, compiled->names, 0);
+    lre_realloc(NULL, bytecode, 0);
+    lre_realloc(NULL, compiled, 0);
+    context->last_failure = ZJS_RE_OUT_OF_MEMORY;
+    return 0;
+  }
   compiled->owner = context;
   context->live_handles += 1;
-  context->live_bytes += (uintptr_t)bytecode_length;
+  context->live_bytes += (uintptr_t)bytecode_length + (uintptr_t)compiled->twin_length;
   context->last_failure = 0;
   return (uintptr_t)compiled;
 }
@@ -290,9 +341,10 @@ void zjs_re_free(uintptr_t handle) {
   if (compiled == NULL) return;
   if (compiled->owner != NULL) {
     compiled->owner->live_handles -= 1;
-    compiled->owner->live_bytes -= (uintptr_t)compiled->length;
+    compiled->owner->live_bytes -= (uintptr_t)compiled->length + (uintptr_t)compiled->twin_length;
   }
   lre_realloc(NULL, compiled->bytecode, 0);
+  if (compiled->twin != NULL) lre_realloc(NULL, compiled->twin, 0);
   if (compiled->names != NULL) lre_realloc(NULL, compiled->names, 0);
   free(compiled);
 }
@@ -309,6 +361,377 @@ int zjs_re_name_byte(uintptr_t handle, int index) {
   Pattern *compiled = (Pattern *)handle;
   if (compiled->names == NULL || index < 0 || index >= compiled->names_length) return -1;
   return (int)(unsigned char)compiled->names[index];
+}
+
+/* --- What every match holds --- */
+
+static uint32_t read_u32(const uint8_t *at) {
+  uint32_t value;
+  memcpy(&value, at, sizeof value);
+  return value;
+}
+
+static uint16_t read_u16(const uint8_t *at) {
+  uint16_t value;
+  memcpy(&value, at, sizeof value);
+  return value;
+}
+
+/* The bytes an op at `pos` takes, as libregexp's own walks count them. */
+static int op_length(const uint8_t *code, int pos) {
+  int op = code[pos];
+  int length = op_sizes[op];
+  switch (op) {
+  case ZJS_REOP_range:
+  case ZJS_REOP_range_i:
+    length += read_u16(code + pos + 1) * 4;
+    break;
+  case ZJS_REOP_range32:
+  case ZJS_REOP_range32_i:
+    length += read_u16(code + pos + 1) * 8;
+    break;
+  case ZJS_REOP_back_reference:
+  case ZJS_REOP_back_reference_i:
+  case ZJS_REOP_backward_back_reference:
+  case ZJS_REOP_backward_back_reference_i:
+    length += code[pos + 1];
+    break;
+  default:
+    break;
+  }
+  return length;
+}
+
+/* Where the op at `pos` may jump, or -1 for an op that only falls through. */
+static long jump_target(const uint8_t *code, int pos) {
+  switch (code[pos]) {
+  case ZJS_REOP_goto:
+  case ZJS_REOP_split_goto_first:
+  case ZJS_REOP_split_next_first:
+  case ZJS_REOP_lookahead:
+  case ZJS_REOP_negative_lookahead:
+    return (long)pos + 5 + (int32_t)read_u32(code + pos + 1);
+  case ZJS_REOP_loop:
+    return (long)pos + 6 + (int32_t)read_u32(code + pos + 2);
+  case ZJS_REOP_loop_split_goto_first:
+  case ZJS_REOP_loop_split_next_first:
+  case ZJS_REOP_loop_check_adv_split_goto_first:
+  case ZJS_REOP_loop_check_adv_split_next_first:
+    return (long)pos + 10 + (int32_t)read_u32(code + pos + 6);
+  default:
+    return -1;
+  }
+}
+
+/* A literal run, its bytes, and how far after the match's start it may begin
+   (max -1: no bound). */
+typedef struct {
+  uint8_t bytes[ZJS_RE_LITERAL_MAX];
+  uint8_t fold[ZJS_RE_LITERAL_MAX];
+  int length;
+  int min;
+  int max;
+} Run;
+
+/* A run ends: it may be the literal to search for or the one to require. */
+static void end_run(Pattern *compiled, const Run *run) {
+  if (run->length == 0) return;
+  if (run->max >= 0 && run->max - run->min <= ZJS_RE_WINDOW_MAX) {
+    /* Longer finds fewer false starts; a narrower window, fewer tries. */
+    int score = run->length * 4 - (run->max - run->min);
+    int held = compiled->placed_length * 4 - (compiled->placed_max - compiled->placed_min);
+    if (compiled->placed_length == 0 || score > held) {
+      memcpy(compiled->placed, run->bytes, (size_t)run->length);
+      memcpy(compiled->placed_fold, run->fold, (size_t)run->length);
+      compiled->placed_length = run->length;
+      compiled->placed_min = run->min;
+      compiled->placed_max = run->max;
+    }
+  }
+  if (run->length > compiled->required_length) {
+    memcpy(compiled->required, run->bytes, (size_t)run->length);
+    memcpy(compiled->required_fold, run->fold, (size_t)run->length);
+    compiled->required_length = run->length;
+  }
+}
+
+static void no_facts(Pattern *compiled) {
+  compiled->placed_length = 0;
+  compiled->required_length = 0;
+  compiled->anchored = false;
+}
+
+/* Whether an op reads one unit of input. */
+static bool reads_unit(int op) {
+  switch (op) {
+  case ZJS_REOP_char:
+  case ZJS_REOP_char_i:
+  case ZJS_REOP_char32:
+  case ZJS_REOP_char32_i:
+  case ZJS_REOP_dot:
+  case ZJS_REOP_any:
+  case ZJS_REOP_space:
+  case ZJS_REOP_not_space:
+  case ZJS_REOP_range:
+  case ZJS_REOP_range_i:
+  case ZJS_REOP_range32:
+  case ZJS_REOP_range32_i:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/* The facts every match of a searching pattern holds, from one walk over
+   the body between `save_start 0` and `save_end 0`. An op on the
+   body's top level runs on every path to a match; one inside a region a
+   forward jump spans (an alternative, an optional repetition, a lookahead
+   or lookbehind, which may be negative) may not, and is passed over. A
+   backward jump closes a loop whose body ran once already. Literal bytes
+   are a run of `char` ops of a byte's value, or of `char_i` ops of an
+   ASCII one: the letter in either case, or the byte itself, since no
+   other unit canonicalizes to ASCII (outside unicode mode none does; in
+   it U+017F and U+212A do, which search allows for); ops that read no input (captures' marks and the assertions)
+   leave a run whole, and anything else ends it. Along the way the walk
+   counts the units read before each op, least and most: a region adds up
+   to its ops that read a unit (a lookaround, nothing), a loop or a back
+   reference takes away the bound. A start-of-input assertion before any
+   input is read anchors the match. A shape the walk does not know leaves
+   no facts. */
+static void readFacts(Pattern *compiled) {
+  no_facts(compiled);
+  const uint8_t *code = compiled->bytecode;
+  if ((compiled->flags & LRE_FLAG_STICKY) != 0) return;
+  long end = 8 + (long)read_u32(code + 4);
+  int pos = 8;
+  /* The search loop libregexp puts before a non-sticky pattern. */
+  if (end < 21 || code[pos] != ZJS_REOP_split_goto_first || code[pos + 5] != ZJS_REOP_any || code[pos + 6] != ZJS_REOP_goto) return;
+  pos += 11;
+  if (code[pos] != ZJS_REOP_save_start || code[pos + 1] != 0) return;
+  pos += 2;
+  Run run;
+  run.length = 0;
+  /* Units read before this op on the top level, least and most. */
+  int least = 0;
+  int most = 0;
+  /* While pos is below region_end, it is inside a region a jump spans:
+     whether that region is a lookaround, the ops in it that read a unit,
+     and whether it holds a loop or a back reference. */
+  long region_end = 0;
+  bool region_looks = false;
+  int region_reads = 0;
+  bool region_unbounded = false;
+  while (pos < end) {
+    int op = code[pos];
+    if (op >= ZJS_REOP_COUNT) return;
+    int length = op_length(code, pos);
+    if (pos + length > end) return;
+    long target = jump_target(code, pos);
+    if (pos < region_end) {
+      if (target > region_end) region_end = target;
+      if (target >= 0 && target <= pos) region_unbounded = true;
+      if (reads_unit(op)) region_reads += 1;
+      if (op >= ZJS_REOP_back_reference && op <= ZJS_REOP_backward_back_reference_i) region_unbounded = true;
+      pos += length;
+      if (pos >= region_end && !region_looks && most >= 0) most = region_unbounded ? -1 : most + region_reads;
+      continue;
+    }
+    int literal = -1;
+    bool fold = false;
+    if (op == ZJS_REOP_char) {
+      uint16_t unit = read_u16(code + pos + 1);
+      if (unit <= 0xFF) literal = unit;
+    } else if (op == ZJS_REOP_char_i) {
+      uint16_t unit = read_u16(code + pos + 1);
+      if ((unit >= 'A' && unit <= 'Z') || (unit >= 'a' && unit <= 'z')) {
+        literal = unit | 0x20;
+        fold = true;
+      } else if (unit < 0x80) {
+        literal = unit;
+      }
+    }
+    if (literal >= 0) {
+      if (run.length == 0) {
+        run.min = least;
+        run.max = most;
+      }
+      if (run.length < ZJS_RE_LITERAL_MAX) {
+        run.bytes[run.length] = (uint8_t)literal;
+        run.fold[run.length] = fold;
+        run.length += 1;
+      }
+      least += 1;
+      if (most >= 0) most += 1;
+      pos += length;
+      continue;
+    }
+    switch (op) {
+    case ZJS_REOP_save_start:
+    case ZJS_REOP_save_reset:
+    case ZJS_REOP_word_boundary:
+    case ZJS_REOP_word_boundary_i:
+    case ZJS_REOP_not_word_boundary:
+    case ZJS_REOP_not_word_boundary_i:
+    case ZJS_REOP_line_start_m:
+    case ZJS_REOP_line_end:
+    case ZJS_REOP_line_end_m:
+      pos += length;
+      continue;
+    case ZJS_REOP_line_start:
+      if (least == 0 && most == 0) compiled->anchored = true;
+      pos += length;
+      continue;
+    case ZJS_REOP_save_end:
+      if (code[pos + 1] != 0) {
+        pos += length;
+        continue;
+      }
+      /* The body's end. */
+      end_run(compiled, &run);
+      return;
+    case ZJS_REOP_prev:
+    case ZJS_REOP_match:
+    case ZJS_REOP_lookahead_match:
+    case ZJS_REOP_negative_lookahead_match:
+      /* Not a shape a body's top level has. */
+      no_facts(compiled);
+      return;
+    default:
+      break;
+    }
+    /* Anything else reads input or decides the path: the run ends. */
+    end_run(compiled, &run);
+    run.length = 0;
+    if (reads_unit(op)) {
+      least += 1;
+      if (most >= 0) most += 1;
+    } else if (op >= ZJS_REOP_back_reference && op <= ZJS_REOP_backward_back_reference_i) {
+      most = -1;
+    }
+    if (target > pos) {
+      region_end = target;
+      region_looks = op == ZJS_REOP_lookahead || op == ZJS_REOP_negative_lookahead;
+      region_reads = 0;
+      region_unbounded = false;
+    } else if (target >= 0) {
+      /* A loop's close: its body may run again. */
+      most = -1;
+    }
+    pos += length;
+  }
+  /* The walk ran off the end without the body's close. */
+  no_facts(compiled);
+}
+
+/* The pattern without its search loop, for one try at a given position:
+   the header, then the body as it is (its jumps are relative). None when
+   the facts name no positions to try. False when its memory is refused,
+   which fails the compile as any refused allocation does. */
+static bool makeTwin(Pattern *compiled, Context *context) {
+  if (compiled->placed_length == 0 && !compiled->anchored) return true;
+  int length = compiled->length - 11;
+  uint8_t *twin = (uint8_t *)lre_realloc(context, NULL, (size_t)length);
+  if (twin == NULL) return false;
+  memcpy(twin, compiled->bytecode, 8);
+  memcpy(twin + 8, compiled->bytecode + 19, (size_t)(length - 8));
+  uint16_t flags = (uint16_t)(read_u16(twin) | LRE_FLAG_STICKY);
+  memcpy(twin, &flags, sizeof flags);
+  uint32_t body = read_u32(twin + 4) - 11;
+  memcpy(twin + 4, &body, sizeof body);
+  compiled->twin = twin;
+  compiled->twin_length = length;
+  return true;
+}
+
+/* The unit at `index` of input of 8- or 16-bit units. */
+static unsigned unit_at(const uint8_t *input, int type, uintptr_t index) {
+  if (type == 0) return input[index];
+  uint16_t unit;
+  memcpy(&unit, input + 2 * index, sizeof unit);
+  return unit;
+}
+
+/* Whether `literal` is at unit `at`: a folded byte matches its ASCII letter
+   in either case (only those two units have it, with 0x20 set). */
+static bool literal_at(const uint8_t *input, int type, uintptr_t at, const uint8_t *literal, const uint8_t *fold, int length) {
+  for (int k = 0; k < length; k++) {
+    unsigned unit = unit_at(input, type, at + (uintptr_t)k);
+    if (fold[k]) unit |= 0x20;
+    if (unit != literal[k]) return false;
+  }
+  return true;
+}
+
+/* The first unit index of [from, length) where `literal` occurs, or -1.
+   Over bytes, memchr finds the literal's first byte that matches only
+   itself, and the rest is checked around it. */
+static long find_literal(const uint8_t *input, int type, uintptr_t from, uintptr_t length, const uint8_t *literal, const uint8_t *fold, int literal_length) {
+  if (from > length || length - from < (uintptr_t)literal_length) return -1;
+  uintptr_t last = length - (uintptr_t)literal_length;
+  int anchor = 0;
+  while (anchor < literal_length && fold[anchor]) anchor++;
+  uintptr_t at = from;
+  if (type != 0 || anchor == literal_length) {
+    for (; at <= last; at++) {
+      if (literal_at(input, type, at, literal, fold, literal_length)) return (long)at;
+    }
+    return -1;
+  }
+  while (at <= last) {
+    const uint8_t *hit = (const uint8_t *)memchr(input + at + anchor, literal[anchor], (size_t)(last - at) + 1);
+    if (hit == NULL) return -1;
+    at = (uintptr_t)(hit - input) - (uintptr_t)anchor;
+    if (literal_at(input, 0, at, literal, fold, literal_length)) return (long)at;
+    at += 1;
+  }
+  return -1;
+}
+
+static bool any_fold(const uint8_t *fold, int length) {
+  for (int k = 0; k < length; k++) {
+    if (fold[k]) return true;
+  }
+  return false;
+}
+
+/* A search the facts can answer or narrow, as lre_exec answers it: 1 for
+   a match (its captures written), 0 for none, below 0 for a failure. A
+   match must hold the required literal, so with none past `start` there is
+   none. The placed literal's every occurrence names the few starts a match
+   using it can have, each tried once with the twin, in order: the first
+   that matches is the leftmost match. An anchored pattern has one start.
+   Over 16-bit units in unicode mode an op may read a surrogate pair, the
+   matcher may step back into one from `start`, and a folded letter has
+   other units (U+212A is k): there only an exact required literal holds. */
+static int search(Pattern *compiled, Context *context, uint8_t **captures, const uint8_t *input, uintptr_t start, uintptr_t length, int type) {
+  bool code_points = type != 0 && (compiled->flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+  if (compiled->required_length > 0 && !(code_points && any_fold(compiled->required_fold, compiled->required_length))
+      && find_literal(input, type, start, length, compiled->required, compiled->required_fold, compiled->required_length) < 0) {
+    return 0;
+  }
+  if (code_points || (compiled->placed_length == 0 && !compiled->anchored)) {
+    return lre_exec(captures, compiled->bytecode, input, (int)start, (int)length, type, context);
+  }
+  if (compiled->anchored) {
+    if (start > 0) return 0;
+    return lre_exec(captures, compiled->twin, input, 0, (int)length, type, context);
+  }
+  uintptr_t next = start;
+  uintptr_t from = start + (uintptr_t)compiled->placed_min;
+  while (true) {
+    long found = find_literal(input, type, from, length, compiled->placed, compiled->placed_fold, compiled->placed_length);
+    if (found < 0) return 0;
+    uintptr_t at = (uintptr_t)found;
+    uintptr_t low = at >= (uintptr_t)compiled->placed_max ? at - (uintptr_t)compiled->placed_max : 0;
+    if (low < next) low = next;
+    uintptr_t high = at - (uintptr_t)compiled->placed_min;
+    for (uintptr_t candidate = low; candidate <= high; candidate++) {
+      int result = lre_exec(captures, compiled->twin, input, (int)candidate, (int)length, type, context);
+      if (result != 0) return result;
+    }
+    next = high + 1;
+    from = at + 1;
+  }
 }
 
 /* --- Matching --- */
@@ -332,7 +755,8 @@ int zjs_re_exec(uintptr_t handle, uintptr_t pattern_handle, uintptr_t input, uin
   enter(context);
   /* Type 1 is 16-bit units; the matcher itself reads surrogate pairs as
      code points when the bytecode was compiled in unicode mode. */
-  int result = lre_exec(captures, compiled->bytecode, bytes, (int)start, (int)length, type, context);
+  /* The facts may answer the search, or narrow the starts to try. */
+  int result = search(compiled, context, captures, bytes, start, length, type);
   int failure = context->last_failure;
   bool allocation_failed = context->allocation_failed;
   leave(context);

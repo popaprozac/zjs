@@ -1,0 +1,33 @@
+/d1/g "xd1yd1" -> [1,"d1"] [4,"d1"]
+/abcdefghijklmnopqrstuvwxyz0123456789ABCDEF/ "abcdefghijklmnopqrstuvwxyz0123456789ABCDEX" -> null
+/abcdefghijklmnopqrstuvwxyz0123456789ABCDEF/ "--abcdefghijklmnopqrstuvwxyz0123456789ABCDEF" -> [2,"abcdefghijklmnopqrstuvwxyz0123456789ABCDEF"]
+/ab[0-9]/g "abx ab1 ab ab2" -> [4,"ab1"] [11,"ab2"]
+/%\w?$/ "a%b c%d" -> [5,"%d"]
+/(^|[^\\])"x/g "\"x \\\"x a\"x" -> [0,"\"x",""] [7,"a\"x","a"]
+/[^x]"q/g "x\"q y\"q\"q" -> [4,"y\"q"]
+/^ab/g "abab" -> [0,"ab"]
+anchored at 1: null
+/^ab/m "x\nab" -> [2,"ab"]
+/abc|xyz/ "--xyz" -> [2,"xyz"]
+/a(?:bc){0,3}d/g "ad abcd abcbcbcd" -> [0,"ad"] [3,"abcd"] [8,"abcbcbcd"]
+/a(?!b)c/g "ac abc" -> [0,"ac"]
+/(?<=x)ab/g "xab yab" -> [1,"ab"]
+/(?<!x)ab/g "xab yab" -> [5,"ab"]
+/(a)\1b/ "aab" -> [0,"aab","a"]
+/\bfoo\b/g "foobar foo" -> [7,"foo"]
+/TNQP=([^;]*)/i "tnqp=1; TNQP=2" -> [0,"tnqp=1","1"]
+/##YV19##/gi "x##yv19## ##Yv19##" -> [1,"##yv19##"] [10,"##Yv19##"]
+/k/iu "K" -> [0,"K"]
+/s/iu "ſ" -> [0,"ſ"]
+/ss/iu "ſſ" -> [0,"ſſ"]
+/k/i "K" -> null
+/K=/iu "xK=" -> [1,"K="]
+/(^|[^\\])"x/g "€\"x \\\"x €a\"x" -> [0,"€\"x","€"] [9,"a\"x","a"]
+/^./u "😀" -> [0,"😀"]
+pair at 1: [0,"😀"]
+half at 1: [1,"\ude00"]
+/.x/gu "😀x" -> [0,"😀x"]
+/ab/y "xab" -> null
+sticky at 1: [1,"ab"]
+x1<d1> ["a","b","c"] ["ab1","ab2"] 2
+sweep -1046770221
