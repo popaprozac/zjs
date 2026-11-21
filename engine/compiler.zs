@@ -670,6 +670,9 @@ export struct Compiler {
         // `===` jumps when the two differ, `!==` when they are the same.
         return this.emitStrictBranch(in parser, inout runtime, n.left, n.right, compare == Op.cmpStrictNe ? 1 : 0);
       }
+      if (compare == Op.cmpEq || compare == Op.cmpNe) {
+        return this.emitLooseBranch(in parser, inout runtime, n.left, n.right, compare == Op.cmpNe ? 1 : 0);
+      }
     }
     const condition = this.compileOperand(in parser, inout runtime, node, NO_NODE);
     return this.emit(instAI16(Op.jmpIfFalse, condition, 0));
@@ -689,6 +692,24 @@ export struct Compiler {
     const left = this.compileOperand(in parser, inout runtime, leftNode, rightNode);
     const right = this.compileOperand(in parser, inout runtime, rightNode, NO_NODE);
     this.emit(instABCD(Op.jmpIfNotStrictEq, left, right, 0, when));
+    return this.emit(instAI16(Op.halt, 0, 0));
+  }
+
+  // A fused == branch, as emitStrictBranch's: jumping when the operands
+  // differ (d = 0) or are equal (d = 1). Against the null literal it is
+  // one test of the other operand, which `==` makes equal to null exactly
+  // when it is null or undefined; the jump itself, returned for patching.
+  function emitLooseBranch(inout this, in parser: Parser, inout runtime: Runtime, leftNode: u32, rightNode: u32, when: u8): u32 {
+    let tested = NO_NODE;
+    if (isNullLiteral(in parser, rightNode)) tested = leftNode;
+    else if (isNullLiteral(in parser, leftNode)) tested = rightNode;
+    if (tested != NO_NODE) {
+      const operand = this.compileOperand(in parser, inout runtime, tested, NO_NODE);
+      return this.emit(instAI16(when == 0 ? Op.jmpIfNotNullish : Op.jmpIfNullish, operand, 0));
+    }
+    const left = this.compileOperand(in parser, inout runtime, leftNode, rightNode);
+    const right = this.compileOperand(in parser, inout runtime, rightNode, NO_NODE);
+    this.emit(instABCD(Op.jmpIfNotEq, left, right, 0, when));
     return this.emit(instAI16(Op.halt, 0, 0));
   }
 
@@ -723,6 +744,11 @@ export struct Compiler {
       }
       if (compare == Op.cmpStrictEq || compare == Op.cmpStrictNe) {
         const word = this.emitStrictBranch(in parser, inout runtime, n.left, n.right, compare == Op.cmpStrictEq ? 1 : 0);
+        this.patchJumpTo(word, target);
+        return;
+      }
+      if (compare == Op.cmpEq || compare == Op.cmpNe) {
+        const word = this.emitLooseBranch(in parser, inout runtime, n.left, n.right, compare == Op.cmpEq ? 1 : 0);
         this.patchJumpTo(word, target);
         return;
       }
@@ -6466,6 +6492,15 @@ function isQuietOperand(in parser: Parser, node: u32, localReg: i32): boolean {
   if (node == NO_NODE) return false;
   const k = parser.ast.node(node).kind;
   return k == NodeKind.numberExpr || k == NodeKind.stringExpr || k == NodeKind.boolExpr || k == NodeKind.nullExpr;
+}
+
+// Whether a node is the literal `null`, in parentheses or not.
+function isNullLiteral(in parser: Parser, node: u32): boolean {
+  let current = node;
+  while (current != NO_NODE && parser.ast.node(current).kind == NodeKind.paren) {
+    current = parser.ast.node(current).left;
+  }
+  return current != NO_NODE && parser.ast.node(current).kind == NodeKind.nullExpr;
 }
 
 // Whether evaluating a subtree may assign a binding: an assignment (plain,

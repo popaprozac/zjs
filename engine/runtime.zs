@@ -7839,7 +7839,10 @@ export struct Runtime {
   }
 
   function looseEquals(inout this, a: Value, b: Value): boolean {
-    if (isInt32(a) && isInt32(b)) return asInt32(a) == asInt32(b);
+    // The same value (a Symbol, too, and one an object converted to),
+    // two int32s, null and undefined: no conversion needed.
+    const quick = quickLooseEquals(a, b);
+    if (quick >= 0) return quick == 1;
     if (isNumber(a) && isNumber(b)) return toNumber(a) == toNumber(b);
     const aString = this.isStringValue(a);
     const bString = this.isStringValue(b);
@@ -10754,6 +10757,33 @@ export struct Runtime {
             }
             if (isInt32(left)) continue;
           }
+          jmpIfNotEq => {
+            // As jmpIfNotStrictEq, compared with ==, which may convert an
+            // object (valueOf, toString) and so raise.
+            const left = this.reg(base, inst.a);
+            const right = this.reg(base, inst.b);
+            const word = unsafe { select this.codeSegment.uncheckedAt(codeStart.wrappingAdd(ip)); };
+            ip = ip.wrappingAdd(1);
+            let quick = quickLooseEquals(left, right);
+            if (quick < 0) {
+              quick = this.looseEquals(left, right) ? 1 : 0;
+              if (this.pendingThrow) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
+            }
+            if ((quick == 1) == (inst.d != 0)) {
+              const offset = jumpOffset(word);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
+            }
+            continue;
+          }
           jmpIfNotStrictEq => {
             const left = this.reg(base, inst.a);
             const right = this.reg(base, inst.b);
@@ -10904,13 +10934,33 @@ export struct Runtime {
             if (taken) ip = usize(i64(ip) + i64(jumpOffset(inst)));
             continue;
           }
+          // A loop's bottom test (`while (x != null)`) jumps back, and a
+          // back edge is a safe point, as jmpIfTrue's.
           jmpIfNotNullish => {
             const tested = this.reg(base, inst.a);
-            if (!(isNull(tested) || isUndefined(tested))) ip = usize(i64(ip) + i64(jumpOffset(inst)));
+            if (!(isNull(tested) || isUndefined(tested))) {
+              const offset = jumpOffset(inst);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
+            }
+            continue;
           }
           jmpIfNullish => {
             const tested = this.reg(base, inst.a);
-            if (isNull(tested) || isUndefined(tested)) ip = usize(i64(ip) + i64(jumpOffset(inst)));
+            if (isNull(tested) || isUndefined(tested)) {
+              const offset = jumpOffset(inst);
+              ip = usize(i64(ip) + i64(offset));
+              if (offset < 0 && this.backEdge(frameIndex, ip)) {
+                thrown = this.takePending();
+                throwing = true;
+                break;
+              }
+            }
+            continue;
           }
           sub => {
             const rawB = this.reg(base, inst.b);
@@ -11377,12 +11427,22 @@ export struct Runtime {
           cmpEq => {
             const operandB = this.reg(base, inst.b);
             const operandC = this.reg(base, inst.c);
+            const quick = quickLooseEquals(operandB, operandC);
+            if (quick >= 0) {
+              this.setReg(base, inst.a, booleanValue(quick == 1));
+              continue;
+            }
             const equal = this.looseEquals(operandB, operandC);
             this.setReg(base, inst.a, booleanValue(equal));
           }
           cmpNe => {
             const operandB = this.reg(base, inst.b);
             const operandC = this.reg(base, inst.c);
+            const quick = quickLooseEquals(operandB, operandC);
+            if (quick >= 0) {
+              this.setReg(base, inst.a, booleanValue(quick == 0));
+              continue;
+            }
             const equal = this.looseEquals(operandB, operandC);
             this.setReg(base, inst.a, booleanValue(!equal));
           }
@@ -12260,6 +12320,25 @@ export function wideImmediateOf(inst: Inst): i32 {
   return bits >= 0x8000 ? bits - 0x10000 : bits;
 }
 
+
+// `a == b` where no conversion can run: 1 equal, 0 not, -1 when it takes
+// looseEquals (a string, an object, a boolean, or two numbers that differ
+// in representation). The same value is equal unless it is NaN; null and
+// undefined equal each other and nothing else.
+export inline function quickLooseEquals(a: Value, b: Value): i32 {
+  if (a.bits == b.bits) {
+    if (isDouble(a)) {
+      const d = asDouble(a);
+      return d != d ? 0 : 1;
+    }
+    return 1;
+  }
+  if (isInt32(a) && isInt32(b)) return 0;
+  const aNullish = isNull(a) || isUndefined(a);
+  const bNullish = isNull(b) || isUndefined(b);
+  if (aNullish || bNullish) return aNullish && bNullish ? 1 : 0;
+  return -1;
+}
 
 export inline function numericAdd(a: Value, b: Value): Value {
   if (isInt32(a) && isInt32(b)) return int32OrDouble(i64(asInt32(a)) + i64(asInt32(b)));
