@@ -7038,8 +7038,9 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.resetTemps();
   }
   const isGenerator = n.kind == NodeKind.methodDef ? (n.num == 4.0 || n.num == 5.0) : n.num == 3.0;
-  // Async: a flag on functions and arrows, a kind code on methods.
-  const isAsync = n.kind == NodeKind.methodDef ? (n.num == 1.0 || n.num == 5.0) : n.boolValue;
+  // Async: a flag on functions and arrows, a kind code on methods. (A
+  // static block's flag says it is static: it is a plain function.)
+  const isAsync = n.kind == NodeKind.methodDef ? (n.num == 1.0 || n.num == 5.0) : (n.kind != NodeKind.staticBlock && n.boolValue);
   // Async functions and async generators are coroutines driven by
   // promises; both suspend on await.
   const isCoroutine = isGenerator || isAsync;

@@ -1,0 +1,8 @@
+throw threw RangeError
+throw from a call threw TypeError
+missing method threw TypeError
+class expression SyntaxError,unset
+stops the rest a,caught 1
+order first,field,last,after
+this and var true,true,undefined
+try inside in,true
