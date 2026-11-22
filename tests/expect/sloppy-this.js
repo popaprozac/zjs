@@ -29,3 +29,16 @@ var it = gen.call(5);
 console.log(it.next().value, it.next().value, it.next().value);
 var it2 = gen();
 console.log(it2.next().value, it2.next().value, it2.next().value);
+
+// An arrow has no `this` of its own: it sees the one its function was
+// entered with, bound once, however often the arrow is called.
+function maker() { return () => this; }
+var held = maker.call("s"), free = maker();
+console.log(held() === held(), held() instanceof String, free() === globalThis, (() => this)() === globalThis);
+function deep() { return () => () => typeof this; }
+console.log(deep.call(true)()(), deep()()(), [1].map(() => this)[0] === globalThis);
+
+// A closure called with no receiver sees the global object, as any
+// function does, and an object receiver as it is.
+var inner = (function () { var kept = 1; return function () { return kept && this; }; })();
+console.log(inner() === globalThis, typeof inner.call(4), inner.call(maker) === maker, inner.call(held) === held);

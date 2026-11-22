@@ -2297,6 +2297,12 @@ export struct Runtime {
   // --- Objects and properties ---
 
   function isObjectLike(value: Value): boolean {
+    return this.objectLike(value);
+  }
+
+  // isObjectLike's test, inline: for enterCallable, which asks it of the
+  // receiver on every call of a sloppy function that reads `this`.
+  inline function objectLike(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0) return false;
     const tag = this.heap.tagOf(asCell(value));
     return tag == TAG_OBJECT || tag == TAG_ARRAY || tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
@@ -7986,17 +7992,24 @@ export struct Runtime {
     }
     let env: u32 = 0;
     let boundThis = thisValue;
+    // An arrow's `this` is the one its function was entered with, bound
+    // there already. Binding it again would put the receiver tests on
+    // every plain call, whose receiver is otherwise known to be undefined.
+    let bind = !this.functions[code].strict;
     if (this.heap.isClosure(handle)) {
       env = this.heap.linkOf(handle);
-      if (this.functions[code].isArrow) boundThis = this.heap.slot(handle, 0);
+      if (this.functions[code].isArrow) {
+        boundThis = this.heap.slot(handle, 0);
+        bind = false;
+      }
     }
     // A sloppy function called with no receiver sees the global object,
     // and one that reads `this` sees a primitive receiver wrapped in an
     // object (one that never reads it cannot tell).
-    if (!this.functions[code].strict) {
+    if (bind) {
       if (isUndefined(boundThis) || isNull(boundThis)) {
         boundThis = cellValue(this.globalObject);
-      } else if (this.functions[code].thisReg >= 0 && !this.isObjectLike(boundThis)) {
+      } else if (this.functions[code].thisReg >= 0 && !this.objectLike(boundThis)) {
         boundThis = this.toObjectValue(boundThis);
       }
     }
