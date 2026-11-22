@@ -6,3 +6,24 @@ stops the rest a,caught 1
 order first,field,last,after
 this and var true,true,undefined
 try inside in,true
+field this true,C
+field arrow true,true
+field arrow in a literal true,true,true
+field arrow, private true
+field arrow, async pending
+field in a method true,true
+field in a strict function true
+field new.target undefined
+field function has its own this true,true
+field key is the definition's 1,true
+field key of a nested method function
+field eval true,true,undefined
+field names t|u|c|k|quoted key
+field order a,block,b,c
+field throw RangeError,unset
+field define, not set false,C
+field sees the class's names true,19
+field constants 1,c,2,true,,true
+method key this 1,2,3
+method key this in an arrow function
+field arrow, async, later true

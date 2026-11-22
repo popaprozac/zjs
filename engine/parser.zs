@@ -3067,6 +3067,26 @@ export struct Parser {
     return false;
   }
 
+  // Whether a static field's initializer can tell which function it runs
+  // in: it reads `this`, `super`, or `new.target`, or names eval, itself
+  // or in an arrow (which sees its function's). A method's computed key
+  // is the initializer's own expression; a function's body is not.
+  function initializerSeesFunction(index: u32): boolean {
+    if (index == NO_NODE) return false;
+    const n = this.node(index);
+    if (n.kind == NodeKind.thisExpr || n.kind == NodeKind.superExpr) return true;
+    if (n.kind == NodeKind.functionExpr || n.kind == NodeKind.staticBlock) return false;
+    if (n.kind == NodeKind.methodDef) return this.initializerSeesFunction(n.third);
+    if (n.kind == NodeKind.identExpr) return this.identMatches(n.start, n.end - n.start, "eval");
+    if (this.initializerSeesFunction(n.left) || this.initializerSeesFunction(n.right) || this.initializerSeesFunction(n.third)) return true;
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (this.initializerSeesFunction(this.ast.child(index, i))) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
   // ContainsArguments for a static block body: escape-aware, and only the
   // computed keys of nested members are in the block's scope.
   function staticBlockUsesArguments(index: u32): boolean {
@@ -3329,6 +3349,16 @@ export struct Parser {
         this.ast.setName(field, nameToken.start, nameToken.length);
       }
       this.ast.setBool(field, isStatic);
+      // A static field's initializer that can tell which function it
+      // runs in is the body of a function of the class, as a static
+      // block is: `this` in it, and in its arrows, is the class, and what
+      // direct eval declares stays in it. Any other runs where the class
+      // is defined.
+      if (isStatic && this.initializerSeesFunction(init)) {
+        const body = this.ast.newNode(NodeKind.staticBlock, this.ast.node(init).start, this.endOf(init));
+        this.ast.setLeft(body, init);
+        init = body;
+      }
       this.ast.setLeft(field, init);
       return field;
     }

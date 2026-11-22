@@ -9,3 +9,30 @@ show("stops the rest", function () { var log = []; try { class C { static { log.
 show("order", function () { var log = []; class C { static { log.push("first"); } static x = log.push("field"); static { log.push("last"); } } log.push("after"); return log.join(); });
 show("this and var", function () { class C { static { var kept = this; C.same = kept === C; C.arrow = (() => this)() === C; } } return [C.same, C.arrow, typeof kept].join(); });
 show("try inside", function () { class C { static { try { throw new Error("in"); } catch (e) { C.caught = e.message; } finally { C.done = true; } } } return [C.caught, C.done].join(); });
+
+// A static field's initializer that reads `this` runs as a function of
+// the class too: `this` is the class in it and in its arrows, its key is
+// the class definition's own expression, and what eval declares stays in it.
+show("field this", function () { class C { static s = this; static n = this.name; } return [C.s === C, C.n].join(); });
+show("field arrow", function () { class C { static t = () => this; static deep = () => () => this; } return [C.t() === C, C.deep()() === C].join(); });
+show("field arrow in a literal", function () { class C { static o = { m: () => this }; static list = [() => this]; static now = (() => this)(); } return [C.o.m() === C, C.list[0]() === C, C.now === C].join(); });
+show("field arrow, private", function () { class C { static #p = () => this; static get() { return C.#p(); } } return C.get() === C; });
+show("field arrow, async", function () { class C { static t = async () => this; } C.t().then(function (v) { console.log("field arrow, async, later", v === C); }); return "pending"; });
+show("field in a method", function () { var o = { f() { class C { static t = () => this; } return [(() => this)() === o, C.t() === C].join(); } }; return o.f(); });
+show("field in a strict function", function () { "use strict"; return (function () { class C { static t = () => this; } return C.t() === C; }).call(undefined); });
+show("field new.target", function () { var seen = "unset"; function Outer() { class C { static n = new.target; } seen = C.n; } new Outer(); return seen; });
+show("field function has its own this", function () { class C { static f = function () { return this; }; static g = function () { return () => this; }; } var o = { f: C.f, g: C.g }; return [o.f() === o, o.g()() === o].join(); });
+show("field key is the definition's", function () { var o = { k: "a", f() { return class { static [this.k] = 1; static [(() => this.k + "b")()] = this; }; } }; var C = o.f(); return [C.a, C.ab === C].join(); });
+show("field key of a nested method", function () { class C { static tag = "m"; static inner = class { [this.tag]() { return 1; } }; } return typeof C.inner.prototype.m; });
+show("field eval", function () { class C { static e = eval("var kept = 1; this"); static a = eval("() => this"); } return [C.e === C, C.a() === C, typeof kept].join(); });
+show("field names", function () { class C { static t = () => this; static u = function () {}; static c = class {}; static k = () => 1; static "quoted key" = () => this; } return [C.t.name, C.u.name, C.c.name, C.k.name, C["quoted key"].name].join("|"); });
+show("field order", function () { var log = []; class C { static a = log.push("a") && this; static { log.push("block"); } static b = (() => log.push("b"))(); static c = log.push("c"); } return log.join(); });
+show("field throw", function () { var after = "unset"; try { class C { static a = (() => { throw new RangeError("x"); })(); static b = (after = "set"); } } catch (e) { return e.name + "," + after; } });
+show("field define, not set", function () { var hit = false; class B { static set x(v) { hit = true; } } class C extends B { static x = this.name; } return [hit, Object.getOwnPropertyDescriptor(C, "x").value].join(); });
+show("field sees the class's names", function () { var outer = 5; var D = class C { static #secret = 7; static me = this === C; static sum = (() => outer + C.#secret + this.#secret)(); }; return [D.me, D.sum].join(); });
+show("field constants", function () { class C { static RED = 1; static NAME = "c"; static list = [1, 2]; static made = new Map(); static none; } return [C.RED, C.NAME, C.list.length, C.made instanceof Map, C.none, "none" in C].join(); });
+
+// A method's computed key is an expression of the function the class is
+// in: `this` there is that function's, and counts as its reading `this`.
+show("method key this", function () { var o = { k: "m", f() { return class { [this.k]() { return 1; } static [this.k + "s"]() { return 2; } get [this.k + "g"]() { return 3; } }; } }; var C = o.f(); return [new C().m(), C.ms(), new C().mg].join(); });
+show("method key this in an arrow", function () { var o = { k: "m", f() { return class { [(() => this.k)()]() { return 1; } }; } }; return typeof o.f().prototype.m; });

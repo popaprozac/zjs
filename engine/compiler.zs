@@ -2737,9 +2737,12 @@ export struct Compiler {
           this.emit(instABC(Op.defineMethodComputed, target, key, fnReg));
         }
       } else if (member.kind == NodeKind.classField && member.boolValue) {
-        const savedThis = this.thisReg;
-        this.thisReg = i32(ctorReg);
+        // The key is the class definition's own expression, and so is
+        // an initializer that cannot tell; one that reads `this` is a
+        // function of the class (the parser wrapped it). An anonymous
+        // function in either takes a written field name.
         let key: u8 = 0;
+        let named = false;
         if (member.third != NO_NODE) {
           key = this.compileExpr(in parser, inout runtime, member.third);
         } else if (this.isPrivateName(in parser, member.nameStart, member.nameLength)) {
@@ -2747,17 +2750,19 @@ export struct Compiler {
         } else {
           const atom = this.propertyNameAtom(in parser, inout runtime, member.nameStart, member.nameLength);
           key = this.emitKey(atom);
-          this.nameNext(member.nameStart, member.nameLength, 0);
+          named = true;
         }
         let value: u8 = 0;
-        if (member.left != NO_NODE) {
-          value = this.compileExpr(in parser, inout runtime, member.left);
-        } else {
+        if (member.left == NO_NODE) {
           value = this.allocReg();
           this.emit(instA(Op.loadUndefined, value));
+        } else if (parser.ast.node(member.left).kind == NodeKind.staticBlock) {
+          value = this.emitStaticCall(in parser, inout runtime, member.left, ctorReg, named ? member.nameStart : 0, named ? member.nameLength : 0);
+        } else {
+          if (named) this.nameNext(member.nameStart, member.nameLength, 0);
+          value = this.compileExpr(in parser, inout runtime, member.left);
         }
         this.emit(instABC(Op.defineField, ctorReg, key, value));
-        this.thisReg = savedThis;
       } else if (member.kind == NodeKind.classField && member.third != NO_NODE) {
         // An instance field's computed key is evaluated once, here, into
         // the slot its initializer reads.
@@ -2771,13 +2776,7 @@ export struct Compiler {
         const keyHops = u8(this.openEnvs);
         this.emit(this.envSlotInst(Op.storeEnvSlot, key, keyHops, i32(slot)));
       } else if (member.kind == NodeKind.staticBlock) {
-        const fnReg = this.allocReg();
-        this.emitClassFunction(in parser, inout runtime, memberIndex, fnReg, 0, 0, 0, 3, 0);
-        const base = this.allocReg();
-        this.allocReg();
-        this.emit(instAB(Op.mov, base, fnReg));
-        this.emit(instAB(Op.mov, base + 1, ctorReg));
-        this.emit(instABCD(Op.methodInvoke, base, base, base + 1, 0));
+        this.emitStaticCall(in parser, inout runtime, memberIndex, ctorReg, 0, 0);
       }
       this.nextReg = protoReg + 1;
       i = i + 1;
@@ -2789,6 +2788,20 @@ export struct Compiler {
     }
     this.nextReg = ctorReg + 1;
     return ctorReg;
+  }
+
+  // A static block, or a static field's initializer: a function of the
+  // class, called on it once where the class is defined. The register
+  // returned holds what the function returned.
+  function emitStaticCall(inout this, in parser: Parser, inout runtime: Runtime, node: u32, ctorReg: u8, nameStart: u32, nameLength: u32): u8 {
+    const fnReg = this.allocReg();
+    this.emitClassFunction(in parser, inout runtime, node, fnReg, nameStart, nameLength, 0, 3, 0);
+    const base = this.allocReg();
+    this.allocReg();
+    this.emit(instAB(Op.mov, base, fnReg));
+    this.emit(instAB(Op.mov, base + 1, ctorReg));
+    this.emit(instABCD(Op.methodInvoke, base, base, base + 1, 0));
+    return base;
   }
 
   // A class member as a function value: compiled with its class role
@@ -7158,7 +7171,9 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
         b = b + 1;
       }
     } else {
-      // Concise arrow body: the expression is the return value.
+      // A concise body: the expression is the return value. A static
+      // field's initializer names an anonymous function after the field.
+      if (n.kind == NodeKind.staticBlock) compiler.nameNext(contextualStart, contextualLength, 0);
       const r = compiler.compileExpr(in parser, inout runtime, n.left);
       compiler.emit(instA(Op.returnOp, r));
     }
@@ -8113,7 +8128,9 @@ function arrowsUseThis(in parser: Parser, node: u32): boolean {
 function bodyUsesThis(in parser: Parser, node: u32): boolean {
   if (node == NO_NODE) return false;
   const n = parser.ast.node(node);
-  if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.methodDef || n.kind == NodeKind.staticBlock) return false;
+  if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.staticBlock) return false;
+  // A method's computed key is this body's expression; the method is not.
+  if (n.kind == NodeKind.methodDef) return bodyUsesThis(in parser, n.third);
   if (n.kind == NodeKind.thisExpr) return !n.boolValue;
   // `super.x` reads through `this`; direct eval code may read it.
   if (n.kind == NodeKind.superExpr) return true;

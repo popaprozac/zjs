@@ -85,8 +85,7 @@ class Derived extends Base {
 var derived = new Derived();
 show("classes", derived.first, derived.second, derived.m(), Base.s(), derived.ok, derived.field, derived.self === derived, derived.viaSuper());
 
-// A static initializer's `this` is the class, in a register of the
-// class definition's own.
+// A static initializer's `this` is the class.
 class Statics { static a = this && 1; static b = this === Statics; static c = this || 2; static { var x = this ?? 3; Statics.d = this === Statics; } }
 var Expression = [class { static a = this && 7; static b = this; static n = (this || 0).name.length; }][0];
 show("statics", Statics.a, Statics.b, Statics.c === Statics, Statics.d, typeof Expression, Expression.a, Expression.b === Expression, Expression.n);
