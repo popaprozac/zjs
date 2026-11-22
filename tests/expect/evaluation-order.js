@@ -49,3 +49,21 @@ console.log([p1(1), p2({}), p3(), pg, p4(), p5(), p6(0), p7(), p8(1), new P().m(
 function rejects(src) { try { Function(src); return "parsed"; } catch (e) { return e.name; } }
 console.log(["(a) = 1", "((a)) += 1", "(a)++", "++(a)", "for ((a) of []);", "([a]) = [1]", "({a}) = {}", "[([a])] = [[1]]",
   "(a, b) = 1", "(a = 1) = 2", "for (([a]) of []);", "'use strict'; (eval) = 1"].map(rejects).join(" "));
+
+// A named property updated in place (`o.n++`, `o.n += v`) reads and
+// writes as `o.n` and `o.n = v` do: the getter once, then the operand,
+// then the setter; the step converts as `x++` does; one site sees
+// objects of several shapes, inherited and frozen properties, arrays,
+// primitives, and a right side that rebinds the object.
+function m1() { var o = { n: 5, s: "41", u: undefined, b: { valueOf: function () { return 9; } } }; var r = [o.n++, o.n, ++o.n, o.n--, --o.n, o.n]; o.s++; o.u++; o.b--; o.n += 10; o.n -= 1; o.n *= 2; o.s += "x"; var t = { s: "7" }; var old = t.s++; r.push(o.s, typeof o.u, o.u, o.b, o.n, typeof old, old, t.s); return r.join(","); }
+function m2() { var log = []; var o = { get v() { log.push("get"); return 5; }, set v(x) { log.push("set " + x); } }; var f = function () { log.push("f"); return 2; };
+  log.push(o.v++); log.push(++o.v); o.v--; o.v += f(); o.v **= f(); return log.join(" "); }
+function m3() { var log = []; var proto = { set v(x) { log.push("proto set " + x); } }; var child = Object.create(proto); child.v++; var c2 = Object.create({ n: 4 }); c2.n++; return log.concat([Object.keys(child).length, c2.n, Object.getPrototypeOf(c2).n, Object.keys(c2).join()]).join(" "); }
+function m4() { var f = Object.freeze({ n: 1 }); var a = f.n++, b = ++f.n; f.n += 5; var strict = (function () { "use strict"; try { f.n++; return "no"; } catch (e) { return e.name; } })(); var strict2 = (function () { "use strict"; try { f.n -= 1; return "no"; } catch (e) { return e.name; } })(); return [a, b, f.n, strict, strict2].join(","); }
+function m5() { var objs = [{ n: 1 }, { a: 0, n: 2 }, { b: 0, c: 0, n: 3 }, Object.create({ n: 4 }), { n: 5, x: 1, y: 2, z: 3, w: 4 }]; delete objs[4].x; var r = [];
+  for (var k = 0; k < 3; k++) for (var i = 0; i < objs.length; i++) { objs[i].n++; objs[i].n += 10; r.push(objs[i].n); } return r.join(","); }
+function m6() { var o = { n: 1 }, keep = o; o.n += (o = { n: 100 }, 1); var p = { n: 1 }, pk = p; p.n++; return [keep.n, o.n, pk.n].join(","); }
+class Counter { constructor() { this.count = 0; this.total = 0; } tick(v) { this.count++; this.total += v; return this; } }
+function m7() { var c = new Counter(); for (var i = 0; i < 100; i++) c.tick(i); return [c.count, c.total].join(","); }
+function m8() { var a = [1, 2, 3]; a.length--; var l1 = a.length; a.length += 2; var s = "abc"; var sl = s.length++; var z = null, e1; try { z.n++; } catch (e) { e1 = e.name; } var e2; try { z.n += 1; } catch (e) { e2 = e.name; } return [l1, a.length, a.join("/"), sl, s.length, e1, e2].join(","); }
+console.log([m1(), m2(), m3(), m4(), m5(), m6(), m7(), m8()].join(" | "));

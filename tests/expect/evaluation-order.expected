@@ -4,3 +4,4 @@
 ltlelt3 | legelt3 | gtgege3 |  | ltlege3 | gtgege3 |  | 65 | lrtlr
 18 | 11,1,11,2,12,2 | 7 | 8 | a,7,8,9 | "",g,"","" | 4,5,6 | 6 | 11,4,5 | 6
 parsed parsed parsed parsed parsed SyntaxError SyntaxError SyntaxError SyntaxError SyntaxError SyntaxError SyntaxError
+5,6,7,7,5,5,42x,number,NaN,8,28,number,7,8 | get set 6 5 get set 6 6 get set 4 get f set 7 get f set 25 | proto set NaN 0 5 4 n | 1,2,1,TypeError,TypeError | 12,13,14,15,16,23,24,25,26,27,34,35,36,37,38 | 2,100,2 | 100,4950 | 2,4,1/2//,3,3,TypeError,TypeError

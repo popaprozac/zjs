@@ -4585,6 +4585,26 @@ export struct Compiler {
     if ((k == NodeKind.unary || k == NodeKind.postfix) && (n.op == TokenKind.plusPlus || n.op == TokenKind.minusMinus)) {
       const target = parser.ast.node(n.left);
       if (target.kind == NodeKind.member || target.kind == NodeKind.computed) {
+        if (target.kind == NodeKind.member && parser.ast.node(target.left).kind != NodeKind.superExpr && !this.isPrivateName(in parser, target.nameStart, target.nameLength)) {
+          // `o.name++`: read and written through the name's site cache, as
+          // `o.name` and `o.name = v` are; the step converts as `x++` does.
+          const named = this.compileOperand(in parser, inout runtime, target.left, NO_NODE);
+          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
+          const loaded = this.allocReg();
+          this.emitLoadNamed(loaded, named, atom);
+          const step = n.op == TokenKind.plusPlus ? Op.inc : Op.dec;
+          if (k == NodeKind.postfix && !unused) {
+            // The expression's value: the old value, ToNumeric.
+            const old = this.allocReg();
+            this.emit(instAB(Op.toNumeric, old, loaded));
+            this.emit(instAB(step, loaded, old));
+            this.emitStoreNamed(named, atom, loaded);
+            return old;
+          }
+          this.emit(instAB(step, loaded, loaded));
+          this.emitStoreNamed(named, atom, loaded);
+          return loaded;
+        }
         // Read through the key, step, write back through the same key.
         const object = this.compileExpr(in parser, inout runtime, target.left);
         const key = this.memberKeyReg(in parser, inout runtime, target);
@@ -4934,6 +4954,23 @@ export struct Compiler {
           }
           this.emit(instABC(Op.storeElem, object, key, value));
           return value;
+        }
+        if (target.kind == NodeKind.member && parser.ast.node(target.left).kind != NodeKind.superExpr && !this.isPrivateName(in parser, target.nameStart, target.nameLength)) {
+          // `o.name op= v`: through the name's site cache, as `o.name` and
+          // `o.name = v` are.
+          const atom = this.propertyNameAtom(in parser, inout runtime, target.nameStart, target.nameLength);
+          const current = this.allocReg();
+          this.emitLoadNamed(current, object, atom);
+          const operand = this.compileOperand(in parser, inout runtime, n.right, NO_NODE);
+          const compound = compoundOp(n.op);
+          if (compound == Op.halt) {
+            this.hadError = true;
+            return 0;
+          }
+          const result = this.allocReg();
+          this.emit(instABC(compound, result, current, operand));
+          this.emitStoreNamed(object, atom, result);
+          return result;
         }
         // Compound: read through the key, operate, write back.
         const key = this.memberKeyReg(in parser, inout runtime, target);
