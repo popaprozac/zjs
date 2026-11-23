@@ -199,6 +199,7 @@ export function opName(op: Op): String {
     loadWithCallee => "loadWithCallee";
     deleteWithVar => "deleteWithVar";
     storeWithHolder => "storeWithHolder";
+    setHome => "setHome";
     declareEvalVar => "declareEvalVar";
     toStringOp => "toStringOp";
     concatN => "concatN";

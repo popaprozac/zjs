@@ -50,3 +50,19 @@ show("field calls a later private method", function () { class C { static a = C.
 show("a key's throw comes first", function () { var log = []; try { class C { static a = log.push("a"); static [(() => { throw new RangeError("k"); })()] = 1; } } catch (e) { log.push(e.name); } return log.join(); });
 show("held keys", function () { class C { static ["k" + 1] = 1; static ["k" + 2] = (typeof gc == "function" && gc(), 2); m() {} static ["k" + 3] = this.k1 + this.k2; get g() { return 0; } } return Object.getOwnPropertyNames(C).filter(function (n) { return n[0] == "k"; }).join() + "," + C.k3; });
 show("many held keys", function () { var src = "class C {"; for (var i = 0; i < 40; i++) src += " static ['k' + " + i + "] = " + i + "; m" + i + "() {}"; src += " static total = Object.getOwnPropertyNames(this).length; } [C.total, C.k0, C.k39].join()"; return eval(src); });
+
+// `super` in a static field or block reads through the class: its home
+// object is the class, so `super.k` is the parent class's `k`.
+show("super in a field", function () { class B { static k = 7; } class C extends B { static s = super.k; } return C.s; });
+show("super in a field's arrow", function () { class B { static k = 7; } class C extends B { static s = () => super.k; static t = () => () => super.k; } return [C.s(), C.t()()].join(); });
+show("super call keeps this", function () { class B { static k = 7; static m() { return this.k; } } class C extends B { static k = 9; static s = super.m(); } return C.s; });
+show("super in a block", function () { class B { static k = 7; static m() { return this.k; } } class C extends B { static k = 9; static { C.a = super.k; C.b = super.m(); C.c = (() => super.k)(); } } return [C.a, C.b, C.c].join(); });
+show("super skips the class's own", function () { class B { static k = "parent"; } class C extends B { static k = "own"; static s = super.k; static { C.t = super.k; } } return [C.s, C.t].join(); });
+show("super with no parent", function () { class C { static s = super.toString === Function.prototype.toString; static { C.t = typeof super.call; } } return [C.s, C.t].join(); });
+show("super computed", function () { class B { static k = 7; } var name = "k"; class C extends B { static s = super[name]; static { C.t = super["k"]; } } return [C.s, C.t].join(); });
+show("super write", function () { var hit = []; class B { static set p(v) { hit.push("B.p " + v + " " + this.name); } } class C extends B { static set p(v) { hit.push("C.p"); } static { super.p = 1; } static f = (() => { super.p = 2; })(); static q = (super.q = 3); } return hit.join() + "|" + C.q + "," + Object.prototype.hasOwnProperty.call(C, "q") + "," + Object.prototype.hasOwnProperty.call(B, "q"); });
+show("super after reparenting", function () { class A { static k = "a"; } class B { static k = "b"; } class C extends A { static f = () => super.k; } var before = C.f(); Object.setPrototypeOf(C, B); return [before, C.f()].join(); });
+show("super in a nested class's key", function () { class B { static k = "m"; } class C extends B { static inner = class { [super.k]() { return 1; } }; } return typeof C.inner.prototype.m; });
+show("a method's super is its own", function () { class B { static k = "static"; k() { return "proto"; } } class C extends B { static { C.viaBlock = super.k; } m() { return super.k(); } static sm() { return super.k; } } return [C.viaBlock, new C().m(), C.sm()].join(); });
+show("two classes, two homes", function () { class A { static k = "a"; } class B { static k = "b"; } function make(P) { return class extends P { static f = () => super.k; }; } var X = make(A), Y = make(B); return [X.f(), Y.f(), X.f()].join(); });
+show("super outside a class", function () { try { return eval("(function () { return super.k; })()"); } catch (e) { return e.name; } });

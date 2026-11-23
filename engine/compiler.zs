@@ -2823,11 +2823,13 @@ export struct Compiler {
   }
 
   // A static block, or a static field's initializer: a function of the
-  // class, called on it once where the class is defined. The register
+  // class, called on it once where the class is defined. One that reads
+  // through `super` takes the class as its home object. The register
   // returned holds what the function returned.
   function emitStaticCall(inout this, in parser: Parser, inout runtime: Runtime, node: u32, ctorReg: u8, nameStart: u32, nameLength: u32): u8 {
     const fnReg = this.allocReg();
     this.emitClassFunction(in parser, inout runtime, node, fnReg, nameStart, nameLength, 0, 3, 0);
+    if (bodyUsesSuper(in parser, parser.ast.node(node).left)) this.emit(instAB(Op.setHome, fnReg, ctorReg));
     const base = this.allocReg();
     this.allocReg();
     this.emit(instAB(Op.mov, base, fnReg));
@@ -8152,6 +8154,23 @@ function arrowsUseThis(in parser: Parser, node: u32): boolean {
   let i: u32 = 0;
   while (i < n.childrenCount) {
     if (arrowsUseThis(in parser, parser.ast.child(node, i))) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
+// Whether a body reads through `super`, itself or in an arrow. As in
+// bodyUsesThis, a method's computed key is the body's; a function is not.
+function bodyUsesSuper(in parser: Parser, node: u32): boolean {
+  if (node == NO_NODE) return false;
+  const n = parser.ast.node(node);
+  if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.staticBlock) return false;
+  if (n.kind == NodeKind.methodDef) return bodyUsesSuper(in parser, n.third);
+  if (n.kind == NodeKind.superExpr) return true;
+  if (bodyUsesSuper(in parser, n.left) || bodyUsesSuper(in parser, n.right) || bodyUsesSuper(in parser, n.third)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (bodyUsesSuper(in parser, parser.ast.child(node, i))) return true;
     i = i + 1;
   }
   return false;

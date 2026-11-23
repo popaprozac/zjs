@@ -9817,6 +9817,12 @@ export struct Runtime {
           }
         }
       }
+      setHome => {
+        const fn = this.reg(base, inst.a);
+        const home = this.reg(base, inst.b);
+        const atomHome = this.atomHome;
+        this.setFunctionHidden(asCell(fn), atomHome, home);
+      }
       checkThis => {
         const held = this.reg(base, inst.a);
         if (isDeleted(held) || isHole(held)) {

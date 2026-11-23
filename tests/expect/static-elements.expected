@@ -36,4 +36,17 @@ field calls a later private method 5
 a key's throw comes first RangeError
 held keys k1,k2,k3,3
 many held keys 43,0,39
+super in a field 7
+super in a field's arrow 7,7
+super call keeps this 9
+super in a block 7,9,7
+super skips the class's own parent,parent
+super with no parent true,function
+super computed 7,7
+super write B.p 1 C,B.p 2 C|3,true,false
+super after reparenting a,b
+super in a nested class's key function
+a method's super is its own static,proto,static
+two classes, two homes a,b,a
+super outside a class SyntaxError
 field arrow, async, later true

@@ -292,6 +292,11 @@ export enum Op {
   loadWithCallee,
   deleteWithVar,
   storeWithHolder,
+  // a = function, b = object: the function's home object, which `super`
+  // in it reads through. A method takes its own where it is defined; a
+  // static block's function, and a static field initializer's, take
+  // their class here.
+  setHome,
 }
 
 export struct Inst {
@@ -572,6 +577,7 @@ export function opCode(op: Op): i32 {
     loadWithCallee => 202;
     deleteWithVar => 203;
     storeWithHolder => 204;
+    setHome => 205;
   };
 }
 
@@ -784,6 +790,7 @@ export function opsByCode(): Array<Op> {
   ops.push(Op.loadWithCallee);
   ops.push(Op.deleteWithVar);
   ops.push(Op.storeWithHolder);
+  ops.push(Op.setHome);
   return ops;
 }
 
@@ -791,7 +798,7 @@ export function opsByCode(): Array<Op> {
 // operands, and what each does. Moves whenever any of them changes, so a
 // file from another engine is refused rather than misread; the test
 // below pins it beside the opcode count, which a new opcode changes.
-export const INSTRUCTION_SET_VERSION: u32 = 5;
+export const INSTRUCTION_SET_VERSION: u32 = 6;
 
 // One property access site's inline cache, kept per property name of a
 // function: the receiver's hidden class and where the property was
@@ -1003,8 +1010,8 @@ test "u16 and i16 operands round-trip through b and c" {
 test "the instruction set version moves with the opcodes" {
   // A new opcode lands here first: move INSTRUCTION_SET_VERSION with it.
   const ops = opsByCode();
-  expect(ops.length).toEqual(205);
-  expect(INSTRUCTION_SET_VERSION).toEqual(5);
+  expect(ops.length).toEqual(206);
+  expect(INSTRUCTION_SET_VERSION).toEqual(6);
   let code: usize = 0;
   while (code < ops.length) {
     expect(opCode(ops[code])).toEqual(i32(code));
