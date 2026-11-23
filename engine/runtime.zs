@@ -9784,13 +9784,11 @@ export struct Runtime {
           const proto = this.protoOfValue(home);
           let found = undefinedValue();
           if (proto != 0) {
-            if (this.heap.isObject(proto)) {
-              const atom = this.propertyKey(key);
-              const receiver = this.hostThis;
-              found = this.lookupProperty(proto, atom, receiver);
-            } else {
-              found = this.getProperty(cellValue(proto), key);
-            }
+            // Whatever kind of cell the prototype is (a class's is its
+            // parent, a function), a getter found runs against `this`.
+            const atom = this.propertyKey(key);
+            const receiver = this.hostThis;
+            found = this.heap.isObject(proto) ? this.lookupProperty(proto, atom, receiver) : this.lookupFrom(proto, atom, receiver);
           }
           if (this.pendingThrow) {
             // The throw stays pending for the loop to take.

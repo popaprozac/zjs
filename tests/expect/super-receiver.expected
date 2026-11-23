@@ -1,0 +1,29 @@
+static method: B
+computed key: B
+symbol key: B
+arrow: B
+same object: true
+getter returns a function: B/B
+setter: [true,false,5]
+data and virtual: [1,"A",0,true]
+static field: B
+static field arrow: B
+static block: B
+instance getter: b
+two levels up: C
+through a super call: C
+borrowed static method: other
+object method, class as prototype: ["o",true]
+array as prototype: [7,1,true]
+host function as prototype: ["max",2]
+Function.prototype getter, base class: D
+Function.prototype getter, derived: E
+after reparenting: F:G
+class, then a plain object: plain:I
+key throws: threw RangeError: key
+object key: ["K",1]
+int key: zero
+missing: undefined
+getter throws: threw EvalError: getter of K
+generator: K
+async: K
