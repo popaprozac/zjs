@@ -36,3 +36,17 @@ show("field constants", function () { class C { static RED = 1; static NAME = "c
 // in: `this` there is that function's, and counts as its reading `this`.
 show("method key this", function () { var o = { k: "m", f() { return class { [this.k]() { return 1; } static [this.k + "s"]() { return 2; } get [this.k + "g"]() { return 3; } }; } }; var C = o.f(); return [new C().m(), C.ms(), new C().mg].join(); });
 show("method key this in an arrow", function () { var o = { k: "m", f() { return class { [(() => this.k)()]() { return 1; } }; } }; return typeof o.f().prototype.m; });
+
+// Static fields and blocks run once the class is built: after every
+// method and accessor is defined and every computed key evaluated, in
+// the order they are written.
+show("keys, then static elements", function () { var log = []; class C { static [(log.push("k1"), "a")] = log.push("v1"); [(log.push("k2"), "b")] = log.push("v2"); static { log.push("block"); } static [(log.push("k3"), "c")]() {} static d = log.push("v4"); } log.push("defined"); new C(); return log.join(); });
+show("field calls a later method", function () { class C { static a = this.m(); static b = C.m(); static m() { return 1; } } return [C.a, C.b].join(); });
+show("block calls a later method", function () { class C { static { this.a = this.m(); } static m() { return 1; } } return C.a; });
+show("field reads a later accessor", function () { class C { static a = this.g; static get g() { return 2; } } return C.a; });
+show("field reads a later field", function () { class C { static a = this.b; static b = 3; } return [C.a, C.b].join(); });
+show("field makes an instance", function () { class C { static a = new this().m(); m() { return 4; } } return C.a; });
+show("field calls a later private method", function () { class C { static a = C.#p(); static #p() { return 5; } } return C.a; });
+show("a key's throw comes first", function () { var log = []; try { class C { static a = log.push("a"); static [(() => { throw new RangeError("k"); })()] = 1; } } catch (e) { log.push(e.name); } return log.join(); });
+show("held keys", function () { class C { static ["k" + 1] = 1; static ["k" + 2] = (typeof gc == "function" && gc(), 2); m() {} static ["k" + 3] = this.k1 + this.k2; get g() { return 0; } } return Object.getOwnPropertyNames(C).filter(function (n) { return n[0] == "k"; }).join() + "," + C.k3; });
+show("many held keys", function () { var src = "class C {"; for (var i = 0; i < 40; i++) src += " static ['k' + " + i + "] = " + i + "; m" + i + "() {}"; src += " static total = Object.getOwnPropertyNames(this).length; } [C.total, C.k0, C.k39].join()"; return eval(src); });

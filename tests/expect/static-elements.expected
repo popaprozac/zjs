@@ -26,4 +26,14 @@ field sees the class's names true,19
 field constants 1,c,2,true,,true
 method key this 1,2,3
 method key this in an arrow function
+keys, then static elements k1,k2,k3,v1,block,v4,defined,v2
+field calls a later method 1,1
+block calls a later method 1
+field reads a later accessor 2
+field reads a later field ,3
+field makes an instance 4
+field calls a later private method 5
+a key's throw comes first RangeError
+held keys k1,k2,k3,3
+many held keys 43,0,39
 field arrow, async, later true

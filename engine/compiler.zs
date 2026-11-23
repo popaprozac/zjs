@@ -2612,9 +2612,9 @@ export struct Compiler {
   }
 
   // A class: the constructor as a function value with the class flags,
-  // its prototype, the members in source order, the static initializers
-  // running with `this` bound to the constructor. Private names are
-  // fresh symbols stored in the class's environment slots.
+  // its prototype, the members in source order, then the static fields
+  // and blocks, running with `this` bound to the constructor. Private
+  // names are fresh symbols stored in the class's environment slots.
   function compileClass(inout this, in parser: Parser, inout runtime: Runtime, node: u32, contextualStart: u32, contextualLength: u32): u8 {
     const n = parser.ast.node(node);
     const derived = n.right != NO_NODE;
@@ -2632,12 +2632,14 @@ export struct Compiler {
       this.bindings.push(Local({ nameStart: n.nameStart, nameLength: n.nameLength, reg: ctorReg, envSlot: innerSlot, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
     }
     let fieldCount: u32 = 0;
+    let heldKeyCount: u32 = 0;
     let ctorNode: u32 = NO_NODE;
     let i: u32 = 0;
     while (i < n.childrenCount) {
       const memberIndex = parser.ast.child(node, i);
       const member = parser.ast.node(memberIndex);
       if (member.kind == NodeKind.classField && !member.boolValue) fieldCount = fieldCount + 1;
+      if (member.kind == NodeKind.classField && member.boolValue && member.third != NO_NODE) heldKeyCount = heldKeyCount + 1;
       if (member.kind == NodeKind.methodDef && !member.boolValue && member.third == NO_NODE
           && (member.num == 2.0 || (member.nameLength == 11 && parser.sliceEquals(member.nameStart, 11, "constructor")))) {
         ctorNode = memberIndex;
@@ -2707,6 +2709,19 @@ export struct Compiler {
     const classHops = u8(this.openEnvs);
     if (innerSlot >= 0) this.emit(this.envSlotInst(Op.storeEnvSlot, ctorReg, classHops, i32(innerSlot)));
     this.nextReg = protoReg + 1;
+    // The members in source order: methods and accessors are defined and
+    // computed keys evaluated. Static fields and blocks run after all of
+    // them (below), so a static field's computed key is held meanwhile,
+    // in a register of its own.
+    // shortcut: a register a held key, so some 250 computed static keys in one class; an environment slot each (as instance fields' keys have) if one ever needs more.
+    const heldKeys = this.nextReg;
+    let h: u32 = 0;
+    while (h < heldKeyCount) {
+      this.allocReg();
+      h = h + 1;
+    }
+    const memberBase = this.nextReg;
+    let heldAt: u8 = 0;
     i = 0;
     while (i < n.childrenCount && !this.hadError) {
       const memberIndex = parser.ast.child(node, i);
@@ -2737,14 +2752,43 @@ export struct Compiler {
           this.emit(instABC(Op.defineMethodComputed, target, key, fnReg));
         }
       } else if (member.kind == NodeKind.classField && member.boolValue) {
-        // The key is the class definition's own expression, and so is
-        // an initializer that cannot tell; one that reads `this` is a
-        // function of the class (the parser wrapped it). An anonymous
-        // function in either takes a written field name.
+        if (member.third != NO_NODE) {
+          const key = this.compileExpr(in parser, inout runtime, member.third);
+          this.emit(instAB(Op.mov, heldKeys + heldAt, key));
+          heldAt = heldAt + 1;
+        }
+      } else if (member.kind == NodeKind.classField && member.third != NO_NODE) {
+        // An instance field's computed key is evaluated once, here, into
+        // the slot its initializer reads.
+        const keyNode = parser.ast.node(member.third);
+        const slot = this.capturedSlot(keyNode.start - 1);
+        if (slot < 0) {
+          this.hadError = true;
+          return ctorReg;
+        }
+        const key = this.compileExpr(in parser, inout runtime, member.third);
+        const keyHops = u8(this.openEnvs);
+        this.emit(this.envSlotInst(Op.storeEnvSlot, key, keyHops, i32(slot)));
+      }
+      this.nextReg = memberBase;
+      i = i + 1;
+    }
+    // The static fields and blocks, in source order, on the finished class.
+    heldAt = 0;
+    i = 0;
+    while (i < n.childrenCount && !this.hadError) {
+      const memberIndex = parser.ast.child(node, i);
+      const member = parser.ast.node(memberIndex);
+      if (member.kind == NodeKind.classField && member.boolValue) {
+        // An initializer that cannot tell which function it runs in is
+        // the class definition's own expression; one that reads `this`
+        // is a function of the class (the parser wrapped it). An
+        // anonymous function in either takes a written field name.
         let key: u8 = 0;
         let named = false;
         if (member.third != NO_NODE) {
-          key = this.compileExpr(in parser, inout runtime, member.third);
+          key = heldKeys + heldAt;
+          heldAt = heldAt + 1;
         } else if (this.isPrivateName(in parser, member.nameStart, member.nameLength)) {
           key = this.privateKeyReg(in parser, member.nameStart, member.nameLength);
         } else {
@@ -2763,22 +2807,10 @@ export struct Compiler {
           value = this.compileExpr(in parser, inout runtime, member.left);
         }
         this.emit(instABC(Op.defineField, ctorReg, key, value));
-      } else if (member.kind == NodeKind.classField && member.third != NO_NODE) {
-        // An instance field's computed key is evaluated once, here, into
-        // the slot its initializer reads.
-        const keyNode = parser.ast.node(member.third);
-        const slot = this.capturedSlot(keyNode.start - 1);
-        if (slot < 0) {
-          this.hadError = true;
-          return ctorReg;
-        }
-        const key = this.compileExpr(in parser, inout runtime, member.third);
-        const keyHops = u8(this.openEnvs);
-        this.emit(this.envSlotInst(Op.storeEnvSlot, key, keyHops, i32(slot)));
       } else if (member.kind == NodeKind.staticBlock) {
         this.emitStaticCall(in parser, inout runtime, memberIndex, ctorReg, 0, 0);
       }
-      this.nextReg = protoReg + 1;
+      this.nextReg = memberBase;
       i = i + 1;
     }
     let u = this.bindings.locals.length;
