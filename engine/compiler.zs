@@ -158,6 +158,10 @@ class Bindings {
   indexed: usize;
   stale: usize;
   buckets: usize;
+  // While an instance field's initializer compiles in its constructor:
+  // the count of bindings the constructor had then, none of which the
+  // initializer may see (its scope is the class body's); -1 otherwise.
+  fieldFrom: i32;
 
   function push(inout this, local: Local): void {
     this.locals.push(local);
@@ -182,7 +186,8 @@ class Bindings {
     if (this.hashes.length == 0 || nameLength == 0) return -1;
     const at = this.bucket(in parser, nameStart, nameLength, bindingHash(in parser, nameStart, nameLength));
     if (this.hashes[at] == 0) return -1;
-    return this.heads[at];
+    const latest = this.heads[at];
+    return latest < this.fieldFrom ? -1 : latest;
   }
 
   function bucket(in parser: Parser, nameStart: u32, nameLength: u32, hash: u32): usize {
@@ -276,7 +281,7 @@ class Bindings {
 const NO_BUCKET: u32 = 0xFFFF_FFFF;
 
 function newBindings(locals: Array<Local>): Bindings {
-  return new Bindings({ locals: move locals, hashes: Array<u32>(), keyStarts: Array<u32>(), keyLengths: Array<u32>(), heads: Array<i32>(), bucketOf: Array<u32>(), previous: Array<i32>(), indexed: 0, stale: 0, buckets: 0 });
+  return new Bindings({ locals: move locals, hashes: Array<u32>(), keyStarts: Array<u32>(), keyLengths: Array<u32>(), heads: Array<i32>(), bucketOf: Array<u32>(), previous: Array<i32>(), indexed: 0, stale: 0, buckets: 0, fieldFrom: -1 });
 }
 
 function bindingHash(in parser: Parser, start: u32, length: u32): u32 {
@@ -2393,6 +2398,18 @@ export struct Compiler {
     return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false, quiet: false });
   }
 
+  // Whether this code is an instance field's initializer, or an arrow
+  // in one: the nearest non-arrow function is compiling one now.
+  function inFieldInitializer(inout this): boolean {
+    if (this.bindings.fieldFrom >= 0) return true;
+    let level: usize = this.outerScopes.length;
+    while (level > 0 && (level == this.outerScopes.length ? this.isArrow : this.outerScopes[level].isArrow)) {
+      level = level - 1;
+      if (this.outerScopes[level].bindings.fieldFrom >= 0) return true;
+    }
+    return false;
+  }
+
   // After super() binds `this`: the environment copy for the arrows.
   function emitThisToEnv(inout this): void {
     if (this.thisEnvSlot < 0 || this.thisReg < 0) return;
@@ -2606,7 +2623,11 @@ export struct Compiler {
       key = this.allocReg();
       this.emitLoadBinding(in parser, keyNode.start - 1, keyNode.end - keyNode.start + 1, key);
     }
+    // The initializer's scope is the class body's: the constructor's
+    // parameters and locals are not in it.
+    this.bindings.fieldFrom = i32(this.bindings.locals.length);
     const value = this.compileExpr(in parser, inout runtime, n.right);
+    this.bindings.fieldFrom = -1;
     this.emit(instABC(Op.defineField, receiver, key, value));
     this.resetTemps();
   }
@@ -3646,7 +3667,7 @@ export struct Compiler {
       let i: usize = 0;
       while (i < this.outerScopes[level].bindings.locals.length) {
         const local = this.outerScopes[level].bindings.locals[i];
-        if (local.nameLength > 0 && local.envSlot >= 0) bindings.push(evalBindingOf(in parser, inout site.names, local));
+        if (local.nameLength > 0 && local.envSlot >= 0 && i32(i) >= this.outerScopes[level].bindings.fieldFrom) bindings.push(evalBindingOf(in parser, inout site.names, local));
         i = i + 1;
       }
       const hasEnv = this.outerScopes[level].hasEnv;
@@ -3661,7 +3682,7 @@ export struct Compiler {
     let i: usize = 0;
     while (i < this.bindings.locals.length) {
       const local = this.bindings.locals[i];
-      if (local.nameLength > 0 && local.envSlot >= 0) {
+      if (local.nameLength > 0 && local.envSlot >= 0 && i32(i) >= this.bindings.fieldFrom) {
         let binding = evalBindingOf(in parser, inout site.names, local);
         if (i < this.parameterLocals) binding.conflicts = true;
         own.push(binding);
@@ -4263,8 +4284,10 @@ export struct Compiler {
     }
     if (k == NodeKind.thisExpr) {
       if (n.boolValue) {
+        // new.target: undefined in an instance field's initializer,
+        // which is not the constructor's code.
         const dst = this.allocReg();
-        this.emit(instA(Op.loadNewTarget, dst));
+        this.emit(instA(this.inFieldInitializer() ? Op.loadUndefined : Op.loadNewTarget, dst));
         return dst;
       }
       // A static initializer routes `this` to the constructor's register.
@@ -7727,6 +7750,16 @@ function collectCaptures(in parser: Parser, node: u32, inout enclosing: Array<Na
   if (isFunctionLike(k)) {
     enclosing.push(functionBindings(in parser, node));
     collectCapturesInside(in parser, node, inout enclosing, inout summary);
+    const left = enclosing.pop();
+    return;
+  }
+  if (k == NodeKind.classField && !n.boolValue) {
+    // An instance field's initializer runs in each construction, in the
+    // class body's scope: a function there that binds nothing, whatever
+    // the constructor it is compiled in binds.
+    collectCaptures(in parser, n.third, inout enclosing, inout summary);
+    enclosing.push(nameSet());
+    collectCaptures(in parser, n.left, inout enclosing, inout summary);
     const left = enclosing.pop();
     return;
   }

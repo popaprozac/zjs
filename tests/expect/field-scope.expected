@@ -1,0 +1,51 @@
+parameter of the same name: outer
+var of the same name: outer
+let of the same name: outer
+function of the same name: string
+derived, parameter: outer,param
+derived, let after super(): outer
+derived, let before super(): outer
+derived, super() in a block with a let: outer
+derived, super() in a catch with a parameter: outer
+local of the enclosing function: enclosing
+parameter of the enclosing function: enclosing
+enclosing local, read and written: 2
+arrow in the initializer: outer
+arrow in the initializer, enclosing local: enclosing
+function in the initializer: outer
+class in the initializer: outer,true
+class with a private name in the initializer: outer
+later field reads an earlier one: outer!
+the class's own name: tag
+private field: outer
+computed key: outer
+the constructor still sees its own: outer,param
+the constructor's arrow still sees its own: outer,param
+typeof an undeclared name the constructor declares: undefined
+undeclared name the constructor declares: threw ReferenceError
+assignment in the initializer: set,param
+eval in the initializer: outer
+eval in the initializer, enclosing local: enclosing
+eval var in the initializer does not reach the constructor: 1,undefined
+new.target: undefined
+new.target, written constructor: undefined
+new.target in an arrow: ,true
+new.target, derived: ,
+new.target in eval in the initializer: undefined
+arguments in a function in the initializer: 3
+eval in an arrow in the initializer: outer
+class with a field in the initializer: outer
+class in the constructor, its field reads the parameter: param
+derived, two super() calls: outer,then,outer,else
+with object around the class: with
+constructor's local function of the same name is not called: outer pick
+new.target in an arrow in an arrow: undefined
+new.target in a function in the initializer: true
+new.target in an arrow in a function in the initializer: true
+new.target in the constructor's own arrow: true
+static field next to a parameter of the same name: outer
+arguments: SyntaxError
+arguments in an arrow: SyntaxError
+arguments in a function: accepted
+arguments, static: SyntaxError
+arguments in a computed key: accepted
