@@ -1,0 +1,44 @@
+class method stored: B>A.m B>A.m
+stored under a computed key: B>A.m
+stored by shorthand: B>A.m
+stored through a spread: B>A.m
+getter stored: B>A.g
+static method stored: B>A.s
+object method stored in another: o>P.m o>P.m
+stored twice: pxpx
+class stored: A.m
+class stored, static: A.s
+arrow stored in a method: A.m
+arrow stored in an object method: P.m
+arrow stored, called later: A.m A.g
+bound method stored: B>A.m B>A.m
+function value, eval: threw SyntaxError
+function value, computed key, eval: threw SyntaxError
+arrow value in a function, eval: threw SyntaxError
+generator function value, eval: threw SyntaxError
+method: px
+method call: o>P.m
+computed key method: px
+string key method: px
+number key method: px
+getter: px
+computed getter: px
+setter: set 3
+generator method: px
+parameter default: px
+parameter default arrow: px
+destructured parameter default: px
+arrow in a method: px
+eval in a method: px
+eval in a method's arrow: px
+eval in a parameter default: px
+eval in a getter: px
+method after the prototype changes: undefined px
+method called on another object: px
+method in a method: inner px
+two literals from one site: onetwoone
+literal in a loop: 012
+many properties: 1,2,3,px,5,6
+method without super, names: m,get g,f,a
+async method: px
+async function value, eval: threw SyntaxError

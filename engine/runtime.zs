@@ -10035,10 +10035,6 @@ export struct Runtime {
           const key = this.reg(base, inst.b);
           const fn = this.reg(base, inst.c);
           this.defineAccessor(object, key, fn, fn, op == Op.defineGetter);
-          if (this.isCompiledCallable(fn)) {
-            const atomHome = this.atomHome;
-            this.setFunctionHidden(asCell(fn), atomHome, object);
-          }
         } else if (op == Op.spreadInvoke || op == Op.spreadMethodInvoke || op == Op.spreadNewInvoke) {
           // Callee at b; for a method call the receiver at b + 1; the
           // arguments array in the next register. The elements are placed
@@ -11667,23 +11663,14 @@ export struct Runtime {
               this.heap.objectSet(object, atom, value);
               this.populateDefineCache(fi, nameSlot, object, atom, classBefore);
             }
-            if (this.isCompiledCallable(value)) {
-              const atomHome = this.atomHome;
-              this.setFunctionHidden(asCell(value), atomHome, cellValue(object));
-            }
           }
           initObjData => {
-            // Object literal property: define on the literal's own class. A
-            // function value remembers the literal as its home, for `super`.
+            // Object literal property: define on the literal's own class.
             const object = this.reg(base, inst.a);
             const key = this.reg(base, inst.b);
             const value = this.reg(base, inst.c);
             const atom = this.propertyKey(key);
             this.heap.objectSet(asCell(object), atom, value);
-            if (this.isCompiledCallable(value)) {
-              const atomHome = this.atomHome;
-              this.setFunctionHidden(asCell(value), atomHome, object);
-            }
           }
           loadThis => {
             const current = this.hostThis;

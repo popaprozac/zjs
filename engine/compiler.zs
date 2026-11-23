@@ -4425,6 +4425,9 @@ export struct Compiler {
         } else {
           this.emit(instABC(Op.initObjData, dst, key, value));
         }
+        // Only a method has the literal as its home object, and only one
+        // that reads through `super` can tell.
+        if (methodUsesSuper(in parser, property.left)) this.emit(instAB(Op.setHome, value, dst));
         this.nextReg = floorReg;
         i = i + 1;
       }
@@ -8171,6 +8174,20 @@ function bodyUsesSuper(in parser: Parser, node: u32): boolean {
   // Direct eval code reads through `super` as an arrow does.
   if (n.kind == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
   if (bodyUsesSuper(in parser, n.left) || bodyUsesSuper(in parser, n.right) || bodyUsesSuper(in parser, n.third)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (bodyUsesSuper(in parser, parser.ast.child(node, i))) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
+// Whether an object literal's property value is a method or accessor
+// that reads through `super`, in its parameters or its body.
+function methodUsesSuper(in parser: Parser, node: u32): boolean {
+  const n = parser.ast.node(node);
+  if (n.kind != NodeKind.functionExpr || !n.conciseMethod) return false;
+  if (bodyUsesSuper(in parser, n.left)) return true;
   let i: u32 = 0;
   while (i < n.childrenCount) {
     if (bodyUsesSuper(in parser, parser.ast.child(node, i))) return true;
