@@ -7151,6 +7151,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     compiler.emit(instAB(Op.buildRestArgs, rest, 0));
     const produced = compiler.allocReg();
     compiler.emit(instAB(Op.spreadSuperCall, produced, rest));
+    compiler.emitThisToEnv();
     compiler.emitFieldInitializers(in parser, inout runtime);
     compiler.resetTemps();
   }
