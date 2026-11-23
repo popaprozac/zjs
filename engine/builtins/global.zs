@@ -1,5 +1,5 @@
 // Global functions: eval and the number-parsing conveniences.
-import { Value, undefinedValue, booleanValue, doubleValue, int32Value, cellValue, asCell, isNumber } from "../value.zs";
+import { Value, undefinedValue, isUndefined, booleanValue, doubleValue, int32Value, cellValue, asCell, isNumber } from "../value.zs";
 import { thread } from "std/thread";
 import { Runtime, DirectEval, ERROR_KIND_SYNTAX, stringToNumber, toNumber, toInt32, isIntegralDouble } from "../runtime.zs";
 import { isJsSpace, codePointAt, isHighSurrogate, isLowSurrogate, pushCodePoint, utf8Length } from "../text.zs";
@@ -40,6 +40,12 @@ function evalDirect(inout runtime: Runtime, source: Array<u8>, direct: DirectEva
     return undefinedValue();
   }
   const closure = runtime.heap.allocateClosure(u32(functionIndex), direct.env, direct.thisValue, 0);
+  // The caller's home object, as an arrow made there takes it: what a
+  // read through `super` in the code starts from.
+  if (!isUndefined(direct.home)) {
+    const atomHome = runtime.atomHome;
+    runtime.setFunctionHidden(closure, atomHome, direct.home);
+  }
   return runtime.callValue(cellValue(closure), direct.thisValue, Array<Value>());
 }
 

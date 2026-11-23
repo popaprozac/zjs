@@ -1,0 +1,30 @@
+method: A.m
+getter: g of b
+computed: A.m
+arrow around eval: A.m
+arrow inside eval: A.m
+arrow kept from eval: A.m
+nested eval: A.m
+write runs the setter: ["set 5",false]
+static method: A.s
+static getter: B
+static field: A.s
+static field arrow: A.s
+static block: A.s
+instance field: A.m
+constructor: A.m
+base constructor: function
+object method: proto.m
+object getter: 7
+generator method: A.m
+parameter default: A.m
+after reparenting: ["first","second"]
+two methods, two homes: ["p","q"]
+eval without super: 2
+-- refused
+indirect eval: threw SyntaxError: 'super' keyword unexpected here
+function around eval: threw SyntaxError: 'super' keyword unexpected here
+top level: threw SyntaxError: 'super' keyword unexpected here
+plain function: threw SyntaxError: 'super' keyword unexpected here
+arrow at top level: threw SyntaxError: 'super' keyword unexpected here
+async method: A.m

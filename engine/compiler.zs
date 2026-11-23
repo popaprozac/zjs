@@ -8168,6 +8168,8 @@ function bodyUsesSuper(in parser: Parser, node: u32): boolean {
   if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.staticBlock) return false;
   if (n.kind == NodeKind.methodDef) return bodyUsesSuper(in parser, n.third);
   if (n.kind == NodeKind.superExpr) return true;
+  // Direct eval code reads through `super` as an arrow does.
+  if (n.kind == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
   if (bodyUsesSuper(in parser, n.left) || bodyUsesSuper(in parser, n.right) || bodyUsesSuper(in parser, n.third)) return true;
   let i: u32 = 0;
   while (i < n.childrenCount) {
