@@ -126,6 +126,10 @@ export struct Parser {
   inGenerator: boolean;
   strictMode: boolean;
   inDerivedConstructor: boolean;
+  // Whether `super.x` may be written here: in a method, accessor,
+  // constructor, field initializer or static block, in an arrow inside
+  // one, and in direct eval code whose caller has a home object.
+  superProperty: boolean;
   inStaticBlock: boolean;
   staticBlockDepth: u32;
   // The labels the statement being parsed is nested in: start, length,
@@ -1400,6 +1404,11 @@ export struct Parser {
     }
     if (k == TokenKind.kwSuper) {
       this.advance();
+      const after = this.peekKind();
+      if ((after == TokenKind.dot || after == TokenKind.lBracket) && !this.superProperty) {
+        this.hadError = true;
+        return NO_NODE;
+      }
       return this.ast.newNode(NodeKind.superExpr, t.start, t.start + t.length);
     }
     if (this.isBindingIdentCtx(k)) {
@@ -2098,6 +2107,9 @@ export struct Parser {
     }
     this.advance();
     if (!this.expectKind(TokenKind.lParen)) return NO_NODE;
+    // A function has no home object, whatever it is written in.
+    const savedSuper = this.superProperty;
+    this.superProperty = false;
     const params = this.parseParamList();
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
     if (this.peekKind() != TokenKind.lBrace) {
@@ -2105,6 +2117,7 @@ export struct Parser {
       return NO_NODE;
     }
     const body = this.parseFunctionBody(isAsync, isGenerator);
+    this.superProperty = savedSuper;
     if (body == NO_NODE) return NO_NODE;
     if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
       this.hadError = true;
@@ -2143,6 +2156,9 @@ export struct Parser {
       nameLength = nameToken.length;
     }
     if (!this.expectKind(TokenKind.lParen)) return NO_NODE;
+    // A function has no home object, whatever it is written in.
+    const savedSuper = this.superProperty;
+    this.superProperty = false;
     const params = this.parseParamList();
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
     if (this.peekKind() != TokenKind.lBrace) {
@@ -2150,6 +2166,7 @@ export struct Parser {
       return NO_NODE;
     }
     const body = this.parseFunctionBody(isAsync, isGenerator);
+    this.superProperty = savedSuper;
     if (body == NO_NODE) return NO_NODE;
     if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
       this.hadError = true;
@@ -2324,6 +2341,8 @@ export struct Parser {
           const savedGenerator = this.inGenerator;
           this.inAsync = isAsync;
           this.inGenerator = isGenerator;
+          const savedSuper = this.superProperty;
+          this.superProperty = true;
           let params = this.parseParamList();
           if (!this.expectKind(TokenKind.rParen)) {
             this.inAsync = savedAsync;
@@ -2339,6 +2358,7 @@ export struct Parser {
           this.inAsync = savedAsync;
           this.inGenerator = savedGenerator;
           value = this.parseMethodFunction(bracket.start, isAsync, isGenerator, inout params);
+          this.superProperty = savedSuper;
           if (value == NO_NODE) break;
         } else {
           this.hadError = true;
@@ -2391,6 +2411,8 @@ export struct Parser {
           this.advance();
         }
         if (!this.expectKind(TokenKind.lParen)) break;
+        const savedSuper = this.superProperty;
+        this.superProperty = true;
         const params = this.parseParamList();
         if (!this.expectKind(TokenKind.rParen)) break;
         if (this.peekKind() != TokenKind.lBrace) {
@@ -2400,6 +2422,7 @@ export struct Parser {
         this.functionDepth = this.functionDepth + 1;
         const body = this.parseBlock();
         this.functionDepth = this.functionDepth - 1;
+        this.superProperty = savedSuper;
         if (body == NO_NODE) break;
         const accessor = this.ast.newNode(NodeKind.functionExpr, realName.start, this.endOf(body));
         this.ast.setConciseMethod(accessor);
@@ -2438,6 +2461,8 @@ export struct Parser {
         const savedGenerator = this.inGenerator;
         this.inAsync = isAsync;
         this.inGenerator = isGenerator;
+        const savedSuper = this.superProperty;
+        this.superProperty = true;
         let params = this.parseParamList();
         if (!this.expectKind(TokenKind.rParen)) {
           this.inAsync = savedAsync;
@@ -2453,6 +2478,7 @@ export struct Parser {
         this.inAsync = savedAsync;
         this.inGenerator = savedGenerator;
         const body = this.parseFunctionBody(isAsync, isGenerator);
+        this.superProperty = savedSuper;
         if (body == NO_NODE) break;
         if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
           this.hadError = true;
@@ -3226,7 +3252,10 @@ export struct Parser {
         this.functionDepth = this.functionDepth + 1;
         this.inStaticBlock = true;
         this.staticBlockDepth = this.functionDepth;
+        const savedSuper = this.superProperty;
+        this.superProperty = true;
         const body = this.parseBlock();
+        this.superProperty = savedSuper;
         this.functionDepth = this.functionDepth - 1;
         this.inAsync = savedAsync;
         this.inGenerator = savedGenerator;
@@ -3317,7 +3346,10 @@ export struct Parser {
       let init: u32 = NO_NODE;
       if (this.peekKind() == TokenKind.eq) {
         this.advance();
+        const savedSuper = this.superProperty;
+        this.superProperty = true;
         init = this.parseAssignment();
+        this.superProperty = savedSuper;
         if (init == NO_NODE) return NO_NODE;
         if (this.walkShort(init)) return NO_NODE;
         if (this.exprContainsArguments(init)) {
@@ -3387,6 +3419,8 @@ export struct Parser {
     const savedGenerator = this.inGenerator;
     this.inAsync = isAsyncMethod;
     this.inGenerator = isGeneratorMethod;
+    const savedSuper = this.superProperty;
+    this.superProperty = true;
     if (!this.expectKind(TokenKind.lParen)) {
       this.inAsync = savedAsync;
       this.inGenerator = savedGenerator;
@@ -3409,6 +3443,7 @@ export struct Parser {
     this.functionDepth = this.functionDepth - 1;
     this.inAsync = savedAsync;
     this.inGenerator = savedGenerator;
+    this.superProperty = savedSuper;
     if (body == NO_NODE) return NO_NODE;
     if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
       this.hadError = true;
@@ -3925,12 +3960,13 @@ export function parseText(source: String, isModule: boolean): ParseResult {
 }
 
 export function parseProgram(source: Array<u8>, isModule: boolean, stackFloor: usize): ParseResult {
-  return parseScript(move source, isModule, false, stackFloor);
+  return parseScript(move source, isModule, false, false, stackFloor);
 }
 
-// A program parsed as strict code from the start: direct eval code
-// called from strict code.
-export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, stackFloor: usize): ParseResult {
+// A program parsed as its caller says: direct eval code is strict from
+// the start when called from strict code, and may write `super.x` when
+// the calling function has a home object (`superProperty`).
+export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, superProperty: boolean, stackFloor: usize): ParseResult {
   const sourceLength = u32(source.length);
   const byteCount = source.length;
   let stackSpent = false;
@@ -3953,6 +3989,7 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     inGenerator: false,
     strictMode: strict,
     inDerivedConstructor: false,
+    superProperty: superProperty,
     inStaticBlock: false,
     staticBlockDepth: 0,
     argumentsName: 0,

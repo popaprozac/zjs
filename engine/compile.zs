@@ -23,9 +23,9 @@ function compileScriptSource(inout runtime: Runtime, source: Array<u8>): i32 on 
   return index;
 }
 
-function compileEvalSource(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32): i32 on thread.any {
+function compileEvalSource(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32, inMethod: boolean): i32 on thread.any {
   const strict = runtime.functions[usize(caller)].evalSites[usize(site)].strict;
-  let parsed = parseScript(move source, false, strict, runtime.stackFloor());
+  let parsed = parseScript(move source, false, strict, inMethod, runtime.stackFloor());
   if (parsed.hadError) return parsed.parser.stackSpent ? COMPILE_STACK : COMPILE_PARSE_ERROR;
   const index = compileEval(inout parsed.parser, parsed.root, inout runtime, caller, site);
   if (index < 0) return compileStopped(inout runtime);

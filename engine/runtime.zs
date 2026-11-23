@@ -264,10 +264,11 @@ export type HostFunction = (inout runtime: Runtime, thisValue: Value, argsBase: 
 
 // Source compiled against a runtime: a script (an indirect eval's, the
 // Function constructor's) or direct eval code at a call, against the
-// scopes its caller's eval site `site` records. The script's function
-// index, or a COMPILE_ reason it has none.
+// scopes its caller's eval site `site` records; `inMethod` says the
+// caller has a home object, so the code may write `super.x`. The
+// script's function index, or a COMPILE_ reason it has none.
 export type ScriptCompiler = (inout runtime: Runtime, source: Array<u8>) => i32 on thread.any;
-export type EvalCompiler = (inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32) => i32 on thread.any;
+export type EvalCompiler = (inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32, inMethod: boolean) => i32 on thread.any;
 export const COMPILE_PARSE_ERROR: i32 = -1;
 export const COMPILE_ERROR: i32 = -2;
 export const COMPILE_NO_COMPILER: i32 = -3;
@@ -419,7 +420,7 @@ function noScriptCompiler(inout runtime: Runtime, source: Array<u8>): i32 on thr
   return COMPILE_NO_COMPILER;
 }
 
-function noEvalCompiler(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32): i32 on thread.any {
+function noEvalCompiler(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32, inMethod: boolean): i32 on thread.any {
   return COMPILE_NO_COMPILER;
 }
 
@@ -2688,9 +2689,9 @@ export struct Runtime {
   }
 
   // Direct eval code compiled at `caller`'s eval site `site`.
-  function compileEvalCode(inout this, source: Array<u8>, caller: u32, site: u32): i32 {
+  function compileEvalCode(inout this, source: Array<u8>, caller: u32, site: u32, inMethod: boolean): i32 {
     const compile = this.evalCompiler;
-    return compile(inout this, move source, caller, site);
+    return compile(inout this, move source, caller, site, inMethod);
   }
 
   // What a compile that gave no function throws: a SyntaxError naming

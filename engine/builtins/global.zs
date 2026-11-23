@@ -32,8 +32,10 @@ function evalSource(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
 
 // The caller's environment and `this` stay reachable from its frame
 // while the code compiles; the closure is made last and called at once.
+// Code whose caller has no home object may not write `super.x`: the
+// parse refuses it, before any of the code runs.
 function evalDirect(inout runtime: Runtime, source: Array<u8>, direct: DirectEval): Value {
-  const functionIndex = runtime.compileEvalCode(move source, direct.caller, direct.site);
+  const functionIndex = runtime.compileEvalCode(move source, direct.caller, direct.site, !isUndefined(direct.home));
   if (functionIndex < 0) {
     const error = runtime.compileFailure(functionIndex);
     runtime.raise(error);

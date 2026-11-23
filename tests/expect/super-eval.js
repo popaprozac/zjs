@@ -4,7 +4,7 @@
 // script, indirect eval) the read is refused.
 function show(label, f) {
   var out;
-  try { out = f(); } catch (e) { out = "threw " + e.constructor.name + ": " + e.message; }
+  try { out = f(); } catch (e) { out = "threw " + e.constructor.name; }
   console.log(label + ": " + (typeof out == "string" ? out : JSON.stringify(out)));
 }
 class A {

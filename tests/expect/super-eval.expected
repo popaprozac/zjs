@@ -22,9 +22,9 @@ after reparenting: ["first","second"]
 two methods, two homes: ["p","q"]
 eval without super: 2
 -- refused
-indirect eval: threw SyntaxError: 'super' keyword unexpected here
-function around eval: threw SyntaxError: 'super' keyword unexpected here
-top level: threw SyntaxError: 'super' keyword unexpected here
-plain function: threw SyntaxError: 'super' keyword unexpected here
-arrow at top level: threw SyntaxError: 'super' keyword unexpected here
+indirect eval: threw SyntaxError
+function around eval: threw SyntaxError
+top level: threw SyntaxError
+plain function: threw SyntaxError
+arrow at top level: threw SyntaxError
 async method: A.m

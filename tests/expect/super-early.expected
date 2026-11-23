@@ -1,0 +1,97 @@
+SyntaxError 0  super.x
+SyntaxError 0  super['x']
+SyntaxError 0  function f() { super.x }
+SyntaxError 0  (function () { super.x })
+SyntaxError 0  () => super.x
+SyntaxError 0  (() => () => super[1])
+SyntaxError 0  function* g() { super.x }
+SyntaxError 0  async function f() { super.x }
+SyntaxError 0  async function* f() { super.x }
+SyntaxError 0  (async () => super.x)
+SyntaxError 0  function f(a = super.x) {}
+SyntaxError 0  (function (a = () => super.x) {})
+SyntaxError 0  ({ f: function () { super.x } })
+SyntaxError 0  ({ f: () => super.x })
+SyntaxError 0  ({ [super.x]: 1 })
+SyntaxError 0  ({ [super.x]() {} })
+SyntaxError 0  ({ a: super.x })
+SyntaxError 0  class C { [super.x]() {} }
+SyntaxError 0  class C { static [super.x] = 1 }
+SyntaxError 0  class C extends (super.x) {}
+SyntaxError 0  class C { m() { function g() { super.x } } }
+SyntaxError 0  class C { m() { return function () { return () => super.x } } }
+SyntaxError 0  class C { x = function () { super.y } }
+SyntaxError 0  class C { static { function g() { super.x } } }
+SyntaxError 0  ({ m() { ({ f: function () { super.x } }) } })
+SyntaxError 0  new super.x
+SyntaxError 0  super.x = 1
+SyntaxError 0  super.x()
+SyntaxError 0  `${super.x}`
+SyntaxError 0  function f() { `${super.x}` }
+ok 1  ({ m() { super.x } })
+ok 1  ({ m(a = super.x) {} })
+ok 1  ({ get g() { return super.x }, set s(v) { super.x = v } })
+ok 1  ({ async m() { super.x }, *n() { super.x }, async *o() { super.x } })
+ok 1  ({ ['k']() { super.x }, get ['g']() { return super.x } })
+ok 1  ({ m() { () => super.x } })
+ok 1  ({ m() { `${super.x}` } })
+ok 1  class C { m() { super.x } }
+ok 1  class C { static m() { super.x } }
+ok 1  class C { get g() { return super.x } set s(v) { super.x = v } }
+ok 1  class C { constructor() { super.x } }
+ok 1  class C { constructor(a = super.x) {} }
+ok 1  class C { m() { () => () => super.x } }
+ok 1  class C { x = super.y }
+ok 1  class C { static x = super.y }
+ok 1  class C { x = () => super.y }
+ok 1  class C { static { super.x } }
+ok 1  class C { static { () => super.x } }
+ok 1  class C { #p = super.x; static #q() { return super.x } }
+ok 1  class C { m() { new super.x } }
+ok 1  class C { m() { class D { [super.x]() {} } } }
+ok 1  class C { m() { class D extends (super.x) {} } }
+ok 1  class C { m() { ({ [super.x]: 1, a: super.y }) } }
+ok 1  class C { m() { function f() { ({ n() { super.x } }) } } }
+ok 1  function f() { class C { m() { super.x } } }
+ok 1  function f() { return { m() { return super.x } } }
+SyntaxError 0  class C { m() {} }; super.x
+SyntaxError 0  class C { get g() { return 1 } }; super.x
+SyntaxError 0  class C { x = 1 }; super.x
+SyntaxError 0  class C { static {} }; super.x
+SyntaxError 0  ({ m() {} }); super.x
+SyntaxError 0  ({ get g() { return 1 } }); super.x
+SyntaxError 0  ({ ['k']() {} }); super.x
+ok 1  class C { m() { function f() {} return super.x } }
+ok 1  class C { m() { (function () {}); return super.x } }
+SyntaxError  Function body super.x
+SyntaxError  Function body () => super.x
+ok  Function body ({ m() { super.x } })
+ok  Function body class C { x = super.y }
+SyntaxError  Function parameter a = super.x
+SyntaxError  Function parameter a = () => super.x
+script: SyntaxError 0
+function: SyntaxError 0
+function, computed: SyntaxError 0
+arrow in a script: SyntaxError 0
+function in a method: SyntaxError 0
+eval in eval in a function: SyntaxError 1
+function written in a method's eval: SyntaxError 0
+generator: SyntaxError 0
+function's parameter: SyntaxError 0
+computed key in a function: SyntaxError 0
+indirect eval in a method: SyntaxError 0
+Function in a method: SyntaxError 0
+method: px 1
+method's arrow: px 1
+eval in eval in a method: px 2
+arrow written in a method's eval: px 1
+method written in a method's eval: inner 1
+getter: px 1
+class method: ax 1
+static method: sx 1
+constructor: ax 1
+field: ax 1
+static field: sx 1
+static block: sx 1
+computed key in a method: px 1
+no super: 7 1
