@@ -1852,7 +1852,8 @@ export struct Parser {
 
   // Comma-separated bindings up to (not including) `)`: plain, defaulted,
   // pattern (wrapped in a placeholder IdentExpr with the pattern on
-  // `third`), and a trailing `...rest`.
+  // `third`), and a trailing `...rest` (a RestParam whose `left` is the
+  // name or, unwrapped, the pattern).
   function parseParamList(inout this): Array<u32> {
     let params = Array<u32>();
     let seenRest = false;
@@ -1872,16 +1873,15 @@ export struct Parser {
       let identStart: u32 = 0;
       let identEnd: u32 = 0;
       if (isPattern) {
-        if (isRest) {
-          this.hadError = true;
-          break;
-        }
         const pattern = this.parseBindingTarget();
         if (pattern == NO_NODE) break;
         identStart = this.startOf(pattern);
         identEnd = this.endOf(pattern);
-        ident = this.ast.newNode(NodeKind.identExpr, identStart, identEnd);
-        this.ast.setThird(ident, pattern);
+        ident = pattern;
+        if (!isRest) {
+          ident = this.ast.newNode(NodeKind.identExpr, identStart, identEnd);
+          this.ast.setThird(ident, pattern);
+        }
       } else {
         const nameToken = this.peek();
         if (!this.isBindingIdentTok(nameToken)) {

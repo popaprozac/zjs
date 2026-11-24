@@ -6939,10 +6939,14 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     const param = parser.ast.node(parser.ast.child(node, p));
     if (param.kind == NodeKind.restParam) {
       // `...rest` binds the arguments past the plain parameters; it is
-      // filled at entry from the frame's actual arguments.
+      // filled at entry from the frame's actual arguments. A pattern
+      // there reads them from a register with no name.
       const inner = parser.ast.node(param.left);
-      if (inner.kind != NodeKind.identExpr || inner.nameLength == 0) return failed;
-      compiler.addLocal(inner.nameStart, inner.nameLength);
+      if (inner.kind == NodeKind.identExpr && inner.nameLength > 0) {
+        compiler.addLocal(inner.nameStart, inner.nameLength);
+      } else {
+        compiler.bindings.push(Local({ nameStart: 0, nameLength: 0, reg: compiler.allocReg(), envSlot: -1, envDepth: 0, captured: false, isConst: false, initialized: true, alwaysCheck: false, needsHole: false, nameConst: -1, blockFunction: false, lexical: false, inlineFunction: NO_NODE }));
+      }
       restIndex = i32(compiler.bindings.locals.length - 1);
       p = p + 1;
       continue;
@@ -7168,11 +7172,9 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   while (p < n.childrenCount) {
     const paramIndex = parser.ast.child(node, p);
     const param = parser.ast.node(paramIndex);
-    if (param.kind == NodeKind.restParam) {
-      p = p + 1;
-      continue;
-    }
-    const paramReg = u8(p);
+    // A rest parameter's array is in its local's register by now.
+    const isRest = param.kind == NodeKind.restParam;
+    const paramReg = isRest ? compiler.bindings.locals[usize(restIndex)].reg : u8(p);
     if (param.right != NO_NODE) {
       const undefinedReg = compiler.allocReg();
       compiler.emit(instA(Op.loadUndefined, undefinedReg));
@@ -7192,7 +7194,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       compiler.destructure(in parser, inout runtime, pattern, paramReg);
       compiler.initializing = wasInitializing;
       compiler.resetTemps();
-    } else if (orderedParams) {
+    } else if (orderedParams && !isRest) {
       compiler.initLocal(usize(p), paramReg);
     }
     p = p + 1;
@@ -7313,7 +7315,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   p = 0;
   while (p < n.childrenCount) {
     const param = parser.ast.node(parser.ast.child(node, p));
-    if (param.right != NO_NODE) break;
+    if (param.right != NO_NODE || param.kind == NodeKind.restParam) break;
     expected = expected + 1;
     p = p + 1;
   }
@@ -8073,12 +8075,14 @@ function patternHasDefault(in parser: Parser, pattern: u32): boolean {
 }
 
 // The pattern a parameter node carries: the parser wraps `[a]` / `{a}`
-// parameters in a nameless identifier node whose `third` is the pattern.
+// parameters in a nameless identifier node whose `third` is the pattern,
+// and a rest parameter holds its own on `left`.
 function parameterPattern(in parser: Parser, param: u32): u32 {
   if (param == NO_NODE) return NO_NODE;
   const n = parser.ast.node(param);
   if (n.kind == NodeKind.arrayPattern || n.kind == NodeKind.objectPattern) return param;
   if (n.kind == NodeKind.identExpr && n.nameLength == 0 && n.third != NO_NODE) return n.third;
+  if (n.kind == NodeKind.restParam) return parameterPattern(in parser, n.left);
   return NO_NODE;
 }
 
