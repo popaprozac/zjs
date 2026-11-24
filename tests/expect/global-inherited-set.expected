@@ -1,0 +1,11 @@
+sloppy setter: 5 true own:false getter
+sloppy getter only: own:false kept
+sloppy read-only: own:false 1
+sloppy writable: own:true 5 1
+sloppy nowhere: own:true
+sloppy compound: set 11,set 11
+strict setter: 5 true own:false getter
+strict getter only: TypeError
+strict read-only: TypeError
+strict nowhere: ReferenceError
+strict compound: set 11,set 11

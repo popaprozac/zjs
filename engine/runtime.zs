@@ -12073,6 +12073,21 @@ export struct Runtime {
       return;
     }
     if (this.pendingThrow) return;
+    // A name the global object only inherits: a setter on its
+    // [[Prototype]] chain runs, and a read-only property or a setterless
+    // accessor there refuses, as for a sloppy write (storeGlobalSlow).
+    if (!this.globals[slot].defined && this.heap.objectFindSlot(this.globalObject, atom) < 0) {
+      const proto = this.heap.objectProto(this.globalObject);
+      if (proto != 0) {
+        const step = this.setThroughChain(proto, atom, value, globalObject);
+        if (this.pendingThrow || step == SET_DONE) return;
+        if (step == SET_REFUSED) {
+          const inherited = this.readOnlyError(atom);
+          this.raise(inherited);
+          return;
+        }
+      }
+    }
     if (!this.setProperty(globalObject, cellValue(atom), value) && !this.pendingThrow) {
       const refused = this.readOnlyError(atom);
       this.raise(refused);
