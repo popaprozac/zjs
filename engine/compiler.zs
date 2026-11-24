@@ -2413,9 +2413,9 @@ export struct Compiler {
     return false;
   }
 
-  // From an arrow that calls super(): the derived constructor it is in,
-  // as findConstructorThis finds it. superCallOuter has a byte for the
-  // slot.
+  // From an arrow or eval code that calls super(): the derived
+  // constructor it is in, as findConstructorThis finds it.
+  // superCallOuter has a byte for the slot.
   function outerConstructor(inout this): OuterRef {
     const found = this.findConstructorThis();
     if (!found.found || found.slot > 255) this.hadError = true;
@@ -3672,7 +3672,7 @@ export struct Compiler {
   // Record the scopes a direct eval call sees: the enclosing functions'
   // and this one's, each binding with its environment slot and spelling.
   function addEvalSite(inout this, in parser: Parser): u16 {
-    let site = EvalSite({ names: Array<u8>(), levels: Array<EvalLevel>(), strict: this.strict, inParameters: this.parameterLocals > 0 && !this.isArrow });
+    let site = EvalSite({ names: Array<u8>(), levels: Array<EvalLevel>(), strict: this.strict, inParameters: this.parameterLocals > 0 && !this.isArrow, inField: this.inFieldInitializer() });
     let level: usize = 0;
     while (level < this.outerScopes.length) {
       let bindings = Array<EvalBinding>();
@@ -7060,8 +7060,9 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   // A derived constructor whose arrows read `this` keeps it in the
   // environment as well, so those arrows see it once super() binds it.
-  // One whose super() an arrow may call keeps itself and the function
-  // defining its fields in the two slots after it (superCallOuter).
+  // One whose super() an arrow or eval code may call keeps itself and
+  // the function defining its fields in the two slots after it
+  // (superCallOuter).
   const superOuter = role == 2 && n.left != NO_NODE && n.num != 2.0 && constructorArrowsCallSuper(in parser, node);
   if (role == 2 && n.left != NO_NODE && (superOuter || arrowsUseThis(in parser, n.left))) {
     compiler.thisEnvSlot = i32(compiler.envSize);
@@ -8239,7 +8240,7 @@ function arrowsUseThis(in parser: Parser, node: u32): boolean {
 }
 
 // Whether an arrow function in a derived constructor's parameters or
-// body calls super().
+// body calls super(), or direct eval code there may.
 function constructorArrowsCallSuper(in parser: Parser, node: u32): boolean {
   const n = parser.ast.node(node);
   let i: u32 = 0;
@@ -8260,6 +8261,8 @@ function arrowsCallSuper(in parser: Parser, node: u32, inArrow: boolean): boolea
   if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.staticBlock) return false;
   if (k == NodeKind.methodDef || k == NodeKind.classField) return arrowsCallSuper(in parser, n.third, inArrow);
   if (inArrow && k == NodeKind.call && n.left != NO_NODE && parser.ast.node(n.left).kind == NodeKind.superExpr) return true;
+  // Direct eval code calls super() as an arrow does.
+  if (k == NodeKind.call && isDirectEvalCall(in parser, node)) return true;
   const inside = inArrow || k == NodeKind.arrowFunc;
   if (arrowsCallSuper(in parser, n.left, inside) || arrowsCallSuper(in parser, n.right, inside) || arrowsCallSuper(in parser, n.third, inside)) return true;
   let i: u32 = 0;
@@ -8677,6 +8680,10 @@ export function compileEval(inout parser: Parser, root: u32, inout runtime: Runt
   }
   // Its `this` is the caller's, captured by the closure it runs as.
   if (bodyUsesThis(in parser, root)) compiler.thisReg = i32(compiler.allocReg());
+  // Called in a field's initializer, it is that initializer's code: no
+  // binding of its own is hidden, new.target is undefined, and an eval
+  // call in it is in the initializer too.
+  if (runtime.functions[usize(caller)].evalSites[usize(site)].inField) compiler.bindings.fieldFrom = 0;
   if (!compiler.isFunction) {
     let enclosingLexicals = Array<NameRef>();
     hoistProgramDecls(in parser, inout runtime, inout compiler.declaredGlobals, root, false, inout enclosingLexicals);

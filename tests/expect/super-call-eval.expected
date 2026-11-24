@@ -1,0 +1,43 @@
+eval: true,1,2,3,true
+eval, this afterwards in the eval: 2
+eval in an arrow: 5
+arrow in eval: 6
+eval in eval: 7
+eval twice: A,A,ReferenceError
+eval, fields: 2
+eval, new.target is the subclass: true,true
+eval, value of super(): threw ReferenceError
+eval, spread arguments: 4
+eval reads the constructor's locals: 2
+eval in a parameter default: true
+eval in a block with a let: 7
+eval, super getter afterwards in the constructor: tag of 1
+eval, super getter afterwards in the eval: threw ReferenceError
+eval makes an arrow that is called later: 7
+eval's arrow called after the constructor returned an object: 1,true,A,A,ReferenceError
+eval then the constructor's own super(): A,A,ReferenceError
+the constructor's own super() then eval: A,A,ReferenceError
+eval, fields and their scope: outer,outer,
+eval, private field and method: 4
+an eval that never calls super(): threw ReferenceError
+an eval that never calls super(), then the constructor's own: 2,1
+eval of a nested class with a derived constructor: 2
+many constructions through eval: 45150
+eval in an arrow in a field initializer: threw SyntaxError
+eval in eval in a field initializer: threw SyntaxError
+eval in a field initializer of a class with a written constructor: threw SyntaxError
+eval in a field initializer, the constructor's super() in an arrow: threw SyntaxError
+eval in a static method: threw SyntaxError
+eval in a getter: threw SyntaxError
+eval in an object's method in a derived constructor: threw SyntaxError
+eval of a function that calls super(): threw SyntaxError
+eval at the top of a function: threw SyntaxError
+eval new.target in a function called with new: true
+eval new.target in a function called without new: undefined
+eval new.target in an arrow in a function: true
+arrow in eval reads new.target: true
+eval in eval reads new.target: true
+eval new.target in a derived constructor: true
+eval new.target in a method: undefined
+eval new.target in a field initializer: ,
+eval new.target in a field initializer of a derived class: ,true

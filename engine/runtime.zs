@@ -494,6 +494,7 @@ export struct DirectEval {
   env: u32;
   thisValue: Value;
   home: Value;
+  newTarget: Value;
 }
 
 // What an out-of-line instruction leaves the dispatch loop: where to go
@@ -9934,7 +9935,11 @@ export struct Runtime {
           const calling = this.frames[frameIndex].callee;
           const atomHome = this.atomHome;
           const home = isCell(calling) && asCell(calling) != 0 ? this.functionHidden(asCell(calling), atomHome) : undefinedValue();
-          this.directEval = DirectEval({ active: true, caller: fi, site: u32(bcU16(word)), env: env, thisValue: thisValue, home: home });
+          // And its new.target, as loadNewTarget reads it.
+          const atomNewTarget = this.atomNewTarget;
+          let newTarget = this.frames[frameIndex].newTarget;
+          if (this.functions[usize(fi)].isArrow) newTarget = isCell(calling) && asCell(calling) != 0 ? this.functionHidden(asCell(calling), atomNewTarget) : undefinedValue();
+          this.directEval = DirectEval({ active: true, caller: fi, site: u32(bcU16(word)), env: env, thisValue: thisValue, home: home, newTarget: newTarget });
         }
         const produced = this.callValue(callee, undefinedValue(), move args);
         if (!this.pendingThrow) this.setReg(base, inst.a, produced);
@@ -12129,7 +12134,7 @@ export function createRuntime(): Runtime {
     pendingThrow: false, pendingValue: undefinedValue(),
     objectProto: 0, functionProto: 0, arrayProto: 0, stringProto: 0, numberProto: 0, booleanProto: 0, symbolProto: 0,
     randomState: 0x9E3779B97F4A7C15, concatScratch: Array<u8>(), numberText: [u8(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], joining: Array<u32>(), jsonTextHint: 0, execShapeClass: 0, promiseClass: 0, generatorClass: 0, iterResultClass: 0, execProtoClass: 0, execSlot: 0, execLastIndexSlot: 0, execFlagsSlot: 0, flagsProtoClass: 0, flagAccessors: Array<FlagAccessor>(), flagsShapeClass: 0, flagsBitsSlot: 0, lastResult: undefinedValue(),
-    hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue(), home: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
+    hostTable: Array<HostFunction>(), evalHostId: 0xFFFF_FFFF, directEval: DirectEval({ active: false, caller: 0, site: 0, env: 0, thisValue: undefinedValue(), home: undefinedValue(), newTarget: undefinedValue() }), sharedHosts: Array<u32>(), globalObject: 0, tempRoots: Array<Value>(),
     atomLength: 0, atomPrototype: 0, atomConstructor: 0, atomName: 0, atomMessage: 0, atomEmpty: 0, atomDone: 0, atomValue: 0, atomThen: 0, atomNext: 0, atomReturn: 0, atomThrow: 0, atomResolve: 0, atomPrimitive: 0,
     atomArgumentsMarker: 0, atomCallee: 0, indexAtoms: Array<u32>(), argumentsClasses: Array<u32>(), iteratorProto: 0, arrayIteratorProto: 0, atomIterSource: 0, atomIterIndex: 0, atomIterKind: 0, arrayIteratorNext: 0,
     generatorProto: 0, atomGenRecord: 0,

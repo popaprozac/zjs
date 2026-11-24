@@ -3989,13 +3989,14 @@ export function parseText(source: String, isModule: boolean): ParseResult {
 }
 
 export function parseProgram(source: Array<u8>, isModule: boolean, stackFloor: usize): ParseResult {
-  return parseScript(move source, isModule, false, false, stackFloor);
+  return parseScript(move source, isModule, false, false, false, stackFloor);
 }
 
 // A program parsed as its caller says: direct eval code is strict from
-// the start when called from strict code, and may write `super.x` when
-// the calling function has a home object (`superProperty`).
-export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, superProperty: boolean, stackFloor: usize): ParseResult {
+// the start when called from strict code, may write `super.x` when
+// the calling function has a home object (`superProperty`), and may
+// call super() when the call is in a derived constructor (`superCall`).
+export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, superProperty: boolean, superCall: boolean, stackFloor: usize): ParseResult {
   const sourceLength = u32(source.length);
   const byteCount = source.length;
   let stackSpent = false;
@@ -4017,7 +4018,7 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     isModule: isModule,
     inGenerator: false,
     strictMode: strict,
-    inDerivedConstructor: false,
+    inDerivedConstructor: superCall,
     superProperty: superProperty,
     inStaticBlock: false,
     staticBlockDepth: 0,

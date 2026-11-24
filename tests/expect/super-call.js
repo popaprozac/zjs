@@ -167,7 +167,7 @@ show("derived constructor inside the arrow's class", () => {
   return [b.a, b.inner].join();
 });
 
-// Direct eval code may not call super() (yet, in a derived constructor)
+// Direct eval code may not call super() where its call may not (super-call-eval.js has the rest)
 show("indirect eval", () => {
   class B extends A { constructor() { (0, eval)("super()"); } }
   return new B();

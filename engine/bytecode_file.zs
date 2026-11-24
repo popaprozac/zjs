@@ -295,6 +295,7 @@ function putEvalSite(sites: Slice<EvalSite>, site: usize, inout buffer: Array<u8
   }
   putU8(inout buffer, sites[site].strict ? 1 : 0);
   putU8(inout buffer, sites[site].inParameters ? 1 : 0);
+  putU8(inout buffer, sites[site].inField ? 1 : 0);
 }
 
 function putFunction(inout runtime: Runtime, inout buffer: Array<u8>, inout writer: Writer, fi: u32): void {
@@ -583,8 +584,9 @@ function getEvalSite(bytes: Slice<u8>, inout reader: Reader): EvalSite {
   }
   const strict = getU8(bytes, inout reader);
   const inParameters = getU8(bytes, inout reader);
-  if (strict > 1 || inParameters > 1) reader.failed = true;
-  return EvalSite({ names: move names, levels: move levels, strict: strict == 1, inParameters: inParameters == 1 });
+  const inField = getU8(bytes, inout reader);
+  if (strict > 1 || inParameters > 1 || inField > 1) reader.failed = true;
+  return EvalSite({ names: move names, levels: move levels, strict: strict == 1, inParameters: inParameters == 1, inField: inField == 1 });
 }
 
 // One function: checked, and installed at `base + position` when the

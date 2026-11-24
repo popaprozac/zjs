@@ -298,7 +298,7 @@ export enum Op {
   // takes the literal here, and a static block's function, and a static
   // field initializer's, their class.
   setHome,
-  // super(...) in an arrow function (or eval code) inside a derived
+  // super(...) in an arrow function or direct eval code inside a derived
   // constructor: as superCall, with the constructor found in that
   // constructor's environment, c hops out, where slot d holds its `this`
   // and the next two the constructor and the function defining its
@@ -811,7 +811,7 @@ export function opsByCode(): Array<Op> {
 // operands, and what each does. Moves whenever any of them changes, so a
 // file from another engine is refused rather than misread; the test
 // below pins it beside the opcode count, which a new opcode changes.
-export const INSTRUCTION_SET_VERSION: u32 = 8;
+export const INSTRUCTION_SET_VERSION: u32 = 9;
 
 // One property access site's inline cache, kept per property name of a
 // function: the receiver's hidden class and where the property was
@@ -946,6 +946,10 @@ export struct EvalSite {
   // The call is in a function's parameter list (not an arrow's), where
   // the code may not declare `arguments` either.
   inParameters: boolean;
+  // The call is in an instance field's initializer (or an arrow in
+  // one), which is no constructor's code: the code may not call super(),
+  // and its new.target is undefined.
+  inField: boolean;
 }
 
 // One compiled function. Fields beyond the code and constants are added
@@ -1024,7 +1028,7 @@ test "the instruction set version moves with the opcodes" {
   // A new opcode lands here first: move INSTRUCTION_SET_VERSION with it.
   const ops = opsByCode();
   expect(ops.length).toEqual(208);
-  expect(INSTRUCTION_SET_VERSION).toEqual(8);
+  expect(INSTRUCTION_SET_VERSION).toEqual(9);
   let code: usize = 0;
   while (code < ops.length) {
     expect(opCode(ops[code])).toEqual(i32(code));

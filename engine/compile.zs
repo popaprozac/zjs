@@ -23,9 +23,26 @@ function compileScriptSource(inout runtime: Runtime, source: Array<u8>): i32 on 
   return index;
 }
 
+// Whether direct eval code at this site may call super(): the function
+// the call is in, past any arrows, is a derived constructor (it keeps
+// `this` in its environment for such code), and the call is not in a
+// field's initializer.
+function evalMayCallSuper(in runtime: Runtime, caller: u32, site: u32): boolean {
+  if (runtime.functions[usize(caller)].evalSites[usize(site)].inField) return false;
+  let level = runtime.functions[usize(caller)].evalSites[usize(site)].levels.length;
+  while (level > 0) {
+    level = level - 1;
+    if (!runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].isArrow) {
+      return runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].thisSlot >= 0;
+    }
+  }
+  return false;
+}
+
 function compileEvalSource(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32, inMethod: boolean): i32 on thread.any {
   const strict = runtime.functions[usize(caller)].evalSites[usize(site)].strict;
-  let parsed = parseScript(move source, false, strict, inMethod, runtime.stackFloor());
+  const superCall = evalMayCallSuper(in runtime, caller, site);
+  let parsed = parseScript(move source, false, strict, inMethod, superCall, runtime.stackFloor());
   if (parsed.hadError) return parsed.parser.stackSpent ? COMPILE_STACK : COMPILE_PARSE_ERROR;
   const index = compileEval(inout parsed.parser, parsed.root, inout runtime, caller, site);
   if (index < 0) return compileStopped(inout runtime);

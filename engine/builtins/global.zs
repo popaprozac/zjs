@@ -48,6 +48,12 @@ function evalDirect(inout runtime: Runtime, source: Array<u8>, direct: DirectEva
     const atomHome = runtime.atomHome;
     runtime.setFunctionHidden(closure, atomHome, direct.home);
   }
+  // And the caller's new.target, which the code reads as an arrow does,
+  // and which super() in it constructs the parent with.
+  if (!isUndefined(direct.newTarget)) {
+    const atomNewTarget = runtime.atomNewTarget;
+    runtime.setFunctionHidden(closure, atomNewTarget, direct.newTarget);
+  }
   return runtime.callValue(cellValue(closure), direct.thisValue, Array<Value>());
 }
 
