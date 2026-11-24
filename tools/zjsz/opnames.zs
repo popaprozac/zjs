@@ -200,6 +200,8 @@ export function opName(op: Op): String {
     deleteWithVar => "deleteWithVar";
     storeWithHolder => "storeWithHolder";
     setHome => "setHome";
+    superCallOuter => "superCallOuter";
+    spreadSuperCallOuter => "spreadSuperCallOuter";
     declareEvalVar => "declareEvalVar";
     toStringOp => "toStringOp";
     concatN => "concatN";

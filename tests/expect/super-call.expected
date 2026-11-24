@@ -1,0 +1,70 @@
+arrow, immediately called: true,1,2,3,true
+arrow, value of super(): true
+arrow, called later in the constructor: 7
+arrow in an arrow: 8
+arrow, spread arguments: 4,5
+arrow, arguments evaluated in the arrow: 5,6
+this before the arrow runs: threw ReferenceError
+this in the constructor after the arrow: 2
+this in the arrow after super(): 2
+this in another arrow after the arrow: 3
+never called: threw ReferenceError
+called twice: A,A,ReferenceError
+constructor then arrow: A,A,ReferenceError
+arrow then constructor: A,A,ReferenceError
+new.target is the subclass: true,true
+parent read when super() runs: 1
+parent not a constructor: threw TypeError
+fields after the arrow's super(): 2,5
+fields see the arrow's super() once: 1
+private method after the arrow's super(): pm
+arrow called through a builtin: 9
+arrow called from another function: 3
+arrow in a parameter default: 4
+returned object, arrow called afterwards: 1,true,A,A,ReferenceError
+arrow called after the constructor threw: true
+super() throws inside the arrow: threw RangeError
+super.m() in the arrow after super(): A.m
+try, finally with the arrow: 1
+return override then arrow in finally: undefined
+async arrow: 1
+derived constructor inside the arrow's class: 1,2
+indirect eval: threw SyntaxError
+eval in a base constructor: threw SyntaxError
+eval in a method: threw SyntaxError
+eval in a function in a derived constructor: threw SyntaxError
+eval in a field initializer: threw SyntaxError
+eval in a static block of a derived class: threw SyntaxError
+arrow in a derived constructor: accepted
+arrow in a base constructor: SyntaxError
+arrow in a method: SyntaxError
+arrow in a field initializer: SyntaxError
+arrow in a static block: SyntaxError
+function in a derived constructor: SyntaxError
+function expression in a derived constructor: SyntaxError
+method of an object in a derived constructor: SyntaxError
+class method in a derived constructor: SyntaxError
+base class constructor in a derived constructor: SyntaxError
+parameter default of a derived constructor: accepted
+arrow at the top level: SyntaxError
+getter of a derived class: SyntaxError
+static method of a derived class: SyntaxError
+super getter in the constructor after the arrow: tag of 1
+super getter in the arrow after super(): tag of 2
+super getter after an arrow called through a builtin: tag of 3
+super setter in the constructor after the arrow: m
+arrow made in a block with a captured let: 5
+arrow made in a loop: 1
+parameter default calls the arrow at once: true
+returns a number after the arrow's super(): threw TypeError
+returns an object after the arrow's super(): 1
+the outer construction's arrow called inside an inner one: outer,outer,inner,inner,true
+the same class constructed inside before the arrow runs: 2,1,0,
+a field initializer throws in the arrow's super(): RangeError,1,false
+field initializer's scope: outer,outer,
+field initializers run in order, once: p,q,ReferenceError
+computed and private fields: 1,true
+accessor and method on the instance after the arrow: 12
+a subclass with its own fields: 1,2,true
+an unrelated arrow reads this before and after: ReferenceError,A,true
+many constructions: 2001000

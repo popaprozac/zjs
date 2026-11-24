@@ -376,6 +376,9 @@ struct CompiledFunction {
 
 // compileFunction's role for a module's function (docs/modules.md).
 const ROLE_MODULE: u32 = 4;
+// And for the arrow the parser makes of a derived class's field
+// statements, which defines the fields when super() ran in an arrow.
+const ROLE_FIELDS: u32 = 5;
 
 // At most this many pieces join in one concatN (emitConcat).
 const CONCAT_CHUNK: u32 = 32;
@@ -2408,6 +2411,15 @@ export struct Compiler {
       if (this.outerScopes[level].bindings.fieldFrom >= 0) return true;
     }
     return false;
+  }
+
+  // From an arrow that calls super(): the derived constructor it is in,
+  // as findConstructorThis finds it. superCallOuter has a byte for the
+  // slot.
+  function outerConstructor(inout this): OuterRef {
+    const found = this.findConstructorThis();
+    if (!found.found || found.slot > 255) this.hadError = true;
+    return found;
   }
 
   // After super() binds `this`: the environment copy for the arrows.
@@ -5073,6 +5085,11 @@ export struct Compiler {
         const argsReg = this.allocReg();
         this.compileArgumentsArray(in parser, inout runtime, node, argsReg);
         const dst = this.allocReg();
+        if (this.isArrow) {
+          const outer = this.outerConstructor();
+          this.emit(instABCD(Op.spreadSuperCallOuter, dst, argsReg, outer.hops, u8(outer.slot)));
+          return dst;
+        }
         this.emit(instAB(Op.spreadSuperCall, dst, argsReg));
         this.emitThisToEnv();
         this.emitFieldInitializers(in parser, inout runtime);
@@ -5125,6 +5142,14 @@ export struct Compiler {
           if (argReg != base + 1 + u8(a)) this.emit(instAB(Op.mov, base + 1 + u8(a), argReg));
           this.nextReg = base + u8(1 + argCount);
           a = a + 1;
+        }
+        if (this.isArrow) {
+          // The constructor is a function out: its environment has what
+          // super() needs, and the instruction defines the fields.
+          const outer = this.outerConstructor();
+          this.emit(instABCD(Op.superCallOuter, base, u8(argCount), outer.hops, u8(outer.slot)));
+          this.nextReg = base + 1;
+          return base;
         }
         this.emit(instABC(Op.superCall, base, base + 1, u8(argCount)));
         this.nextReg = base + 1;
@@ -7035,9 +7060,12 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   }
   // A derived constructor whose arrows read `this` keeps it in the
   // environment as well, so those arrows see it once super() binds it.
-  if (role == 2 && n.left != NO_NODE && arrowsUseThis(in parser, n.left)) {
+  // One whose super() an arrow may call keeps itself and the function
+  // defining its fields in the two slots after it (superCallOuter).
+  const superOuter = role == 2 && n.left != NO_NODE && n.num != 2.0 && constructorArrowsCallSuper(in parser, node);
+  if (role == 2 && n.left != NO_NODE && (superOuter || arrowsUseThis(in parser, n.left))) {
     compiler.thisEnvSlot = i32(compiler.envSize);
-    compiler.envSize = compiler.envSize + 1;
+    compiler.envSize = compiler.envSize + (superOuter ? 3 : 1);
     compiler.hasEnv = true;
   }
   if (!compiler.strict && ownsDirectEval(in parser, node)) {
@@ -7063,6 +7091,20 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
     const uninitialized = compiler.allocReg();
     compiler.emit(instA(Op.loadHole, uninitialized));
     compiler.emit(compiler.envSlotInst(Op.storeEnvSlot, uninitialized, 0, i32(compiler.thisEnvSlot)));
+    compiler.resetTemps();
+  }
+  if (superOuter) {
+    const held = compiler.allocReg();
+    compiler.emit(instA(Op.loadCallee, held));
+    compiler.emit(compiler.envSlotInst(Op.storeEnvSlot, held, 0, compiler.thisEnvSlot + 1));
+    if (fieldCount > 0 && n.right != NO_NODE) {
+      // The fields' scope is the class body's: nothing of this
+      // constructor's is in it (as in compileFieldStatement).
+      compiler.bindings.fieldFrom = i32(compiler.bindings.locals.length);
+      compiler.emitClassFunction(in parser, inout runtime, n.right, held, 0, 0, 0, ROLE_FIELDS, fieldCount);
+      compiler.bindings.fieldFrom = -1;
+      compiler.emit(compiler.envSlotInst(Op.storeEnvSlot, held, 0, compiler.thisEnvSlot + 2));
+    }
     compiler.resetTemps();
   }
   if (orderedParams) compiler.emitHoles(0);
@@ -7165,7 +7207,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
   // A constructor's instance fields: inline first for a base class,
   // after each super() for a derived one. A synthesized derived
   // constructor forwards its arguments to the parent.
-  if (role == 1 || role == 2) {
+  if (role == 1 || role == 2 || role == ROLE_FIELDS) {
     compiler.fieldSource = n.left;
     compiler.fieldCount = fieldCount;
   }
@@ -7220,7 +7262,7 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
         const kind = parser.ast.node(statement).kind;
         if (kind != NodeKind.functionDecl) {
           if (b < fieldCount) {
-            if (role == 1) compiler.compileFieldStatement(in parser, inout runtime, statement);
+            if (role == 1 || role == ROLE_FIELDS) compiler.compileFieldStatement(in parser, inout runtime, statement);
           } else if (role == ROLE_MODULE && kind == NodeKind.importDecl) {
             // Bound when the module links.
           } else if (role == ROLE_MODULE && kind == NodeKind.exportDecl) {
@@ -8191,6 +8233,38 @@ function arrowsUseThis(in parser: Parser, node: u32): boolean {
   let i: u32 = 0;
   while (i < n.childrenCount) {
     if (arrowsUseThis(in parser, parser.ast.child(node, i))) return true;
+    i = i + 1;
+  }
+  return false;
+}
+
+// Whether an arrow function in a derived constructor's parameters or
+// body calls super().
+function constructorArrowsCallSuper(in parser: Parser, node: u32): boolean {
+  const n = parser.ast.node(node);
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (arrowsCallSuper(in parser, parser.ast.child(node, i), false)) return true;
+    i = i + 1;
+  }
+  return arrowsCallSuper(in parser, n.left, false);
+}
+
+// Whether `node` holds a super() call inside an arrow function, `inArrow`
+// when it is in one already. No other kind of function is entered: of a
+// class member only its computed key is the constructor's code.
+function arrowsCallSuper(in parser: Parser, node: u32, inArrow: boolean): boolean {
+  if (node == NO_NODE) return false;
+  const n = parser.ast.node(node);
+  const k = n.kind;
+  if (k == NodeKind.functionDecl || k == NodeKind.functionExpr || k == NodeKind.staticBlock) return false;
+  if (k == NodeKind.methodDef || k == NodeKind.classField) return arrowsCallSuper(in parser, n.third, inArrow);
+  if (inArrow && k == NodeKind.call && n.left != NO_NODE && parser.ast.node(n.left).kind == NodeKind.superExpr) return true;
+  const inside = inArrow || k == NodeKind.arrowFunc;
+  if (arrowsCallSuper(in parser, n.left, inside) || arrowsCallSuper(in parser, n.right, inside) || arrowsCallSuper(in parser, n.third, inside)) return true;
+  let i: u32 = 0;
+  while (i < n.childrenCount) {
+    if (arrowsCallSuper(in parser, parser.ast.child(node, i), inside)) return true;
     i = i + 1;
   }
   return false;

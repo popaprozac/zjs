@@ -2107,9 +2107,12 @@ export struct Parser {
     }
     this.advance();
     if (!this.expectKind(TokenKind.lParen)) return NO_NODE;
-    // A function has no home object, whatever it is written in.
+    // A function has no home object, whatever it is written in, and is
+    // no constructor of a derived class to call super() from.
     const savedSuper = this.superProperty;
     this.superProperty = false;
+    const savedDerived = this.inDerivedConstructor;
+    this.inDerivedConstructor = false;
     const params = this.parseParamList();
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
     if (this.peekKind() != TokenKind.lBrace) {
@@ -2118,6 +2121,7 @@ export struct Parser {
     }
     const body = this.parseFunctionBody(isAsync, isGenerator);
     this.superProperty = savedSuper;
+    this.inDerivedConstructor = savedDerived;
     if (body == NO_NODE) return NO_NODE;
     if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
       this.hadError = true;
@@ -2156,9 +2160,12 @@ export struct Parser {
       nameLength = nameToken.length;
     }
     if (!this.expectKind(TokenKind.lParen)) return NO_NODE;
-    // A function has no home object, whatever it is written in.
+    // A function has no home object, whatever it is written in, and is
+    // no constructor of a derived class to call super() from.
     const savedSuper = this.superProperty;
     this.superProperty = false;
+    const savedDerived = this.inDerivedConstructor;
+    this.inDerivedConstructor = false;
     const params = this.parseParamList();
     if (!this.expectKind(TokenKind.rParen)) return NO_NODE;
     if (this.peekKind() != TokenKind.lBrace) {
@@ -2167,6 +2174,7 @@ export struct Parser {
     }
     const body = this.parseFunctionBody(isAsync, isGenerator);
     this.superProperty = savedSuper;
+    this.inDerivedConstructor = savedDerived;
     if (body == NO_NODE) return NO_NODE;
     if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
       this.hadError = true;
@@ -2343,6 +2351,8 @@ export struct Parser {
           this.inGenerator = isGenerator;
           const savedSuper = this.superProperty;
           this.superProperty = true;
+          const savedDerived = this.inDerivedConstructor;
+          this.inDerivedConstructor = false;
           let params = this.parseParamList();
           if (!this.expectKind(TokenKind.rParen)) {
             this.inAsync = savedAsync;
@@ -2359,6 +2369,7 @@ export struct Parser {
           this.inGenerator = savedGenerator;
           value = this.parseMethodFunction(bracket.start, isAsync, isGenerator, inout params);
           this.superProperty = savedSuper;
+          this.inDerivedConstructor = savedDerived;
           if (value == NO_NODE) break;
         } else {
           this.hadError = true;
@@ -2413,6 +2424,8 @@ export struct Parser {
         if (!this.expectKind(TokenKind.lParen)) break;
         const savedSuper = this.superProperty;
         this.superProperty = true;
+        const savedDerived = this.inDerivedConstructor;
+        this.inDerivedConstructor = false;
         const params = this.parseParamList();
         if (!this.expectKind(TokenKind.rParen)) break;
         if (this.peekKind() != TokenKind.lBrace) {
@@ -2423,6 +2436,7 @@ export struct Parser {
         const body = this.parseBlock();
         this.functionDepth = this.functionDepth - 1;
         this.superProperty = savedSuper;
+        this.inDerivedConstructor = savedDerived;
         if (body == NO_NODE) break;
         const accessor = this.ast.newNode(NodeKind.functionExpr, realName.start, this.endOf(body));
         this.ast.setConciseMethod(accessor);
@@ -2463,6 +2477,8 @@ export struct Parser {
         this.inGenerator = isGenerator;
         const savedSuper = this.superProperty;
         this.superProperty = true;
+        const savedDerived = this.inDerivedConstructor;
+        this.inDerivedConstructor = false;
         let params = this.parseParamList();
         if (!this.expectKind(TokenKind.rParen)) {
           this.inAsync = savedAsync;
@@ -2479,6 +2495,7 @@ export struct Parser {
         this.inGenerator = savedGenerator;
         const body = this.parseFunctionBody(isAsync, isGenerator);
         this.superProperty = savedSuper;
+        this.inDerivedConstructor = savedDerived;
         if (body == NO_NODE) break;
         if (!this.paramsAreSimple(in params) && this.bodyHasUseStrictDirective(body)) {
           this.hadError = true;
@@ -3582,6 +3599,18 @@ export struct Parser {
             statements.push(assignment);
           }
           s3 = s3 + 1;
+        }
+        // A derived constructor's super() may run in an arrow inside it,
+        // which then defines the fields as well: the same statements as
+        // the body of an arrow, at `right`, for the compiler to make a
+        // function of in that case.
+        if (isDerived && this.node(constructorElement).num != 2.0 && statements.length > 0) {
+          const at = this.startOf(statements[0]);
+          const fieldsBlock = this.ast.newNode(NodeKind.blockStmt, at, at);
+          this.ast.setChildren(fieldsBlock, in statements);
+          const fieldsArrow = this.ast.newNode(NodeKind.arrowFunc, at, at);
+          this.ast.setLeft(fieldsArrow, fieldsBlock);
+          this.ast.setRight(constructorElement, fieldsArrow);
         }
         const existing = this.node(block).childrenCount;
         let bi: u32 = 0;

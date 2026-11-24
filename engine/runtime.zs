@@ -8152,9 +8152,30 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
+    const newTarget = this.frames[frameIndex].newTarget;
+    const result = this.constructParent(asCell(callee), newTarget, first, argc, spread);
+    if (this.pendingThrow) return undefinedValue();
+    // The parent runs first; binding `this` a second time is the error.
+    if (!isDeleted(this.frames[frameIndex].constructThis)) {
+      const message: String = "Super constructor may only be called once";
+      const error = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
+      this.raise(error);
+      return undefinedValue();
+    }
+    this.frames[frameIndex].constructThis = result;
+    this.hostThis = result;
+    const thisReg = this.functions[usize(code)].thisReg;
+    const regsBase = this.frames[frameIndex].regsBase;
+    if (thisReg >= 0) this.setReg(regsBase, u8(thisReg), result);
+    return result;
+  }
+
+  // The parent of the derived constructor in cell `derived`, constructed
+  // with `newTarget` and the arguments superConstruct describes.
+  inline function constructParent(inout this, derived: u32, newTarget: Value, first: u32, argc: u32, spread: u32): Value {
     // GetSuperConstructor: the active function's [[Prototype]] now, so a
     // class re-parented with setPrototypeOf constructs its new parent.
-    const parentHandle = this.functionProtoOf(asCell(callee));
+    const parentHandle = this.functionProtoOf(derived);
     const parent = parentHandle == 0 ? nullValue() : cellValue(parentHandle);
     if (!this.isConstructorValue(parent)) {
       const message: String = "Super constructor is not a constructor";
@@ -8162,7 +8183,6 @@ export struct Runtime {
       this.raise(error);
       return undefinedValue();
     }
-    const newTarget = this.frames[frameIndex].newTarget;
     const count = spread == 0 ? argc : this.heap.arrayLength(spread);
     let result = undefinedValue();
     if (this.isHostFunctionValue(parent)) {
@@ -8196,20 +8216,73 @@ export struct Runtime {
       this.regTop = argsBase + count;
       result = this.constructPlaced(parent, argsBase, count, newTarget);
     }
+    return result;
+  }
+
+  // The environment `hops` out from the frame's.
+  function outerEnv(frameIndex: usize, hops: u32): u32 {
+    let env = this.frames[frameIndex].env;
+    let left = hops;
+    while (left > 0) {
+      env = this.heap.linkOf(env);
+      left = left - 1;
+    }
+    return env;
+  }
+
+  // super(...args) from an arrow function inside a derived constructor,
+  // whose environment is `hops` out: slot `slot` there holds that
+  // constructor's `this` (a hole until bound), the next the constructor
+  // itself, the one after the function that defines its fields, if it
+  // has any. The arrow carries the constructor's new.target. The binding
+  // is the environment's, which outlives the constructor's call; while
+  // that call is still running, its frame and `this` register take the
+  // value too, so the constructor's own code needs no other way to read
+  // it.
+  function superConstructOuter(inout this, frameIndex: usize, first: u32, argc: u32, spread: u32, hops: u32, slot: u32): Value {
+    // The constructor put itself there on entry (compileFunction).
+    const derived = asCell(this.heap.slot(this.outerEnv(frameIndex, hops), slot + 1));
+    const arrow = this.frames[frameIndex].callee;
+    const atomNewTarget = this.atomNewTarget;
+    const newTarget = isCell(arrow) && asCell(arrow) != 0 ? this.functionHidden(asCell(arrow), atomNewTarget) : undefinedValue();
+    const result = this.constructParent(derived, newTarget, first, argc, spread);
     if (this.pendingThrow) return undefinedValue();
-    // The parent runs first; binding `this` a second time is the error.
-    if (!isDeleted(this.frames[frameIndex].constructThis)) {
+    // Read again: the parent ran in between.
+    const env = this.outerEnv(frameIndex, hops);
+    if (!isHole(this.heap.slot(env, slot))) {
       const message: String = "Super constructor may only be called once";
       const error = this.makeError(ERROR_KIND_REFERENCE, bytesOf(in message));
       this.raise(error);
       return undefinedValue();
     }
-    this.frames[frameIndex].constructThis = result;
+    this.heap.setSlot(env, slot, result);
     this.hostThis = result;
-    const thisReg = this.functions[usize(code)].thisReg;
-    const regsBase = this.frames[frameIndex].regsBase;
-    if (thisReg >= 0) this.setReg(regsBase, u8(thisReg), result);
-    return result;
+    // The constructor's call, if it is still on the stack: the frame of
+    // that function whose environments lead to this one.
+    const made = asCell(this.heap.slot(env, slot + 1));
+    let index = frameIndex;
+    while (index > 0) {
+      index = index - 1;
+      const running = this.frames[index].callee;
+      if (isCell(running) && asCell(running) == made) {
+        let inner = this.frames[index].env;
+        while (inner != 0 && inner != env) { inner = this.heap.linkOf(inner); }
+        if (inner == env) {
+          this.frames[index].constructThis = result;
+          // What the frame above saved is this frame's `this`.
+          this.frames[index + 1].savedThis = result;
+          const thisReg = this.functions[usize(this.heap.functionIndex(made))].thisReg;
+          if (thisReg >= 0) this.setStackAt(usize(this.frames[index].regsBase + u32(thisReg)), result);
+          break;
+        }
+      }
+    }
+    const fields = this.heap.slot(env, slot + 2);
+    if (!this.isCallable(fields)) return result;
+    const ignored = this.callValue(fields, undefinedValue(), Array<Value>());
+    if (this.pendingThrow) return undefinedValue();
+    // The fields ran: the binding is where the value is now.
+    return this.heap.slot(this.outerEnv(frameIndex, hops), slot);
   }
 
   // The name a method gets from its property key: a symbol's description
@@ -10178,6 +10251,16 @@ export struct Runtime {
           const spread = op == Op.spreadSuperCall ? asCell(this.reg(base, inst.b)) : u32(0);
           this.frames[frameIndex].ip = ip;
           const constructed = this.superConstruct(frameIndex, base + u32(inst.b), u32(inst.c), spread);
+          if (this.pendingThrow) {
+            // The throw stays pending for the loop to take.
+          } else {
+            this.setReg(base, inst.a, constructed);
+          }
+        } else if (op == Op.superCallOuter || op == Op.spreadSuperCallOuter) {
+          const spread = op == Op.spreadSuperCallOuter ? asCell(this.reg(base, inst.b)) : u32(0);
+          const argc: u32 = op == Op.superCallOuter ? u32(inst.b) : 0;
+          this.frames[frameIndex].ip = ip;
+          const constructed = this.superConstructOuter(frameIndex, base + u32(inst.a) + 1, argc, spread, u32(inst.c), u32(inst.d));
           if (this.pendingThrow) {
             // The throw stays pending for the loop to take.
           } else {
