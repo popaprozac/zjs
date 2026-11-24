@@ -1,0 +1,91 @@
+SyntaxError 0  new.target
+SyntaxError 0  new.target.x
+SyntaxError 0  new new.target
+SyntaxError 0  typeof new.target
+SyntaxError 0  new.target?.x
+SyntaxError 0  [new.target]
+SyntaxError 0  ({ a: new.target })
+SyntaxError 0  ({ [new.target]: 1 })
+SyntaxError 0  ({ ...new.target })
+SyntaxError 0  `${new.target}`
+SyntaxError 0  var a = new.target
+SyntaxError 0  let { a = new.target } = {}
+SyntaxError 0  if (new.target) {}
+SyntaxError 0  for (;new.target;) {}
+SyntaxError 0  x: { new.target; }
+SyntaxError 0  try {} catch (e) { new.target; }
+SyntaxError 0  switch (1) { case new.target: }
+SyntaxError 0  () => new.target
+SyntaxError 0  () => () => new.target
+SyntaxError 0  (a = new.target) => a
+SyntaxError 0  ({ a = new.target }) => a
+SyntaxError 0  async () => new.target
+SyntaxError 0  async (a = new.target) => a
+SyntaxError 0  ({ a: () => new.target })
+SyntaxError 0  (class { [new.target]() {} })
+SyntaxError 0  (class { static [new.target]() {} })
+SyntaxError 0  (class { get [new.target]() { return 1; } })
+SyntaxError 0  (class { [new.target] = 1 })
+SyntaxError 0  (class { static [new.target] = 1 })
+SyntaxError 0  (class extends new.target {})
+SyntaxError 0  (class { [(() => new.target)()]() {} })
+SyntaxError 0  ({ [new.target]() {} })
+SyntaxError 0  ({ get [new.target]() { return 1; } })
+SyntaxError 1  eval('new.target')
+SyntaxError 1  eval('() => new.target')
+SyntaxError 1  (() => eval('new.target'))()
+SyntaxError 1  eval('eval("new.target")')
+SyntaxError 1  (0, eval)('new.target')
+SyntaxError 1  (class { [eval('new.target')]() {} })
+SyntaxError 1  ({ [eval('new.target')]: 1 })
+SyntaxError 1  (class extends eval('new.target') {})
+ok 1  (function () { return new.target; })
+ok 1  (function (a = new.target) { return a; })
+ok 1  (function () { return () => new.target; })
+ok 1  (function* () { yield new.target; })
+ok 1  (async function () { return new.target; })
+ok 1  function f() { return new.target; }
+ok 1  function g(a = () => new.target) { return a; }
+ok 1  ({ m() { return new.target; } })
+ok 1  ({ m(a = new.target) { return a; } })
+ok 1  ({ get x() { return new.target; } })
+ok 1  ({ set x(v = new.target) {} })
+ok 1  ({ f: function () { return new.target; } })
+ok 1  ({ *g() { yield new.target; } })
+ok 1  (class { constructor() { new.target; } })
+ok 1  (class { constructor(a = new.target) {} })
+ok 1  (class { m() { return new.target; } })
+ok 1  (class { static m(a = new.target) { return a; } })
+ok 1  (class { get x() { return new.target; } })
+ok 1  (class { x = new.target })
+ok 1  (class { x = () => new.target })
+ok 1  (class { #x = new.target })
+ok 1  (class extends Object { x = new.target })
+ok 1  (class extends Object { constructor() { super(); } x = new.target })
+ok 1  (class { static x = new.target })
+ok 1  (class { static x = () => new.target })
+ok 1  (class { static { new.target; } })
+ok 1  (class { static { (() => new.target)(); } })
+ok 1  (class { x = class { [new.target]() {} } })
+ok 1  (class { static x = { [new.target]: 1 } })
+ok 1  (class { x = eval('new.target') })
+ok 1  (class { static x = eval('new.target') })
+ok 1  (class { static { eval('new.target'); } })
+ok 1  (function () { return eval('new.target'); })()
+ok 1  (function () { return (() => eval('new.target'))(); })()
+ok 1  (function () { return eval('eval("new.target")'); })()
+ok 1  (function () { return eval('() => new.target')(); })()
+ok 1  ({ m() { return eval('new.target'); } }).m()
+ok 1  new Function('return new.target')()
+ok 1  new Function('return eval("new.target")')()
+ok 1  new Function('a = new.target', 'return a')()
+ok 1  (function () { return 'new.target'; })()
+ok 1  this === (function () { return new.target; })
+ok 1  'new.target'
+ok 1  /new.target/
+ok 1  ({ new: { target: 1 } }).new.target
+SyntaxError 1  (function () { return (0, eval)('new.target'); })()
+SyntaxError 1  (function () { return (0, eval)('() => new.target'); })()
+SyntaxError 1  new (class { x = (0, eval)('new.target') })()
+SyntaxError 1  new (class { x = () => (0, eval)('new.target') })().x()
+SyntaxError 1  (class { static x = (0, eval)('new.target') })

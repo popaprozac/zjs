@@ -39,11 +39,24 @@ function evalMayCallSuper(in runtime: Runtime, caller: u32, site: u32): boolean 
   return false;
 }
 
+// Whether direct eval code at this site may name new.target: the call
+// is in a function, past arrows and eval code. Level 0 is a script's.
+// shortcut: a module's own code compiles as a function, so eval there may name it too (as undefined); a fact on the EvalSite if one ever needs the error.
+function evalInFunction(in runtime: Runtime, caller: u32, site: u32): boolean {
+  let level = runtime.functions[usize(caller)].evalSites[usize(site)].levels.length;
+  while (level > 1) {
+    level = level - 1;
+    if (!runtime.functions[usize(caller)].evalSites[usize(site)].levels[level].isArrow) return true;
+  }
+  return false;
+}
+
 function compileEvalSource(inout runtime: Runtime, source: Array<u8>, caller: u32, site: u32, inMethod: boolean): i32 on thread.any {
   const strict = runtime.functions[usize(caller)].evalSites[usize(site)].strict;
+  const inFunction = evalInFunction(in runtime, caller, site);
   const superCall = evalMayCallSuper(in runtime, caller, site);
   const inField = runtime.functions[usize(caller)].evalSites[usize(site)].inField;
-  let parsed = parseScript(move source, false, strict, inMethod, superCall, inField, runtime.stackFloor());
+  let parsed = parseScript(move source, false, strict, inFunction, inMethod, superCall, inField, runtime.stackFloor());
   if (parsed.hadError) return parsed.parser.stackSpent ? COMPILE_STACK : COMPILE_PARSE_ERROR;
   const index = compileEval(inout parsed.parser, parsed.root, inout runtime, caller, site);
   if (index < 0) return compileStopped(inout runtime);

@@ -138,6 +138,9 @@ export struct Parser {
   // The source has a `with` statement somewhere: the compiler looks for
   // one in a function only then.
   sawWith: boolean;
+  // The source names `new.target` somewhere: code that is in no function
+  // is looked through for one only then.
+  sawNewTarget: boolean;
   // A module's own code awaits (top-level await): its function compiles
   // as an async generator (docs/modules.md).
   topLevelAwait: boolean;
@@ -1144,11 +1147,7 @@ export struct Parser {
         }
       }
       if (isNewTarget) {
-        // A module's own code is in no function to have a new.target.
-        if (this.isModule && this.functionDepth == 0) {
-          this.hadError = true;
-          return NO_NODE;
-        }
+        this.sawNewTarget = true;
         this.advance();
         const targetToken = this.advance();
         const meta = this.ast.newNode(NodeKind.thisExpr, newToken.start, targetToken.start + 6);
@@ -3110,6 +3109,25 @@ export struct Parser {
     return false;
   }
 
+  // Contains NewTarget, for code that is in no function (a script's, a
+  // module's, eval code's called outside one): through arrows, not into
+  // a function, a static block or a field's initializer (each has its
+  // own), and of a method or a field only its computed key.
+  function containsNewTarget(index: u32): boolean {
+    if (index == NO_NODE) return false;
+    const n = this.node(index);
+    if (n.kind == NodeKind.thisExpr) return n.boolValue;
+    if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.staticBlock) return false;
+    if (n.kind == NodeKind.methodDef || n.kind == NodeKind.classField) return this.containsNewTarget(n.third);
+    if (this.containsNewTarget(n.left) || this.containsNewTarget(n.right) || this.containsNewTarget(n.third)) return true;
+    let i: u32 = 0;
+    while (i < n.childrenCount) {
+      if (this.containsNewTarget(this.ast.child(index, i))) return true;
+      i = i + 1;
+    }
+    return false;
+  }
+
   // ContainsArguments, for a field's initializer, a static block's body,
   // and eval code called in a field's initializer: escape-aware, through
   // arrows, not into a function (which has its own), and of a method
@@ -3967,16 +3985,17 @@ export function parseText(source: String, isModule: boolean): ParseResult {
 }
 
 export function parseProgram(source: Array<u8>, isModule: boolean, stackFloor: usize): ParseResult {
-  return parseScript(move source, isModule, false, false, false, false, stackFloor);
+  return parseScript(move source, isModule, false, false, false, false, false, stackFloor);
 }
 
 // A program parsed as its caller says: direct eval code is strict from
-// the start when called from strict code, may write `super.x` when
+// the start when called from strict code, may name `new.target` when
+// the call is in a function (`newTarget`), may write `super.x` when
 // the calling function has a home object (`superProperty`), may call
 // super() when the call is in a derived constructor (`superCall`), and
 // may not name `arguments` when the call is in a class field's
 // initializer (`noArguments`), which has none.
-export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, superProperty: boolean, superCall: boolean, noArguments: boolean, stackFloor: usize): ParseResult {
+export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, newTarget: boolean, superProperty: boolean, superCall: boolean, noArguments: boolean, stackFloor: usize): ParseResult {
   const sourceLength = u32(source.length);
   const byteCount = source.length;
   let stackSpent = false;
@@ -4005,6 +4024,7 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
     argumentsName: 0,
     labels: Array<u32>(),
     sawWith: false,
+    sawNewTarget: false,
     topLevelAwait: false,
     mainLimit: tokenCount,
     windowEnd: sourceLength,
@@ -4044,6 +4064,8 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
   if (!parser.hadError && !parser.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
     let chain = Array<u32>();
     parser.validatePrivateNames(program, inout chain, 0);
+    // Code that is in no function has no new.target to name.
+    if (parser.sawNewTarget && !newTarget && parser.containsNewTarget(program)) parser.hadError = true;
     // Eval code in a field's initializer has no `arguments` to name.
     if (noArguments && parser.containsArguments(program)) parser.hadError = true;
   }
