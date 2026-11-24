@@ -10,8 +10,9 @@ kernels are how that is tracked.
 | `kernels/` | One program per kind of work. Each ends by assigning `result`; the runner prints it, and an engine whose checksum differs from the Z engine's gets no time. |
 | `run.py` | Runs every engine present, median of `RUNS` (default 5) interleaved runs less that engine's startup, and prints a table; with a path, also writes JSON. |
 | `v8/` | The V8 benchmark suite, version 7, an outside benchmark run with `run.py v8` (below). |
-| `results/` | Recorded runs, with the date, the load average, and each engine's startup. |
+| `results/` | Where a run's JSON goes; git ignores it. Each records the date, the load average, and each engine's startup. |
 | `placements.py` | Two builds of the Z engine compared in cycles over eight placements of the dispatch loop's code, for changes smaller than what one placement swings (up to 10% a kernel). |
+| `thread-dispatch.py` | Rewrites the dispatch loop in a copy of the generated C as threaded handlers (tail calls, or computed goto), for `placements.py` to measure against the `switch`. |
 
 Engines, each measured only when present:
 
@@ -26,8 +27,7 @@ Engines, each measured only when present:
 | `hermes-hbc` | `hvm -Xes6-class` | Hermes on bytecode `hermesc -O` made before timing, the way a React Native app ships it |
 
 The kernels are written for this suite, each with its work inside a
-function, as most code runs; older recorded runs may have fewer kernels,
-or earlier versions of them. They are small on purpose: each
+function, as most code runs. They are small on purpose: each
 isolates one cost (calls, property access, closures, arrays, strings,
 allocation, JSON, regular expressions, Map and Set), so a regression or a
 win points at a subsystem. They are not a substitute for real programs.

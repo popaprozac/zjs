@@ -14,8 +14,10 @@ for reuse and compacts the live cells' slots in place, so an object that
 outgrew its range leaves no permanent hole and nothing outside the heap
 needs updating. Compaction slides: the survivors' slot ranges are sorted
 into arena order (by buckets of eight slots, then a pass of insertion sort)
-and each moves down over the dead ones, and the small strings' bytes the
-same way once their arena holds twice what is live. No second arena is
+and each moves down over the dead ones. The small strings' bytes are
+compacted all at once when the marking ends, once their arena holds twice
+the live bytes plus 64 KiB and its dead bytes come to 4 for every handle
+in the table. No second arena is
 made: on macOS the allocator keeps a freed large block resident, so a copy
 into a fresh arena would cost the whole old one. For the same reason the
 arena and the handle table grow four times at a step, not twice.
@@ -64,9 +66,9 @@ cells alone: the free list's top moves back up over the handles they took,
 the survivors' places in it are repaired, and the few young cells that own
 storage outside the arenas, or are atoms, are listed when they come to, so
 only those are visited. Its roots skip the functions and hidden classes an
-earlier collection traced. When 60% or more of a young generation survives,
-the next seven are made old untraced and the eighth is traced to see
-whether that still holds.
+earlier collection traced. When 60% or more of a young generation of at
+least 1,024 cells survives, the next seven are made old untraced and the
+eighth is traced to see whether that still holds.
 
 ## Full collections in slices
 
@@ -89,12 +91,14 @@ not reached is dead: the weak entries and atoms of dead cells go, and the
 sweep walks the table a slice at a time, then the slide sorts and moves the
 slot ranges a slice at a time. A handle never changes, so ranges move
 between slices with nothing for the program to check. A slice traces 65,536
-cells' worth, or more when the heap is large enough that the marking would
-otherwise take over 64 steps. A heap one slice can mark is collected whole,
-and so is every collection of `gc()` and of a heap with no young
-generation. The cells made old while a collection runs wait for the next,
-which costs up to 10% resident memory on most large heaps and 26 to 50% on
-those with the highest turnover (`bench/gc`).
+cells' worth (`--gc-slice`, 0 for no bound), or twice what the cells made
+old in its step brought when that is more, so the marking gains on the
+program, or more again when the heap is large enough that the marking
+would otherwise take over 64 steps. A heap one slice can mark is collected
+whole, and so is every collection of `gc()` and of a heap with no young
+generation (`--gc-nursery 0`). The cells made old while a collection runs
+wait for the next, which costs resident memory on a heap with high
+turnover (`bench/gc` measures it).
 
 ## When a collection is due
 
@@ -122,15 +126,18 @@ and before anything is torn down, so they can be set against each other:
 
 | Figure | What it is |
 |---|---|
-| alive at the last collection | headers and slots of the cells that collection traced |
+| alive at the last collection | headers and slots of what the last full collection kept and the minor ones promoted since |
 | in use | that plus everything allocated since, garbage included |
-| held | the capacity of every array behind the heap and the runtime, used or not: the active arena, the spare arena, the handle table with its free list and mark stack, the string table, the rest |
-| allocator in use, reserved | what the system allocator reports the process holds in blocks, and what it has reserved in its zones |
+| held | the capacity of every array behind the heap and the runtime, used or not: the slot arena with the slide's scratch, the handle table with its free list, mark stack, and the collector's lists, the strings, the rest |
+| allocator in use, reserved, peak in use | what the system allocator reports the process holds in blocks, what it has reserved in its zones, and the most it has held |
 | resident now, footprint now | the task's resident size and physical footprint at that moment |
 | resident peak | the high-water mark, which says nothing about now |
 
 `--gc-stats` times every collection and prints the time in each of the
-collector's phases (`bench/gc/README.md` lists them).
+collector's phases (`bench/gc/README.md` lists them). `--stats` prints the
+engine's counters (cells, dictionaries, collections and minor ones, weak
+entries cleared, ephemeron passes and visits, the pending table's
+scratch), which `gc-check.sh` reads.
 
 ## Measuring
 

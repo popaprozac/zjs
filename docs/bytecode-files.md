@@ -6,12 +6,6 @@ calls are the ones the ABI declares, `zjs_compile_to_bytecode` and
 `zjs_eval_bytecode` (`include/zjs.h`), and the command line's
 `zjsz compile in.js -o out.zbc` and `zjsz run out.zbc`.
 
-The Zen-C engine's format (`prior-art/zen-c/docs/aot-bytecode-format.md`)
-is the starting point. What changes: the Z engine's functions are a flat
-table rather than a tree of function values, its strings are atoms, it
-marks hoisted globals defined when a script starts rather than when it
-compiles, and the file carries a checksum.
-
 ## What a compiled program is
 
 `compileProgram` adds functions to the runtime's table in order: each
@@ -50,8 +44,8 @@ as defined globals while it compiles. A compile that is not followed by
 a run -- `zjs_compile_to_bytecode` -- would leave them defined in the
 compiling context, and a script that fails to compile part way leaves
 some of them defined too. Instead the script's `FunctionCode` lists the
-global slots it declares, and `Runtime.run` defines them before the
-first instruction, which is when the specification has them made
+global slots it declares, and its first instruction, `declareGlobals`,
+defines them, which is when the specification has them made
 (GlobalDeclarationInstantiation). The file writes the list as name-table
 indices.
 
@@ -140,8 +134,13 @@ The loader reads the whole file before it changes the runtime: magic,
 both versions, the payload's length and checksum, and every count and
 index against what the file holds -- a string, global, or function index
 in range, an opcode below the opcode count, a register count of at most
-256, a known string kind and constant tag. A file that fails any check
-is refused with nothing added to the runtime. Then it interns the
+256 with the fixed registers and `thisReg` inside it, known flag bits, a
+known string kind and constant tag, no function without code, at least
+one function, and no bytes past the last; and the runtime must have
+global slots left for the file's names. A file that fails any check is
+refused with nothing added to the runtime: `zjs_eval_bytecode` runs
+nothing and returns `undefined` without setting the context's error, and
+a module graph fails with a SyntaxError (docs/modules.md). Then it interns the
 strings, finds or adds each global by name, reserves the functions'
 indices together, makes the constants (function cells for the reserved
 indices, template objects from their strings), rewrites global operands
@@ -160,20 +159,18 @@ code runs against. A file that breaks those can make the engine read or
 write outside its arrays. Proving them for a file means a verifier
 that follows each function's environment chain through its control flow
 and into the functions it creates -- code the runtime without a
-compiler would carry, and time every load would spend. QuickJS and
-Hermes take the same position: bytecode comes from the application's own
-build. Untrusted bytecode is out of scope until a verifier is asked for.
+compiler would carry, and time every load would spend. There is none:
+bytecode comes from the application's own build, as with QuickJS and
+Hermes.
 
 ## The runtime without a compiler
 
-What the lever saves comes from linking without the front end. Outside
-the compiler itself, three places reached it: `lib.zs`'s `evaluate`,
-`eval` (`builtins/global.zs`), and the `Function` constructor
-(`builtins/function.zs`). Now the runtime reaches it through two
-function-typed fields, `scriptCompiler` and `evalCompiler`, whose
-defaults answer that there is none; `installCompiler` (`compile.zs`)
-sets them. `eval` and `Function` compile through them and, without a
-compiler, throw an EvalError saying the context runs bytecode only.
+The runtime reaches the front end only through three function-typed
+fields, `scriptCompiler`, `evalCompiler`, and `moduleCompiler`, whose
+defaults answer that there is none; `installCompiler` (`compile.zs`) sets
+the first two, and `installModuleCompiler` the third (docs/modules.md).
+`eval` and `Function` compile through them and, without a compiler,
+throw an EvalError saying the context runs bytecode only.
 
 `zjs_new_context` installs the compiler, and `zjs_eval` and
 `zjs_compile_to_bytecode` install it in the context they run on, since
@@ -182,17 +179,9 @@ context that has done neither. A core context that only runs bytecode
 never references the front end, so the linker drops it from the same
 `libzjs.a`: no separate library is built.
 
-Linked and dead-stripped (`bench/size/embedders.sh`, macOS arm64, z-lang
-`1b105418`):
-
-| Embedder | `__text` | `__TEXT` |
-|---|---|---|
-| `zjs_new_context`, `zjs_eval` | 736,276 | 786,432 |
-| `zjs_new_core_context`, `zjs_eval` | 548,148 | 573,440 |
-| `zjs_new_core_context`, `zjs_eval_bytecode` | 365,904 | 393,216 |
-
-Bytecode only, the core is 182 KB (33%) smaller: the lexer, parser,
-compiler, and the bytecode writer are gone, and only the loader remains.
+`bench/size/embedders.sh` links each kind of embedder dead-stripped and
+prints its size: bytecode only, the lexer, parser, compiler, and bytecode
+writer are gone, and only the loader remains.
 
 ## Evidence
 
@@ -201,8 +190,3 @@ compiler, and the bytecode writer are gone, and only the loader remains.
   as from source.
 - The loader's refusals: truncated files, each byte flipped, wrong
   magic and versions, out-of-range indices.
-- Load time against parse and compile time: a generated program of
-  3,000 functions, 1.29 MB of source, runs in 204M cycles from source
-  and 28M from its bytecode file, startup (5.5M) included. The file is
-  1.31 MB, about the size of the source: an instruction is 5 bytes,
-  every count and index 4.

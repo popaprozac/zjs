@@ -1,7 +1,8 @@
-# Embedding lifecycle: ownership model
+# Embedding
 
-How a context lives and dies behind the public ABI (`include/zjs.h`):
-what the Z library does and what the shim promises. `tests/lifecycle_test.c`
+The public ABI (`include/zjs.h`) as the Z library implements it: how a
+context lives and dies, what each kind of context holds, and what the
+shim promises for values, calls, and host functions. `tests/lifecycle_test.c`
 is the evidence and runs on every build.
 
 ## The model
@@ -13,11 +14,14 @@ Engine (ARC class, the library root; one field)
   registry: Mutex<Registry>
     slots: Array<Option<Context>>      one entry per handle index, none when freed
     generations: Array<u32>            bumped when a slot is freed; handles carry it
+    freeSlots                          freed slots to reuse
+    live, created, detached            the counters the lifecycle test reads
 Context (ARC class; shareable because its one field is a Mutex)
   state: Mutex<ContextState>
-    runtime: Runtime                   the heap and everything on it
-    hadError, lastResult, evalCount
-    deinit: runtime.releaseNative()    the regex context; Z frees the rest
+    runtime: Runtime                   the heap and everything on it; its deinit
+                                       releases the regex context and the lent
+                                       string copies, and Z frees the rest
+    hadError, lastResult, evalCount, interrupted
 ```
 
 A handle is `(index + 1) | generation << 32`, cast into the pointer-shaped
@@ -100,7 +104,8 @@ embedder's to avoid.
 
 ### Initialization and teardown
 
-The shim initializes the Z runtime on the first `zjs_new_context`, under
+The shim initializes the Z runtime on the first `zjs_new_context` or
+`zjs_new_core_context`, under
 a mutex: concurrent first callers wait; readiness is published only after
 the generated runtime reports success; a failed attempt (an invalid
 configuration) leaves later attempts possible, and `zjs_shim_init_status`
@@ -127,9 +132,38 @@ through the ABI can run an accessor that queues a job, and that job
 waits: `zjs_has_pending_work` answers 1, and `zjs_drain_microtasks`, the
 next `zjs_call`, or the next evaluation runs it. A job queued while a
 host function runs waits for the call that entered the engine. A context
-freed with jobs queued discards them. There are no timers yet (`zjs_next_timer_ms`
-and `zjs_run_pending_timers` are placeholders), so
-`zjs_has_pending_work` reports jobs only.
+freed with jobs queued discards them. There are no timers
+(`zjs_next_timer_ms` and `zjs_run_pending_timers` are not implemented),
+so `zjs_has_pending_work` reports jobs only.
+
+## Contexts and installers
+
+`zjs_new_core_context` makes a context with the language and the builtins
+it cannot do without: Object, Function, Array, String, Number, Boolean,
+Symbol, Math, the error constructors, iterators and generators, and the
+global functions. Each installer adds one family, and an embedder links
+only the installers it calls:
+
+| Installer | Adds |
+|---|---|
+| `zjs_install_json` | JSON |
+| `zjs_install_regexp` | RegExp, and String's `match`, `matchAll`, and `search`; before it, a regular-expression literal throws a TypeError |
+| `zjs_install_date` | Date |
+| `zjs_install_collections` | Map, Set, WeakMap, WeakSet |
+| `zjs_install_promise` | Promise; before it, async functions run, but their promises have no Promise methods |
+| `zjs_install_reflect` | Reflect |
+| `zjs_install_typed_arrays` | ArrayBuffer, DataView, and the typed arrays |
+| `zjs_install_compiler` | the source compiler, for `eval` and the `Function` constructor |
+
+`zjs_new_context` is the core with every installer run. Installing a
+family twice does nothing the second time. `zjs_eval` and
+`zjs_compile_to_bytecode` bring the compiler to any context they run on;
+a core context that only runs bytecode never has it, so there `eval` and
+`Function` throw an EvalError and the embedder links no lexer, parser, or
+compiler ([`bytecode-files.md`](bytecode-files.md)).
+`tests/core_context_test.c`, run by `build.sh`, checks what a core context
+has and lacks, what each installer adds, and that installing twice
+changes nothing.
 
 ## Values
 
@@ -142,8 +176,9 @@ function). The kind makes the header's cell predicates bit tests; the
 slot lets `zjs_string_bytes` and `zjs_array_length`, which are given no
 context, find the heap. A context takes as `undefined` a cell that names
 another context's slot, a handle outside its heap's table, and bits that
-are the engine's own markers. Eleven bits hold the slot, so the cells of
-a context past the 2,047th slot are refused by those two calls.
+are the engine's own markers. Eleven bits hold the slot: a context past
+the 2,047th slot exports its cells with no slot, so those two calls refuse
+them, and another context cannot tell them from its own.
 
 Lifetime is the header's: a value a call returned is good until the next
 call on its context that can allocate, unless it is reachable from
@@ -231,7 +266,7 @@ function registered from inside one; an interrupt inside one that ends
 the evaluation and runs nothing after; and a host function that
 evaluates another context whose host function reads the first.
 
-## ABI placeholders
+## Not implemented
 
 The shim provides the contexts and their installers, the evaluators and
 `zjs_compile_to_bytecode`, `zjs_had_error` and `zjs_get_error`, the
@@ -251,19 +286,19 @@ header is unimplemented, and calling it is a link error:
 
 ## Evidence
 
-`tests/lifecycle_test.c`, linked against `libzjs.a`, run by `build.sh`,
+`tests/lifecycle_test.c`, run by `build.sh` and linked against its own
+build of the library (`tests/lifecycle/`, which adds the test-only gate),
 with the library's counters as witnesses (`zjs_z_live_contexts`,
 `zjs_z_created_contexts`, `zjs_z_detached_contexts`, and the native
 `zjs_re_live_contexts`):
 
-1. A thousand create / evaluate / destroy cycles: bytes in use identical
-   after the first and the last cycle (10,848), native contexts back to
-   zero, detached count exact.
+1. A thousand create / evaluate / destroy cycles: bytes in use after the
+   last cycle within 2 MB of those after the first, native contexts back
+   to zero, detached count exact.
 2. Overlap, by synchronization: two evaluators on two contexts each
    pause at a test gate while holding their context lock, and the test
-   observes both paused at once before resuming either. The timing line
-   (one long evaluation 1.37 s, two concurrently 1.40 s) is printed as a
-   benchmark, not asserted.
+   observes both paused at once before resuming either. A timing line
+   (one long evaluation against two at once) is printed, not asserted.
 3. Serialization: two threads evaluating on one context, 400 evaluations
    adding to one global, the total exact, every evaluation counted.
 4. Free after admission: the evaluator pauses at the gate after its

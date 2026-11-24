@@ -321,7 +321,7 @@ ZjsValue zjs_call(ZjsContext* ctx, ZjsValue callee, ZjsValue this_val, ZjsValue*
  * AOT-compiled bytecode.
  *
  * Pre-parsed programs ship as a byte buffer with a "ZJSb" magic
- * header (produced by `zjs compile in.js -o out.zbc`). zjs_eval_bytecode
+ * header (produced by `zjsz compile in.js -o out.zbc`). zjs_eval_bytecode
  * deserializes the buffer, rebinds global-slot references to the
  * current context, and runs the program as if it were the top-level
  * script — top-level `this` is bound to the global object, microtasks
@@ -345,7 +345,7 @@ ZjsValue zjs_eval_bytecode(ZjsContext* ctx, const unsigned char* data, size_t le
  * writes the byte count to *out_len, and returns 0. On parse/compile
  * failure leaves *out_len = 0, sets zjs_had_error, and returns NULL.
  *
- * Equivalent to running `zjs compile` but in-process: useful for
+ * Equivalent to running `zjsz compile` but in-process: useful for
  * embedders that want to AOT cache scripts the first time they're
  * seen, then play back the bytecode on subsequent runs.
  */

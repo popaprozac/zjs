@@ -10,8 +10,8 @@ happens.
 A weak collection's record is a `TAG_WEAK_RECORD` cell of five slots: the
 keys and values arrays, an open-addressed index from key hash (the key's
 cell handle, mixed) to entry position, the live count, and the kind. The
-keys and values arrays are `TAG_WEAK_ARRAY` cells. `Map` and `Set` keep
-their `TAG_ARRAY` records and pay nothing.
+keys and values arrays are `TAG_WEAK_ARRAY` cells. `Map` and `Set` are
+`TAG_TABLE` cells and pay nothing.
 
 Private backing-storage invariant: the two weak arrays are reachable only
 from their record. The collector never traces a `TAG_WEAK_ARRAY` cell's
@@ -19,34 +19,40 @@ elements, whatever path marked the cell, so even a stray strong reference
 to one could not retain entries; and nothing hands them out -- the
 builtins reach entries only through the heap's `weakFind` / `weakGet` /
 `weakPut` / `weakDelete`, and `recordOf` returns the record. The heap's
-`weakRecords` worklist exists only during a collection: it is filled by
-`drainMarks` as records are reached and emptied by `clearDeadWeakEntries`;
-it is never marked as a root.
+`weakRecords` worklist exists only during a full collection: `traceCell`
+fills it as the marking reaches records, and `clearDeadWeakEntries`
+empties it; it is never marked as a root.
 
 ## Collection order
 
-`Runtime.collectGarbage`:
+Only a full collection clears weak entries. A minor collection holds the
+young elements of a weak array as it holds any cell's, so a dead young
+key waits for the next full collection.
 
-1. strong roots (registers, globals, frames, temporary roots, prototypes,
-   atoms the compiled code and hidden classes hold), each drained. While
-   draining, a weak record that is reached registers its entries: a
-   value whose key is already marked is marked at once; the others wait
-   in the pending table, indexed by key. When a key with waiting values
-   is popped from the mark stack, its values are marked and traced in
-   turn, and records reached through them register the same way. So the
-   drain itself completes the ephemeron closure, in one visit per entry.
-2. `markEphemerons`: a verification scan over the records reached; it
-   marks nothing when the pending table did its job, and would continue
-   to a fixpoint if it ever found something, so the collection is right
-   either way.
-3. `clearDeadWeakEntries`: entries whose key is unmarked are retired,
+A full collection's marking, whole or in slices, traces a weak record
+like any cell (its index and counts, and its two weak arrays as cells),
+lists it, and reaches nothing through a weak array's elements. When the
+marking is done, `Runtime.dropDeadEntries` runs:
+
+1. `markEphemerons`: each listed record registers its entries. A value
+   whose key is marked is marked at once; the others wait in the pending
+   table, indexed by key, and a key with waiting values that is traced
+   later marks its values in turn. Records reached on the way are listed
+   and registered the same way. Then a verification scan over the
+   records marks the value of any marked key still unmarked, to a
+   fixpoint; it marks nothing when the pending table did its job, so the
+   collection is right either way.
+2. `clearDeadWeakEntries`: entries whose key is unmarked are retired,
    each touched record compacted and its index rebuilt in place.
-4. `rebuildAtoms`: the weak atom table, after the ephemeron work because
+3. `rebuildAtoms`: the weak atom table, after the ephemeron work because
    values reached through it can hold interned strings.
-5. `sweep`.
+
+The sweep follows: at once for a whole collection (`finishWhole`), in
+slices after `endMark` otherwise.
 
 Clearing removes the record's references; a value with other references
-survives. Steps 2 and 3 allocate nothing.
+survives. Steps 1 and 2 allocate no cells; only the pending table's own
+arrays grow.
 
 The pending table is collection-local Z-owned scratch (a chained hash
 table over key handles: keys, values, next links, buckets), never a root:
@@ -82,7 +88,7 @@ returns undefined and `has` / `delete` return false.
 
 ## Forced collection
 
-`zjsz --expose-gc` defines `gc()`. It is a host function, so it runs at a
+`zjsz run --expose-gc` defines `gc()`. It is a host function, so it runs at a
 call site: the arguments and every register of the calling frames are
 roots, the same state an ordinary collection sees at a return or a loop
 back edge. Builtins that call back into the program (`getOrInsertComputed`,
@@ -96,15 +102,16 @@ function and calls `gc()` after it returns.
 
 ## Evidence
 
-Correctness: ten heap unit tests with explicit mark / sweep (rooted and
-dropped keys, value-to-key cycle, value rooted elsewhere, both discovery
-orders, a record discovered through a value, a 40-link reverse chain,
-shared keys across records, an unreachable record, handle reuse, storage
-across cycles); `tests/expect/weak-collections.js` (node-recorded) and
-`weak-upsert.js` (from the proposal text; node 25 lacks the methods);
-`gc-check.sh` on the engine's counters, including
-`tests/gc/weak-pressure.js` (400,000 keys inserted and dropped across a
-WeakMap and a WeakSet, 100 held, ordinary collections only).
+Correctness: the heap's unit tests in `engine/heap.zs`, with explicit
+mark and sweep (rooted and dropped keys, value-to-key cycle, value
+rooted elsewhere, both discovery orders, a record discovered through a
+value, a reverse chain, shared keys across records, an unreachable
+record, handle reuse, storage across cycles);
+`tests/expect/weak-collections.js` (recorded from node) and
+`weak-upsert.js` (written from the proposal text); `gc-check.sh` on the
+engine's counters, including `tests/gc/weak-pressure.js` (keys inserted
+and dropped across a WeakMap and a WeakSet, some held, ordinary
+collections only).
 
 Cost: the pending table visits each entry once at registration and once
 in the verification scan, so an adversarial chain (record i maps key i

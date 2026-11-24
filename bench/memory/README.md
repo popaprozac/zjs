@@ -14,5 +14,4 @@ and layout decide.
 The peak depends on the allocator as much as on the engine: run with
 `MallocLargeCache=0` in the environment, macOS's allocator stops keeping
 freed large blocks resident. The engine's arrays grow by moving, and each
-move leaves the old block behind. The figures against other engines are
-in [docs/goals.md](../../docs/goals.md).
+move leaves the old block behind.

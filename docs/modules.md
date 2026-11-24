@@ -26,11 +26,16 @@ virtual path given to `zjs_eval_module_source`):
 - the record each request resolved to;
 - its generator and environment, made when it is linked;
 - its namespace object, made the first time one is asked for;
-- its status (new, linked, evaluating, evaluated, failed) and the error
-  it failed with, which every later import of it throws again.
+- its status (new, linked, evaluating, evaluating asynchronously,
+  evaluated, failed) and the error it failed with, which every later
+  import of it throws again;
+- the promise an evaluation from it settles, and what top-level await
+  needs: whether its evaluation is async, how many async modules it
+  waits on, and the modules waiting on it;
+- its `import.meta` object, made the first time it is read.
 
 The collector marks every record's keys, names, generator, environment,
-namespace, and error.
+namespace, promise, `import.meta` object, and error.
 
 ## Compiling a module
 
@@ -64,11 +69,9 @@ imports, checking its redeclarations, recording its exports, hoisting
 its exported functions, compiling its export statements -- through a
 function argument of `compileFunction`, and a runtime has a module
 compiler only once `installModuleCompiler` gives it one: a front end
-that compiles only scripts links none of it. Such an embedder's
-`__TEXT` grows by under 5 KB (the parser's module syntax and
-`compileFunction`'s module branches), a
-bytecode-only one's by 1.2 KB (the runtime's `importBind` and the
-marking of module records).
+that compiles only scripts links none of it, only the parser's module
+syntax and `compileFunction`'s module branches, and a bytecode-only
+runtime links only `importBind` and the marking of module records.
 
 Module code is strict. Its early errors: a function declaration at its
 top level is lexical, so it may not share a name with another
@@ -90,8 +93,10 @@ resolves every import by ResolveExport: the module's own exports, then
 its indirect exports, then its star exports, `default` never through a
 star, and a name two stars provide differently ambiguous. An import, or
 an indirect export, that resolves to nothing or to an ambiguity is a
-SyntaxError, raised before any module runs; the graph's modules are
-then new again, to be linked afresh.
+SyntaxError ("The requested module '<key>' does not provide an export
+named '<name>'", or "... contains conflicting star exports for name
+'<name>'"), raised before any module runs; the graph's modules are then
+new again, to be linked afresh.
 
 Evaluation is the specification's depth-first walk, a module's
 requested modules before it and each module once, the strongly
@@ -128,6 +133,11 @@ which fails them all. `Evaluate()` gives a promise
 (`evaluateRoot`); `zjs_eval_module` and `zjsz` run the jobs it queues,
 and a graph that rejected reports its error.
 
+`await /re/` and `yield /re/`: the lexer cuts the source into tokens
+before the parser knows the keyword is an operator, and takes a `/`
+after a name for division; the parser cuts the rest again from the `/`,
+as a regular expression.
+
 ## `import()` and `import.meta`
 
 `import(specifier)` compiles to `dynamicImport`, which hands the
@@ -139,20 +149,18 @@ lets the current evaluation finish first. The promise fulfills with the
 namespace once evaluation is done, or rejects with what failed: the
 specifier's conversion, a module not found or not parsing, a link error,
 an evaluation error. A script's `import()` resolves against the script's
-path when the host knows it (`zjsz` sets it; `zjs_eval` has none, so a
-specifier is a path as written). Without module support installed,
-`import()` rejects with a TypeError. A second argument (import
+path when the host knows it (`zjsz` sets it; `zjs_eval` gives none, so a
+specifier is a path as written). Module support comes with the module
+entry points (`zjs_eval_module`, `zjs_eval_module_source`,
+`zjs_eval_module_bytecode`) and `zjsz`; on a context none of them has
+run on, `import()` rejects with a TypeError ("import() is not
+supported: the context has no module loader"). A second argument (import
 attributes, `with { type: "json" }`) is read and dropped; there are no
 JSON modules.
 
 `import.meta` (`importMeta`) is an object of the module's own, without a
 prototype, made the first time it is read; its `url` is the module's key,
 a `file:` URL for an absolute path.
-
-`await /re/` and `yield /re/`: the source is cut into tokens before the
-parser knows the keyword is an operator, so a `/` after it was taken for
-division; the parser cuts the rest again from the `/`, a regular
-expression first.
 
 ## The loader
 
@@ -175,9 +183,14 @@ either source or a module file for a specifier; a module file is loaded,
 not compiled, so a runtime without the compiler runs a graph of them.
 `zjs_eval_module_bytecode` is `zjs_eval_module` without the module
 compiler: on a core context an embedder that runs module files links no
-front end, 410 KB of `__TEXT` against 393 KB for scripts from bytecode
-(`bench/size`, `module`). Its graph's modules must be module files; one
-left as source fails it with an EvalError.
+front end (`bench/size/embedders.sh` measures it, `module`). Its graph's
+modules must be module files; one left as source fails it with an
+EvalError, unless an earlier `zjs_eval_module` or
+`zjs_eval_module_source` gave the context the module compiler. A file
+that is not a module file this engine reads fails the graph with a
+SyntaxError ("bytecode: the module file '<key>' is not one this engine
+reads, or is damaged"). `zjsz run` runs a module file as a module
+whatever its name.
 Each module is a file of its own: compiling one does not read its
 imports. `zjsz run --via-bytecode` passes every module of a graph
 through a module file made in an engine of its own, which the
@@ -191,15 +204,14 @@ expectation cases and `test262-ab.py --aot` use.
   the curated subset includes `language/module-code`, `import`, and
   `export`. A script test that imports dynamically runs from beside its
   own file, so its relative specifiers resolve. With
-  `expressions/dynamic-import` and `import.meta`, and skipping only the
-  proposals (import defer, attributes, text and bytes imports, source
-  phase), all 1,599 runs pass.
+  `expressions/dynamic-import` and `import.meta`; the proposals (import
+  defer, attributes, text and bytes imports, source phase) are skipped.
 - Expectation cases `module-live-bindings`, `module-cycles`,
   `module-reexports`, `module-namespace-object`, and
   `module-top-level-await`, recorded from node, each run three times
   (collecting at every safe point the second, through module files the
   third), as `dynamic-import-script`, a script, is. Under
-  `test262-ab.py --aot` the 610 module tests of `module-code`,
+  `test262-ab.py --aot` the module tests of `module-code`,
   `dynamic-import`, and `import.meta` have the outcomes they have from
   source.
 - `tests/module_test.c`: the ABI's two source entries, the cache, a

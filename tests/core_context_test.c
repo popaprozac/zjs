@@ -3,7 +3,7 @@
    that installing twice changes nothing, and that the full context is
    the core with every installer run. Each check is a script that throws
    when the expectation fails. Also measures what a core-only embedder
-   links (printed; see docs/goals.md). */
+   links (printed; bench/size/embedders.sh measures each embedder). */
 #include <stdio.h>
 #include <stdlib.h>
 

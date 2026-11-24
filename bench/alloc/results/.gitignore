@@ -1,1 +1,3 @@
-.alloc-attr.dylib
+# Runs recorded here stay local.
+*
+!.gitignore
