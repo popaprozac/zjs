@@ -124,6 +124,10 @@ function objectToString(inout runtime: Runtime, thisValue: Value, argsBase: u32,
     tag = "Function";
   } else if (isCell(thisValue) && asCell(thisValue) != 0 && runtime.heap.isArray(asCell(thisValue))) {
     tag = "Array";
+  } else if (isCell(thisValue) && asCell(thisValue) != 0 && runtime.heap.isProxy(asCell(thisValue))) {
+    // A proxy for an array is an array here (IsArray), whatever else it is.
+    if (runtime.isArrayThrough(thisValue)) tag = "Array";
+    if (runtime.pendingThrow) return undefinedValue();
   } else if (isCell(thisValue) && asCell(thisValue) != 0 && runtime.isArgumentsObject(asCell(thisValue))) {
     tag = "Arguments";
   } else if (runtime.isStringValue(thisValue)) {

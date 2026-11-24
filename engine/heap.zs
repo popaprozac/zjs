@@ -57,6 +57,13 @@ export const TAG_ITERATION: u8 = 19;
 // table string buffers use, which the cell owns (see Bytes). No program
 // value is one.
 export const TAG_BYTES: u8 = 20;
+// A Proxy: slot 1 its target, slot 2 its handler, both null once it is
+// revoked. Slot 0 stays empty: it is where the runtime's function-like
+// helpers look for a property bag in a cell that is neither an object
+// nor an array, so one that has not learned of proxies finds none. A
+// proxy has no properties or prototype of its own: every operation on
+// it is the runtime's proxy arm (engine/builtins/proxy.zs).
+export const TAG_PROXY: u8 = 21;
 
 // Beyond the reference's tags: an environment is its own cell here, where
 // the reference keeps captured bindings in a property bag.
@@ -4117,6 +4124,27 @@ export struct Heap {
 
   function isIteration(handle: u32): boolean {
     return this.cellHeader(handle).tag == TAG_ITERATION;
+  }
+
+  // A proxy for `target` with `handler` (see TAG_PROXY).
+  function allocateProxy(inout this, target: Value, handler: Value): u32 {
+    const handle = this.allocate(TAG_PROXY, 3);
+    this.setSlot(handle, 1, target);
+    this.setSlot(handle, 2, handler);
+    return handle;
+  }
+
+  function isProxy(handle: u32): boolean {
+    return this.cellHeader(handle).tag == TAG_PROXY;
+  }
+
+  // A proxy's target and handler: null once revoked.
+  function proxyTarget(handle: u32): Value {
+    return this.slot(handle, 1);
+  }
+
+  function proxyHandler(handle: u32): Value {
+    return this.slot(handle, 2);
   }
 
   function marked(handle: u32): boolean {

@@ -23,11 +23,12 @@ import { installPromise } from "./builtins/promise.zs";
 import { installDate } from "./builtins/date.zs";
 import { installRegExp } from "./builtins/regexp.zs";
 import { installTypedArrays } from "./builtins/typedarray.zs";
+import { installProxy } from "./builtins/proxy.zs";
 
 // The core: the language and the builtins it cannot do without. An
 // embedder adds the optional ones it wants (installJson, installRegExp,
 // installDate, installCollections, installPromise, installReflect,
-// installTypedArrays);
+// installTypedArrays, installProxy);
 // whatever it never installs is never linked.
 export function createCoreEngine(): Runtime {
   let runtime = createRuntime();
@@ -54,5 +55,6 @@ export function createEngine(): Runtime {
   installDate(inout runtime);
   installRegExp(inout runtime);
   installTypedArrays(inout runtime);
+  installProxy(inout runtime);
   return runtime;
 }

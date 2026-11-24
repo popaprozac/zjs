@@ -292,7 +292,10 @@ export function fillReceiver(inout runtime: Runtime, target: Value, source: u32)
 
 function arrayIsArray(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {
   const first = runtime.argument(argsBase, argc, 0);
-  return booleanValue(isArrayValue(in runtime, first));
+  if (isArrayValue(in runtime, first)) return booleanValue(true);
+  const through = runtime.isArrayThrough(first);
+  if (runtime.pendingThrow) return undefinedValue();
+  return booleanValue(through);
 }
 
 // --- Mutators ---
@@ -1083,7 +1086,8 @@ function isConcatSpreadable(inout runtime: Runtime, value: Value): boolean {
   const spreadable = runtime.getProperty(value, symbolIsConcatSpreadable);
   if (runtime.pendingThrow) return false;
   if (!isUndefined(spreadable)) return runtime.toBooleanValue(spreadable);
-  return isArrayValue(in runtime, value);
+  if (isArrayValue(in runtime, value)) return true;
+  return runtime.isArrayThrough(value);
 }
 
 function arrayConcat(inout runtime: Runtime, thisValue: Value, argsBase: u32, argc: u32, callee: u32): Value on thread.any {

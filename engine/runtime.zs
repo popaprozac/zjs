@@ -17,7 +17,7 @@ import { stackAddress } from "./stack.zs";
 import { doubleTextInto } from "./number_text.zs";
 import { Value, int32Value, asInt32, doubleValue, asDouble, isInt32, isDouble, isNumber, isBoolean, isTrue, isNull, isUndefined, isCell, asCell, cellValue, undefinedValue, nullValue, booleanValue, deletedValue, isDeleted, holeValue, isHole } from "./value.zs";
 import { RegexBackend, emptyRegexBackend, loadScratch, REGEX_GLOBAL, REGEX_IGNORE_CASE, REGEX_MULTILINE, REGEX_DOT_ALL, REGEX_UNICODE, REGEX_STICKY, REGEX_HAS_INDICES, REGEX_UNICODE_SETS, REGEX_MATCH, REGEX_NO_MATCH, REGEX_OUT_OF_MEMORY, REGEX_STEP_LIMIT, REGEX_BAD_BYTECODE, REGEX_STACK_LIMIT, REGEX_SYNTAX, REGEX_SIZE_LIMIT, REGEX_INTERRUPTED } from "./regex.zs";
-import { Heap, createHeap, bytesOf, FLAG_BINARY, FLAG_VARIABLE_LENGTH, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
+import { Heap, createHeap, bytesOf, FLAG_BINARY, FLAG_VARIABLE_LENGTH, TAG_OBJECT, TAG_ARRAY, TAG_STRING, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_ENV, TAG_SYMBOL, TAG_PROXY, PROP_WRITABLE, PROP_ENUMERABLE, PROP_CONFIGURABLE, PROP_ACCESSOR, PROP_DEFAULT, PROP_METHOD, PROP_NONE, FLAG_NON_EXTENSIBLE, FLAG_LENGTH_READONLY, FLAG_NAMESPACE, FLAG_PRIVATE_NAME, FLAG_INTERNED, FLAG_WIDE, FLAG_HIDDEN, FLAG_BOUND, FLAG_REGISTERED_SYMBOL, FLAG_INDEX_KEY, FLAG_LEAF, FLAG_SPARSE } from "./heap.zs";
 import { utf8ToUnits, unitsToUtf8, unitsToWtf8, unitsOf, latin1Units, unitsToLatin1, isNarrowUnits, isAsciiBytes, sliceUnits, appendUnits, sameUnits, isJsSpace, pushCodePoint, codePointAt } from "./text.zs";
 import { Op, Inst, FunctionCode, createFunctionCode, instA, bcU16, bcI16, jumpOffset, PropertyCache, emptyCache, CACHE_EMPTY, CACHE_OWN, CACHE_PROTO, CACHE_TRANSITION, CACHE_INHERITED, CACHE_DEFINE, CACHE_BAG, CACHE_FUNCTION_PROTO, CACHE_FUNCTION_VIRTUAL, VIRTUAL_PROTOTYPE, VIRTUAL_LENGTH, VIRTUAL_NAME, CACHE_CHAIN, CACHE_ABSENT, CACHE_GETTER, CHAIN_LIMIT } from "./bytecode.zs";
 import stdlib from "stdlib.h";
@@ -124,6 +124,16 @@ export const HOST_ARGUMENTS_SET: usize = 18;
 // A bound function whose target is a bound function: called by one walk
 // down the chain (engine/builtins/function.zs).
 export const HOST_BOUND_CHAIN: usize = 19;
+// A proxy's internal methods, and the function Proxy.revocable hands out
+// (engine/builtins/proxy.zs).
+export const HOST_PROXY: usize = 20;
+export const HOST_PROXY_REVOKE: usize = 21;
+
+// The internal method HOST_PROXY is asked for: its first argument.
+export const PROXY_GET: i32 = 0;
+export const PROXY_SET: i32 = 1;
+export const PROXY_HAS: i32 = 2;
+export const PROXY_DELETE: i32 = 3;
 
 // What a function's [[Prototype]] chain answered to a [[Set]].
 // How far past an array's slots a write may land and still grow them
@@ -438,6 +448,7 @@ export const FEATURE_COLLECTIONS: u32 = 8;
 export const FEATURE_PROMISE: u32 = 16;
 export const FEATURE_REFLECT: u32 = 32;
 export const FEATURE_TYPED_ARRAYS: u32 = 64;
+export const FEATURE_PROXY: u32 = 128;
 
 // Binary data: an object with FLAG_BINARY holds its internal data in its
 // leading slots (heap.leadingSlot), the first saying which it is. An
@@ -2024,6 +2035,90 @@ export struct Runtime {
     return symbol != 0 && (this.heap.flagsOf(symbol) & FLAG_PRIVATE_NAME) != 0;
   }
 
+  // --- Proxies ---
+  //
+  // A proxy is a cell of its own tag (TAG_PROXY), so the paths that know
+  // objects, arrays and functions never meet one: each generic operation
+  // tests for it last. The internal methods themselves are the builtin
+  // installProxy registers under HOST_PROXY, reached through the host
+  // table so that a build without Proxy links none of them; no proxy
+  // exists until that builtin is installed.
+
+  // A proxy's internal method `operation` (PROXY_GET and the rest) for
+  // `key`, an atom as a value. A throw is left pending, the result then
+  // undefined.
+  cold function proxyOperation(inout this, proxy: u32, operation: i32, key: Value, value: Value, receiver: Value): Value {
+    const argsBase = this.regTop;
+    const needed = usize(argsBase + 4);
+    if (this.regStack.length < needed) {
+      if (needed > REGISTER_LIMIT) return this.stackOverflow();
+      this.growRegisters(needed);
+    }
+    // A proxy's target may be a proxy: each one is a level of native stack.
+    if (this.stackShort(0)) return this.stackOverflow();
+    this.setStackAt(usize(argsBase), int32Value(operation));
+    this.setStackAt(usize(argsBase + 1), key);
+    this.setStackAt(usize(argsBase + 2), value);
+    this.setStackAt(usize(argsBase + 3), receiver);
+    this.regTop = argsBase + 4;
+    const result = this.callHost(this.sharedHosts[HOST_PROXY], cellValue(proxy), argsBase, 4, 0);
+    this.regTop = argsBase;
+    return result;
+  }
+
+  // The target of a proxy, for an operation the proxy hands on as it
+  // is. A TypeError is left pending when the proxy is revoked.
+  cold function proxyTargetOrThrow(inout this, proxy: u32): Value {
+    const target = this.heap.proxyTarget(proxy);
+    if (isNull(target)) {
+      const message: String = "Cannot perform an operation on a revoked proxy";
+      const error = this.typeError(in message);
+      this.raise(error);
+    }
+    return target;
+  }
+
+  // IsArray: an array, or a proxy whose target is one, however many
+  // proxies deep. A revoked proxy leaves a TypeError pending.
+  function isArrayThrough(inout this, value: Value): boolean {
+    let current = value;
+    while (isCell(current) && asCell(current) != 0 && this.heap.isProxy(asCell(current))) {
+      current = this.proxyTargetOrThrow(asCell(current));
+      if (this.pendingThrow) return false;
+    }
+    return isCell(current) && asCell(current) != 0 && this.heap.isArray(asCell(current));
+  }
+
+  // [[Get]] of `key` on `object` with `receiver` as an accessor's this:
+  // Reflect.get's, and a proxy's when its handler has no trap. The
+  // branches are getProperty's, which reads with the object itself as
+  // the receiver.
+  function getWithReceiver(inout this, object: Value, key: Value, receiver: Value): Value {
+    if (!this.isObjectLike(object)) return this.getProperty(object, key);
+    const handle = asCell(object);
+    const tag = this.heap.tagOf(handle);
+    if (tag == TAG_ARRAY) return this.arrayGet(handle, key, receiver);
+    if (tag == TAG_PROXY) {
+      const proxyAtom = this.propertyKey(key);
+      return this.proxyOperation(handle, PROXY_GET, cellValue(proxyAtom), undefinedValue(), receiver);
+    }
+    if (tag != TAG_OBJECT) return this.functionGet(handle, key, receiver);
+    if ((this.heap.flagsOf(handle) & FLAG_BINARY) != 0) return this.binaryGet(handle, key, receiver);
+    const atom = this.propertyKey(key);
+    const found = this.lookupProperty(handle, atom, receiver);
+    if (!isUndefined(found)) return found;
+    if (handle == this.globalObject) {
+      const slot = this.findGlobalByAtom(atom);
+      if (slot >= 0 && this.globals[usize(slot)].defined) return this.globals[usize(slot)].value;
+      return found;
+    }
+    const primitive = this.wrappedPrimitive(handle);
+    if (!isDeleted(primitive) && this.isStringValue(primitive)) {
+      if (atom == this.atomLength || this.arrayIndexOf(key) >= 0) return this.getProperty(primitive, key);
+    }
+    return found;
+  }
+
   // --- Strings ---
 
   function isStringValue(value: Value): boolean {
@@ -2301,11 +2396,15 @@ export struct Runtime {
   // --- Objects and properties ---
 
   function isObjectLike(value: Value): boolean {
-    return this.objectLike(value);
+    if (this.objectLike(value)) return true;
+    return isCell(value) && asCell(value) != 0 && this.heap.isProxy(asCell(value));
   }
 
-  // isObjectLike's test, inline: for enterCallable, which asks it of the
-  // receiver on every call of a sloppy function that reads `this`.
+  // isObjectLike's test, inline, less a proxy: for enterCallable, which
+  // asks it of the receiver on every call of a sloppy function that
+  // reads `this`, where a sixth tag costs every such call two
+  // instructions. A receiver that fails it goes to toObjectValue, which
+  // asks isObjectLike and hands a proxy back as it is.
   inline function objectLike(value: Value): boolean {
     if (!isCell(value) || asCell(value) == 0) return false;
     const tag = this.heap.tagOf(asCell(value));
@@ -3326,6 +3425,10 @@ export struct Runtime {
       return this.lookupProperty(stringProto, atom, object);
     }
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.functionGet(handle, key, object);
+    if (tag == TAG_PROXY) {
+      const atom = this.propertyKey(key);
+      return this.proxyOperation(handle, PROXY_GET, cellValue(atom), undefinedValue(), object);
+    }
     return undefinedValue();
   }
 
@@ -3338,6 +3441,7 @@ export struct Runtime {
     if (tag == TAG_OBJECT) return this.lookupProperty(holder, atom, receiver);
     if (tag == TAG_ARRAY) return this.arrayGet(holder, cellValue(atom), receiver);
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.functionGet(holder, cellValue(atom), receiver);
+    if (tag == TAG_PROXY) return this.proxyOperation(holder, PROXY_GET, cellValue(atom), undefinedValue(), receiver);
     return undefinedValue();
   }
 
@@ -3427,7 +3531,11 @@ export struct Runtime {
     while (current != 0) {
       const tag = this.heap.tagOf(current);
       const isFunction = tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
-      if (!isFunction && tag != TAG_OBJECT && tag != TAG_ARRAY) return SET_NOT_INHERITED;
+      if (!isFunction && tag != TAG_OBJECT && tag != TAG_ARRAY) {
+        // A proxy on the chain takes the whole [[Set]], receiver and all.
+        if (tag == TAG_PROXY) return isTrue(this.proxyOperation(current, PROXY_SET, cellValue(atom), value, receiver)) ? SET_DONE : SET_REFUSED;
+        return SET_NOT_INHERITED;
+      }
       if (tag == TAG_ARRAY) {
         // An array holds elements by index, `length` (its own, writable),
         // and named properties in its bag.
@@ -3655,6 +3763,10 @@ export struct Runtime {
       const bag = this.ensureFunctionBag(handle);
       if ((this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) != 0 && this.heap.objectFindSlot(bag, atom) < 0) return false;
       return this.setOnObject(bag, atom, value, object);
+    }
+    if (tag == TAG_PROXY) {
+      const atom = this.propertyKey(key);
+      return isTrue(this.proxyOperation(handle, PROXY_SET, cellValue(atom), value, object));
     }
     return this.setOnPrimitive(object, key, value);
   }
@@ -4081,6 +4193,11 @@ export struct Runtime {
       }
       return absentProperty();
     }
+    if (tag == TAG_PROXY) {
+      const target = this.proxyTargetOrThrow(handle);
+      if (this.pendingThrow) return absentProperty();
+      return this.getOwnDescriptor(target, key);
+    }
     return absentProperty();
   }
 
@@ -4143,7 +4260,12 @@ export struct Runtime {
 
   function isExtensible(value: Value): boolean {
     if (!this.isObjectLike(value)) return false;
-    return (this.heap.flagsOf(asCell(value)) & FLAG_NON_EXTENSIBLE) == 0;
+    const handle = asCell(value);
+    if (this.heap.isProxy(handle)) {
+      const target = this.heap.proxyTarget(handle);
+      return !isNull(target) && this.isExtensible(target);
+    }
+    return (this.heap.flagsOf(handle) & FLAG_NON_EXTENSIBLE) == 0;
   }
 
   // [[PreventExtensions]]: false, with nothing changed, for a typed array
@@ -4152,6 +4274,11 @@ export struct Runtime {
   function preventExtensions(inout this, value: Value): boolean {
     if (!this.isObjectLike(value)) return true;
     const handle = asCell(value);
+    if (this.heap.isProxy(handle)) {
+      const target = this.proxyTargetOrThrow(handle);
+      if (this.pendingThrow) return false;
+      return this.preventExtensions(target);
+    }
     const flags = this.heap.flagsOf(handle);
     if ((flags & FLAG_VARIABLE_LENGTH) != 0 && this.binaryKind(handle) == BINARY_TYPED) return false;
     this.heap.setFlags(handle, flags | FLAG_NON_EXTENSIBLE);
@@ -4164,6 +4291,11 @@ export struct Runtime {
     if (!this.isObjectLike(object)) return false;
     const handle = asCell(object);
     const tag = this.heap.tagOf(handle);
+    if (tag == TAG_PROXY) {
+      const target = this.proxyTargetOrThrow(handle);
+      if (this.pendingThrow) return false;
+      return this.defineOwnProperty(target, key, desc);
+    }
     // A typed array's element is a writable, enumerable, configurable data
     // property while its index is valid, and can be nothing else.
     if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_BINARY) != 0 && this.binaryKind(handle) == BINARY_TYPED) {
@@ -4442,6 +4574,11 @@ export struct Runtime {
       if (this.functionHasPrototype(object) && !this.functionBagHas(handle, this.atomPrototype)) keys.push(cellValue(this.atomPrototype));
       if (bag != 0) this.pushObjectKeys(inout keys, bag, false);
       return keys;
+    }
+    if (tag == TAG_PROXY) {
+      const target = this.proxyTargetOrThrow(handle);
+      if (this.pendingThrow) return keys;
+      return this.ownKeys(target);
     }
     return keys;
   }
@@ -4760,6 +4897,10 @@ export struct Runtime {
       }
       return false;
     }
+    if (tag == TAG_PROXY) {
+      const proxyAtom = this.propertyKey(key);
+      return isTrue(this.proxyOperation(handle, PROXY_HAS, cellValue(proxyAtom), undefinedValue(), undefinedValue()));
+    }
     // Functions: `prototype` (constructors only), `length`, `name`, own
     // named properties, then Function.prototype.
     const atom = this.propertyKey(key);
@@ -4819,6 +4960,11 @@ export struct Runtime {
       if (this.functionVirtualDeleted(handle, atom)) return false;
       if (atom == this.atomPrototype) return this.functionHasPrototype(object);
       return atom == this.atomLength || atom == this.atomName;
+    }
+    if (tag == TAG_PROXY) {
+      const target = this.proxyTargetOrThrow(handle);
+      if (this.pendingThrow) return false;
+      return this.hasOwnProperty(target, key);
     }
     return false;
   }
@@ -4888,11 +5034,26 @@ export struct Runtime {
     if (handle == this.objectProto) return false;
     const tag = this.heap.tagOf(handle);
     const isFunction = tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE;
+    if (tag == TAG_PROXY) {
+      const inner = this.proxyTargetOrThrow(handle);
+      if (this.pendingThrow) return false;
+      return this.setPrototypeOfValue(inner, proto);
+    }
     if (tag != TAG_OBJECT && tag != TAG_ARRAY && !isFunction) return true;
     if (!this.isExtensible(target)) return false;
     let current = wanted;
     while (current != 0) {
-      if (current == handle) return false;
+      // shortcut: a proxy hands [[GetPrototypeOf]] on to its target, so a
+      // chain that came back to this object through one would never end,
+      // and is refused; the specification stops the search at a proxy.
+      // To be redone with the getPrototypeOf trap, when each such step
+      // becomes a call.
+      let end = current;
+      while (end != 0 && this.heap.isProxy(end)) {
+        const inner = this.heap.proxyTarget(end);
+        end = isNull(inner) ? 0 : asCell(inner);
+      }
+      if (end == handle) return false;
       current = this.protoOfValue(cellValue(current));
     }
     if (tag == TAG_OBJECT) {
@@ -4917,6 +5078,10 @@ export struct Runtime {
     if (tag == TAG_ARRAY) return this.arrayProtoOf(handle);
     if (tag == TAG_FUNCTION || tag == TAG_HOST_FUNCTION || tag == TAG_CLOSURE) return this.functionProtoOf(handle);
     if (this.heap.isString(handle)) return this.stringProto;
+    if (tag == TAG_PROXY) {
+      const target = this.heap.proxyTarget(handle);
+      return isNull(target) ? 0 : this.protoOfValue(target);
+    }
     return 0;
   }
 
@@ -4981,6 +5146,10 @@ export struct Runtime {
         return true;
       }
       return true;
+    }
+    if (tag == TAG_PROXY) {
+      const atom = this.propertyKey(key);
+      return isTrue(this.proxyOperation(handle, PROXY_DELETE, cellValue(atom), undefinedValue(), undefinedValue()));
     }
     return true;
   }
@@ -5114,6 +5283,11 @@ export struct Runtime {
       const parent = this.functionProtoOf(handle);
       if (parent != this.functionProto) this.appendInheritedKeys(keys, value, parent);
       return cellValue(keys);
+    }
+    if (tag == TAG_PROXY) {
+      const target = this.proxyTargetOrThrow(handle);
+      if (this.pendingThrow) return cellValue(keys);
+      return this.enumerateKeys(target);
     }
     if (tag == TAG_OBJECT && (this.heap.flagsOf(handle) & FLAG_NAMESPACE) != 0) {
       // A namespace has no prototype; each export is read for its

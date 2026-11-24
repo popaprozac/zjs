@@ -1,0 +1,143 @@
+typeof: object
+call without new: TypeError
+target number: TypeError
+target null: TypeError
+handler string: TypeError
+handler undefined: TypeError
+length: 2
+name: Proxy
+revocable length: 2
+proxy of proxy: 1
+isArray: true false true
+forward get: 1
+forward set: 2
+forward has: true false true
+forward delete: true false
+forward keys: a,b
+forward for-in: a,b
+forward JSON: {"a":[1,{"b":2}]}
+forward proto: true
+forward instanceof: true
+forward hasOwn: true false
+forward descriptor: {"value":1,"writable":true,"enumerable":true,"configurable":true}
+forward define: 5
+forward frozen: true false
+forward preventExtensions: false
+forward setPrototypeOf: 1
+forward getter this: true
+forward setter this: true
+forward method this: true
+forward array: 4 4 2,4,6,8 1,2,3,4
+forward symbol key: 7
+forward string target: 2 b
+forward assign: {"a":1,"b":2}
+forward spread: {"a":1}
+forward entries: [["a",1]]
+toString tag: [object Array] [object Object]
+String(proxy): [object Object] 1,2
+loose equality: true true false
+get args: 9 true a true
+get index key: string:0 string:1.5 string:x
+get symbol key: symbol symbol
+get this is handler: true
+get trap read each time: 1 2 1
+get trap null: 1
+get trap undefined: 1
+get trap not callable: TypeError
+get trap throws: RangeError
+get inherited trap: from proto
+get read-only same: 1
+get read-only other: TypeError
+get soft other: 2
+get no getter undefined: undefined
+get no getter value: TypeError
+get with getter value: 1
+get NaN same: NaN
+get -0 other: TypeError
+get method call: called anything
+get destructure: a!b!
+get optional chain: undefined
+get typeof member: number
+set args: true a 5 true false
+set false sloppy: quiet
+set false strict: TypeError
+set truthy: ok
+set value of expression: 7
+set index key: string 2 v
+set compound: get n | set n 5 | get n | set n 6 6
+set read-only same: ok
+set read-only other: TypeError
+set no setter: TypeError
+set with setter: ok
+set false skips checks: ok
+set trap not callable: TypeError
+set array through traps: 0 | 1 | length
+has args: true true true a | true 1
+has falsy: false
+has hides non-configurable: TypeError
+has hides on non-extensible: TypeError
+has absent on non-extensible: false
+has shows absent: true
+Reflect.has: true
+has with: 1 a
+delete args: true true a true
+delete false sloppy: false
+delete false strict: TypeError
+delete non-configurable: TypeError
+delete on non-extensible: TypeError
+delete absent on non-extensible: true
+delete index: string 0
+Reflect.deleteProperty: false
+proto get: child x
+proto get own wins: own
+proto set: x 1 true false
+proto set no trap: true 1
+proto has: true false
+proto of array: 2 map | constructor
+proto repeated reads: 5 5
+proto replaced after reads: plain plain plain trap trap trap 
+proto store after cache: set w 3 false
+field on proxy this: 1 2 1 x,y
+field via set trap: 1 3 set z
+method on proxy this: 4
+object literal proto proxy: 1 p:other
+concat array proxy: 3
+spread array proxy: 2 9
+Array.from proxy: 1,2 a,b
+sort through proxy: 1,2,3
+Object.freeze proxy: true
+WeakMap key: 1 false
+Map key identity: pt2
+in with primitive key: true false
+valueOf arithmetic: 21
+toPrimitive hint: string
+for-of proxy iterator: 12
+getter proto chain: tc
+delete then has: false
+Object.create(proxy) keys: a
+instanceof proxy proto: false
+isPrototypeOf: true
+proto set strict: false
+proto set refused strict: TypeError
+Reflect.get receiver: true true
+Reflect.get in trap: child
+Reflect.set receiver: 5 undefined
+Reflect.set plain receiver: true 1 2
+Reflect.set in trap: 3
+Reflect.set read-only receiver: false
+revocable shape: proxy,revoke object function 0 ''
+revoke get: TypeError
+revoke set: TypeError
+revoke has: TypeError
+revoke delete: TypeError
+revoke keys: TypeError
+revoke typeof: object
+revoke twice: undefined undefined
+revoke isArray: TypeError
+revoke in trap: 1
+revoke as target: object
+revoke non-object: TypeError
+private read: TypeError
+private in: true false
+private write: TypeError
+private method: TypeError

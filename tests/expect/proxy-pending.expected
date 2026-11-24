@@ -1,0 +1,39 @@
+function target: TypeError
+arrow target: TypeError
+class target: TypeError
+builtin target: TypeError
+revocable function target: TypeError
+getOwnPropertyDescriptor: TypeError
+getOwnPropertyDescriptor inherited: TypeError
+getOwnPropertyDescriptor null: object
+getOwnPropertyDescriptor undefined: object
+defineProperty: TypeError
+defineProperty inherited: TypeError
+defineProperty null: object
+defineProperty undefined: object
+ownKeys: TypeError
+ownKeys inherited: TypeError
+ownKeys null: object
+ownKeys undefined: object
+getPrototypeOf: TypeError
+getPrototypeOf inherited: TypeError
+getPrototypeOf null: object
+getPrototypeOf undefined: object
+setPrototypeOf: TypeError
+setPrototypeOf inherited: TypeError
+setPrototypeOf null: object
+setPrototypeOf undefined: object
+isExtensible: TypeError
+isExtensible inherited: TypeError
+isExtensible null: object
+isExtensible undefined: object
+preventExtensions: TypeError
+preventExtensions inherited: TypeError
+preventExtensions null: object
+preventExtensions undefined: object
+apply on an object target: object
+construct on an object target: object
+cycle through its own proxy: TypeError
+cycle through two proxies: TypeError
+cycle, Reflect: false
+no cycle: 1

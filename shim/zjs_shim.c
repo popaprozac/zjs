@@ -98,6 +98,7 @@ void zjs_install_collections(ZjsContext *ctx) { if (ctx != NULL && !zjs_host_ref
 void zjs_install_promise(ZjsContext *ctx) { if (ctx != NULL && !zjs_host_refuse(ctx)) zjs_z_install_promise((uintptr_t)ctx); }
 void zjs_install_reflect(ZjsContext *ctx) { if (ctx != NULL && !zjs_host_refuse(ctx)) zjs_z_install_reflect((uintptr_t)ctx); }
 void zjs_install_typed_arrays(ZjsContext *ctx) { if (ctx != NULL && !zjs_host_refuse(ctx)) zjs_z_install_typed_arrays((uintptr_t)ctx); }
+void zjs_install_proxy(ZjsContext *ctx) { if (ctx != NULL && !zjs_host_refuse(ctx)) zjs_z_install_proxy((uintptr_t)ctx); }
 void zjs_install_compiler(ZjsContext *ctx) { if (ctx != NULL && !zjs_host_refuse(ctx)) zjs_z_install_compiler((uintptr_t)ctx); }
 
 void zjs_free_context(ZjsContext *ctx) {

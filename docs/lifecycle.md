@@ -153,6 +153,7 @@ only the installers it calls:
 | `zjs_install_promise` | Promise; before it, async functions run, but their promises have no Promise methods |
 | `zjs_install_reflect` | Reflect |
 | `zjs_install_typed_arrays` | ArrayBuffer, DataView, and the typed arrays |
+| `zjs_install_proxy` | Proxy, with the `get`, `set`, `has`, and `deleteProperty` traps; `new Proxy` throws a TypeError for a handler that has any other trap, and for a target that is a function |
 | `zjs_install_compiler` | the source compiler, for `eval` and the `Function` constructor |
 
 `zjs_new_context` is the core with every installer run. Installing a

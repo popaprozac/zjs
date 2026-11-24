@@ -32,13 +32,14 @@ import { installCollections } from "./builtins/collections.zs";
 import { installPromise } from "./builtins/promise.zs";
 import { installReflect } from "./builtins/reflect.zs";
 import { installTypedArrays } from "./builtins/typedarray.zs";
+import { installProxy } from "./builtins/proxy.zs";
 import { installCompiler, installModuleCompiler } from "./compile.zs";
 import { evaluateModule, evaluateModuleSource, installModuleSupport } from "./modules.zs";
 import { installFileLoader } from "./module_files.zs";
 import { writeProgram, writeModule, loadProgram } from "./bytecode_file.zs";
 import { Value, undefinedValue, deletedValue, cellValue, int32Value, asInt32, doubleValue, asCell, isCell, isNumber, isNull, isUndefined, isDeleted, isHole, VALUE_NULL, VALUE_FALSE, VALUE_TRUE, VALUE_UNDEFINED } from "./value.zs";
 import host from "./native/zjs_host.h";
-import { sliceBytes, TAG_STRING, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_PROMISE, TAG_REGEXP } from "./heap.zs";
+import { sliceBytes, TAG_STRING, TAG_OBJECT, TAG_ARRAY, TAG_FUNCTION, TAG_HOST_FUNCTION, TAG_CLOSURE, TAG_PROMISE, TAG_REGEXP, TAG_PROXY } from "./heap.zs";
 
 export struct ContextState {
   hadError: boolean;
@@ -267,6 +268,10 @@ export c function zjs_z_install_reflect(handle: usize): void {
 
 export c function zjs_z_install_typed_arrays(handle: usize): void {
   installInto(handle, installTypedArrays);
+}
+
+export c function zjs_z_install_proxy(handle: usize): void {
+  installInto(handle, installProxy);
 }
 
 // Run an installer on a live context, under its lock; installing a
@@ -582,7 +587,7 @@ function exportValue(in runtime: Runtime, slot: u32, value: Value): u64 {
   let kind: u64 = 0;
   if (tag == TAG_STRING) {
     kind = ABI_KIND_STRING;
-  } else if (tag == TAG_OBJECT || tag == TAG_PROMISE || tag == TAG_REGEXP) {
+  } else if (tag == TAG_OBJECT || tag == TAG_PROMISE || tag == TAG_REGEXP || tag == TAG_PROXY) {
     kind = ABI_KIND_OBJECT;
   } else if (tag == TAG_ARRAY) {
     kind = ABI_KIND_ARRAY;

@@ -26,7 +26,7 @@ int main(void) {
     return 1;
   }
   check(core, "optional builtins absent",
-        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect', 'ArrayBuffer', 'Uint8Array', 'Float64Array'])"
+        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect', 'ArrayBuffer', 'Uint8Array', 'Float64Array', 'Proxy'])"
         "  if (typeof globalThis[name] !== 'undefined') throw new Error(name);"
         "if ('match' in String.prototype || 'search' in String.prototype || 'matchAll' in String.prototype) throw 1;");
   check(core, "core builtins present",
@@ -59,12 +59,20 @@ int main(void) {
   zjs_install_promise(core);
   zjs_install_reflect(core);
   zjs_install_typed_arrays(core);
+  zjs_install_proxy(core);
   check(core, "installed builtins work",
         "if (JSON.stringify({ a: [1] }) !== '{\"a\":[1]}') throw 1;"
         "if (!/b+/.test('abbc') || 'abbc'.match(/b+/)[0] !== 'bb' || 'a1b2'.search(/\\d/) !== 1) throw 2;"
         "if (new Date(0).getTime() !== 0 || new Map([[1, 2]]).get(1) !== 2 || !new Set([1]).has(1)) throw 3;"
         "if (Reflect.ownKeys({ q: 1 })[0] !== 'q' || typeof Promise.resolve(1).then !== 'function') throw 4;"
-        "var bytes = new Uint8Array(new ArrayBuffer(4)); bytes[0] = 257; if (bytes[0] !== 1 || new Float64Array([0.5])[0] !== 0.5) throw 5;");
+        "var bytes = new Uint8Array(new ArrayBuffer(4)); bytes[0] = 257; if (bytes[0] !== 1 || new Float64Array([0.5])[0] !== 0.5) throw 5;"
+        "var seen = new Proxy({ a: 1 }, { get: function (target, key) { return key in target ? target[key] : 'none'; } });"
+        "if (seen.a !== 1 || seen.b !== 'none' || !('a' in seen)) throw 6;");
+  ZjsValue proxied = zjs_eval(core, "new Proxy({ a: 1 }, {})");
+  if (!zjs_is_object(proxied) || zjs_as_int32(zjs_get_property(core, proxied, "a")) != 1) {
+    fprintf(stderr, "core context: FAIL a proxy is an object to the embedder\n");
+    failures++;
+  }
   check(core, "installing twice changes nothing",
         "var R = RegExp, J = JSON; globalThis.saved = [R, J];");
   zjs_install_regexp(core);
@@ -75,7 +83,7 @@ int main(void) {
 
   ZjsContext *full = zjs_new_context();
   check(full, "the full context has everything",
-        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect', 'ArrayBuffer', 'Int8Array', 'Uint8ClampedArray'])"
+        "for (var name of ['JSON', 'RegExp', 'Date', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Reflect', 'ArrayBuffer', 'Int8Array', 'Uint8ClampedArray', 'Proxy'])"
         "  if (typeof globalThis[name] === 'undefined') throw new Error(name);"
         "if (typeof ''.match !== 'function' || !/a/.test('a')) throw 1;");
   zjs_free_context(full);

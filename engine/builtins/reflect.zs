@@ -123,6 +123,8 @@ function reflectGet(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
   const target = runtime.argument(argsBase, argc, 0);
   const method: String = "get";
   if (!requireTarget(inout runtime, target, in method)) return undefinedValue();
+  // The receiver, an accessor's this: the target unless one is given.
+  if (argc >= 3) return runtime.getWithReceiver(target, runtime.argument(argsBase, argc, 1), runtime.argument(argsBase, argc, 2));
   return runtime.getProperty(target, runtime.argument(argsBase, argc, 1));
 }
 
@@ -160,6 +162,13 @@ function reflectSet(inout runtime: Runtime, thisValue: Value, argsBase: u32, arg
       if (runtime.pendingThrow) return undefinedValue();
       return booleanValue(defined);
     }
+  }
+  // Another receiver: a setter on the target's chain runs against it, and
+  // a plain write lands on it (the [[Set]] of `super[key] = value`).
+  if (argc >= 4 && !runtime.sameValue(target, runtime.argument(argsBase, argc, 3))) {
+    const stored = runtime.superSet(asCell(target), runtime.argument(argsBase, argc, 1), runtime.argument(argsBase, argc, 2), runtime.argument(argsBase, argc, 3));
+    if (runtime.pendingThrow) return undefinedValue();
+    return booleanValue(stored);
   }
   const accepted = runtime.setProperty(target, runtime.argument(argsBase, argc, 1), runtime.argument(argsBase, argc, 2));
   if (runtime.pendingThrow) return undefinedValue();
