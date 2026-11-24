@@ -1,0 +1,94 @@
+field: throws SyntaxError
+field typeof: throws SyntaxError
+field arrow in eval: throws SyntaxError
+field eval in arrow: throws SyntaxError
+field nested arrows: throws SyntaxError
+field in block: throws SyntaxError
+field nested eval: throws SyntaxError
+field eval of eval in arrow: throws SyntaxError
+field method key: throws SyntaxError
+field accessor key: throws SyntaxError
+field class method key: throws SyntaxError
+field template: throws SyntaxError
+field call argument: throws SyntaxError
+field default parameter of arrow: throws SyntaxError
+private field: throws SyntaxError
+private field arrow: throws SyntaxError
+static field: throws SyntaxError
+static field arrow: throws SyntaxError
+static private field: throws SyntaxError
+computed-key field: throws SyntaxError
+derived field: throws SyntaxError
+derived field, written constructor: throws SyntaxError
+derived field, arrow super: throws SyntaxError
+field in function with arguments: throws SyntaxError
+class expression field: throws SyntaxError
+escaped name: throws SyntaxError
+ran: 0
+function in eval: 3
+eval in function: 2
+method in eval: 1
+eval in method: 4
+arrow in function in eval: 2
+generator in eval: 1
+class method in eval: 2
+property named arguments: 5
+member named arguments: undefined
+string holding the name: arguments
+indirect eval: undefined
+eval of no name: 2
+method: 2
+constructor: 3
+constructor arrow: 1
+constructor beside a field: 2
+computed key: 2
+function: 3
+getter: 0
+static method: 1
+refused twice: 3
+a later field does not run: 0
+ran: 0
+class C { x = arguments } => SyntaxError
+class C { x = a => arguments } => SyntaxError
+class C { x = (a = arguments) => a } => SyntaxError
+class C { x = ({ a = arguments }) => a } => SyntaxError
+class C { x = ([a = arguments]) => a } => SyntaxError
+class C { x = ({ [arguments]: a }) => a } => SyntaxError
+class C { x = async (a = arguments) => a } => SyntaxError
+class C { x = (a, b = () => arguments) => a } => SyntaxError
+class C { x = (a, b = (c = arguments) => c) => a } => SyntaxError
+class C { x = { [arguments]() {} } } => SyntaxError
+class C { x = { get [arguments]() { return 1; } } } => SyntaxError
+class C { x = class { [arguments]() {} } } => SyntaxError
+class C { x = class { static [arguments]() {} } } => SyntaxError
+class C { x = class { [arguments] = 1 } } => SyntaxError
+class C { x = { arguments } } => SyntaxError
+class C { x = argument\u0073 } => SyntaxError
+class C { x = () => argument\u0073 } => SyntaxError
+class C { static x = (a = arguments) => a } => SyntaxError
+class C { static x = argument\u0073 } => SyntaxError
+class C { #x = (a = arguments) => a } => SyntaxError
+class C { static { arguments; } } => SyntaxError
+class C { static { ((a = arguments) => a)(); } } => SyntaxError
+class C { static { (({ a = arguments }) => a)({}); } } => SyntaxError
+class C { static { class D { [arguments]() {} } } } => SyntaxError
+class C { static { ({ [arguments]() {} }); } } => SyntaxError
+class C { x = function () { return arguments; } } => accepted
+class C { x = function (a = arguments) { return a; } } => accepted
+class C { x = { m() { return arguments; } } } => accepted
+class C { x = { m(a = arguments) { return a; } } } => accepted
+class C { x = class { m() { return arguments; } } } => accepted
+class C { x = class { constructor() { arguments; } } } => accepted
+class C { x = { arguments: 1 } } => accepted
+class C { x = this.arguments } => accepted
+class C { x = 'arguments' } => accepted
+class C { arguments = 1 } => accepted
+class C { x = { arguments() {} } } => accepted
+class C { x = () => function () { return arguments; } } => accepted
+class C { static { function f() { return arguments; } } } => accepted
+class C { static { (function () { return arguments; })(); } } => accepted
+class C { static { ({ m() { return arguments; } }); } } => accepted
+class C { m() { return arguments; } } => accepted
+class C { m(a = arguments) { return () => arguments; } } => accepted
+class C { constructor() { arguments; } x = 1 } => accepted
+function f() { return class { [arguments.length] = 1 }; } => accepted

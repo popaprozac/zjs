@@ -3090,26 +3090,6 @@ export struct Parser {
     return false;
   }
 
-  // ContainsArguments for a class field initializer: recurses through
-  // arrows, stops at functions and methods (which have their own).
-  function exprContainsArguments(index: u32): boolean {
-    if (index == NO_NODE) return false;
-    const n = this.node(index);
-    if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr || n.kind == NodeKind.methodDef) return false;
-    if (n.kind == NodeKind.identExpr) {
-      return n.end - n.start == 9 && this.sliceEquals(n.start, 9, "arguments");
-    }
-    if (n.left != NO_NODE && this.exprContainsArguments(n.left)) return true;
-    if (n.right != NO_NODE && this.exprContainsArguments(n.right)) return true;
-    if (n.third != NO_NODE && this.exprContainsArguments(n.third)) return true;
-    let i: u32 = 0;
-    while (i < n.childrenCount) {
-      if (this.exprContainsArguments(this.ast.child(index, i))) return true;
-      i = i + 1;
-    }
-    return false;
-  }
-
   // Whether a static field's initializer can tell which function it runs
   // in: it reads `this`, `super`, or `new.target`, or names eval, itself
   // or in an arrow (which sees its function's). A method's computed key
@@ -3130,23 +3110,21 @@ export struct Parser {
     return false;
   }
 
-  // ContainsArguments for a static block body: escape-aware, and only the
-  // computed keys of nested members are in the block's scope.
-  function staticBlockUsesArguments(index: u32): boolean {
+  // ContainsArguments, for a field's initializer, a static block's body,
+  // and eval code called in a field's initializer: escape-aware, through
+  // arrows, not into a function (which has its own), and of a method
+  // only its computed key. A parameter is an identifier with its default
+  // on `right` and a pattern on `third`, so the scan goes on past a name.
+  function containsArguments(index: u32): boolean {
     if (index == NO_NODE) return false;
     const n = this.node(index);
     if (n.kind == NodeKind.functionDecl || n.kind == NodeKind.functionExpr) return false;
-    if (n.kind == NodeKind.identExpr) return this.identMatches(n.start, n.end - n.start, "arguments");
-    if (n.kind == NodeKind.methodDef) {
-      if (n.third != NO_NODE && this.staticBlockUsesArguments(n.third)) return true;
-      return false;
-    }
-    if (n.left != NO_NODE && this.staticBlockUsesArguments(n.left)) return true;
-    if (n.right != NO_NODE && this.staticBlockUsesArguments(n.right)) return true;
-    if (n.third != NO_NODE && this.staticBlockUsesArguments(n.third)) return true;
+    if (n.kind == NodeKind.identExpr && this.identMatches(n.start, n.end - n.start, "arguments")) return true;
+    if (n.kind == NodeKind.methodDef) return this.containsArguments(n.third);
+    if (this.containsArguments(n.left) || this.containsArguments(n.right) || this.containsArguments(n.third)) return true;
     let i: u32 = 0;
     while (i < n.childrenCount) {
-      if (this.staticBlockUsesArguments(this.ast.child(index, i))) return true;
+      if (this.containsArguments(this.ast.child(index, i))) return true;
       i = i + 1;
     }
     return false;
@@ -3280,7 +3258,7 @@ export struct Parser {
         this.staticBlockDepth = savedDepth;
         if (body == NO_NODE) return NO_NODE;
         if (this.walkShort(body)) return NO_NODE;
-        if (this.staticBlockUsesArguments(body)) {
+        if (this.containsArguments(body)) {
           this.hadError = true;
           return NO_NODE;
         }
@@ -3369,7 +3347,7 @@ export struct Parser {
         this.superProperty = savedSuper;
         if (init == NO_NODE) return NO_NODE;
         if (this.walkShort(init)) return NO_NODE;
-        if (this.exprContainsArguments(init)) {
+        if (this.containsArguments(init)) {
           this.hadError = true;
           return NO_NODE;
         }
@@ -3989,14 +3967,16 @@ export function parseText(source: String, isModule: boolean): ParseResult {
 }
 
 export function parseProgram(source: Array<u8>, isModule: boolean, stackFloor: usize): ParseResult {
-  return parseScript(move source, isModule, false, false, false, stackFloor);
+  return parseScript(move source, isModule, false, false, false, false, stackFloor);
 }
 
 // A program parsed as its caller says: direct eval code is strict from
 // the start when called from strict code, may write `super.x` when
-// the calling function has a home object (`superProperty`), and may
-// call super() when the call is in a derived constructor (`superCall`).
-export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, superProperty: boolean, superCall: boolean, stackFloor: usize): ParseResult {
+// the calling function has a home object (`superProperty`), may call
+// super() when the call is in a derived constructor (`superCall`), and
+// may not name `arguments` when the call is in a class field's
+// initializer (`noArguments`), which has none.
+export function parseScript(source: Array<u8>, isModule: boolean, strict: boolean, superProperty: boolean, superCall: boolean, noArguments: boolean, stackFloor: usize): ParseResult {
   const sourceLength = u32(source.length);
   const byteCount = source.length;
   let stackSpent = false;
@@ -4064,6 +4044,8 @@ export function parseScript(source: Array<u8>, isModule: boolean, strict: boolea
   if (!parser.hadError && !parser.stackShort(parser.ast.walkCost(parser.ast.tallest))) {
     let chain = Array<u32>();
     parser.validatePrivateNames(program, inout chain, 0);
+    // Eval code in a field's initializer has no `arguments` to name.
+    if (noArguments && parser.containsArguments(program)) parser.hadError = true;
   }
 
   parser.argumentsName = u32(parser.source.length);

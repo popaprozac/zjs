@@ -2401,8 +2401,9 @@ export struct Compiler {
     return OuterRef({ found: false, hops: 0, slot: -1, scopeIndex: 0, needsCheck: false, isConst: false, quiet: false });
   }
 
-  // Whether this code is an instance field's initializer, or an arrow
-  // in one: the nearest non-arrow function is compiling one now.
+  // Whether this code is a field's initializer, or an arrow in one: the
+  // nearest non-arrow function is compiling one now, or is a static
+  // field's.
   function inFieldInitializer(inout this): boolean {
     if (this.bindings.fieldFrom >= 0) return true;
     let level: usize = this.outerScopes.length;
@@ -7276,8 +7277,13 @@ function compileFunction(in parser: Parser, inout runtime: Runtime, node: u32, i
       }
     } else {
       // A concise body: the expression is the return value. A static
-      // field's initializer names an anonymous function after the field.
-      if (n.kind == NodeKind.staticBlock) compiler.nameNext(contextualStart, contextualLength, 0);
+      // field's initializer names an anonymous function after the field,
+      // and an eval call in it is in a field's initializer (none of its
+      // bindings is hidden).
+      if (n.kind == NodeKind.staticBlock) {
+        compiler.nameNext(contextualStart, contextualLength, 0);
+        compiler.bindings.fieldFrom = 0;
+      }
       const r = compiler.compileExpr(in parser, inout runtime, n.left);
       compiler.emit(instA(Op.returnOp, r));
     }
