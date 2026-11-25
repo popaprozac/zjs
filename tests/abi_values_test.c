@@ -298,6 +298,29 @@ static void two_contexts(ZjsContext *a) {
   zjs_free_context(core);
 }
 
+/* Eleven bits of a cell name its context's slot, so the cells of a
+   context in a slot past the 2,047th name none. A context within the
+   limit still refuses them, and the far one still takes its own. */
+static void past_the_slot_limit(ZjsContext *a) {
+  enum { MORE = 2048 };
+  static ZjsContext *made[MORE];
+  for (int i = 0; i < MORE; i++) made[i] = zjs_new_core_context();
+  ZjsContext *far = made[MORE - 1];
+  CHECK(far != NULL, "a context past the 2,047th slot");
+  ZjsValue theirs = zjs_eval(far, "({ tag: 7 })");
+  uint32_t kept = zjs_root(far, theirs);
+  CHECK(zjs_is_object(theirs) && zjs_as_int32(zjs_get_property(far, theirs, "tag")) == 7, "takes its own cells");
+  uint32_t root = zjs_root(a, theirs);
+  CHECK(zjs_is_undefined(zjs_root_get(a, root)), "a context within the limit refuses them");
+  zjs_unroot(a, root);
+  root = zjs_root(far, zjs_eval(a, "({ tag: 8 })"));
+  CHECK(zjs_is_undefined(zjs_root_get(far, root)), "as the far one refuses its");
+  zjs_unroot(far, root);
+  CHECK(zjs_string_bytes(zjs_eval(far, "'far'"), NULL) == NULL, "a far string has no text for the call that is given no context");
+  zjs_unroot(far, kept);
+  for (int i = 0; i < MORE; i++) zjs_free_context(made[i]);
+}
+
 int main(void) {
   immediates();
   ZjsContext *ctx = zjs_new_context();
@@ -308,6 +331,7 @@ int main(void) {
   strangers(ctx);
   many_strings(ctx);
   two_contexts(ctx);
+  past_the_slot_limit(ctx);
   zjs_free_context(ctx);
   printf(failures ? "abi values: %d FAILURES\n" : "abi values: ok (%d failures)\n", failures);
   return failures ? 1 : 0;

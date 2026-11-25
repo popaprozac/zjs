@@ -178,8 +178,9 @@ slot lets `zjs_string_bytes` and `zjs_array_length`, which are given no
 context, find the heap. A context takes as `undefined` a cell that names
 another context's slot, a handle outside its heap's table, and bits that
 are the engine's own markers. Eleven bits hold the slot: a context past
-the 2,047th slot exports its cells with no slot, so those two calls refuse
-them, and another context cannot tell them from its own.
+the 2,047th slot exports its cells with no slot. Those two calls refuse
+such cells, and so does every context within the limit; two contexts
+that are both past it cannot tell each other's cells from their own.
 
 Lifetime is the header's: a value a call returned is good until the next
 call on its context that can allocate, unless it is reachable from
@@ -208,7 +209,8 @@ host is UTF-8, with a lone surrogate as U+FFFD.
 `tests/abi_values_test.c`, run by `build.sh`, is the evidence: every kind
 of value out of an evaluation and back in, strings in UTF-8 both ways,
 roots and pins across collections, 2,400 strings read with collections
-between, a second context's values refused, and bits no call returned.
+between, a second context's values refused, the same between a context
+past the 2,047th slot and one within the limit, and bits no call returned.
 
 ## Properties, globals, and calls
 

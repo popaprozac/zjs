@@ -563,8 +563,10 @@ export c function zjs_z_last_result_bits(handle: usize): u64 {
 // heap's table, and the engine's own markers come in as undefined (a
 // handle whose cell has died is not known from a live one: zjs.h makes
 // the embedder keep what it uses alive). A slot
-// past ABI_SLOT_LIMIT crosses as 0: such a context's cells are refused
-// by the two calls that are given no context.
+// past ABI_SLOT_LIMIT crosses as 0 (slotField): such a context's cells
+// are refused by the two calls that are given no context and by every
+// context within the limit, and two contexts past it cannot tell each
+// other's cells from their own.
 
 const ABI_HANDLE_MASK: u64 = 0x3_FFFF_FFFF;
 const ABI_SLOT_SHIFT: u64 = 34;
@@ -575,6 +577,11 @@ const ABI_KIND_OBJECT: u64 = 2;
 const ABI_KIND_ARRAY: u64 = 3;
 const ABI_KIND_FUNCTION: u64 = 4;
 const ABI_KIND_HOST_FUNCTION: u64 = 5;
+
+// The slot as a cell carries it.
+function slotField(slot: u32): u32 {
+  return slot <= ABI_SLOT_LIMIT ? slot : 0;
+}
 
 function exportValue(in runtime: Runtime, slot: u32, value: Value): u64 {
   if (!isCell(value)) {
@@ -596,7 +603,7 @@ function exportValue(in runtime: Runtime, slot: u32, value: Value): u64 {
   } else if (tag == TAG_HOST_FUNCTION) {
     kind = ABI_KIND_HOST_FUNCTION;
   }
-  const field: u64 = slot <= ABI_SLOT_LIMIT ? u64(slot) : 0;
+  const field = u64(slotField(slot));
   return value.bits | (field << ABI_SLOT_SHIFT) | (kind << ABI_KIND_SHIFT);
 }
 
@@ -607,7 +614,7 @@ function importValue(in runtime: Runtime, slot: u32, bits: u64): Value {
     return undefinedValue();
   }
   const field = u32((bits >> ABI_SLOT_SHIFT) & u64(ABI_SLOT_LIMIT));
-  if (field != 0 && field != slot) return undefinedValue();
+  if (field != slotField(slot)) return undefinedValue();
   const cell = u32((bits & ABI_HANDLE_MASK) >> 2);
   if (!runtime.heap.handleInTable(cell)) return undefinedValue();
   return cellValue(cell);
@@ -891,7 +898,9 @@ function registerHostFunction(inout runtime: Runtime, handle: usize, in name: Ar
   const made = cellValue(runtime.defineHostFunctionBytes(callEmbedder, int32Value(i32(index)), 0, sliceBytes(in name, 0, count)));
   runtime.pushTempRoot(made);
   const key = keyOf(inout runtime, in name);
-  writeGlobal(inout runtime, handleIndex(handle), key, made.bits);
+  // Not writeGlobal: that takes a cell as the embedder holds it.
+  const global = cellValue(runtime.globalObject);
+  const accepted = runtime.setProperty(global, key, made);
   runtime.popTempRoot();
   return made;
 }
